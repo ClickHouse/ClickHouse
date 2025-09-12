@@ -245,9 +245,9 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
 @pytest.mark.parametrize(
     "action_and_message",
     [
-        ("slow_down", "DB::Exception: Slow Down"),
-        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
-        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
+        ("slow_down", "DB::Exception: Slow Down."),
+        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
+        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
         (
             "connection_refused",
             "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",
@@ -729,7 +729,7 @@ def test_no_key_found_disk(cluster, broken_s3):
     error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
 
     assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk"
+        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
 

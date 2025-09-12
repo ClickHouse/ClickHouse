@@ -32,9 +32,10 @@ SELECT (number - 10) * 2 FROM numbers(10, 10);
 SELECT * FROM numbers(0, 20, 2);
 ```
 
+
 Examples:
 
 ```sql
 -- Generate a sequence of dates from 2010-01-01 to 2010-12-31
-SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+select toDate('2010-01-01') + number as d FROM numbers(365);
 ```

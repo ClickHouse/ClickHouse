@@ -6,7 +6,7 @@ Union
            ALIAS __table1.x :: 0 -> x UInt32 : 2
            ALIAS __table1.y :: 1 -> y UInt32 : 0
   Positions: 2 0
-    Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+    Expression
     Actions: INPUT : 1 -> y UInt32 : 0
              INPUT : 0 -> x UInt32 : 1
              ALIAS y :: 0 -> __table1.y UInt32 : 2
@@ -36,7 +36,6 @@ Union
           Parts: 1/1
           Granules: 1/123
           Search Algorithm: binary search
-          Ranges: 1
   Expression ((Project names + Projection))
   Actions: INPUT : 0 -> __table1.x UInt32 : 0
            INPUT : 1 -> __table1.y UInt32 : 1
@@ -59,7 +58,7 @@ Union
                  ALIAS __table1.x :: 0 -> x UInt32 : 2
                  ALIAS __table1.y :: 1 -> y UInt32 : 0
         Positions: 2 0
-          Expression ((WHERE + Change column names to column identifiers))
+          Expression
           Actions: INPUT : 1 -> y UInt32 : 0
                    INPUT : 0 -> x UInt32 : 1
                    ALIAS y :: 0 -> __table1.y UInt32 : 2
@@ -85,7 +84,6 @@ Union
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
 ============ lambdas
 41	41
 41	41
@@ -107,7 +105,7 @@ Positions: 1
       Expression (Before GROUP BY)
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
       Positions: 0
-        Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Expression
         Actions: INPUT : 0 -> y UInt32 : 0
                  INPUT :: 1 -> x UInt32 : 1
                  ALIAS y :: 0 -> __table1.y UInt32 : 2
@@ -134,7 +132,6 @@ Positions: 1
               Parts: 1/1
               Granules: 1/123
               Search Algorithm: binary search
-              Ranges: 1
       Expression (Before GROUP BY)
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
       Positions: 0
@@ -153,7 +150,7 @@ Positions: 1
                      ALIAS __table1.x :: 0 -> x UInt32 : 2
                      ALIAS __table1.y :: 1 -> y UInt32 : 0
             Positions: 2 0
-              Expression ((WHERE + Change column names to column identifiers))
+              Expression
               Actions: INPUT : 1 -> y UInt32 : 0
                        INPUT : 0 -> x UInt32 : 1
                        ALIAS y :: 0 -> __table1.y UInt32 : 2
@@ -179,8 +176,7 @@ Positions: 1
                     Parts: 1/1
                     Granules: 1/123
                     Search Algorithm: binary search
-                    Ranges: 1
-Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
+Expression ((Project names + (Projection + )))
 Actions: INPUT : 0 -> sum(__table2.y) UInt64 : 0
          INPUT : 1 -> __table2.x UInt32 : 1
          ALIAS sum(__table2.y) :: 0 -> sum(y) UInt64 : 2
@@ -197,7 +193,7 @@ Positions: 1 0
         Function: sum(UInt32) → UInt64
         Arguments: __table2.y
     Union
-      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
+      Expression
       Actions: INPUT : 0 -> __table1.x UInt32 : 0
                INPUT : 1 -> sum(__table1.y) AggregateFunction(sum, UInt32) : 1
                ALIAS __table1.x :: 0 -> __table2.x UInt32 : 2
@@ -210,7 +206,7 @@ Positions: 1 0
               Function: sum(UInt32) → UInt64
               Arguments: __table1.y
         Skip merging: 0
-          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
+          Expression
           Actions: INPUT : 1 -> y UInt32 : 0
                    INPUT : 0 -> x UInt32 : 1
                    ALIAS y :: 0 -> __table1.y UInt32 : 2
@@ -236,7 +232,6 @@ Positions: 1 0
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
       Filter (( + Change remote column names to local column names))
       Filter column: equals(__table1.x, 42_UInt8) (removed)
       Actions: INPUT : 0 -> __table1.x UInt32 : 0
@@ -270,14 +265,13 @@ Positions: 1 0
                     Condition: true
                     Parts: 1/1
                     Granules: 123/123
-                    Ranges: 1
 ============ in / global in
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Union
         Expression (Before GROUP BY)
-          Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          Expression
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
@@ -287,13 +281,12 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
@@ -303,7 +296,6 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                        Ranges: 1
 42
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -313,7 +305,7 @@ CreatingSets (Create sets before main query execution)
           ReadFromRemote (Read from remote replica)
             CreatingSets (Create sets before main query execution)
               Expression ((Project names + Projection))
-                Expression ((WHERE + Change column names to column identifiers))
+                Expression
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
@@ -323,7 +315,6 @@ CreatingSets (Create sets before main query execution)
                       Parts: 1/1
                       Granules: 1/123
                       Search Algorithm: binary search
-                      Ranges: 1
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       ReadFromSystemNumbers
@@ -332,7 +323,7 @@ CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Expression (Before GROUP BY)
-        Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Expression
           ReadFromMergeTree (default.tab0)
           Indexes:
             PrimaryKey
@@ -342,7 +333,6 @@ CreatingSets (Create sets before main query execution)
               Parts: 1/1
               Granules: 1/123
               Search Algorithm: binary search
-              Ranges: 1
 84
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -352,7 +342,7 @@ CreatingSets (Create sets before main query execution)
           ReadFromRemote (Read from remote replica)
             CreatingSets (Create sets before main query execution)
               Expression ((Project names + Projection))
-                Expression ((WHERE + Change column names to column identifiers))
+                Expression
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
@@ -362,10 +352,9 @@ CreatingSets (Create sets before main query execution)
                       Parts: 1/1
                       Granules: 1/123
                       Search Algorithm: binary search
-                      Ranges: 1
             CreatingSets (Create sets before main query execution)
               Expression ((Project names + Projection))
-                Expression ((WHERE + Change column names to column identifiers))
+                Expression
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
@@ -375,7 +364,6 @@ CreatingSets (Create sets before main query execution)
                       Parts: 1/1
                       Granules: 1/123
                       Search Algorithm: binary search
-                      Ranges: 1
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       ReadFromSystemNumbers
@@ -385,7 +373,7 @@ CreatingSets (Create sets before main query execution)
     Aggregating
       Union
         Expression (Before GROUP BY)
-          Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          Expression
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
@@ -395,13 +383,12 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
@@ -411,14 +398,13 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                        Ranges: 1
 126
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Union
         Expression (Before GROUP BY)
-          Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          Expression
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
@@ -428,13 +414,12 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
@@ -444,10 +429,9 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                        Ranges: 1
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
@@ -457,47 +441,43 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                        Ranges: 1
 126
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Union
         Expression (Before GROUP BY)
-          Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          Expression
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
                 Condition: true
                 Parts: 1/1
                 Granules: 123/123
-                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
                         Condition: true
                         Parts: 1/1
                         Granules: 123/123
-                        Ranges: 1
                 CreatingSet (Create set for subquery)
                   Expression ((Project names + (Projection + Change column names to column identifiers)))
                     ReadFromSystemNumbers
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
+                  Expression
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
                         Condition: true
                         Parts: 1/1
                         Granules: 123/123
-                        Ranges: 1
                 CreatingSet (Create set for subquery)
                   Expression ((Project names + (Projection + Change column names to column identifiers)))
                     ReadFromSystemNumbers
@@ -508,7 +488,7 @@ CreatingSets (Create sets before main query execution)
 CreatingSets (Create sets before main query execution)
   Union
     Expression ((Project names + Projection))
-      Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+      Expression
         ReadFromMergeTree (default.tab1)
         Indexes:
           PrimaryKey
@@ -518,13 +498,12 @@ CreatingSets (Create sets before main query execution)
             Parts: 0/1
             Granules: 0/1
             Search Algorithm: generic exclusion search
-            Ranges: 0
     Expression ((Project names + Projection))
       Filter (( + Change column names to column identifiers))
         ReadFromRemote (Read from remote replica)
           CreatingSets (Create sets before main query execution)
             Expression ((Project names + Projection))
-              Expression ((WHERE + Change column names to column identifiers))
+              Expression
                 ReadFromMergeTree (default.tab1)
                 Indexes:
                   PrimaryKey
@@ -534,7 +513,6 @@ CreatingSets (Create sets before main query execution)
                     Parts: 0/1
                     Granules: 0/1
                     Search Algorithm: generic exclusion search
-                    Ranges: 0
 ============ #68030
 Union
   Expression ((Project names + Projection))
@@ -562,7 +540,6 @@ Union
           Parts: 1/1
           Granules: 1/62
           Search Algorithm: binary search
-          Ranges: 1
   Expression ((Project names + Projection))
   Actions: INPUT : 0 -> __table1.n UInt64 : 0
            ALIAS __table1.n :: 0 -> n UInt64 : 1
@@ -601,4 +578,3 @@ Union
                 Parts: 1/1
                 Granules: 1/62
                 Search Algorithm: binary search
-                Ranges: 1

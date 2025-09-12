@@ -54,14 +54,12 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -76,8 +74,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Freeze.h>
@@ -93,8 +89,6 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -149,7 +143,6 @@ namespace ProfileEvents
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
-    extern const Event RejectedLightweightUpdates;
     extern const Event PartsLockWaitMicroseconds;
     extern const Event PartsLockHoldMicroseconds;
     extern const Event LoadedDataParts;
@@ -178,6 +171,8 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool allow_experimental_inverted_index;
+    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
@@ -196,9 +191,6 @@ namespace Setting
     extern const SettingsUInt64 parts_to_throw_insert;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 merge_tree_storage_snapshot_sleep_ms;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsBool apply_patch_parts;
 }
 
 namespace MergeTreeSetting
@@ -259,14 +251,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
-    extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
-    extern const MergeTreeSettingsBool remove_unused_patch_parts;
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
-    extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
-    extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
 }
 
 namespace ServerSetting
@@ -303,6 +289,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -315,7 +302,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -364,17 +350,6 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
             sampling_column_type->getName());
-}
-
-static bool hasColumnsWithDynamicSubcolumns(const Block & block)
-{
-    for (const auto & column : block.getColumnsWithTypeAndName())
-    {
-        if (column.type->hasDynamicSubcolumns())
-            return true;
-    }
-
-    return false;
 }
 
 
@@ -481,86 +456,33 @@ DataPartsLock::~DataPartsLock()
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
-static Int64 extractVersion(const auto & versions, const String & partition_id, Int64 default_value)
+MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_)
+    : params(std::move(params_)), counters(std::move(counters_))
 {
-    if (!versions)
-        return default_value;
-
-    auto it = versions->find(partition_id);
-    if (it == versions->end())
-        return default_value;
-
-    return it->second;
 }
 
-Int64 MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(const Params & params, const String & partition_id)
+bool MergeTreeData::MutationsSnapshotBase::hasSupportedCommands(const MutationCommands & commands) const
 {
-    return extractVersion(params.min_part_data_versions, partition_id, std::numeric_limits<Int64>::min());
-}
+    bool need_data_mutations = hasDataMutations();
+    bool need_alter_mutations = hasAlterMutations();
+    bool need_metatadata_mutations = hasMetadataMutations();
 
-Int64 MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(const Params & params, const String & partition_id)
-{
-    return extractVersion(params.max_mutation_versions, partition_id, std::numeric_limits<Int64>::max());
-}
-
-bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands)
-{
     for (const auto & command : commands)
     {
-        if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+        if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             return true;
 
-        if (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
+        if (need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
             return true;
 
-        /// Metadata mutations must be included into the snapshot regardless of the parameters.
-        if (AlterConversions::isSupportedMetadataMutation(command.type))
+        if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
             return true;
     }
 
     return false;
 }
 
-MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_)
-    : params(std::move(params_))
-    , counters(std::move(counters_))
-    , patches_by_partition(getPatchPartsByPartition(patches_, params.max_mutation_versions))
-{
-}
-
-void MergeTreeData::MutationsSnapshotBase::addPatches(DataPartsVector patches_)
-{
-    if (patches_.empty())
-        return;
-
-    patches_by_partition = getPatchPartsByPartition(patches_, params.max_mutation_versions);
-    params.need_patch_parts = true;
-}
-
-NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
-{
-    if (!params.need_patch_parts)
-        return {};
-
-    NameSet res;
-    for (const auto & [_, patches] : patches_by_partition)
-    {
-        for (const auto & patch : patches)
-        {
-            const auto & columns = patch->getColumns();
-            auto metadata_snapshot = patch->storage.getInMemoryMetadataPtr();
-
-            for (const auto & column : columns)
-            {
-                if (!isPatchPartSystemColumn(column.name))
-                    res.insert(column.name);
-            }
-        }
-    }
-    return res;
-}
-
-void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const
+void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const
 {
     for (const auto & command : commands | std::views::reverse)
     {
@@ -569,29 +491,8 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
             || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
 
         if (is_supported)
-        {
-            auto & result_command = result_commands.emplace_back(command);
-            result_command.mutation_version = mutation_version;
-        }
+            result_commands.emplace_back(command);
     }
-}
-
-PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPartPtr & part) const
-{
-    if (!params.need_patch_parts)
-        return {};
-
-    auto in_partition = patches_by_partition.find(part->info.getPartitionId());
-    if (in_partition == patches_by_partition.end())
-        return {};
-
-    PatchParts res;
-    for (const auto & patch_part : in_partition->second)
-    {
-        auto patch_infos = DB::getPatchesForPart(part->info, patch_part);
-        std::move(patch_infos.begin(), patch_infos.end(), std::back_inserter(res));
-    }
-    return res;
 }
 
 MergeTreeData::MergeTreeData(
@@ -705,10 +606,8 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
-    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part");
-    desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+    desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
-    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
 
     if (metadata.hasPartitionKey())
     {
@@ -759,28 +658,6 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
-std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const DataPartsVector & parts_list) const
-{
-    if (parts_list.empty())
-        return {};
-
-    std::map<std::string, DiskPtr> results;
-    auto storage_policy = getStoragePolicy();
-
-    for (const auto & part : parts_list)
-    {
-        auto disk_name = part->getDataPartStorage().getDiskName();
-        DiskPtr disk = storage_policy->tryGetDiskByName(disk_name);
-        if (disk == nullptr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't find disk '{}' for part {}",
-                            disk_name, part->name);
-
-        results.try_emplace(disk_name, disk);
-    }
-
-    return results;
-}
-
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
@@ -808,7 +685,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             /// TODO: We only have one stats file for every part.
             estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(stat);
+                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -825,7 +702,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
                 auto stats = part.data_part->loadStatistics();
                 estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(stat);
+                    estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
@@ -986,7 +863,6 @@ void MergeTreeData::checkProperties(
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
-        std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1001,36 +877,22 @@ void MergeTreeData::checkProperties(
 
             MergeTreeIndexFactory::instance().validate(index, attach);
 
-            if (indices_names.contains(index.name))
+            if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
 
             indices_names.insert(index.name);
-
-            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions searchAll/searchAny don't work
-            /// on columns with more than one text index
-            if (index.type == TEXT_INDEX_NAME)
-            {
-                const auto & column = index.column_names[0];
-
-                if (columns_with_text_indexes.contains(column))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} must not have more than one text index",
-                        backQuote(index.column_names[0]));
-
-                columns_with_text_indexes.insert(column);
-            }
         }
     }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
+    ///     SET allow_experimental_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
     if (new_metadata.secondary_indices.hasType("vector_similarity") && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     if (!new_metadata.projections.empty())
     {
@@ -1038,7 +900,7 @@ void MergeTreeData::checkProperties(
 
         for (const auto & projection : new_metadata.projections)
         {
-            if (projections_names.contains(projection.name))
+            if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
             const auto settings = getSettings();
@@ -1057,16 +919,6 @@ void MergeTreeData::checkProperties(
                 local_context);
             projections_names.insert(projection.name);
         }
-    }
-
-    for (const auto & projection : new_metadata.projections)
-    {
-        if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
-                "This projection cannot be used in this table",
-                projection.name);
     }
 
     String projection_with_parent_part_offset;
@@ -1116,13 +968,9 @@ void MergeTreeData::setProperties(
         allow_reverse_key,
         allow_nullable_key,
         local_context);
-
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
     projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
-
-    std::lock_guard lock(patch_parts_metadata_mutex);
-    patch_parts_metadata_cache.clear();
 }
 
 namespace
@@ -1291,31 +1139,9 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 
 namespace
 {
-
+template <typename TMustHaveDataType>
 void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
 {
-    if (command.type == AlterCommand::DROP_COLUMN)
-    {
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Trying to ALTER DROP {} ({}) column",
-            column_meta_name,
-            backQuoteIfNeed(command.column_name));
-    }
-    else if (command.type == AlterCommand::RENAME_COLUMN)
-    {
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Trying to ALTER RENAME {} ({}) column",
-            column_meta_name,
-            backQuoteIfNeed(command.column_name));
-    }
-};
-
-template <typename TMustHaveDataType>
-void checkSpecialColumnWithDataType(const std::string_view column_meta_name, const AlterCommand & command)
-{
-    checkSpecialColumn(column_meta_name, command);
     if (command.type == AlterCommand::MODIFY_COLUMN)
     {
         if (!command.data_type)
@@ -1337,8 +1163,23 @@ void checkSpecialColumnWithDataType(const std::string_view column_meta_name, con
                 TypeName<TMustHaveDataType>);
         }
     }
+    else if (command.type == AlterCommand::DROP_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER DROP {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER RENAME {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
 };
-
 }
 
 void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
@@ -1981,10 +1822,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
 
     if (to_state == DataPartState::Active)
-    {
         addPartContributionToDataVolume(res.part);
-        addPartContributionToUncompressedBytesInPatches(res.part);
-    }
 
     if (res.part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
@@ -2109,14 +1947,6 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
-bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
-{
-    SearchOrphanedPartsDisks mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-    bool is_disk_eligible = !disk->isBroken() && !disk->isCustomDisk() && (mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote()));
-
-    LOG_TRACE(log, "is disk {} eligible for search: {} (mode {})", disk->getName(), is_disk_eligible, mode);
-    return is_disk_eligible;
-}
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
@@ -2130,7 +1960,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
-        /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2164,13 +1994,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (!isDiskEligibleForOrphanedPartsSearch(disk))
+            if (disk->isBroken() || disk->isCustomDisk())
             {
                 skip_check_disks.insert(disk_name);
                 continue;
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
+
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 /// There still a chance that underlying disk is defined in storage policy
@@ -2361,9 +2192,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-
+    are_columns_and_secondary_indices_sizes_calculated = false;
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
-        calculateColumnAndSecondaryIndexSizesImpl();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -2436,7 +2267,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
 {
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -2527,10 +2357,6 @@ try
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
     refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh parts");
 }
 
 
@@ -3076,7 +2902,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     /// Please don't use "zero-copy replication" (a non-production feature) in production.
     /// It is not ready for production usage. Don't use it.
 
-    bool need_remove_parts_in_order = supportsReplication() && !isSharedStorage() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+    bool need_remove_parts_in_order = supportsReplication() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
     if (need_remove_parts_in_order)
     {
@@ -3204,7 +3030,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     }
 }
 
-void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts)
+void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
     if (parts.empty())
         return;
@@ -3227,9 +3053,6 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
             LOG_TEST(log, "removePartsFinally: removing {} from data_parts_indexes", (*it)->getNameWithState());
             data_parts_indexes.erase(it);
-
-            if (removed_parts)
-                removed_parts->push_back(part);
         }
     }
 
@@ -3604,51 +3427,11 @@ size_t MergeTreeData::clearEmptyParts()
 
     for (auto & name : parts_names_to_drop)
     {
-        LOG_TRACE(log, "Will drop empty part {}", name);
+        LOG_INFO(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
     }
 
     return parts_names_to_drop.size();
-}
-
-size_t MergeTreeData::clearUnusedPatchParts()
-{
-    if (!(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
-        return 0;
-
-    auto patch_parts = getPatchPartsVectorForInternalUsage();
-    auto regular_parts = getDataPartsVectorForInternalUsage();
-
-    std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
-
-    for (const auto & part : regular_parts)
-    {
-        UInt64 data_version = part->info.getDataVersion();
-        auto [it, inserted] = min_data_version_by_partition.emplace(part->info.getPartitionId(), data_version);
-
-        if (!inserted)
-            it->second = std::min(it->second, data_version);
-    }
-
-    Names patch_names_to_drop;
-
-    for (const auto & patch : patch_parts)
-    {
-        auto partition_id = patch->info.getOriginalPartitionId();
-        UInt64 max_data_version = patch->getSourcePartsSet().getMaxDataVersion();
-
-        auto it = min_data_version_by_partition.find(partition_id);
-        if (it == min_data_version_by_partition.end() || max_data_version <= it->second)
-            patch_names_to_drop.push_back(patch->name);
-    }
-
-    for (const auto & name : patch_names_to_drop)
-    {
-        LOG_INFO(log, "Will drop unused patch part {}", name);
-        dropPartNoWaitNoThrow(name);
-    }
-
-    return patch_names_to_drop.size();
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -3815,7 +3598,7 @@ void MergeTreeData::dropAllData()
 
         try
         {
-            if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path) &&
+            if (!disk->isDirectoryEmpty(relative_data_path) &&
                 supportsReplication() && disk->supportZeroCopyReplication()
                 && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
@@ -3981,8 +3764,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (merging_params.mode != MergingParams::Mode::Ordinary
             && (*settings_from_storage)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
-                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
+                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
                 getName());
     }
 
@@ -3990,16 +3773,33 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
+                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
+
+    /// -------------------------------------------------------------------------------------------------------
+    /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
+    if (AlterCommands::hasLegacyFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
+
+    if (AlterCommands::hasLegacyInvertedIndex(new_metadata) && !settings[Setting::allow_experimental_inverted_index])
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
+
+    if (AlterCommands::hasLegacyGinIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
+    /// -------------------------------------------------------------------------------------------------------
+
+    if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental vector similarity index is disabled (turn on setting 'allow_experimental_vector_similarity_index')");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
+    ///     SET allow_experimental_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
@@ -4099,7 +3899,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
-        checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -4126,19 +3926,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// No other checks required
                 continue;
             }
-            checkSpecialColumn("version", command);
+            if (command.type == AlterCommand::DROP_COLUMN)
+            {
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP version {} column", backQuoteIfNeed(command.column_name));
+            }
+            if (command.type == AlterCommand::RENAME_COLUMN)
+            {
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
+            }
         }
         else if (command.column_name == merging_params.is_deleted_column)
         {
-            checkSpecialColumnWithDataType<DataTypeUInt8>("is_deleted", command);
+            checkSpecialColumn<DataTypeUInt8>("is_deleted", command);
         }
         else if (command.column_name == merging_params.sign_column)
         {
-            checkSpecialColumnWithDataType<DataTypeUInt8>("sign", command);
-        }
-        else if (merging_params.columns_to_sum.end() != std::find(merging_params.columns_to_sum.begin(), merging_params.columns_to_sum.end(), command.column_name))
-        {
-            checkSpecialColumn("columns to sum", command);
+            checkSpecialColumn<DataTypeUInt8>("sign", command);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
@@ -4636,7 +4441,7 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
 
     /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place for the part itself.
     auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
-    auto committed_parts_range = getDataPartsStateRange(state, part_info.getKind());
+    auto committed_parts_range = getDataPartsStateRange(state);
 
     /// Go to the left.
     DataPartIteratorByStateAndInfo begin = it_middle;
@@ -4960,7 +4765,6 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         if (part->getState() == MergeTreeDataPartState::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
-            removePartContributionToUncompressedBytesInPatches(part);
             removePartContributionToDataVolume(part);
             removed_active_part = true;
         }
@@ -5107,8 +4911,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// We a going to remove active parts covered by drop_range without timeout.
     /// Let's also reset timeout for inactive parts
     /// and add these parts to list of parts to remove from ZooKeeper
-    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(
-        {DataPartState::Outdated, DataPartState::Deleting}, drop_range.getPartitionId(), &lock);
+    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage({DataPartState::Outdated, DataPartState::Deleting}, drop_range.getPartitionId(), &lock);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
@@ -5178,9 +4981,7 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
     if (part->getState() == DataPartState::Active)
         return;
-
     addPartContributionToColumnAndSecondaryIndexSizes(part);
-    addPartContributionToUncompressedBytesInPatches(part);
     addPartContributionToDataVolume(part);
     modifyPartState(part, DataPartState::Active);
 }
@@ -5222,7 +5023,6 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     {
         removePartContributionToDataVolume(part);
         removePartContributionToColumnAndSecondaryIndexSizes(part);
-        removePartContributionToUncompressedBytesInPatches(part);
         removed_active_part = true;
     }
 
@@ -5302,10 +5102,6 @@ size_t MergeTreeData::getTotalActiveSizeInRows() const
     return total_active_size_rows.load();
 }
 
-size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
-{
-    return total_uncompressed_bytes_in_patches.load();
-}
 
 size_t MergeTreeData::getActivePartsCount() const
 {
@@ -5553,27 +5349,6 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
     }
 }
 
-void MergeTreeData::throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const
-{
-    size_t max_uncompressed_bytes_in_patches = (*getSettings())[MergeTreeSetting::max_uncompressed_bytes_in_patches];
-    if (max_uncompressed_bytes_in_patches == 0)
-        return;
-
-    size_t new_bytes_in_patches = getTotalUncompressedBytesInPatches() + added_uncompressed_bytes;
-    if (new_bytes_in_patches >= max_uncompressed_bytes_in_patches)
-    {
-        ProfileEvents::increment(ProfileEvents::RejectedLightweightUpdates);
-
-        throw Exception(ErrorCodes::TOO_LARGE_LIGHTWEIGHT_UPDATES,
-            "Too many uncompressed bytes in patch parts: {} (max: {})."
-            " Lightweight updates have rewritten too much data, which can lead to a significant slowdown of SELECT queries."
-            " The threshold can be modified with 'max_uncompressed_bytes_in_patches' setting in <merge_tree> element in config.xml or with per-table setting."
-            " Also you can materialize current patches by 'ALTER TABLE ... APPLY PATCHES' mutation or consider using an 'ALTER TABLE ... UPDATE' mutation for updating the data",
-            formatReadableSizeWithBinarySuffix(new_bytes_in_patches),
-            formatReadableSizeWithBinarySuffix(max_uncompressed_bytes_in_patches));
-    }
-}
-
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
@@ -5635,6 +5410,10 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
 
+            /// Move parts are non replicated operations, so we take lock here.
+            /// All other locks are taken in StorageReplicatedMergeTree
+            lockSharedData(*part_copy, /* replace_existing_lock */ true);
+
             return;
         }
     }
@@ -5665,13 +5444,15 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id);
 }
 
+
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
     ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const
 {
     return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, &lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
+    MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock) const
 {
     if (txn)
     {
@@ -5690,6 +5471,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, acquired_lock);
 }
 
+
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock) const
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
@@ -5702,7 +5484,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const MergeTreeData::DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
+    const MergeTreeData::DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock) const
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
@@ -5789,12 +5572,13 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl() const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (are_columns_and_secondary_indices_sizes_calculated)
+        return;
 
     column_sizes.clear();
-    secondary_index_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -5802,36 +5586,6 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl() const
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
     are_columns_and_secondary_indices_sizes_calculated = true;
-}
-
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const
-{
-    if (are_columns_and_secondary_indices_sizes_calculated)
-        return;
-
-    column_sizes.clear();
-    secondary_index_sizes.clear();
-
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-
-    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
-    /// can read a column sample from each part, it can be slow and we don't want to
-    /// do it under parts lock, so we create a copy of the data parts and release parts lock
-    /// before calculation.
-    if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
-    {
-        DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
-        parts_lock.lock.unlock();
-        for (const auto & part : data_parts)
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
-    else
-    {
-        for (const auto & part : committed_parts_range)
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
-
-    are_columns_and_secondary_indices_sizes_calculated= true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -6761,6 +6515,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
@@ -6934,6 +6689,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     return partition_id;
 }
 
+
 DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_context) const
 {
     return getVisibleDataPartsVector(local_context->getCurrentTransaction());
@@ -6992,6 +6748,7 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
              visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
+
 std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
     std::unordered_set<String> partition_ids;
@@ -7037,20 +6794,19 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
+    const DataPartStates & affordable_states, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
 {
     DataPartsVector res;
     DataPartsVector buf;
 
     for (auto state : affordable_states)
     {
-        for (auto kind : affordable_kinds)
-        {
-            auto range = getDataPartsStateRange(state, kind);
-            std::swap(buf, res);
-            res.clear();
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
-        }
+        auto range = getDataPartsStateRange(state);
+        std::swap(buf, res);
+        res.clear();
+        std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
     }
 
     if (out_states != nullptr)
@@ -7063,61 +6819,15 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector
+MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
     auto lock = lockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
+    return getDataPartsVectorForInternalUsage(affordable_states, lock, out_states);
 }
 
-DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states) const
-{
-    return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Regular}, lock, out_states);
-}
-
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
-{
-    auto lock = lockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Regular}, lock, out_states);
-}
-
-DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states) const
-{
-    return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Patch}, lock, out_states);
-}
-
-DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
-{
-    auto lock = lockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Patch}, lock, out_states);
-}
-
-DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage() const
-{
-    auto lock = lockParts();
-    return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Patch}, lock);
-}
-
-DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id, const DataPartsLock & /*lock*/) const
-{
-    DataPartsVector res;
-    auto range = getDataPartsStateRange(DataPartState::Active, DataPartKind::Patch);
-
-    for (const auto & part : range)
-    {
-        if (isPatchForPartition(part->info, partition_id))
-            res.push_back(part);
-    }
-
-    return res;
-}
-
-DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id) const
-{
-    auto lock = lockParts();
-    return getPatchPartsVectorForPartition(partition_id, lock);
-}
-
-MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector
+MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
     auto lock = lockParts();
     ProjectionPartsVector res;
@@ -7412,67 +7122,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
-bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error) const
-{
-    if (parts.empty() || patches.empty())
-        return true;
-
-    const auto & partition_id = parts.front()->info.getPartitionId();
-
-#ifndef DEBUG_OR_SANITIZER_BUILD
-    for (const auto & part : parts)
-    {
-        if (part->info.getPartitionId() != partition_id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts belong to different partitions: {} and {}", part->info.getPartitionId(), partition_id);
-    }
-
-    for (const auto & patch : patches)
-    {
-        if (!isPatchForPartition(patch->info, partition_id))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} doesn't belong to partition {}", patch->name, partition_id);
-    }
-#endif
-
-    Int64 min_data_version = std::numeric_limits<Int64>::max();
-
-    for (const auto & part : parts)
-    {
-        min_data_version = std::min(min_data_version, part->info.getDataVersion());
-    }
-
-    size_t num_patches = 0;
-    for (const auto & patch : patches)
-    {
-        if (patchHasHigherDataVersion(*patch, min_data_version))
-            ++num_patches;
-    }
-
-    if (num_patches > 0)
-    {
-        auto base_message = fmt::format(
-            "Cannot execute command \"{}\" because there are {} unapplied patch parts for partition {}",
-            command, num_patches, partition_id);
-
-        if (!throw_on_error)
-        {
-            LOG_TRACE(log, fmt::runtime(base_message));
-            return false;
-        }
-
-        auto table_name = parts.front()->storage.getStorageID().getFullTableName();
-
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "{}.\n"
-            "To execute it you need to:\n"
-            "1. Stop UPDATE queries that affect partition {}.\n"
-            "2. Run query \"ALTER TABLE {} APPLY PATCHES IN PARTITION ID '{}'\".\n"
-            "3. Retry command \"{}\"",
-            base_message, partition_id, table_name, partition_id, command);
-    }
-
-    return true;
-}
-
 namespace
 {
 
@@ -7681,18 +7330,16 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
+
+MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
     {
         auto lock = lockParts();
         for (auto state : affordable_states)
         {
-            for (auto kind : affordable_kinds)
-            {
-                auto range = getDataPartsStateRange(state, kind);
-                res.insert(range.begin(), range.end());
-            }
+            auto range = getDataPartsStateRange(state);
+            res.insert(range.begin(), range.end());
         }
     }
     return res;
@@ -7700,12 +7347,12 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
 
 MergeTreeData::DataParts MergeTreeData::getDataPartsForInternalUsage() const
 {
-    return getDataParts({DataPartState::Active}, {MergeTreePartInfo::Kind::Regular});
+    return getDataParts({DataPartState::Active});
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage() const
 {
-    return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular});
+    return getDataPartsVectorForInternalUsage({DataPartState::Active});
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
@@ -7934,7 +7581,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
-                        data.removePartContributionToUncompressedBytesInPatches(covered_part);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -7945,7 +7591,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
                     data.modifyPartState(part, DataPartState::Active);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
-                    data.addPartContributionToUncompressedBytesInPatches(part);
                 }
             }
 
@@ -8644,10 +8289,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
     else
-        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    {
+        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
+        {
+            auto lock = lockParts();
+            state = data_part->getState();
+        }
+
+        if (state == MergeTreeDataPartState::Active)
+            broken_part_callback(data_part->name);
+        else
+            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    }
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -8731,6 +8385,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
+    for (const auto & disk : getStoragePolicy()->getDisks())
+        disk->onFreeze(backup_path);
+
     PartitionCommandsResultInfo result;
 
     size_t parts_processed = 0;
@@ -8760,7 +8417,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         {
             .make_source_readonly = true
         };
-
         auto new_storage = data_part_storage->freeze(
             backup_part_path,
             part->getDataPartStorage().getPartDirectory(),
@@ -9190,24 +8846,21 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
-void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
-    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
-    if (!command.isDropOrRename() || unfinished_mutations.empty())
+    if (!command.isDropSomething() || unfinished_mutations.empty())
         return;
 
     auto throw_exception = [] (
         const std::string & mutation_name,
-        const std::string & action_name,
         const std::string & entity_name,
         const std::string & identifier_name)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+            "Cannot drop {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
             "Wait this mutation, or KILL it with command "
             "\"KILL MUTATION WHERE mutation_id = '{}'\"",
-            action_name,
             entity_name,
             backQuoteIfNeed(identifier_name),
             mutation_name,
@@ -9220,19 +8873,17 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
         {
             if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
             {
-                throw_exception(mutation_name, "drop", "index", command.index_name);
+                throw_exception(mutation_name, "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)
             {
-                throw_exception(mutation_name, "drop", "projection", command.projection_name);
+                throw_exception(mutation_name, "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN)
             {
-                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
-
                 if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, action, "column", command.column_name);
+                    throw_exception(mutation_name, "column", command.column_name);
 
                 if (mutation_command.predicate)
                 {
@@ -9240,18 +8891,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
                 }
 
                 for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
                     if (name == command.column_name)
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
 
                     auto query_tree = buildQueryTree(expr, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -9259,7 +8910,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 for (const auto & stats_col1 : command.statistics_columns)
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
-                            throw_exception(mutation_name, "drop", "statistics", stats_col1);
+                            throw_exception(mutation_name, "statistics", stats_col1);
             }
         }
     }
@@ -9290,120 +8941,8 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MutationsSnapshotPtr & mutations,
     const ContextPtr & query_context)
 {
-    auto commands = mutations->getOnFlyMutationCommandsForPart(part);
-    auto patches = mutations->getPatchesForPart(part);
-    PatchPartsForReader patches_for_reader;
-
-    for (auto & patch : patches)
-    {
-        auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
-        auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
-
-        patches_for_reader.push_back(PatchPartInfoForReader
-        {
-            .mode = patch.mode,
-            .part = std::move(patch_for_reader),
-            .source_parts = std::move(patch.source_parts),
-            .source_data_version = patch.source_data_version,
-        });
-    }
-
-    return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
-}
-
-StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const
-{
-    std::lock_guard lock(patch_parts_metadata_mutex);
-
-    auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id];
-    if (!metadata_snapshot)
-        metadata_snapshot = DB::getPatchPartMetadata(patch_part_desc, local_context);
-
-    return metadata_snapshot;
-}
-
-MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
-{
-    MergingParams params;
-    params.mode = MergingParams::Replacing;
-    params.version_column = PartDataVersionColumn::name;
-    return params;
-}
-
-std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
-{
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        return std::unexpected(PreformattedMessage::create(
-            "Lightweight updates are supported only for tables with custom partitioning"));
-
-    if (merging_params.mode == MergingParams::Summing || merging_params.mode == MergingParams::Aggregating || merging_params.mode == MergingParams::Graphite)
-        return std::unexpected(PreformattedMessage::create(
-            "Lightweight updates are not supported for tables with {}MergeTree engine", merging_params.getModeName()));
-
-    const auto data_settings = getSettings();
-    if (!(*data_settings)[MergeTreeSetting::enable_block_number_column])
-        return std::unexpected(PreformattedMessage::create(
-            "Lightweight updates are supported only for tables with materialized _block_number column. "
-            "Run 'MODIFY SETTING enable_block_number_column = 1' command to enable it"));
-
-    if (!(*data_settings)[MergeTreeSetting::enable_block_offset_column])
-        return std::unexpected(PreformattedMessage::create(
-            "Lightweight updates are supported only for tables with materialized _block_offset column. "
-            "Run 'MODIFY SETTING enable_block_offset_column = 1' command to enable it"));
-
-    return {};
-}
-
-QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
-{
-    auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
-    if (it != commands.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected command with type {} in lightweight update", it->type);
-
-    LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString());
-
-    MutationCommands commands_to_run;
-    const auto & system_columns = getPatchPartSystemColumns();
-
-    for (const auto & [name, type] : system_columns)
-    {
-        commands_to_run.push_back(MutationCommand
-        {
-            .type = MutationCommand::READ_COLUMN,
-            .column_name = name,
-            .data_type = type,
-        });
-    }
-
-    commands_to_run.insert(commands_to_run.end(), commands.begin(), commands.end());
-
-    MutationsInterpreter::Settings mutation_settings(true);
-    mutation_settings.return_mutated_rows = true;
-    mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
-    mutation_settings.recalculate_dependencies_of_updated_columns = false;
-
-    MutationsInterpreter interpreter(
-        shared_from_this(), getInMemoryMetadataPtr(),
-        commands_to_run, query_context, mutation_settings);
-
-    auto pipeline_builder = interpreter.execute();
-    if (!pipeline_builder.initialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute lightweight update with uninitialized pipeline");
-
-    pipeline_builder.resize(1);
-    pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
-        pipeline_builder.getSharedHeader(),
-        query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
-        query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
-
-    /// Required by MergeTree sinks.
-    pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
-    {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
-    });
-
-    return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+    auto commands = mutations->getAlterMutationCommandsForPart(part);
+    return std::make_shared<AlterConversions>(commands, query_context);
 }
 
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
@@ -9433,24 +8972,6 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_bytes.store(bytes);
     total_active_size_rows.store(rows);
     total_active_size_parts.store(parts);
-}
-
-void MergeTreeData::addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part)
-{
-    if (part->info.isPatch())
-    {
-        Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
-        total_uncompressed_bytes_in_patches.fetch_add(uncompressed_bytes);
-    }
-}
-
-void MergeTreeData::removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part)
-{
-    if (part->info.isPatch())
-    {
-        Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
-        total_uncompressed_bytes_in_patches.fetch_add(-uncompressed_bytes);
-    }
 }
 
 bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
@@ -9780,14 +9301,11 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     if (hasLightweightDeletedMask())
         return false;
 
-    const auto & settings = query_context->getSettingsRef();
     if (!storage_snapshot)
-        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+        return !query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-    const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
-
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts();
+    return !snapshot_data.mutations_snapshot->hasDataMutations();
 }
 
 Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
@@ -9800,24 +9318,6 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
             version = part_version;
     }
     return version;
-}
-
-MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
-{
-    PartitionIdToMinBlock partition_to_min_data_version;
-
-    for (const auto & part : parts)
-    {
-        const String & partition_id = part->info.getPartitionId();
-        const Int64 data_version = part->info.getDataVersion();
-
-        if (auto partition_it = partition_to_min_data_version.find(partition_id); partition_it != partition_to_min_data_version.end())
-            partition_it->second = std::min(partition_it->second, data_version);
-        else
-            partition_to_min_data_version.emplace(partition_id, data_version);
-    }
-
-    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
 StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
@@ -9834,7 +9334,8 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
     return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
 }
 
-StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
+StorageSnapshotPtr
+MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     if (without_data)
     {
@@ -9849,23 +9350,18 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     {
         auto lock = lockParts();
         parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+        snapshot_data->parts = RangesInDataParts(parts);
         object_columns_copy = object_columns;
     }
-    /// Avoid holding the lock while constructing RangesInDataParts
-    snapshot_data->parts = RangesInDataParts(parts);
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
-    bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
 
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(parts),
-        .min_part_data_versions = getMinDataVersionForEachPartition(parts),
-        .max_mutation_versions = query_context->getPartitionIdToMaxBlock(),
         .need_data_mutations = apply_mutations_on_fly,
-        .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
-        .need_patch_parts = apply_patch_parts,
+        .need_alter_mutations = apply_mutations_on_fly,
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);

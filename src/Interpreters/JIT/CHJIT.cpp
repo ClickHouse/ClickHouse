@@ -1,4 +1,4 @@
-#include <Interpreters/JIT/CHJIT.h>
+#include "CHJIT.h"
 
 #if USE_EMBEDDED_COMPILER
 

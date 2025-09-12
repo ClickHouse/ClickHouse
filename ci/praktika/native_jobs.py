@@ -1,4 +1,3 @@
-import dataclasses
 import platform
 import sys
 import traceback
@@ -20,19 +19,6 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-
-
-# TODO: find the right place to not dublicate
-def _GH_Auth(workflow):
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return
-    from .gh_auth import GHAuth
-
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
-
 
 _workflow_config_job = Job.Config(
     name=Settings.CI_CONFIG_JOB_NAME,
@@ -199,18 +185,6 @@ def _build_dockers(workflow, job_name):
     return Result.create_from(results=results, info=job_info)
 
 
-def _clean_buildx_volumes():
-    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
-    Shell.check(
-        "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
-        verbose=True,
-    )
-    Shell.check(
-        "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
-        verbose=True,
-    )
-
-
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -313,8 +287,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
-        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
-        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
@@ -323,13 +295,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
         results.append(result_)
 
-    # TODO: commented out to decrease risk of throttling:
-    #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
-    # if results[-1].is_ok() and workflow.secrets:
-    #     result_ = _check_secrets(workflow.secrets)
-    #     if result_.status != Result.Status.SUCCESS:
-    #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-    #     results.append(result_)
+    if results[-1].is_ok() and workflow.secrets:
+        result_ = _check_secrets(workflow.secrets)
+        if result_.status != Result.Status.SUCCESS:
+            print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
+        results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
@@ -479,7 +449,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
-
         results.append(
             Result(
                 name="Cache Lookup",
@@ -489,11 +458,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
-
-    print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
-    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
-    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
@@ -589,19 +554,21 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
-    if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
-        _GH_Auth(workflow)
+    if workflow.enable_merge_ready_status:
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        from .gh_auth import GHAuth
 
-        if workflow.enable_merge_ready_status:
-            if not GH.post_commit_status(
-                name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
-                or f"Ready For Merge [{workflow.name}]",
-                status=ready_for_merge_status,
-                description=ready_for_merge_description,
-                url="",
-            ):
-                print(f"ERROR: failed to set ReadyForMerge status")
-                env.add_info(ResultInfo.GH_STATUS_ERROR)
+        GHAuth.auth(app_id=app_id, app_key=pem)
+        if not GH.post_commit_status(
+            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+            or f"Ready For Merge [{workflow.name}]",
+            status=ready_for_merge_status,
+            description=ready_for_merge_description,
+            url="",
+        ):
+            print(f"ERROR: failed to set ReadyForMerge status")
+            env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
@@ -624,7 +591,6 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
-            _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
         elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:
