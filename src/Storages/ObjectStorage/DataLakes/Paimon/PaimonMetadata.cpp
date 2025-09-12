@@ -1,4 +1,3 @@
-#include "base/types.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -41,6 +40,7 @@ using namespace Paimon;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 DataLakeMetadataPtr PaimonMetadata::create(
@@ -103,7 +103,7 @@ bool PaimonMetadata::updateState()
     /// init manifest by snapshot
     std::vector<PaimonManifestFileMeta> base_manifest_list = table_client_ptr->getManifestMeta(snapshot->base_manifest_list);
     std::vector<PaimonManifestFileMeta> delta_manifest_list = table_client_ptr->getManifestMeta(snapshot->delta_manifest_list);
-    
+
     auto getOrDefault = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
     {
         auto inner_it = options.find(key);
