@@ -1,17 +1,5 @@
 CAST
 DATE
-IPv4CIDRToRange
-IPv4NumToString
-IPv4NumToStringClassC
-IPv4StringToNum
-IPv4StringToNumOrDefault
-IPv4StringToNumOrNull
-IPv4ToIPv6
-IPv6CIDRToRange
-IPv6NumToString
-IPv6StringToNum
-IPv6StringToNumOrDefault
-IPv6StringToNumOrNull
 JSONExtract
 JSONExtractArrayRaw
 JSONExtractBool
@@ -27,6 +15,9 @@ JSONKey
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
+MACNumToString
+MACStringToNum
+MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -48,7 +39,6 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 cutFragment
-cutIPv6
 cutQueryString
 cutQueryStringAndFragment
 cutURLParameter
@@ -91,9 +81,6 @@ hasSubsequenceUTF8
 ilike
 in
 inIgnoreSet
-isIPAddressInRange
-isIPv4String
-isIPv6String
 like
 lowCardinalityIndices
 lowCardinalityKeys
@@ -262,11 +249,9 @@ toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
 toIPv4
-toIPv4OrDefault
 toIPv4OrNull
 toIPv4OrZero
 toIPv6
-toIPv6OrDefault
 toIPv6OrNull
 toIPv6OrZero
 toISOWeek
