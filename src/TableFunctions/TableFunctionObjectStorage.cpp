@@ -67,11 +67,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 {
 #if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
-                    if (Definition::name != "iceberg" &&
-                        Definition::name != "icebergCluster" &&
-                        Definition::name != "deltaLake" &&
-                        Definition::name != "deltaLakeCluster" &&
-                        Definition::object_storage_type != "s3")
+                    if (Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
