@@ -3,7 +3,7 @@ description: 'Page describing automatic schema inference from input data in Clic
 sidebar_label: 'Schema inference'
 slug: /interfaces/schema-inference
 title: 'Automatic schema inference from input data'
-doc_type: 'guide'
+doc_type: 'reference'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
