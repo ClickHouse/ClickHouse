@@ -1,0 +1,62 @@
+1	8	100000001
+2	8	100000002
+1	8	100000001
+2	8	100000002
+(Expression)
+ExpressionTransform
+Header: length(s) UInt64: length(s) UInt64 UInt64(size = 0)
+        length(\'constant\') UInt64: length(\'constant\') UInt64 Const(size = 0, UInt64(size = 1))
+        test_uint64 UInt64: test_uint64 UInt64 UInt64(size = 0)
+  (Sorting)
+  MergeSortingTransform
+  Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+          __table1.s String: __table1.s String String(size = 0)
+          __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+    LimitsCheckingTransform
+    Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+            __table1.s String: __table1.s String String(size = 0)
+            __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+      PartialSortingTransform
+      Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+              __table1.s String: __table1.s String String(size = 0)
+              __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+        (Expression)
+        ExpressionTransform
+        Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+                __table1.s String: __table1.s String String(size = 0)
+                __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+          (Filter)
+          FilterTransform
+          Header: __table1.s String: __table1.s String String(size = 0)
+                  __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+                  __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+            (ReadFromMemoryStorage)
+(Expression)
+ExpressionTransform
+Header: length(s) UInt64: length(s) UInt64 UInt64(size = 0)
+        length(\'constant\') UInt64: length(\'constant\') UInt64 Const(size = 0, UInt64(size = 1))
+        test_uint64 UInt64: test_uint64 UInt64 UInt64(size = 0)
+  (Sorting)
+  MergeSortingTransform
+  Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+          length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
+          __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+    LimitsCheckingTransform
+    Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+            length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
+            __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+      PartialSortingTransform
+      Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+              length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
+              __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+        (Expression)
+        ExpressionTransform
+        Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+                length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
+                __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+          (Filter)
+          FilterTransform
+          Header: __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
+                  __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
+                  length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
+            (ReadFromMemoryStorage)

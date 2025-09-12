@@ -176,6 +176,8 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
     };
 
+    pushDownVolumeReducingFunctions(&root, optimization_settings);
+
     Stack stack;
     stack.push_back({.node = &root});
 
