@@ -1079,7 +1079,7 @@ void ZooKeeper::receiveEvent()
         }
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-        observeOperation(request_info.request, response, elapsed_microseconds);
+        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds);
     }
     catch (...)
     {
@@ -1099,7 +1099,7 @@ void ZooKeeper::receiveEvent()
                 request_info.callback(*response);
 
             logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-            observeOperation(request_info.request, response, elapsed_microseconds);
+            observeOperation(request_info.request.get(), response.get(), elapsed_microseconds);
         }
         catch (...)
         {
@@ -1204,7 +1204,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     {
                         request_info.callback(*response);
                         logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
-                        observeOperation(request_info.request, response, elapsed_microseconds);
+                        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1266,7 +1266,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         info.callback(*response);
                         UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
-                        observeOperation(info.request, response, elapsed_microseconds);
+                        observeOperation(info.request.get(), response.get(), elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1882,20 +1882,18 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-void ZooKeeper::observeOperation(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
+void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds)
 {
     chassert(response);
 
     auto aggregated_zookeeper_log_ = getAggregatedZooKeeperLog();
     if (!aggregated_zookeeper_log_)
-    {
         return;
-    }
 
     if (!request)
     {
         chassert(response->xid == PING_XID || response->xid == WATCH_XID);
-        if (const auto watch_response = std::dynamic_pointer_cast<ZooKeeperWatchResponse>(response))
+        if (const auto watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
         {
             aggregated_zookeeper_log_->observe(session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
         }
@@ -1904,21 +1902,19 @@ void ZooKeeper::observeOperation(const ZooKeeperRequestPtr & request, const ZooK
 
     aggregated_zookeeper_log_->observe(session_id, response->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
-    const auto multi_request = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
-    const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
+    const auto multi_request = dynamic_cast<const ZooKeeperMultiRequest *>(request);
+    const auto multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
 
     chassert(!multi_request == !multi_response);
 
     if (!multi_response)
-    {
         return;
-    }
 
     chassert(multi_request->requests.size() == multi_response->responses.size());
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
-        observeOperation(subrequest, std::dynamic_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
+        observeOperation(subrequest.get(), dynamic_cast<const ZooKeeperResponse *>(subresponse.get()), elapsed_microseconds);
     }
 }
 
