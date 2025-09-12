@@ -4,7 +4,7 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 
--- TODO test some weird idx names with commas and backticks, or maybe we can just assume this is tested elsewhere?
+-- TODO test weird idx names with commas and backticks
 
 CREATE TABLE t_skip_index_insert
 (
@@ -47,7 +47,7 @@ EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a
 
 SYSTEM FLUSH LOGS query_log;
 
--- TODO I think i want to make the above table just have one col and index so that this sum of profile events is 0, then make a new table for the next part as is
+-- TODO this sum() won't work because it will always change since one index is not skipped
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log
 WHERE current_database = currentDatabase()
