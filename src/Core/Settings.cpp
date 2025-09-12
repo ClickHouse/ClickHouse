@@ -1072,7 +1072,10 @@ The table below shows the behavior of this setting for various date-time functio
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
+Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
+Enabling this setting gives the wrong impression that different values within a column can have different timezones.
+Therefore, please do not enable this setting.
 )", 0) \
     DECLARE(Bool, use_legacy_to_time, true, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
