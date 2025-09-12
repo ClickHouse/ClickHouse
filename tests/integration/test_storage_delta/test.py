@@ -851,7 +851,7 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
-    partition_columns = ["b", "c", "e", "f", "g"]
+    partition_columns = ["b", "c", "d", "e", "f", "g"]
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     num_rows = 9
