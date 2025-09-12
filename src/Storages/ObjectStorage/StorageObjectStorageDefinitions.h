@@ -151,7 +151,7 @@ struct IcebergHDFSClusterDefinition
 struct DeltaLakeClusterDefinition
 {
     static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_engine_name = "DeltaLakeS3Cluster";
+    static constexpr auto storage_engine_name = "DeltaLakeCluster";
     static constexpr auto non_clustered_storage_engine_name = DeltaLakeDefinition::storage_engine_name;
 };
 
