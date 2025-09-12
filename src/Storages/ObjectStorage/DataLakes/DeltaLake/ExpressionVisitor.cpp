@@ -365,6 +365,11 @@ public:
         return std::pair(values, types);
     }
 
+    /// Move a list from `from_list_id` to `to_list_id`.
+    /// If prepend = false, moves one list in the end of another.
+    /// If prepend = true, moves one list in the beginning of another.
+    /// If after field name is specified, moves one list after specified field in another list.
+    /// If such field does not exists, throws an exception.
     void moveList(
         size_t to_list_id,
         size_t from_list_id,
