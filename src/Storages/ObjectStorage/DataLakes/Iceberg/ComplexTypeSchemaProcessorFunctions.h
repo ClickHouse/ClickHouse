@@ -16,7 +16,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 
-namespace DB::Iceberg
+namespace DB
 {
 
 /// Complex type schema evolution consists of multiple stages.

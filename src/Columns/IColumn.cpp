@@ -146,11 +146,6 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */) co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
-}
-
 StringRef
 IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
 {
@@ -160,11 +155,6 @@ IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, ch
 char * IColumn::serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
-}
-
-void IColumn::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
 void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
@@ -235,11 +225,6 @@ std::string_view IColumn::getRawData() const
 size_t IColumn::sizeOfValueIfFixed() const
 {
     throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName());
-}
-
-std::span<char> IColumn::insertRawUninitialized(size_t)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRawUninitialized is not supported for {}.", getName());
 }
 
 bool isColumnNullable(const IColumn & column)
@@ -473,13 +458,13 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
 /// Fills column values from RowRefList
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs)
 {
-    for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
+    for (UInt64 row_ref_i : row_refs)
     {
-        if (*row_ref)
+        if (row_ref_i)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
             if constexpr (row_refs_are_ranges)
             {
                 row_ref_list->assertIsRange();
@@ -497,23 +482,23 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
 }
 
 /// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
 {
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs);
     else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs);
 }
 
 /// Fills column values from RowRefsList
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
 {
     auto & self = static_cast<Derived &>(*this);
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs);
     else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs);
 }
 
 /// Fills column values from list of blocks and row numbers
@@ -561,20 +546,11 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
             return {memory, 1};
         }
 
-        auto serialized_value_size = self.getSerializedValueSize(n);
-        if (serialized_value_size)
-        {
-            size_t total_size = *serialized_value_size + 1 /* null map byte */;
-            memory = arena.allocContinue(total_size, begin);
-            *memory = 0;
-            self.serializeValueIntoMemory(n, memory + 1);
-            return {memory, total_size};
-        }
-
-        memory = arena.allocContinue(1, begin);
+        size_t sz = self.byteSizeAt(n) + 1 /* null byte */;
+        memory = arena.allocContinue(sz, begin);
         *memory = 0;
-        auto res = self.serializeValueIntoArena(n, arena, begin);
-        return StringRef(res.data - 1, res.size + 1);
+        self.serializeValueIntoMemory(n, memory + 1);
+        return {memory, sz};
     }
 
     return self.serializeValueIntoArena(n, arena, begin);
@@ -594,7 +570,7 @@ StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Aren
 }
 
 template <typename Derived, typename Parent>
-ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
+char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
@@ -609,29 +585,7 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const
-{
-    const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
-
-    if (!is_null)
-    {
-        self.batchSerializeValueIntoMemory(memories);
-        return;
-    }
-
-    size_t rows = self.size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        *memories[i] = is_null[i];
-        ++memories[i];
-        if (!is_null[i])
-            memories[i] = self.serializeValueIntoMemory(i, memories[i]);
-    }
-}
-
-template <typename Derived, typename Parent>
-ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
+char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoMemory(n, memory);
@@ -640,15 +594,6 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
     auto raw_data = self.getDataAt(n);
     memcpy(memory, raw_data.data, raw_data.size);
     return memory + raw_data.size;
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
-{
-    const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemory(i, memories[i]);
 }
 
 template <typename Derived, typename Parent>
@@ -671,7 +616,12 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     if (is_null)
     {
         for (size_t i = 0; i < rows; ++i)
-            sizes[i] += 1 + !is_null[i] * element_size;
+        {
+            if (is_null[i])
+                ++sizes[i];
+            else
+                sizes[i] += element_size + 1 /* null byte */;
+        }
     }
     else
     {

@@ -160,9 +160,9 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
-void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVariant & options)
+void MetadataStorageFromDiskTransaction::commit()
 {
-    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -266,13 +266,6 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
-}
-
-std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
-    return std::nullopt;
 }
 
 }

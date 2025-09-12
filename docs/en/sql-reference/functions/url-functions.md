@@ -425,6 +425,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
 ### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
 
 Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.

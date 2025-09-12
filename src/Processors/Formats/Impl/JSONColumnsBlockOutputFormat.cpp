@@ -47,8 +47,7 @@ void registerOutputFormatJSONColumns(FormatFactory & factory)
     factory.registerOutputFormat("JSONColumns", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & format_settings)
     {
         return std::make_shared<JSONColumnsBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, format_settings.json.validate_utf8);
     });

@@ -62,6 +62,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -1054,11 +1055,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (const auto & arg : node.arguments->children)
             {
                 visit(arg, index_hint_data);
-
-                if (auto name_type = getNameAndTypeFromAST(arg, index_hint_data))
-                    args.push_back({name_type->name, {}});
-                else
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected element in AST inside the indexHint function: {}", arg->getID());
+                args.push_back({arg->getColumnNameWithoutAlias(), {}});
             }
         }
 
@@ -1376,7 +1373,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    else if (
+        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
+        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);

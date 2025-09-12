@@ -96,7 +96,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector<Creator>(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
