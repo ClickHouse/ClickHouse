@@ -58,7 +58,7 @@ REGISTER_FUNCTION(TopLevelDomain)
 Extracts the the top-level domain from a URL.
 
 :::note
-The URL can be specified with or without a protocol. 
+The URL can be specified with or without a protocol.
 For examples
 
 ```text
