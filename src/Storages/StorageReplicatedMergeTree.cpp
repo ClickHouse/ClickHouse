@@ -10635,7 +10635,6 @@ bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_nam
         {
             LOG_TEST(log, "Removing zero-copy lock on {}", it->first);
             it = existing_zero_copy_locks.erase(it);
-            // getZooKeeper()->deregisterWatch(fmt::format("{}", reinterpret_cast<void *>(it->second.exists.get())));
         }
     }
 

@@ -294,8 +294,6 @@ bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists
     bool ok = false;
     retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
 
-    // zookeeper->deregisterWatch(makeWatchIdFromId(id));
-
     if (!ok)
         return false;
 
