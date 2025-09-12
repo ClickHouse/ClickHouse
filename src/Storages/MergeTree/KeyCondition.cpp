@@ -617,7 +617,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         return cloned_node;
     }
 
-    return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
+    return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
 static bool isTrivialCast(const ActionsDAG::Node & node)

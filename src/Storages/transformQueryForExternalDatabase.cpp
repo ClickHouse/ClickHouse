@@ -97,9 +97,9 @@ struct ReplaceLiteralToExprVisitorData
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
                     if (value)
-                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+                        argument = makeASTOperator("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
                     else
-                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+                        argument = makeASTOperator("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
                 }
             }
         }
@@ -192,6 +192,9 @@ bool isCompatible(ASTPtr & node)
         for (auto & expr : function->arguments->children)
             if (!isCompatible(expr))
                 return false;
+
+        /// It should be formatted in the operator form.
+        function->is_operator = true;
 
         return true;
     }
@@ -338,7 +341,7 @@ String transformQueryForExternalDatabaseImpl(
         {
             if (function->name == "and" || function->name == "tuple")
             {
-                auto new_function_and = makeASTFunction("and");
+                auto new_function_and = makeASTOperator("and");
                 std::queue<const ASTFunction *> predicates;
                 predicates.push(function);
 
@@ -375,9 +378,9 @@ String transformQueryForExternalDatabaseImpl(
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
         if (value)
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+            original_where = makeASTOperator("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
         else
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+            original_where = makeASTOperator("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
