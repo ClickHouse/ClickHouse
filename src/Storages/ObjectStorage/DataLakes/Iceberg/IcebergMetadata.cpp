@@ -65,7 +65,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -93,7 +92,6 @@ extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int PATH_ACCESS_DENIED;
 }
 
 namespace Setting
@@ -570,12 +568,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
 {
     auto configuration_ptr = configuration.lock();
 
-    if (object_storage->getType() == ObjectStorageType::Local)
-    {
-        auto user_files_path = local_context->getUserFilesPath();
-        if (!fileOrSymlinkPathStartsWith(configuration_ptr->getPathForRead().path, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", configuration_ptr->getPathForRead().path, user_files_path);
-    }
     auto log = getLogger("IcebergMetadata");
 
     IcebergMetadataFilesCachePtr cache_ptr = nullptr;
