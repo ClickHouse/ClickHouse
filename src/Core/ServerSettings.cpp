@@ -763,6 +763,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Before changing it, please also take a look at related MergeTree settings, such as:
     - [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
     - [`number_of_free_entries_in_pool_to_execute_mutation`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_execute_mutation).
+    - [`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`](/operations/settings/merge-tree-settings#number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
 
     **Example**
 
@@ -1129,7 +1130,27 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
+    DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
+    Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_zookeeper_client_send_receive, 0, R"(
+    Linux nice value for send and receive threads in ZooKeeper client. Lower values mean higher CPU priority.
+
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
+    Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
+
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
+    )", 0) \
 
 // clang-format on
 
