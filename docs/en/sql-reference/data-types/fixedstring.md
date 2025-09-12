@@ -34,29 +34,39 @@ When inserting the data, ClickHouse:
 - Complements a string with null bytes if the string contains fewer than `N` bytes.
 - Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
 
-When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
+
 
 Let's consider the following table with the single `FixedString(2)` column:
-
-```text
-┌─name──┐
-│ b     │
-└───────┘
-```
-
-The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
-
 ```sql
-SELECT * FROM FixedStringTable
-WHERE a = 'b\0'
+CREATE OR REPLACE TABLE FixedStringTable
+(
+    `name` FixedString(2)
+)
+ENGINE = Memory;
+
+INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
 ```
+```sql
+SELECT
+    name,
+    toTypeName(name),
+    length(name),
+    empty(name)
+FROM FixedStringTable;
+```
+```text
+┌─name─┬─toTypeName(name)─┬─length(name)─┬─empty(name)─┐
+│ a    │ FixedString(2)   │            2 │           0 │
+│ ab   │ FixedString(2)   │            2 │           0 │
+│      │ FixedString(2)   │            2 │           1 │
+└──────┴──────────────────┴──────────────┴─────────────┘
+```
+Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
+
+When selecting the data, ClickHouse removes the padded null bytes, if any, at the end of the string, so there is no need to add `\0` in `WHERE` clause. Thus the queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result: 
 
 ```text
-┌─a─┐
-│ b │
-└───┘
+┌─name─┐
+│ a    │
+└──────┘
 ```
-
-This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
-
-Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
