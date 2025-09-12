@@ -57,10 +57,12 @@ The resource consumption calculated for each interval is output to the server lo
         <queries>1000</queries>
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
         <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
     </interval>
 
     <interval>
@@ -71,7 +73,9 @@ The resource consumption calculated for each interval is output to the server lo
         <query_inserts>10000</query_inserts>
         <errors>1000</errors>
         <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
         <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
         <execution_time>7200</execution_time>
     </interval>
 </statbox>
@@ -93,9 +97,17 @@ Here are the amounts that can be restricted:
 
 `result_rows` – The total number of rows given as a result.
 
+`result_bytes` - The total size of rows given as a result.
+
 `read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
+`read_bytes` - The total size read from tables for running the query on all remote servers.
+
+`written_bytes` - The total size of a writing operation. 
+
 `execution_time` – The total query execution time, in seconds (wall time).
+
+`failed_sequential_authentications` - The total number of sequential authentication errors. 
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 

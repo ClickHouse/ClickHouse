@@ -64,140 +64,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
-            /// But we still need to do some processing on the set of requested columns:
-            ///  * If a non-tuple-element subcolumn is requested, request the whole column.
-            ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
-            ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
-            ///    currently not supported by any format parser (though we might want to add it in
-            ///    future for parquet variant columns).
-            ///  * Don't request tuple element if the whole tuple is also requested.
-            ///    E.g. `SELECT t, t.x` should just read `t`.
-
-            struct SubcolumnInfo
-            {
-                ISerialization::SubstreamPath path;
-                String name;
-                DataTypePtr type;
-                bool is_duplicate = false;
-            };
-
-            std::vector<SubcolumnInfo> columns_info(info.requested_columns.size());
-            std::unordered_map<String, size_t> name_to_idx;
-            size_t idx = 0;
-            for (const auto & column_to_read : info.requested_columns)
-            {
-                SCOPE_EXIT({ ++idx; });
-
-                /// Suppose column `t.a.b.c` was requested, and `t` and `t.a` are tuples,
-                /// but `t.a.b` is an Object (with dynamic subcolumn `c`). We want to read `t.a.b`.
-                /// So, we're looking for the longest prefix of the requested path that consists
-                /// only of tuple element accesses. In this example we want path = {a, b}.
-                /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
-                ///  is a dynamic subcolumn.)
-                auto & column_info = columns_info[idx];
-                bool found_full_path = false;
-                column_info.type = column_to_read.getTypeInStorage();
-
-                if (column_to_read.isSubcolumn())
-                {
-                    /// Do subcolumn lookup similar to getColumnFromBlock.
-
-                    auto type = column_to_read.getTypeInStorage();
-                    auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
-                    auto subcolumn_name = column_to_read.getSubcolumnName();
-
-                    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
-                    {
-                        if (found_full_path)
-                            return;
-
-                        for (size_t i = 0; i < subpath.size(); ++i)
-                        {
-                            /// Allow `a.x` where `a` is array of tuples.
-                            if (subpath[i].type == ISerialization::Substream::ArrayElements)
-                                continue;
-
-                            if (subpath[i].type != ISerialization::Substream::TupleElement)
-                                break;
-
-                            if (subpath[i].visited)
-                                continue;
-                            subpath[i].visited = true;
-                            size_t prefix_len = i + 1;
-                            if (prefix_len <= column_info.path.size())
-                                continue;
-
-                            auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                            if (name == subcolumn_name)
-                                found_full_path = true;
-                            else if (!subcolumn_name.starts_with(name + "."))
-                                continue;
-
-                            column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                            if (found_full_path)
-                                break;
-                        }
-                    };
-
-                    ISerialization::EnumerateStreamsSettings settings;
-                    settings.position_independent_encoding = false;
-                    settings.enumerate_dynamic_streams = false;
-                    data.serialization->enumerateStreams(settings, callback_with_data, data);
-
-                    if (!column_info.path.empty())
-                        column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
-                }
-
-                column_info.name = column_to_read.getNameInStorage();
-                if (!column_info.path.empty())
-                {
-                    column_info.name += '.';
-                    column_info.name += ISerialization::getSubcolumnNameForStream(column_info.path);
-                }
-                bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
-                column_info.is_duplicate = !emplaced;
-            }
-
-            std::vector<String> new_columns_to_read;
-            idx = 0;
-            for (auto & column_to_read : info.requested_columns)
-            {
-                SCOPE_EXIT({ ++idx; });
-
-                /// Check if any ancestor subcolumn is requested.
-                /// (This is why we iterate over requested_columns twice: first to form name_to_idx,
-                ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
-                bool ancestor_requested = false;
-                const auto & column_info = columns_info[idx];
-                for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
-                {
-                    String ancestor_name = column_to_read.getNameInStorage();
-                    if (prefix_len)
-                    {
-                        ancestor_name += '.';
-                        ancestor_name += ISerialization::getSubcolumnNameForStream(column_info.path, prefix_len);
-                    }
-                    auto it = name_to_idx.find(ancestor_name);
-                    if (it != name_to_idx.end())
-                    {
-                        const auto & ancestor_info = columns_info[it->second];
-                        column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_info.type);
-                        ancestor_requested = true;
-                        break;
-                    }
-                }
-                if (ancestor_requested)
-                    continue;
-
-                column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
-                if (!column_info.is_duplicate)
-                    new_columns_to_read.push_back(column_info.name);
-            }
-            columns_to_read = std::move(new_columns_to_read);
-
-            /// (Not checking columns_to_read.empty() in this case, assuming that formats with
-            ///  supports_tuple_elements also support empty list of columns.)
+            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
         else if (columns_to_read.empty())
         {
@@ -239,6 +106,144 @@ ReadFromFormatInfo prepareReadingFromFormat(
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     return info;
+}
+
+Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
+{
+    /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
+    /// But we still need to do some processing on the set of requested columns:
+    ///  * If a non-tuple-element subcolumn is requested, request the whole column.
+    ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
+    ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
+    ///    currently not supported by any format parser (though we might want to add it in
+    ///    future for parquet variant columns).
+    ///  * Don't request tuple element if the whole tuple is also requested.
+    ///    E.g. `SELECT t, t.x` should just read `t`.
+
+    struct SubcolumnInfo
+    {
+        ISerialization::SubstreamPath path;
+        String name;
+        DataTypePtr type;
+        bool is_duplicate = false;
+    };
+
+    std::vector<SubcolumnInfo> columns_info(requested_columns.size());
+    std::unordered_map<String, size_t> name_to_idx;
+    size_t idx = 0;
+    for (const auto & column_to_read : requested_columns)
+    {
+        SCOPE_EXIT({ ++idx; });
+
+        /// Suppose column `t.a.b.c` was requested, and `t` and `t.a` are tuples,
+        /// but `t.a.b` is an Object (with dynamic subcolumn `c`). We want to read `t.a.b`.
+        /// So, we're looking for the longest prefix of the requested path that consists
+        /// only of tuple element accesses. In this example we want path = {a, b}.
+        /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
+        ///  is a dynamic subcolumn.)
+        auto & column_info = columns_info[idx];
+        bool found_full_path = false;
+        column_info.type = column_to_read.getTypeInStorage();
+
+        if (column_to_read.isSubcolumn())
+        {
+            /// Do subcolumn lookup similar to getColumnFromBlock.
+
+            auto type = column_to_read.getTypeInStorage();
+            auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
+            auto subcolumn_name = column_to_read.getSubcolumnName();
+
+            ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+            {
+                if (found_full_path)
+                    return;
+
+                for (size_t i = 0; i < subpath.size(); ++i)
+                {
+                    /// Allow `a.x` where `a` is array of tuples.
+                    if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                        continue;
+
+                    if (subpath[i].type != ISerialization::Substream::TupleElement)
+                        break;
+
+                    if (subpath[i].visited)
+                        continue;
+                    subpath[i].visited = true;
+                    size_t prefix_len = i + 1;
+                    if (prefix_len <= column_info.path.size())
+                        continue;
+
+                    auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                    if (name == subcolumn_name)
+                        found_full_path = true;
+                    else if (!subcolumn_name.starts_with(name + "."))
+                        continue;
+
+                    column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
+                    if (found_full_path)
+                        break;
+                }
+            };
+
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.position_independent_encoding = false;
+            settings.enumerate_dynamic_streams = false;
+            data.serialization->enumerateStreams(settings, callback_with_data, data);
+
+            if (!column_info.path.empty())
+                column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
+        }
+
+        column_info.name = column_to_read.getNameInStorage();
+        if (!column_info.path.empty())
+        {
+            column_info.name += '.';
+            column_info.name += ISerialization::getSubcolumnNameForStream(column_info.path);
+        }
+        bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
+        column_info.is_duplicate = !emplaced;
+    }
+
+    std::vector<String> new_columns_to_read;
+    idx = 0;
+    for (auto & column_to_read : requested_columns)
+    {
+        SCOPE_EXIT({ ++idx; });
+
+        /// Check if any ancestor subcolumn is requested.
+        /// (This is why we iterate over requested_columns twice: first to form name_to_idx,
+        ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
+        bool ancestor_requested = false;
+        const auto & column_info = columns_info[idx];
+        for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
+        {
+            String ancestor_name = column_to_read.getNameInStorage();
+            if (prefix_len)
+            {
+                ancestor_name += '.';
+                ancestor_name += ISerialization::getSubcolumnNameForStream(column_info.path, prefix_len);
+            }
+            auto it = name_to_idx.find(ancestor_name);
+            if (it != name_to_idx.end())
+            {
+                const auto & ancestor_info = columns_info[it->second];
+                column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_info.type);
+                ancestor_requested = true;
+                break;
+            }
+        }
+        if (ancestor_requested)
+            continue;
+
+        column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
+        if (!column_info.is_duplicate)
+            new_columns_to_read.push_back(column_info.name);
+    }
+    return new_columns_to_read;
+
+    /// (Not checking columns_to_read.empty() in this case, assuming that formats with
+    ///  supports_tuple_elements also support empty list of columns.)
 }
 
 ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info)

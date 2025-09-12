@@ -187,34 +187,10 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
     ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
-
-    /** Config of the form:
-        <zookeeper>
-            <node>
-                <host>example1</host>
-                <port>2181</port>
-                <!-- Optional. Enables communication over SSL . -->
-                <secure>1</secure>
-            </node>
-            <node>
-                <host>example2</host>
-                <port>2181</port>
-                <!-- Optional. Enables communication over SSL . -->
-                <secure>1</secure>
-            </node>
-            <session_timeout_ms>30000</session_timeout_ms>
-            <operation_timeout_ms>10000</operation_timeout_ms>
-            <!-- Optional. Chroot suffix. Should exist. -->
-            <root>/path/to/zookeeper/node</root>
-            <!-- Optional. Zookeeper digest ACL string. -->
-            <identity>user:password</identity>
-        </zookeeper>
-    */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// See addCheckSessionOp
     void initSession();
@@ -227,8 +203,7 @@ public:
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
-    static Ptr create(const Poco::Util::AbstractConfiguration & config,
-                      const std::string & config_name,
+    static Ptr create(ZooKeeperArgs args_,
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     template <typename... Args>
