@@ -127,8 +127,8 @@ public:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(BaseStorageConfiguration::getPathForRead().path, user_files_path))
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", BaseStorageConfiguration::getPathForRead().path, user_files_path);
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
         BaseStorageConfiguration::create(
             object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
