@@ -1466,7 +1466,8 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
     if (is_simple_sum)
     {
-        getStateUInt64(res) += addBatchForSimpleSum(row_begin, row_end, aggregate_instructions);
+        getStateUInt64(res) += aggregate_instructions->inline_sum_helper->addMany(
+            aggregate_instructions->batch_arguments[0], row_begin, row_end);
         return;
     }
 
@@ -1533,16 +1534,6 @@ void Aggregator::addBatch(
             arena);
 }
 
-UInt64 Aggregator::addBatchForSimpleSum(
-    size_t row_begin, size_t row_end,
-    AggregateFunctionInstruction * inst)
-{
-    if (inst->has_sparse_arguments)
-        return inst->inline_sum_helper->addSparse(inst->batch_arguments[0], row_begin, row_end);
-    else
-        return inst->inline_sum_helper->addMany(inst->batch_arguments[0], row_begin, row_end);
-}
-
 
 void Aggregator::addBatchSinglePlace(
     size_t row_begin, size_t row_end,
@@ -1587,7 +1578,8 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     if (is_simple_sum)
     {
-        getStateUInt64(res) += addBatchForSimpleSum(row_begin, row_end, aggregate_instructions);
+        getStateUInt64(res) += aggregate_instructions->inline_sum_helper->addMany(
+            aggregate_instructions->batch_arguments[0], row_begin, row_end);
         return;
     }
 
@@ -1696,7 +1688,7 @@ void Aggregator::prepareAggregateInstructions(
         if (is_simple_sum)
         {
             aggregate_functions_instructions[i].inline_sum_helper = createSumExtractorForType(
-                aggregate_functions_instructions[i].batch_arguments[0]->getDataType());
+                aggregate_functions_instructions[i].batch_arguments[0]->getDataType(), has_sparse_arguments);
             assert(aggregate_functions_instructions[i].inline_sum_helper != nullptr);
         }
     }

@@ -205,8 +205,15 @@ public:
         {
             using ColVecType = ColumnVectorOrDecimal<T>;
 
+            explicit InlineAggregationSumHelper(bool has_sparse_arguments_) : has_sparse_arguments(has_sparse_arguments_) {}
+
             UInt64 get(const DB::IColumn* column, size_t row) override
             {
+                // TODO(jianfei): This might be problem for performance as we call lower_bound on every row
+                // when adding sparse together we can check lower bound once and just increment the iterator.
+                // Either implement suming together or disable sparse case, which might be infeasible as constructor phase we don't know if it's sparse in some cases..
+                if (has_sparse_arguments)
+                    return addSparse(column, row, row+1);
                 const auto & typed_column = assert_cast<const ColVecType &>(*column);
                 return static_cast<UInt64>(typed_column.getData()[row]);
             }
@@ -229,14 +236,19 @@ public:
 
             UInt64 addMany(const DB::IColumn* column, size_t row_begin, size_t row_end) override
             {
+                if (has_sparse_arguments)
+                    return addSparse(column, row_begin, row_end);
+
                 const auto & typed_column = assert_cast<const ColVecType &>(*column);
                 AggregateFunctionSumData<UInt64> sum_data;
                 sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
                 return sum_data.get();
             }
+
+            bool has_sparse_arguments = false;
         };
 
-        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::TypeIndex type)
+        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::TypeIndex type, bool has_sparse_arguments)
         {
 #define FOR_INLINABLE_UINT_TYPES(M) \
     M(UInt8) \
@@ -251,7 +263,7 @@ public:
             if (false) {} // NOLINT
 #define M(TYPE) \
             else if (type == TypeIndex::TYPE) { \
-                return std::make_unique<InlineAggregationSumHelper<TYPE> >(); \
+                return std::make_unique<InlineAggregationSumHelper<TYPE> >(has_sparse_arguments); \
             }
 
             FOR_INLINABLE_UINT_TYPES(M)
@@ -720,10 +732,6 @@ private:
         AggregateFunctionInstruction * inst,
         AggregateDataPtr place,
         Arena * arena);
-
-    static UInt64 addBatchForSimpleSum(
-        size_t row_begin, size_t row_end,
-        AggregateFunctionInstruction * inst);
 };
 
 /// NOTE: For non-Analyzer it does not include the database name
