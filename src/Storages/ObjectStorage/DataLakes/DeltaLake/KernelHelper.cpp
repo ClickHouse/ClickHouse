@@ -130,12 +130,14 @@ public:
         const std::string & container_,
         const std::string & blob_path_,
         const std::string & storage_account_name_,
-        const std::string & storage_account_key_)
+        const std::string & storage_account_key_,
+        const std::string & storage_sas_key_)
         : url(url_)
         , container(container_)
         , blob_path(blob_path_)
         , storage_account_name(storage_account_name_)
         , storage_account_key(storage_account_key_)
+        , storage_sas_key(storage_sas_key_)
         , table_location(url_)
     {}
 
@@ -168,6 +170,8 @@ public:
             set_option("azure_storage_account_name", storage_account_name);
         if (!storage_account_key.empty())
             set_option("azure_storage_account_key", storage_account_key);
+        if (!storage_sas_key.empty())
+            set_option("azure_storage_sas_key", storage_sas_key);
 
         set_option("azure_storage_endpoint", url);
         set_option("azure_container_name",container);
@@ -186,6 +190,7 @@ private:
     const std::string blob_path;
     const std::string storage_account_name;
     const std::string storage_account_key;
+    const std::string storage_sas_key;
     const std::string table_location;
 };
 
@@ -254,8 +259,9 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & path = azure_conf->getRawURI();
             const auto & account_name = azure_conf->getAccountName();
             const auto & account_key = azure_conf->getAccountKey();
+            const auto & sas_key = azure_conf->getSasKey();
 
-            return std::make_shared<DeltaLake::AzureKernelHelper>(endpoint, container, path, account_name, account_key);
+            return std::make_shared<DeltaLake::AzureKernelHelper>(endpoint, container, path, account_name, account_key, sas_key);
         }
         case DB::ObjectStorageType::Local:
         {

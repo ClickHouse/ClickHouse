@@ -79,6 +79,7 @@ public:
     String getContainer() const { return connection_params.getContainer(); }
     String getAccountName() const { return connection_params.endpoint.account_name; }
     String getAccountKey() const { return connection_params.endpoint.account_key; }
+    String getSasKey() const { return connection_params.endpoint.sas_auth; }
 
     void check(ContextPtr context) const override;
 
