@@ -568,7 +568,8 @@ protected:
                     }
 
                     // Always reset column UUIDs because they are not displayed in create_table_query field
-                    ast_create->resetColumnUUIDs();
+                    if (ast_create)
+                        ast_create->resetColumnUUIDs();
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
