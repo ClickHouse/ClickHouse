@@ -49,7 +49,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONExists, JSONExistsImpl>>(documentation);
     }
-    
+
     /// JSON_QUERY
     {
         FunctionDocumentation::Description description = R"(
@@ -84,7 +84,7 @@ String
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONQuery, JSONQueryImpl>>(documentation);
     }
-    
+
     /// JSON_VALUE
     {
         FunctionDocumentation::Description description = R"(
