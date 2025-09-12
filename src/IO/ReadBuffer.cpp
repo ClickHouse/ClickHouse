@@ -82,4 +82,5 @@ void ReadBuffer::cancel()
 
     canceled = true;
 }
+
 }
