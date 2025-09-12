@@ -386,6 +386,8 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool allPartitionsHaveSinglePart() const;
+
     bool isParallelReplicasLocalPlanForInitiator() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
