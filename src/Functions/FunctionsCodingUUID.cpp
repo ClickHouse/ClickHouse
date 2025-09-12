@@ -483,8 +483,8 @@ Takes a binary representation of a UUID, with its format optionally specified by
     )";
     FunctionDocumentation::Syntax syntax_UUIDNumToString = "UUIDNumToString(binary[, variant])";
     FunctionDocumentation::Arguments arguments_UUIDNumToString = {
-        {"binary", "[FixedString(16)](../data-types/fixedstring.md) as a binary representation of a UUID."},
-        {"variant", "Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`."}
+        {"binary", "Binary representation of a UUID.", {"FixedString(16)"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDNumToString = {"Returns the UUID as a string.", {"String"}};
     FunctionDocumentation::Examples examples_UUIDNumToString = {
@@ -527,8 +527,8 @@ Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx
     )";
     FunctionDocumentation::Syntax syntax_UUIDStringToNum = "UUIDStringToNum(string[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDStringToNum = {
-        {"string", "A [String](/sql-reference/data-types/string) of 36 characters or [FixedString](/sql-reference/data-types/string)"},
-        {"variant", "Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`."}
+        {"string", "A string or fixed-string of 36 characters)", {"String", "FixedString(36)"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDStringToNum = {"Returns the binary representation of `string`.", {"FixedString(16)"}};
     FunctionDocumentation::Examples examples_UUIDStringToNum = {
@@ -572,8 +572,8 @@ This function replaces calls to two separate functions `UUIDStringToNum(toString
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDToNum = {
-        {"uuid", "[UUID](../data-types/uuid.md)."},
-        {"variant", "Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`."}
+        {"uuid", "UUID.", {"String", "FixedString"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDToNum = {"Returns a binary representation of the UUID.", {"FixedString(16)"}};
     FunctionDocumentation::Examples examples_UUIDToNum = {

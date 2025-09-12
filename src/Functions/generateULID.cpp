@@ -82,7 +82,7 @@ Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](ht
     FunctionDocumentation::Arguments arguments_generateULID = {
         {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing common subexpression elimination if the function is called multiple times in one query.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateULID = {"The FixedString type value.", {"FixedString(26)"}};
+    FunctionDocumentation::ReturnedValue returned_value_generateULID = {"Returns a ULID.", {"FixedString(26)"}};
     FunctionDocumentation::Examples examples_generateULID = {
     {
         "Usage example",

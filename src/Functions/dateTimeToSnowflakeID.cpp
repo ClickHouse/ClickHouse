@@ -137,7 +137,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
     )";
     FunctionDocumentation::Syntax syntax_dateTimeToSnowflakeID = "dateTimeToSnowflakeID(value[, epoch])";
     FunctionDocumentation::Arguments arguments_dateTimeToSnowflakeID = {
-        {"value", "Date with time.", {"DateTime"}},
+        {"value", "Date with time.", {"DateTime", "DateTime64"}},
         {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
@@ -161,10 +161,10 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
     factory.registerFunction<FunctionDateTimeToSnowflakeID>(documentation_dateTimeToSnowflakeID);
 
     /// dateTime64ToSnowflakeID documentation
-    FunctionDocumentation::Description description_dateTime64ToSnowflakeID = R"(Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
+    FunctionDocumentation::Description description_dateTime64ToSnowflakeID = R"(Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
     FunctionDocumentation::Syntax syntax_dateTime64ToSnowflakeID = "dateTime64ToSnowflakeID(value[, epoch])";
     FunctionDocumentation::Arguments arguments_dateTime64ToSnowflakeID = {
-        {"value", "Date with time.", {"DateTime"}},
+        {"value", "Date with time.", {"DateTime", "DateTime64"}},
         {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
@@ -172,12 +172,12 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
    {
        "Usage example",
        R"(
-SELECT toDateTime('2021-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime64ToSnowflakeID(dt) AS res;
+SELECT toDateTime64('2025-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime64ToSnowflakeID(dt) AS res;
        )",
        R"(
-┌──────────────────────dt─┬─────────────────res─┐
-│ 2021-08-15 18:57:56.493 │ 6832626394434895872 │
-└─────────────────────────┴─────────────────────┘
+   ┌──────────────────────dt─┬─────────────────res─┐
+1. │ 2025-08-15 18:57:56.493 │ 7362075066076495872 │
+   └─────────────────────────┴─────────────────────┘
        )"
        }
     };

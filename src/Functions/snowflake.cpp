@@ -319,10 +319,10 @@ REGISTER_FUNCTION(LegacySnowflakeConversion)
 <DeprecatedBadge/>
 
 :::warning
-This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 
-Please use function [snowflakeIDToDateTime](#snowflakeidtodatetime) instead.
+Please use function [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
@@ -357,10 +357,10 @@ SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
 <DeprecatedBadge/>
 
 :::warning
-This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 
-Please use function [snowflakeIDToDateTime64](#snowflakeidtodatetime64) instead.
+Please use function [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](../data-types/datetime64.md) format.
@@ -397,10 +397,10 @@ SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
 <DeprecatedBadge/>
 
 :::warning
-This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 
-Please use function [dateTimeToSnowflakeID](#datetimetosnowflakeid) instead.
+Please use function [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) instead.
 :::
 
 Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
@@ -434,10 +434,10 @@ WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToS
 <DeprecatedBadge/>
 
 :::warning
-This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 
-Please use function [dateTime64ToSnowflakeID](#datetime64tosnowflakeid) instead.
+Please use function [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) instead.
 :::
 
 Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
