@@ -76,8 +76,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("with_restore_and_drop_database", [False, True])
-def test_drop_database_replica(started_cluster, with_restore_and_drop_database: bool):
+@pytest.mark.parametrize("with_tables", [False, True])
+def test_drop_database_replica(started_cluster, with_tables: bool):
     node1.query("DROP DATABASE IF EXISTS db")
     node2.query("DROP DATABASE IF EXISTS db")
     node3.query("DROP DATABASE IF EXISTS db")
@@ -99,9 +99,7 @@ def test_drop_database_replica(started_cluster, with_restore_and_drop_database: 
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv2 REFRESH EVERY 1 SECOND TO db.mv_target AS SELECT 1 AS x"
     )
-    restore_and_drop_database_clause = (
-        " RESTORE_AND_DROP_DATABASE" if with_restore_and_drop_database else ""
-    )
+    with_tables_clause = " WITH TABLES" if with_tables else ""
     assert "SYNTAX_ERROR" in node1.query_and_get_error(
         f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM TABLE t"
     )
@@ -112,16 +110,16 @@ def test_drop_database_replica(started_cluster, with_restore_and_drop_database: 
         f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM DATABASE db"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}' {restore_and_drop_database_clause}"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}' {with_tables_clause}"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}' {restore_and_drop_database_clause}"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}' {with_tables_clause}"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}/'  {restore_and_drop_database_clause}"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}/'  {with_tables_clause}"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' {restore_and_drop_database_clause}"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' {with_tables_clause}"
     )
 
     node2.query(
@@ -200,7 +198,7 @@ def test_drop_database_replica(started_cluster, with_restore_and_drop_database: 
 
     node1.query("DETACH DATABASE db")
     node4.query(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}'  {restore_and_drop_database_clause}"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}'  {with_tables_clause}"
     )
     node1.query("ATTACH DATABASE db")
     assert "Database is in readonly mode" in node1.query_and_get_error(
@@ -233,16 +231,16 @@ def test_drop_database_replica(started_cluster, with_restore_and_drop_database: 
     node4.query("DROP DATABASE db SYNC")
 
 
-def test_drop_database_replica_with_restore_and_drop_database_for_non_existing_db(
+def test_drop_database_replica_with_tables_for_non_existing_db(
     started_cluster,
 ):
     zk_path = "/test/db_dummy"
     assert "Database metadata keeper path does not exists" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' RESTORE_AND_DROP_DATABASE"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' WITH TABLES"
     )
 
 
-def test_drop_database_replica_with_restore_and_drop_database_for_dropped_db(
+def test_drop_database_replica_with_tables_for_dropped_db(
     started_cluster,
 ):
     node1.query("DROP DATABASE IF EXISTS db SYNC")
@@ -266,11 +264,11 @@ def test_drop_database_replica_with_restore_and_drop_database_for_dropped_db(
 
     node1.query("DROP DATABASE `db` SYNC")
     assert "Database metadata keeper path does not exists" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' RESTORE_AND_DROP_DATABASE"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' WITH TABLES"
     )
 
 
-def test_drop_database_replica_with_restore_and_drop_database_for_detached_db(
+def test_drop_database_replica_with_tables_for_detached_db(
     started_cluster,
 ):
     node1.query("DROP DATABASE IF EXISTS db SYNC")
@@ -294,7 +292,7 @@ def test_drop_database_replica_with_restore_and_drop_database_for_detached_db(
 
     node1.query("DETACH DATABASE `db`")
     assert "There is a detached database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' RESTORE_AND_DROP_DATABASE"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' WITH TABLES"
     )
 
     node1.query("ATTACH DATABASE `db`")

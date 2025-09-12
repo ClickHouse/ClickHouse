@@ -13,6 +13,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
@@ -29,6 +30,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -45,7 +47,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
@@ -1255,11 +1256,11 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
     for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
-    LOG_TRACE(
-        log, "Dropped storage replica from {} of Replicated database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
+    LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
 }
 
-DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(const String & zookeeper_path, const String & restoring_database_name)
+DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
+    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
     auto zookeeper = getContext()->getZooKeeper();
 
@@ -1270,12 +1271,9 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(const String &
     if (zookeeper->getChildren(metadata_path).empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path is empty: '{}", metadata_path);
 
-    String replicas_path = zookeeper_path + "/replicas";
-    if (!zookeeper->exists(replicas_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path does not exists: '{}", replicas_path);
-
-    if (zookeeper->getChildren(replicas_path).empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path is empty: '{}", replicas_path);
+    String replica_path = zookeeper_path + "/replicas/" + full_replica_name;
+    if (!zookeeper->exists(replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replica keeper path does not exists: '{}", replica_path);
 
     Strings escaped_table_names;
     escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
@@ -1323,7 +1321,25 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(const String &
 
         if (create_query_ast->is_materialized_view)
         {
-            LOG_TRACE(log, "table_name {} is a materialized view, skip restoring", table_name);
+            LOG_TRACE(log, "Table {} is a materialized view, skip restoring", table_name);
+            continue;
+        }
+
+        if (!create_query_ast->storage)
+        {
+            LOG_TRACE(log, "No storage defined in table create statement: {}, '{}', skip restoring", table_name, create_table_query);
+            continue;
+        }
+        if (!create_query_ast->storage->engine)
+        {
+            LOG_TRACE(log, "No engine defined in create statement: {}, '{}', skip restoring", table_name, create_table_query);
+            continue;
+        }
+
+        const String & engine_name = create_query_ast->storage->engine->name;
+        if (!engine_name.starts_with("Replicated") || !engine_name.ends_with("MergeTree"))
+        {
+            LOG_TRACE(log, "Engine of the table '{}' is not ReplicatedMergeTree: '{}', skip restoring", table_name, engine_name);
             continue;
         }
 
@@ -1332,6 +1348,28 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(const String &
             getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase())
                 .dependencies);
     }
+
+    auto make_create_context = [this, &restoring_database_name]()
+    {
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setCurrentDatabase(restoring_database_name);
+        query_context->setCurrentQueryId("");
+
+        /// We will execute some CREATE queries for recovery (not ATTACH queries),
+        /// so we need to allow experimental features that can be used in a CREATE query
+        enableAllExperimentalSettings(query_context);
+
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
+
+        return query_context;
+    };
 
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
     for (const auto & tables_to_create : tables_to_create_by_level)
@@ -1359,16 +1397,16 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(const String &
                 /*zookeeper_path_=*/zookeeper_path,
                 /*node_name=*/table_name,
                 /*query=*/create_query_string);
-            auto create_query_context = Context::createCopy(getContext());
+            auto create_query_context = make_create_context();
 
             NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
             NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
 
-            LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
+            LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
             InterpreterCreateQuery(query_ast, create_query_context).execute();
         }
     }
-    LOG_INFO(log, "All tables are created successfully");
+    LOG_INFO(log, "All tables are restored successfully");
 
     auto database = DatabaseCatalog::instance().getDatabase(restoring_database_name);
     chassert(database);
@@ -1444,13 +1482,15 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
-    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query_)
+    const String full_replica_name
+        = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
+    const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
+    auto check_not_local_replica
+        = [](const DatabaseReplicated * replicated, const String & full_replica_name_, const fs::path & query_replica_zk_path_)
     {
-        if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
+        if (!query_replica_zk_path_.empty() && fs::path(replicated->getZooKeeperPath()) != query_replica_zk_path_)
             return;
-        String full_replica_name = query_.shard.empty() ? query_.replica
-                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
-        if (replicated->getFullReplicaName() != full_replica_name)
+        if (replicated->getFullReplicaName() != full_replica_name_)
             return;
 
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
@@ -1464,8 +1504,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
-            check_not_local_replica(replicated, query);
-            dropStorageReplicasFromDatabase(query.replica, database);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            if (query.with_tables)
+                dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
@@ -1490,8 +1531,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 continue;
             }
 
-            check_not_local_replica(replicated, query);
-            dropStorageReplicasFromDatabase(query.replica, database);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            if (query.with_tables)
+                dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
@@ -1503,9 +1545,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                check_not_local_replica(replicated, query);
+                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
 
-        if (query.restore_and_drop_database)
+        if (query.with_tables)
         {
             auto detached_database_name = getDetachedDatabaseFromKeeperPath(query);
             if (detached_database_name)
@@ -1516,14 +1558,17 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                     "If you want to drop replica of this database, reattach it with `ATTACH DATABASE`, then drop it with `DROP DATABASE`",
                     *detached_database_name);
 
-            String restoring_database_name = ".tmp_restore_db_for_table_dropping_" + getRandomASCIIString(32);
+            String restoring_database_name = RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX + getRandomASCIIString(32);
             SCOPE_EXIT({
                 auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
                 drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
                 String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
                 executeQuery(drop_query, drop_ctx);
             });
-            auto database = restoreDatabaseFromKeeperPath(query.replica_zk_path, restoring_database_name);
+            auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_path=*/query.replica_zk_path,
+                /*full_replica_name=*/full_replica_name,
+                /*restoring_database_name=*/restoring_database_name);
             if (database)
             {
                 dropStorageReplicasFromDatabase(query.replica, database);
