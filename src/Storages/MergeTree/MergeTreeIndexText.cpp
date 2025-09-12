@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
 #include <base/range.h>
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -38,19 +39,20 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
+static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
+static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
+/// 0.1 seems quite high, it 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
+/// The actual intention is to minimize the size of the bloom filter.
 
 UInt32 TokenInfo::getCardinality() const
 {
     return std::visit([]<typename T>(const T & arg) -> UInt32
     {
         if constexpr (std::is_same_v<T, PostingList>)
-        {
             return arg.cardinality();
-        }
         else
-        {
             return arg.cardinality;
-        }
     }, postings);
 }
 
@@ -609,11 +611,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
 void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", *pos, block.rows());
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
+            *pos, block.rows());
+    }
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-
     if (rows_read == 0)
         return;
 
@@ -682,11 +686,11 @@ namespace
 {
 
 template <typename Type>
-std::optional<Type> getOption(const std::unordered_map<String, Field> & options, const String & option)
+std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option)
 {
     if (auto it = options.find(option); it != options.end())
     {
-        const Field & value = it->second;
+        Field value = std::move(it->second);
         Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
 
         if (value.getType() != expected_type)
@@ -697,15 +701,15 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
                 option, fieldTypeToString(expected_type), value.getTypeName());
         }
 
+        options.erase(it);
         return value.safeGet<Type>();
     }
     return {};
 }
 
-template <typename... Args>
-std::optional<std::vector<String>> getOptionAsStringArray(Args &&... args)
+std::optional<std::vector<String>> extractOptionAsStringArray(std::unordered_map<String, Field> & options, const String & option)
 {
-    auto array = getOption<Array>(std::forward<Args>(args)...);
+    auto array = extractOption<Array>(options, option);
     if (array.has_value())
     {
         std::vector<String> values;
@@ -742,7 +746,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
-    String tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER).value();
+    String tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER).value();
 
     std::unique_ptr<ITokenExtractor> token_extractor;
 
@@ -752,12 +756,12 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        auto ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
         token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
     }
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
-        auto separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        auto separators = extractOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
         token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
@@ -769,12 +773,15 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
     }
 
-    UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(128);
-    UInt64 max_cardinality_for_embedded_postings = getOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(16);
-    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.1);
+    UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
+    UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
+    double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
+
+    if (!options.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     return std::make_shared<MergeTreeIndexText>(index, params, std::move(token_extractor));
 }
@@ -784,7 +791,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
     /// Check that tokenizer is present and supported
-    std::optional<String> tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER);
+    std::optional<String> tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER);
     if (!tokenizer)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
@@ -804,7 +811,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     std::optional<UInt64> ngram_size;
     if (tokenizer.value() == NgramTokenExtractor::getExternalName())
     {
-        ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
         if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
@@ -814,7 +821,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
     else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
     {
-        std::optional<DB::FieldVector> separators = getOption<Array>(options, ARGUMENT_SEPARATORS);
+        std::optional<DB::FieldVector> separators = extractOption<Array>(options, ARGUMENT_SEPARATORS);
         if (separators.has_value())
         {
             for (const auto & separator : separators.value())
@@ -829,7 +836,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
     }
 
-    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
+    double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     if (!std::isfinite(bloom_filter_false_positive_rate) || bloom_filter_false_positive_rate <= 0.0 || bloom_filter_false_positive_rate >= 1.0)
     {
@@ -839,6 +846,16 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE,
             bloom_filter_false_positive_rate);
     }
+
+    UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
+    if (dictionary_block_size == 0)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
+
+    /// No validation for max_cardinality_for_embedded_postings.
+    extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
+
+    if (!options.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)

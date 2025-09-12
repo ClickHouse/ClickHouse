@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -76,8 +77,8 @@ bool injectRequiredColumnsRecursively(
                 return true;
             }
         }
-        /// TODO: fix this
-        else if (column_name_in_part.starts_with("__text_index_"))
+        /// TODO: correctly determine whether the index is present in the part
+        else if (column_name_in_part.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
         {
             return true;
         }

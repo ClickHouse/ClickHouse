@@ -9,9 +9,15 @@ Test separators argument.
 Test bloom_filter_false_positive_rate argument.
 -- bloom_filter_false_positive_rate must be a double.
 -- bloom_filter_false_positive_rate must be between 0.0 and 1.0.
+Test dictionary_block_size argument.
+-- dictionary_block_size must be an integer.
+-- dictionary_block_size must be bigger than 0.
+Test max_cardinality_for_embedded_postings argument.
+-- max_cardinality_for_embedded_postings must be an integer.
 Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.
+Non-existing argument.
 Must be created on single column.
 A column must not have >1 text index
 -- CREATE TABLE

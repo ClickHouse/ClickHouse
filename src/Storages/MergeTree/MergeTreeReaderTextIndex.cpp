@@ -300,7 +300,8 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    std::vector<PostingsIteratorPair *> iterators;
+    /// PostingsIteratorPair is 96 bytes, so avoid copying.
+    std::vector<PostingsIteratorPair *> token_iterators;
 
     for (const auto & token : search_tokens)
     {
@@ -308,13 +309,13 @@ void applyPostingsAll(
         if (it == postings_map.end())
             return;
 
-        iterators.push_back(&it->second);
+        token_iterators.push_back(&it->second);
     }
 
     PaddedPODArray<UInt16> counters(num_rows, 0);
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
 
-    for (auto & iters : iterators)
+    for (auto & iters : token_iterators)
     {
         for (; iters->it != iters->end; ++iters->it)
         {
@@ -330,7 +331,7 @@ void applyPostingsAll(
         }
     }
 
-    size_t total_tokens = iterators.size();
+    size_t total_tokens = token_iterators.size();
     for (size_t i = 0; i < num_rows; ++i)
         column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
 }
