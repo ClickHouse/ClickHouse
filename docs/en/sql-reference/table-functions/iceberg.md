@@ -87,6 +87,14 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Processing of tables with deleted rows {#deleted-rows}
+
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
 ### Basic usage {#basic-usage}
 
  ```sql
@@ -285,6 +293,14 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 ## Aliases {#aliases}
 
 Table function `iceberg` is an alias to `icebergS3` now.
+
+## Virtual Columns {#virtual-columns}
+
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
 ## See Also {#see-also}
 

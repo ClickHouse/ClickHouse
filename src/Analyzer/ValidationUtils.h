@@ -41,6 +41,7 @@ void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
     std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
 
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node);
 
 /** Compare node with group by key node.
   * Such comparison does not take into account aliases, but checks types and column sources.
