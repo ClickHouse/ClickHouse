@@ -7,6 +7,6 @@ title: 'ODBCDriver2'
 
 ## Description {#description}
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

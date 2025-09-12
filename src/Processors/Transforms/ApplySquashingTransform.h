@@ -9,7 +9,7 @@ namespace DB
 class ApplySquashingTransform : public ExceptionKeepingTransform
 {
 public:
-    explicit ApplySquashingTransform(SharedHeader header);
+    explicit ApplySquashingTransform(const Block & header);
 
     String getName() const override { return "ApplySquashingTransform"; }
 

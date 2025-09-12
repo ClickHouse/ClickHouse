@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Client/Connection.h>
+#include "Connection.h"
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>

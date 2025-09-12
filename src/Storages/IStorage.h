@@ -3,8 +3,6 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -21,7 +19,6 @@
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <expected>
 #include <optional>
 
 
@@ -67,7 +64,6 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
 class ActionsDAG;
 
@@ -120,7 +116,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -177,7 +173,7 @@ public:
     virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
-    /// Used for query optimizations by the MergeTree family of storages and by Parquet reader.
+    /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
@@ -223,8 +219,6 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
-
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
@@ -256,9 +250,6 @@ public:
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
-
-    /// Returns true if storage can execute lightweight update.
-    virtual std::expected<void, PreformattedMessage> supportsLightweightUpdate() const;
 
     /// Return true if storage has any projection.
     virtual bool hasProjection() const { return false; }
@@ -295,11 +286,6 @@ private:
 
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
-
-    /// Description of common virtual columns.
-    static const VirtualColumnsDescription common_virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -423,7 +409,6 @@ private:
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
-    /// Can be called after `shutdown`, but not after `drop`.
     virtual void read(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
@@ -545,9 +530,6 @@ public:
         const Names & /* deduplicate_by_columns */,
         bool /*cleanup*/,
         ContextPtr /*context*/);
-
-    /// Executes update query. More lightweight than mutation.
-    virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
