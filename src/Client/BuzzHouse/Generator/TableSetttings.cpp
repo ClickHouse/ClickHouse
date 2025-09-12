@@ -397,10 +397,7 @@ static std::unordered_map<String, CHSetting> ssdCachedLayoutSettings
 static std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FROM_ATTRIBUTES", CHSetting(trueOrFalse, {}, false)}};
 
 static std::unordered_map<String, CHSetting> dataLakeSettings
-    = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
-       {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
-       {"iceberg_metadata_compression_method",
-        CHSetting([](RandomGenerator & rg) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
+    = {{"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
 

@@ -1460,8 +1460,8 @@ void StatementGenerator::addTableColumnInternal(
             generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
             this->entries.clear();
         }
-        cd->set_is_pkey(is_pk);
     }
+    cd->set_is_pkey(is_pk);
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(nextComment(rg));
