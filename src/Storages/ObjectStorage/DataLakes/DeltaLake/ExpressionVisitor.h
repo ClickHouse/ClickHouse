@@ -10,7 +10,7 @@
 namespace ffi
 {
 struct Expression;
-struct SharedExpression;
+struct SharedPredicate;
 }
 namespace DB
 {
@@ -36,7 +36,8 @@ std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
 
 /// A method used in unit test.
 std::shared_ptr<DB::ActionsDAG> visitExpression(
-    ffi::SharedExpression * expression,
+    ffi::SharedPredicate * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema);
 
 }

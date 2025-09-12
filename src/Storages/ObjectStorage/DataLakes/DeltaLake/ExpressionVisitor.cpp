@@ -458,10 +458,10 @@ public:
             std::rethrow_exception(e);
     }
 
-    static void visit(ffi::SharedExpression * expression, ExpressionVisitorData & data)
+    static void visit(ffi::SharedPredicate * predicate, ExpressionVisitorData & data)
     {
         auto visitor = createVisitor(data);
-        [[maybe_unused]] uintptr_t result = ffi::visit_expression(&expression, &visitor);
+        [[maybe_unused]] uintptr_t result = ffi::visit_predicate(&predicate, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (auto e = data.getException())
@@ -1013,10 +1013,11 @@ std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
 }
 
 std::shared_ptr<DB::ActionsDAG> visitExpression(
-    ffi::SharedExpression * expression,
+    ffi::SharedPredicate * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema)
 {
-    ExpressionVisitorData data(expression_schema, expression_schema, /* enable_logging */true);
+    ExpressionVisitorData data(read_schema, expression_schema, /* enable_logging */true);
     ExpressionVisitor::visit(expression, data);
     return data.getScanCallbackExpressionResult();
 }
