@@ -95,6 +95,7 @@ struct JoinSettings
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;
     UInt64 join_to_sort_maximum_table_rows;
+    bool allow_dynamic_type_in_join_keys;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
