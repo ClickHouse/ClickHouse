@@ -86,8 +86,8 @@ You can have several different directories (e.g. `build_release`, `build_debug`,
 Optional: If you have multiple compiler versions installed, you can optionally specify the exact compiler to use.
 
 ```sh
-export CC=clang-19
-export CXX=clang++-19
+export CC=clang-21
+export CXX=clang++-21
 ```
 
 For development purposes, debug builds are recommended.
