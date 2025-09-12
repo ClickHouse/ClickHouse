@@ -38,7 +38,7 @@ def check():
         and not has_new_functional_tests(changed_files)
         and not has_new_integration_tests(changed_files)
     ):
-        print(f"No new tests have been added")
+        print(f"No new tests have been added, body: {Info().pr_body}")
         return False
     return True
 
