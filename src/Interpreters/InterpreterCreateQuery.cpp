@@ -523,7 +523,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (column.uuid != UUIDHelpers::Nil)
         {
-            column_declaration->uuid = std::make_shared<ASTLiteral>(Field(UUIDHelpers::uuidToStr(column.uuid)));
+            column_declaration->uuid = std::make_shared<ASTLiteral>(Field(column.uuid));
             column_declaration->children.push_back(column_declaration->uuid);
         }
 
@@ -732,8 +732,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.uuid)
         {
-            auto uuid_str  = col_decl.uuid->as<ASTLiteral &>().value.safeGet<String>();
-            column.uuid = parseUUID({reinterpret_cast<const UInt8 *>(uuid_str.data()), uuid_str.length()});
+            column.uuid = col_decl.uuid->as<ASTLiteral &>().value.safeGet<DB::UUID>();
         }
 
         res.add(std::move(column));

@@ -127,8 +127,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 {
                     if (!col_decl.uuid)
                     {
-                        auto uuid_str = UUIDHelpers::uuidToStr(UUIDHelpers::generateV4());
-                        auto uuid_ast = ASTLiteral(Field(uuid_str));
+                        auto uuid_ast = ASTLiteral(Field(UUIDHelpers::generateV4()));
                         col_decl.uuid = uuid_ast.clone();
                     }
                 }

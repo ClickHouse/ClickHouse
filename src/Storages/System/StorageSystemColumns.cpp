@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -53,7 +54,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_, ContextP
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."}};
     if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
-        columns.emplace_back("uuid",               std::make_shared<DataTypeString>(), "Column uuid.");
+        columns.emplace_back("uuid",               std::make_shared<DataTypeUUID>(), "Column uuid.");
     columns.insert(columns.end(), {
         { "type",               std::make_shared<DataTypeString>(), "Column type."},
         { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
@@ -213,7 +214,7 @@ protected:
                     res_columns[res_index++]->insert(column.name);
 
                 if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns] && columns_mask[src_index++])
-                    res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                    res_columns[res_index++]->insert(column.uuid);
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());

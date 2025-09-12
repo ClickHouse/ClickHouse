@@ -27,15 +27,6 @@ namespace UUIDHelpers
 
         return uuid;
     }
-
-    /// TODO make better name and put into better place
-    String uuidToStr(const UUID & uuid)
-    {
-        String str;
-        WriteBufferFromString buf{str};
-        writeText(uuid, buf);
-        return str;
-    }
 }
 
 }

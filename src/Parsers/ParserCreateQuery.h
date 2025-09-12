@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -330,9 +331,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_column_uuid.ignore(pos, expected))
     {
-        /// should be followed by a string literal
-        if (!string_literal_parser.parse(pos, column_uuid_expression, expected))
+        ASTPtr ast_uuid;
+        if (!string_literal_parser.parse(pos, ast_uuid, expected))
             return false;
+        auto uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        column_uuid_expression = std::make_shared<ASTLiteral>(Field(uuid));
     }
 
     if (s_codec.ignore(pos, expected))

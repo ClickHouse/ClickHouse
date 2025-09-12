@@ -128,10 +128,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.uuid)
-        {
-            auto uuid_str  = ast_col_decl.uuid->as<ASTLiteral &>().value.safeGet<String>();
-            command.uuid = parseUUID({reinterpret_cast<const UInt8 *>(uuid_str.data()), uuid_str.length()});
-        }
+            command.uuid = ast_col_decl.uuid->as<ASTLiteral &>().value.safeGet<DB::UUID>();
 
         if (ast_col_decl.codec)
         {

@@ -157,4 +157,4 @@ def test_show_table_system_columns(started_cluster):
     uuid is displayed in the list of columns
     """
     result = node_1.query("SHOW CREATE TABLE system.columns")
-    assert "`uuid` String," not in result
+    assert "`uuid` UUID," not in result
