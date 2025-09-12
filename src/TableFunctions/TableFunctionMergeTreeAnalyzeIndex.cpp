@@ -7,6 +7,19 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 
+namespace
+{
+
+const char * mergeTreeAnalyzeIndexFunctionName(bool resolve_by_uuid)
+{
+    if (resolve_by_uuid)
+        return "mergeTreeAnalyzeIndexUUID";
+    else
+        return "mergeTreeAnalyzeIndex";
+}
+
+}
+
 namespace DB
 {
 
@@ -23,13 +36,7 @@ public:
         : resolve_by_uuid(resolve_by_uuid_)
     {}
 
-    std::string getName() const override
-    {
-        if (resolve_by_uuid)
-            return "mergeTreeAnalyzeIndexUUID";
-        else
-            return "mergeTreeAnalyzeIndex";
-    }
+    std::string getName() const override { return mergeTreeAnalyzeIndexFunctionName(resolve_by_uuid); }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -43,7 +50,11 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "MergeTreeAnalyzeIndex"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's MergeTreeAnalyzeIndex but it doesn't register itself
+        return "";
+    }
 
     void parseArgumentsUUID(const ASTs & args_func, ContextPtr context);
     void parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context);
@@ -159,7 +170,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndex::executeImpl(
 
 void registerTableFunctionMergeTreeAnalyzeIndex(TableFunctionFactory & factory)
 {
-    factory.registerFunction("mergeTreeAnalyzeIndex", TableFunctionFactoryData{
+    factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ false); },
         TableFunctionProperties{
             .documentation =
@@ -172,7 +183,7 @@ void registerTableFunctionMergeTreeAnalyzeIndex(TableFunctionFactory & factory)
         }
     });
 
-    factory.registerFunction("mergeTreeAnalyzeIndexUUID", TableFunctionFactoryData{
+    factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ true), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ true); },
         TableFunctionProperties{
             .documentation =
