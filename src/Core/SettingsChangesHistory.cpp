@@ -55,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -82,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
+            {"os_thread_priority", 0, 0, "Obsolete setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
