@@ -136,3 +136,49 @@ def test_s3_question_mark_wildcards(started_cluster):
     assert result_s3_scheme == result_http_scheme
     assert result_s3_scheme.startswith('20\t')
     assert "['a1','a2']" in result_s3_scheme or "['a2','a1']" in result_s3_scheme
+
+def test_s3_presigned_url_works_with_s3_engine(started_cluster):
+    """
+    Regression test for pre-signed URLs:
+    - Previously, the S3 table function misinterpreted '?' in '?X-Amz-...' as a wildcard
+      or encoded it in a way that broke the signature, while the URL engine worked.
+    - This test ensures the S3 table function correctly preserves the query string and can read the object.
+    """
+    import io
+    import pytest
+    from datetime import timedelta
+
+    minio_mod = pytest.importorskip("minio")
+    from minio import Minio
+
+    client = Minio("minio1:9001", access_key="minio", secret_key=minio_secret_key, secure=False)
+    bucket = "data"
+    object_name = "presigned_url_test/presigned_test.csv"
+
+    try:
+        if not client.bucket_exists(bucket):
+            client.make_bucket(bucket)
+    except Exception:
+        # Bucket may already exist; ignore race
+        pass
+
+    # Upload a tiny CSV (3 rows, 1 column)
+    payload = b"row1\nrow2\nrow3\n"
+    client.put_object(
+        bucket,
+        object_name,
+        io.BytesIO(payload),
+        length=len(payload),
+        content_type="text/csv",
+    )
+
+    # Generate a pre-signed GET URL with ?X-Amz-* query parameters
+    url = client.presigned_get_object(bucket, object_name, expires=timedelta(minutes=5))
+
+    cnt_url = node.query(f"SELECT count() FROM url('{url}', 'CSV', 'x String')")
+    assert cnt_url.strip() == "3", f"URL engine returned unexpected row count: {cnt_url!r}"
+
+    cnt_s3 = node.query(f"SELECT count() FROM s3('{url}', 'CSV', 'x String')")
+    assert cnt_s3.strip() == "3", f"S3 table function returned unexpected row count: {cnt_s3!r}"
+
+    assert cnt_s3 == cnt_url, "S3 and URL engines disagree on row count for the same pre-signed URL"

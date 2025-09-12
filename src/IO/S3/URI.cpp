@@ -54,33 +54,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    /// Extract object version ID from query string.
-    bool has_version_id = false;
-    for (const auto & [query_key, query_value] : uri.getQueryParameters())
-    {
-        if (query_key == "versionId")
-        {
-            version_id = query_value;
-            has_version_id = true;
-        }
-    }
-
-    /// Poco treats '?' as 'start of query'. When there is no versionId,
-    /// '?' is a wildcard, so percent-encode it *before* parsing/mapping
-    if (uri_str.find('?') != std::string::npos)
-    {
-        const auto qpos = uri_str.find('?');
-        const String after_q = uri_str.substr(qpos + 1);
-
-        /// if it looks like a real versionId query then dont encode
-        if (!has_version_id)
-        {
-            String encoded;
-            Poco::URI::encode(uri_str, "?", encoded);
-            uri_str.swap(encoded);
-        }
-    }
-
     uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
@@ -110,6 +83,31 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
 
     if (uri.getHost().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+
+    // Detect presence of *any* query parameters (k=v). If present, '?' is a query delimiter,
+    // not a wildcard, so we must not percent-encode it
+    const std::string raw_query = uri.getQuery();
+    const bool has_any_query_params = !raw_query.empty() && raw_query.find('=') != std::string::npos;
+
+    /// if there are ANY query params (e.g. pre-signed URLs with X-Amz-*), do NOT encode '?'
+    /// Otherwise, treat '?' as a wildcard in the path and encode it so Poco keeps it in the path
+    if (!has_any_query_params && uri_str.find('?') != std::string::npos)
+    {
+        // Encode based on the current (already-mapped) URI to avoid regressing to s3:// etc
+        std::string encoded_current;
+        Poco::URI::encode(uri.toString(), "?", encoded_current);
+        uri = Poco::URI(encoded_current);
+    }
+
+    /// Extract object version ID from query string (after final URI is settled).
+    for (const auto & [query_key, query_value] : uri.getQueryParameters())
+    {
+        if (query_key == "versionId")
+        {
+            version_id = query_value;
+            break;
+        }
+    }
 
     String name;
     String endpoint_authority_from_uri;
