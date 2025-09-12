@@ -7,7 +7,7 @@ namespace DB
 {
 
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
-static constexpr auto DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001; /// 0.1%
+static constexpr auto BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001; /// 0.1%
 
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 
@@ -30,10 +30,10 @@ public:
     /// Set the query string of the filter
     void setQueryString(std::string_view query_string_) { query_string = query_string_; }
 
-    /// Add token which are tokens generated from the query string
+    /// Add term which are tokens generated from the query string
     bool addToken(std::string_view token)
     {
-        if (token.length() > FST::MAX_TOKEN_LENGTH)
+        if (token.length() > FST::MAX_TOKEN_LENGTH) [[unlikely]]
             return false;
 
         tokens.push_back(String(token));
@@ -43,7 +43,7 @@ public:
 private:
     /// Query string of the filter
     String query_string;
-    /// Tokens from query string
+    /// Tokenized terms from query string
     std::vector<String> tokens;
 };
 

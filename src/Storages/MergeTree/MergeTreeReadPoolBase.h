@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
@@ -50,6 +52,7 @@ protected:
     const RangesInDataParts parts_ranges;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
+    const IndexReadTasks index_read_tasks;
     const StorageSnapshotPtr storage_snapshot;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
