@@ -128,8 +128,8 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
     table_name_4 = f"{TABLE_NAME}_{storage_type}_4"
     table_name_5 = f"{TABLE_NAME}_{storage_type}_5"
 
-    with pytest.raises(Exception):
-        instance.query(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('../', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
+    assert "Path suffixes" in instance.query_and_get_error(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('../', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
+    assert "Path suffixes" in instance.query_and_get_error(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('/iceberg_data/default', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
 
     instance.query(f"CREATE TABLE {table_name_2} ENGINE=Iceberg('{TABLE_NAME}', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
     assert instance.query(f"SELECT * FROM {table_name_2}") == instance.query(

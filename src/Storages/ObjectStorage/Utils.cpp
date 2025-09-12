@@ -223,11 +223,8 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         if (result.path_suffix.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty path is not allowed");
 
-        if (!pathStartsWith(prefix / fs::path(result.path_suffix), prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path suffixes starting with '.' or '..' are not allowed.");
-        size_t num_start_slashes = 0;
-        for (; num_start_slashes < result.path_suffix.size() && result.path_suffix.at(num_start_slashes) == '/'; ++num_start_slashes) {}
-        result.path_suffix = result.path_suffix.substr(num_start_slashes);
+        if (result.path_suffix.starts_with('/') || !pathStartsWith(prefix / fs::path(result.path_suffix), prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path suffixes starting with '.' or '..' and absoule pathes are not allowed. Please specify relative path");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path should be specified as first argument or via `path = <path/to/data>` key value argument");

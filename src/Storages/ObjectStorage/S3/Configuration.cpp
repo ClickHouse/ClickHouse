@@ -315,7 +315,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         String path = s3_object_storage.getURI().uri_str;
         fs::path root = path;
         fs::path suffix = parsing_result.path_suffix;
-        setURL(S3::URI(String(root / suffix)));
+        url = S3::URI(String(root / suffix));
     }
 
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
