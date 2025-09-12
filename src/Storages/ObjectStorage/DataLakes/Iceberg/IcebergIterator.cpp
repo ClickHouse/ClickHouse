@@ -272,10 +272,24 @@ IcebergIterator::IcebergIterator(
           {
               while (!blocking_queue.isFinished())
               {
-                  auto info = data_files_iterator.next();
-                  if (!info.has_value())
+                  std::optional<ManifestFileEntry> entry;
+                  try
+                  {
+                      entry = data_files_iterator.next();
+                  }
+                  catch (...)
+                  {
+                      std::lock_guard lock(exception_mutex);
+                      if (!exception)
+                      {
+                          exception = std::current_exception();
+                      }
+                      blocking_queue.finish();
                       break;
-                  while (!blocking_queue.push(std::move(info.value())))
+                  }
+                  if (!entry.has_value())
+                      break;
+                  while (!blocking_queue.push(std::move(entry.value())))
                   {
                       if (blocking_queue.isFinished())
                       {
@@ -286,8 +300,6 @@ IcebergIterator::IcebergIterator(
               blocking_queue.finish();
           }))
     , callback(std::move(callback_))
-    , format(configuration_.lock()->format)
-    , compression_method(configuration_.lock()->compression_method)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -324,6 +336,15 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
         object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
         return object_info;
+    }
+    {
+        std::lock_guard lock(exception_mutex);
+        if (exception)
+        {
+            auto exception_message = getExceptionMessage(exception, true, true);
+            auto exception_code = getExceptionErrorCode(exception);
+            throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
+        }
     }
     return nullptr;
 }
