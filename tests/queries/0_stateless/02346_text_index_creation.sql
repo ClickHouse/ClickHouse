@@ -168,6 +168,24 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 SELECT 'Test dictionary_block_size argument.';
 
+SELECT '-- dictionary_block_size must be an integer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 CREATE TABLE tab
 (
     str String,
@@ -177,6 +195,8 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
+SELECT '-- dictionary_block_size must be bigger than 0.';
+
 CREATE TABLE tab
 (
     str String,
@@ -185,21 +205,38 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test max_cardinality_for_embedded_postings argument.';
-
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 20)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = -1)
 )
 ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
+ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT 'Test max_cardinality_for_embedded_postings argument.';
+
+SELECT '-- max_cardinality_for_embedded_postings must be an integer.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 0)
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024)
 )
 ENGINE = MergeTree
 ORDER BY tuple();

@@ -76,7 +76,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     }
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
-    std::sort(all_search_tokens.begin(), all_search_tokens.end());
+    std::ranges::sort(all_search_tokens); /// technically not necessary but leads to nicer read patterns on sorted dictionary blocks
 }
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
