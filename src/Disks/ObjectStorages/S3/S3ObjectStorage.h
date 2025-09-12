@@ -132,9 +132,6 @@ public:
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
-
-    S3::URI getURI() const { return uri; }
-    S3Settings getS3Settings() const { return *s3_settings.get(); }
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
