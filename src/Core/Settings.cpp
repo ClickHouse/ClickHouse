@@ -1667,20 +1667,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
     DECLARE(UInt64, priority, 0, R"(
 Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.
 )", 0) \
-    DECLARE(Int64, os_thread_priority, 0, R"(
-Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
-
-:::note
-To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
-:::
-
-Possible values:
-
-- You can set values in the range `[-20, 19]`.
-
-Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
-)", 0) \
-    \
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
@@ -6497,6 +6483,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
+    DECLARE(String, datalake_disk_name, "", R"(
+Which disk to use for data lake table engines.
+)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -6889,6 +6878,20 @@ Enable jemalloc profiler.
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc profile samples in trace log.
     )", 0) \
+    DECLARE(Int32, os_threads_nice_value_query, 0, R"(
+Linux nice value for query processing threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
+Linux nice value for materialized view threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
+    )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
@@ -7127,6 +7130,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
+    MAKE_OBSOLETE(M, Int64, os_thread_priority, 0) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
