@@ -1373,7 +1373,7 @@ void DDLWorker::createReplicaDirs(const ZooKeeperWithFaultInjectionPtr & zookeep
 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getAndSetZooKeeper(0);
 
     if (reinitialized)
     {
