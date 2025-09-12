@@ -94,7 +94,7 @@ public:
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : ISource(std::make_shared<const Block>(getHeader(columns_)))
+        : ISource(getHeader(columns_))
         , block_size(block_size_)
         , columns(columns_)
         , storage(storage_)
@@ -212,10 +212,10 @@ Chunk LogSource::generate()
             res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
-    if (!res.empty())
+    if (res)
         rows_read += res.rows();
 
-    if (res.empty())
+    if (!res)
         is_finished = true;
 
     if (isFinished())
@@ -304,7 +304,7 @@ public:
 
     explicit LogSink(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
@@ -893,7 +893,7 @@ Pipe StorageLog::read(
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();

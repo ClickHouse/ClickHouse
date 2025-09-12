@@ -1,5 +1,4 @@
 SET enable_analyzer=1;
-SET allow_experimental_correlated_subqueries = 0;
 
 with
     arrayMap(x -> x + 1, [0]) as a

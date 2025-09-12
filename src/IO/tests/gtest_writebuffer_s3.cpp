@@ -244,7 +244,7 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
-            DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+            /* s3_retry_attempts = */ 0,
             /* s3_slow_all_threads_after_network_error = */ true,
             /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,

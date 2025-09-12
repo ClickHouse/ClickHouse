@@ -39,7 +39,7 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "CHECK TABLE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
         if (table)
         {
@@ -55,13 +55,13 @@ protected:
 
         if (partition)
         {
-            ostr << indent_str << " PARTITION ";
+            ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
             partition->format(ostr, settings, state, frame);
         }
 
         if (!part_name.empty())
         {
-            ostr << indent_str << " PART "
+            ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PART " << (settings.hilite ? hilite_none : "")
                 << quoteString(part_name);
         }
     }
@@ -87,7 +87,7 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "CHECK ALL TABLES";
+        ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
     }
 };
 

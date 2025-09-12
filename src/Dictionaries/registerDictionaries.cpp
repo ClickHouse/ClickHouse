@@ -1,5 +1,5 @@
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionaryFactory.h"
+#include "DictionarySourceFactory.h"
 
 namespace DB
 {
@@ -22,7 +22,6 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_fac
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
-void registerDictionarySourceYTsaurus(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
@@ -56,7 +55,6 @@ void registerDictionaries()
         registerDictionarySourceHTTP(source_factory);
         registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
-        registerDictionarySourceYTsaurus(source_factory);
     }
 
     {

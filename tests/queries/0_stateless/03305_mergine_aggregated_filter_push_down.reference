@@ -3,12 +3,12 @@
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
-Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
+Expression ((Project names + (Projection + )))
   MergingAggregated
     Union
-      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
+      Expression
         Aggregating
-          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
+          Expression
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -18,20 +18,19 @@ Expression ((Project names + (Projection + (WHERE + (Change column names to colu
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
 42	84
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
-Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
+Expression ((Project names + (Projection + )))
   MergingAggregated
     Union
-      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
+      Expression
         Aggregating
-          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
-            Expression (((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))[split])
+          Expression (( + (Before GROUP BY + Change column names to column identifiers)))
+            Expression
               ReadFromMergeTree (default.tab)
               Indexes:
                 PrimaryKey
@@ -41,7 +40,6 @@ Expression ((Project names + (Projection + (WHERE + (Change column names to colu
                   Parts: 1/1
                   Granules: 1/123
                   Search Algorithm: binary search
-                  Ranges: 1
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y), z + 1 as q from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where q = 42;
@@ -60,19 +58,18 @@ Expression ((Project names + Projection))
                   Condition: true
                   Parts: 1/1
                   Granules: 123/123
-                  Ranges: 1
         Expression (Change remote column names to local column names)
           ReadFromRemote (Read from remote replica)
 set group_by_use_nulls=1;
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
-Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
+Expression ((Project names + (Projection + )))
   MergingAggregated
     Union
-      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
+      Expression
         Aggregating
-          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
+          Expression
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -82,17 +79,16 @@ Expression ((Project names + (Projection + (WHERE + (Change column names to colu
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-                Ranges: 1
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
 42	84
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
-Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
+Expression ((Project names + (Projection + )))
   MergingAggregated
     Union
-      Filter (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
+      Filter (( + Change remote column names to local column names))
         Aggregating
           Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (default.tab)
@@ -101,6 +97,5 @@ Expression ((Project names + (Projection + (WHERE + (Change column names to colu
                 Condition: true
                 Parts: 1/1
                 Granules: 123/123
-                Ranges: 1
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)

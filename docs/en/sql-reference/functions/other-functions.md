@@ -1,6 +1,7 @@
 ---
 description: 'Documentation for Other Functions'
 sidebar_label: 'Other'
+sidebar_position: 140
 slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
 ---
@@ -9,7 +10,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Other functions
+# Other Functions
 
 ## hostName {#hostname}
 
@@ -297,7 +298,7 @@ byteSize(argument [, ...])
 
 **Examples**
 
-For [String](../data-types/string.md) arguments, the function returns the string length + 8 (length).
+For [String](../data-types/string.md) arguments, the function returns the string length + 9 (terminating zero + length).
 
 Query:
 
@@ -638,130 +639,6 @@ Result:
 
 ```response
 ['default']
-```
-## colorSRGBToOKLCH {#colorsrgbtoOKLCH}
-
-Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLCH** colour space.
-
-If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
-
-:::note
-**OKLCH** is a cylindrical version of the OKLab colour space.
-Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
-OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-:::
-
-**Syntax**
-
-```sql
-colorSRGBToOKLCH(tuple [, gamma])
-```
-
-**Arguments**
-
-- `tuple` - Three numeric values R, G, B in the range `[0...255]`. [Tuple](../data-types/tuple.md).
-- `gamma` - Optional numeric value. Exponent that is used to linearize sRGB by applying `(x / 255)^gamma` to each channel `x`. Defaults to `2.2`.
-
-**Returned values**
-
-- A `tuple` (L, C, H) of type `Tuple(Float64, Float64, Float64)`. 
-
-**Implementation details**
-
-The conversion consists of three stages: 
-
-1) sRGB to Linear sRGB
-2) Linear sRGB to OKLab
-3) OKLab to OKLCH.
-
-Gamma is used at the first stage, when computing linear sRGB.
-For that we normalize sRGB values and take them in power of gamma.
-Observe, that this lacks some precision due to floating-point rounding.
-This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
-
-Two stages involve matrix multiplication and trigonometry conversions respectively.
-For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
-
-In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://OKLCH.com/
-
-**Example**
-
-```sql
-SELECT colorSRGBToOKLCH((128, 64, 32), 2.2) AS lch;
-```
-
-Result:
-``` response
-┌─lch─────────────────────────────────────────────────────────┐
-│ (0.4436238384931984,0.10442699545678624,45.907345481930236) │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## colorOKLCHToSRGB {#colorOKLCHtosrgb}
-
-Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
-
-If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
-
-:::note
-**OKLCH** is a cylindrical version of the OKLab colour space.
-Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.
-OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-:::
-
-**Syntax**
-
-```sql
-colorOKLCHToSRGB(tuple [, gamma])
-```
-
-**Arguments**
-
-- `tuple` - Three numeric values **L**, **C**, **H**, presented as tuple where **L** is in range `[0...1]`, **C** `>= 0` and **H** is in range `[0...360]`. [Tuple](../data-types/tuple.md).
-- `gamma` - Optional numeric value. Exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.
-
-**Returned values**
-
-- A `tuple` (R, G, B) of type `Tuple(Float64, Float64, Float64)`.
-
-:::note
-This function returns floating-point numbers, rather than integer values, to avoid forcing rounding. Users can perform the rounding themselves.
-:::
-
-**Implementation details**
-
-The conversion is inverse of `colorSRGBToOKLCH`: 
-
-1) OKLCH to OKLab.
-2) OKLab to Linear sRGB
-3) Linear sRGB to sRGB
-
-Second argument gamma is used at the last stage.
-Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`.
-Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
-
-As in case of `colorSRGBToOKLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively.
-For more details on maths please see see an article on OKLab color space: https://bottosson.github.io/posts/oklab/
-
-In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://oklch.com/
-
-**Example**
-
-```sql
-SELECT colorOKLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
-WITH colorOKLCHToSRGB((0.7, 0.1, 54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
-
-```
-
-Result:
-``` response
-┌─rgb──────────────────────────────────────────────────────┐
-│ (127.03349738778945,66.06672044472008,37.11802592155851) │
-└──────────────────────────────────────────────────────────┘
-
-┌─RGB──────────┐
-│ (205,139,97) │
-└──────────────┘
 ```
 
 ## isConstant {#isconstant}
@@ -1400,7 +1277,7 @@ uptime()
 Query:
 
 ```sql
-SELECT uptime() AS Uptime;
+SELECT uptime() as Uptime;
 ```
 
 Result:
@@ -2138,7 +2015,7 @@ blockSerializedSize(value[, value[, ...]])
 Query:
 
 ```sql
-SELECT blockSerializedSize(maxState(1)) AS x
+SELECT blockSerializedSize(maxState(1)) as x
 ```
 
 Result:
@@ -2799,7 +2676,7 @@ Consider how you can use `runningAccumulate` to find the cumulative sum of numbe
 Query:
 
 ```sql
-SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number AS k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
 ```
 
 Result:
@@ -2928,7 +2805,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
@@ -2962,7 +2839,7 @@ SELECT * FROM db_test.id_val_nulls;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
@@ -3026,7 +2903,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:

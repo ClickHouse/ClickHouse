@@ -1,6 +1,3 @@
--- Tags: no-msan
--- msan: too slow
-
 DROP TABLE IF EXISTS tab_00625;
 
 set allow_deprecated_syntax_for_merge_tree=1;

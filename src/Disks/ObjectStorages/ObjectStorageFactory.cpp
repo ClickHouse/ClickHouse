@@ -1,6 +1,6 @@
 #include <utility>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include <Disks/DiskType.h>
+#include "Disks/DiskType.h"
 #include "config.h"
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
@@ -88,13 +88,8 @@ ObjectStoragePtr createObjectStorage(
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "plain_rewritable metadata storage support is not implemented for '{}' object storage",
-                DataSourceDescription{
-                    .type = DataSourceType::ObjectStorage,
-                    .object_storage_type = type,
-                    .metadata_type = MetadataStorageType::PlainRewritable,
-                    .description = "",
-                    .zookeeper_name = ""}
-                    .name());
+                DataSourceDescription{DataSourceType::ObjectStorage, type, MetadataStorageType::PlainRewritable, /*description*/ ""}
+                    .toString());
 
         auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<BaseObjectStorage, MetadataStorageType::PlainRewritable>();
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
@@ -177,7 +172,9 @@ static std::string getEndpoint(
 
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
-     auto creator = [](
+    static constexpr auto disk_type = "s3";
+
+    factory.registerObjectStorageType(disk_type, [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -187,8 +184,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
-        auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -196,9 +192,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
             ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         return object_storage;
-    };
-    factory.registerObjectStorageType("s3", creator);
-    factory.registerObjectStorageType("s3_with_keeper", creator);
+    });
 }
 
 void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
@@ -212,11 +206,18 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
+        /// send_metadata changes the filenames (includes revision), while
+        /// s3_plain do not care about this, and expect that the file name
+        /// will not be changed.
+        ///
+        /// And besides, send_metadata does not make sense for s3_plain.
+        if (config.getBool(config_prefix + ".send_metadata", false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
+
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
-        auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -239,11 +240,15 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* skip_access_check */) -> ObjectStoragePtr
         {
+            /// send_metadata changes the filenames (includes revision), while
+            /// s3_plain_rewritable does not support file renaming.
+            if (config.getBool(config_prefix + ".send_metadata", false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
+
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
-            auto settings = std::make_unique<S3Settings>();
-            settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+            auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -293,24 +298,18 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
-        /// AzureObjectStorage::getCommonKeyPrefix() was not implemented previousely by mistake and was always returning an empty string.
-        /// However, we use this string as ZooKeeper path for disk with metadata in Keeper.
-        /// So, all instances of azure-with-keeper were using the same (empty, or root) path.
-        /// We keep using empty prefix by default for compatibility, but allow to configure another one
-        const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
-
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(*azure_settings, /*for_disk=*/ true),
         };
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
             params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
-            params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getServiceEndpoint(), common_key_prefix);
+            params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
+            params.endpoint.getServiceEndpoint());
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);
