@@ -64,50 +64,45 @@ public:
         if (args[0]->getNodeType() != QueryTreeNodeType::COLUMN || !isStringOrFixedString(args[0]->getResultType()))
             return;
 
-        /// Extract prefix and check if it's suitable for rewrite
+        /// Extract affix (prefix or suffix) and check if suitable for rewrite
         auto * pattern_constant = args[1]->as<ConstantNode>();
         if (!pattern_constant || !isString(pattern_constant->getResultType()))
             return;
 
         auto pattern = pattern_constant->getValue().safeGet<String>();
-        auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
+        const bool is_suffix = pattern.starts_with("%");
 
-        if (!is_perfect || prefix.empty())
+        /// Do not rewrite for FixedString LIKE suffix, which requires triming trailing null chars
+        if (is_suffix && isFixedString(args[0]->getResultType()))
             return;
 
-        /// Create range bounds
+        /// Only rewrite for perfect prefix or suffix
+        /// Suffix is prefix in reverse
+        if (is_suffix)
+            std::reverse(pattern.begin(), pattern.end());
+
+        auto [affix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
+        if (!is_perfect || affix.empty())
+            return;
+
+        if (is_suffix)
+            std::reverse(affix.begin(), affix.end());
+
         /// Determine if we need case conversion
         const bool case_insensitive = (is_ilike || is_not_ilike);
-        String comparison_prefix = case_insensitive
-            ? boost::algorithm::to_lower_copy(prefix)
-            : prefix;
-        String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(comparison_prefix);
-        const bool no_right_bound = right_bound.empty();
+        String comparison_affix = case_insensitive
+            ? boost::algorithm::to_lower_copy(affix)
+            : affix;
 
-        auto prefix_constant = std::make_shared<ConstantNode>(std::move(comparison_prefix));
-        ConstantNodePtr right_bound_constant = nullptr;
-        if (!no_right_bound)
-            right_bound_constant = std::make_shared<ConstantNode>(std::move(right_bound));
+        auto affix_constant = std::make_shared<ConstantNode>(std::move(comparison_affix));
 
-        /// Create range expression
-        FunctionNodePtr new_node = nullptr;
         auto column_node = case_insensitive ? operation("lower", args[0]) : args[0]; /// The column being compared
         chassert(column_node != nullptr, "Column node should be non-null");
 
-        if (is_like || is_ilike)
-        {
-            auto left = operation("greaterOrEquals", column_node, prefix_constant);
-            new_node = no_right_bound ? left : operation(
-                "and", left, operation("less", column_node, right_bound_constant));
-        }
-        else if (is_not_like || is_not_ilike)
-        {
-            auto left = operation("less", column_node, prefix_constant);
-            new_node = no_right_bound ? left : operation(
-                "or", left, operation("greaterOrEquals", column_node, right_bound_constant));
-        }
-        else
-            chassert(false, "shouldn't be here");
+        /// Create startsWith/endsWith function
+        FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", column_node, affix_constant);
+        if (is_not_like || is_not_ilike)
+            new_node = operation("not", new_node);
 
         /// Replpace the original LIKE node
         chassert(new_node != nullptr, "should have been created");

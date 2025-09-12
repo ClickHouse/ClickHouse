@@ -26,26 +26,35 @@ TEST(LikeToRangeRewrite, rewrite)
             cond, expected);
     };
 
-    /// Perfect prefix LIKE
-    test_f("col LIKE 'Test%'", "(col >= 'Test') AND (col < 'Tesu')");
-    test_f("col LIKE 'a%'", "(col >= 'a') AND (col < 'b')");
+    /// Perfect affix LIKE
+    test_f("col LIKE 'Test%'", "startsWith(col, 'Test')");
+    test_f("col LIKE 'a%'", "startsWith(col, 'a')");
+    test_f("col LIKE '%Test'", "endsWith(col, 'Test')");
+    test_f("col LIKE '%a'", "endsWith(col, 'a')");
 
-    /// Perfect prefix ILIKE
-    test_f("col ILIKE 'Test%'", "(lower(col) >= 'test') AND (lower(col) < 'tesu')");
-    test_f("col ILIKE 'A%'", "(lower(col) >= 'a') AND (lower(col) < 'b')");
+    /// Perfect affix ILIKE
+    test_f("col ILIKE 'Test%'", "startsWith(lower(col), 'test')");
+    test_f("col ILIKE 'A%'", "startsWith(lower(col), 'a')");
+    test_f("col ILIKE '%Test'", "endsWith(lower(col), 'test')");
+    test_f("col ILIKE '%A'", "endsWith(lower(col), 'a')");
 
     /// Perfect prefix without right bound
-    test_f("col LIKE '\xFF%'", "col >= '\xFF'");
-    test_f("col ILIKE '\xFF%'", "lower(col) >= '\xFF'");
+    test_f("col LIKE '\xFF%'", "startsWith(col, '\xFF')");
+    test_f("col ILIKE '\xFF%'", "startsWith(lower(col), '\xFF')");
+    test_f("col LIKE '%\xFF'", "endsWith(col, '\xFF')");
+    test_f("col ILIKE '%\xFF'", "endsWith(lower(col), '\xFF')");
 
     /// Perfect prefix NOT (I)LIKE
-    test_f("col NOT LIKE 'Test%'", "(col < 'Test') OR (col >= 'Tesu')");
-    test_f("col NOT ILIKE 'Test%'", "(lower(col) < 'test') OR (lower(col) >= 'tesu')");
+    test_f("col NOT LIKE 'Test%'", "NOT startsWith(col, 'Test')");
+    test_f("col NOT ILIKE 'Test%'", "NOT startsWith(lower(col), 'test')");
+    test_f("col NOT LIKE '%Test'", "NOT endsWith(col, 'Test')");
+    test_f("col NOT ILIKE '%Test'", "NOT endsWith(lower(col), 'test')");
 
     /// Imperfect prefix (I)LIKE should not be rewritten
     test_f("col LIKE 'hello_world%'", "col LIKE 'hello_world%'");
+    test_f("col LIKE '%hello_world'", "col LIKE '%hello_world'");
     test_f("col LIKE '%test%'", "col LIKE '%test%'");
-    test_f("col LIKE '%test'", "col LIKE '%test'");
+    test_f("col LIKE '%test_'", "col LIKE '%test_'");
     test_f("col LIKE '_test%'", "col LIKE '_test%'");
     test_f("col LIKE '%'", "col LIKE '%'");
     test_f("col LIKE 'exactvalue'", "col LIKE 'exactvalue'");
@@ -54,5 +63,7 @@ TEST(LikeToRangeRewrite, rewrite)
 
     /// Imperfect prefix NOT (I)LIKE should not be rewritten
     test_f("col NOT LIKE 'hello_world%'", "col NOT LIKE 'hello_world%'");
+    test_f("col NOT LIKE '%hello_world'", "col NOT LIKE '%hello_world'");
     test_f("col NOT ILIKE 'hello_world%'", "col NOT ILIKE 'hello_world%'");
+    test_f("col NOT ILIKE '%hello_world'", "col NOT ILIKE '%hello_world'");
 }

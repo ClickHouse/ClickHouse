@@ -1,42 +1,78 @@
-Test LIKE with perfect prefix patterns - should be rewritten
+-- Test LIKE perfect prefix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE (__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')
+WHERE startsWith(__table1.col_string, \'app\')
 3
 3
+-- Test LIKE perfect suffix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE (__table1.col_string >= \'Test\') AND (__table1.col_string < \'Tesu\')
+WHERE endsWith(__table1.col_string, \'Test\')
 2
 2
-Test LIKE with FixedString column - should be rewritten
+-- Test LIKE perfect prefix on FixedString column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE (__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\')
+WHERE startsWith(__table1.col_fixedstring, \'fruit\')
 2
 2
-Test NOT LIKE with perfect prefix - should be rewritten
+-- Test LIKE perfect suffix on FixedString column - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE (__table1.col_string < \'app\') OR (__table1.col_string >= \'apq\')
+WHERE __table1.col_fixedstring LIKE \'%ther\\0\'
+2
+2
+-- Test NOT LIKE with perfect prefix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE NOT startsWith(__table1.col_string, \'app\')
 4
 4
-Test ILIKE with perfect prefix - should be rewritten
+Test NOT LIKE with perfect suffix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE (lower(__table1.col_string) >= \'app\') AND (lower(__table1.col_string) < \'apq\')
-3
-3
-Test multiple LIKE conditions - all eligible ones should be rewritten
+WHERE NOT endsWith(__table1.col_string, \'Test\')
+5
+5
+-- Test ILIKE with perfect prefix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE ((__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')) AND ((__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\'))
+WHERE startsWith(lower(__table1.col_string), \'app\')
+3
+3
+Test ILIKE with perfect suffix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(lower(__table1.col_string), \'test\')
+2
+2
+-- Test NOT ILIKE with perfect prefix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(lower(__table1.col_string), \'app\')
+4
+4
+Test NOT ILIKE with perfect suffix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(lower(__table1.col_string), \'test\')
+5
+5
+-- Test multiple LIKE conditions - all eligible ones should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_string, \'app\') AND startsWith(__table1.col_fixedstring, \'fruit\')
 1
 1
-Test without prefix patterns - should NOT be rewritten
+-- Test without perfect affix - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_string LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%app_ication\'
 1
 1
 SELECT count() AS `count()`
@@ -47,8 +83,8 @@ WHERE __table1.col_string LIKE \'%app%\'
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_string LIKE \'_est%\'
-2
-2
+1
+1
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_string LIKE \'Test\'
@@ -78,5 +114,10 @@ Test low cardinality attribute - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_lowcardinality_string LIKE \'a%\'
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_string LIKE \'%a\'
 3
 3
