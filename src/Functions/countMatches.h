@@ -75,7 +75,7 @@ public:
 
         if (const ColumnConst * col_haystack_const = checkAndGetColumnConstStringOrFixedString(col_haystack))
         {
-            std::string_view str = col_haystack_const->getDataColumn().getDataAt(0).toView();
+            std::string_view str = col_haystack_const->getDataColumn().getDataAt(0);
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
@@ -112,7 +112,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view str = col_haystack_fixedstring->getDataAt(i).toView();
+                std::string_view str = col_haystack_fixedstring->getDataAt(i);
                 vec_res[i] = countMatches(str, re, matches);
             }
 

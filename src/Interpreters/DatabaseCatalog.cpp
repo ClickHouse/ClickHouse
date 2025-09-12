@@ -756,7 +756,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
 {
     assert(!database_name.empty());
     DatabasePtr db;
@@ -769,7 +769,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(std::string{database_name});
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -784,7 +784,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     return db;
 }
 
-DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
@@ -811,7 +811,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
     return db_and_table.first;
 }
 
-bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
+bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};

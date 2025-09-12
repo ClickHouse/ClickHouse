@@ -486,8 +486,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
         DataTypeDateTime::FieldType, size_t,
         DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
-        StringRefHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMapWithStackMemory<std::string_view, size_t,
+        StringViewHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {
@@ -749,11 +749,11 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
     {
-        result_data.insertData(pair->getKey().data, pair->getKey().size);
+        result_data.insertData(pair->getKey().data(), pair->getKey().size());
     }
     else
     {
-        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
+        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
     if (use_null_map)
         null_map.push_back(0);

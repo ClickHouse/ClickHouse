@@ -149,7 +149,7 @@ public:
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
     std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwInapplicable(); }
-    StringRef getDataAt(size_t) const override { throwInapplicable(); }
+    std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
@@ -161,7 +161,7 @@ public:
     void insertData(const char *, size_t) override { throwInapplicable(); }
     void insertDefault() override { throwInapplicable(); }
     void popBack(size_t) override { throwInapplicable(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *) const override { throwInapplicable(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwInapplicable(); }
     const char * skipSerializedInArena(const char *) const override { throwInapplicable(); }

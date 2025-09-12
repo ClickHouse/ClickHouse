@@ -182,7 +182,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<StringRef>;
+    using Set = HashSet<std::string_view>;
 
     Set value;
     UInt64 version = 0;
@@ -235,8 +235,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data() != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -255,8 +255,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data() != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -342,9 +342,9 @@ public:
         for (auto & elem : set)
         {
             if constexpr (is_plain_column)
-                data_to.insertData(elem.getValue().data, elem.getValue().size);
+                data_to.insertData(elem.getValue().data(), elem.getValue().size());
             else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         }
     }
 };

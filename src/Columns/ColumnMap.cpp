@@ -116,7 +116,7 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-StringRef ColumnMap::getDataAt(size_t) const
+std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -150,7 +150,7 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
 }

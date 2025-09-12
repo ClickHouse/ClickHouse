@@ -139,7 +139,7 @@ std::pair<UInt64, UInt64> getPartNameRange(const ColumnLowCardinality & part_nam
 
     const auto [begin, end] = std::ranges::equal_range(
         indices,
-        StringRef{part_name},
+        std::string_view{part_name},
         std::less{},
         [&](const auto idx) { return part_name_column.getDataAt(idx); });
 
@@ -160,15 +160,15 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
         const auto & [name, result_idx] = name_with_idx;
 
         auto data = part_name_column.getDataAt(index);
-        int res = memcmp(data.data, name.data(), std::min(data.size, name.size()));
+        int res = memcmp(data.data(), name.data(), std::min(data.size(), name.size()));
 
         if (res != 0)
             return res;
 
-        if (data.size < name.size())
+        if (data.size() < name.size())
             return -1;
 
-        if (data.size > name.size())
+        if (data.size() > name.size())
             return 1;
 
         UInt64 patch_idx = part_offset_data[index];

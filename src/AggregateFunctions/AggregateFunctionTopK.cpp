@@ -194,7 +194,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving<StringRef, StringRefHash>;
+    using Set = SpaceSaving<std::string_view, StringViewHash>;
 
     Set value;
 };
@@ -269,7 +269,7 @@ public:
         auto & set = this->data(place).value;
         set.clear();
 
-        // Specialized here because there's no deserialiser for StringRef
+        // Specialized here because there's no deserialiser for std::string_view
         size_t size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > TOP_K_MAX_SIZE))
@@ -288,7 +288,7 @@ public:
             readVarUInt(count, buf);
             readVarUInt(error, buf);
             set.insert(ref, count, error);
-            arena->rollback(ref.size);
+            arena->rollback(ref.size());
         }
 
         set.readAlphaMap(buf);
@@ -310,12 +310,12 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+            auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
                 set.insert(str_serialized);
-            arena->rollback(str_serialized.size);
+            arena->rollback(str_serialized.size());
         }
     }
 

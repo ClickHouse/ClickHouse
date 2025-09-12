@@ -117,7 +117,7 @@ void executeSearchAny(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        const std::string_view value = col_input.getDataAt(i);
         col_result[i] = false;
 
         tokens = token_extractor->getTokensView(value.data(), value.size());
@@ -148,7 +148,7 @@ void executeSearchAll(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        const std::string_view value = col_input.getDataAt(i);
         col_result[i] = false;
 
         mask = 0;

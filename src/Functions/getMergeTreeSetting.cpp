@@ -70,7 +70,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
 
         return getContext()->getMergeTreeSettings().get(setting_name);
     }

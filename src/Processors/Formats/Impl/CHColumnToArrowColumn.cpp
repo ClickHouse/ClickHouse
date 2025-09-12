@@ -539,7 +539,7 @@ namespace DB
                 }
                 else
                 {
-                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    std::string_view string_ref = internal_column.getDataAt(string_i);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -549,7 +549,7 @@ namespace DB
         {
             for (size_t string_i = start; string_i < end; ++string_i)
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                std::string_view string_ref = internal_column.getDataAt(string_i);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }

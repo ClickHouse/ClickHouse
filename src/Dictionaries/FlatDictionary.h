@@ -139,7 +139,7 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<StringRef>,
+            ContainerType<std::string_view>,
             ContainerType<Array>>
             container;
     };

@@ -30,7 +30,7 @@ public:
         const Node * parent = nullptr;
 
         Arena strings_pool;
-        HashMapWithStackMemory<StringRef, std::shared_ptr<Node>, StringRefHash, 4> children;
+        HashMapWithStackMemory<std::string_view, std::shared_ptr<Node>, StringViewHash, 4> children;
 
         NodeData data;
         PathInData path;
@@ -41,7 +41,7 @@ public:
         void addChild(std::string_view key, std::shared_ptr<Node> next_node)
         {
             next_node->parent = this;
-            StringRef key_ref{strings_pool.insert(key.data(), key.length()), key.length()};
+            std::string_view key_ref{strings_pool.insert(key.data(), key.length()), key.length()};
             children[key_ref] = std::move(next_node);
         }
     };
@@ -81,7 +81,7 @@ public:
         {
             assert(current_node->kind != Node::SCALAR);
 
-            auto it = current_node->children.find(StringRef{parts[i].key});
+            auto it = current_node->children.find(std::string_view{parts[i].key});
             if (it != current_node->children.end())
             {
                 current_node = it->getMapped().get();
@@ -99,7 +99,7 @@ public:
             }
         }
 
-        auto it = current_node->children.find(StringRef{parts.back().key});
+        auto it = current_node->children.find(std::string_view{parts.back().key});
         if (it != current_node->children.end())
             return false;
 
@@ -190,7 +190,7 @@ private:
 
         for (const auto & part : parts)
         {
-            auto it = current_node->children.find(StringRef{part.key});
+            auto it = current_node->children.find(std::string_view{part.key});
             if (it == current_node->children.end())
                 return find_exact ? nullptr : current_node;
 

@@ -134,7 +134,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
     if (pos == end)
         return {subcolumn_name, {}};
 
-    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 }
@@ -187,7 +187,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data, value.size);
+                    ReadBufferFromMemory buf(value.data(), value.size());
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {

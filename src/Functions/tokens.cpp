@@ -51,7 +51,7 @@ public:
 
             if (arguments.size() == 3)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
 
                 if (tokenizer == NgramTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
@@ -77,7 +77,7 @@ public:
         std::unique_ptr<ITokenExtractor> token_extractor;
 
         const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0).toView();
+                                                        : arguments[arg_tokenizer].column->getDataAt(0);
 
         if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
         {
@@ -156,7 +156,7 @@ private:
         size_t tokens_count = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i).toView();
+            std::string_view input = column_input.getDataAt(i);
             tokens = token_extractor->getTokensView(input.data(), input.size());
             tokens_count += tokens.size();
 

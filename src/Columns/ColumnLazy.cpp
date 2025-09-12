@@ -82,7 +82,7 @@ bool ColumnLazy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for {}", getName());
 }
 
-StringRef ColumnLazy::getDataAt(size_t) const
+std::string_view ColumnLazy::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }

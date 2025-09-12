@@ -2,7 +2,6 @@
 
 #include <typeinfo>
 #include <Poco/Exception.h>
-#include <base/StringRef.h>
 #include <base/types.h>
 
 
