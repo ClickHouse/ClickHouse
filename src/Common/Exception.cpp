@@ -58,8 +58,18 @@ void abortOnFailedAssertion(const String & description)
 }
 
 bool terminate_on_any_exception = false;
+std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
 std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+
+constexpr bool debug_or_sanitizer_build =
+#ifdef DEBUG_OR_SANITIZER_BUILD
+true
+#else
+false
+#endif
+;
+
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
@@ -68,12 +78,11 @@ static size_t handle_error_code(
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
+            abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
     }
-#endif
 
     if (Exception::callback)
     {
@@ -558,20 +567,21 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        try
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            if (!with_stacktrace)
-                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
+            try
+            {
+                throw;
+            }
+            catch (const std::logic_error &)
+            {
+                if (!with_stacktrace)
+                    stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
 
-            abortOnFailedAssertion(stream.str());
+                abortOnFailedAssertion(stream.str());
+            }
+            catch (...) {} // NOLINT(bugprone-empty-catch)
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-#endif
     }
     catch (...)
     {

@@ -8,7 +8,7 @@ set -e
 
 QUERY="CREATE USER user IDENTIFIED WITH PLAINTEXT_PASSWORD BY 'hello'"
 
-$CLICKHOUSE_FORMAT --hilite <<< "$QUERY"
+$CLICKHOUSE_FORMAT --hilite --show_secrets <<< "$QUERY"
 
-$CLICKHOUSE_FORMAT --highlight <<< "$QUERY"
+$CLICKHOUSE_FORMAT --highlight --show_secrets <<< "$QUERY"
 

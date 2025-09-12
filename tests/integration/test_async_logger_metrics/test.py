@@ -2,6 +2,7 @@ import json
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from concurrent.futures import ThreadPoolExecutor
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -17,6 +18,8 @@ node = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            list(executor.submit(node.query, "select 1") for _ in range(100))
         yield cluster
     finally:
         cluster.shutdown()

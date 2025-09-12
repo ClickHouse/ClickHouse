@@ -399,10 +399,9 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         /// Based on logger_useful.h this won't be called if the message is not needed
         /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
-        const auto & msg_source = msg.getSource();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-            logs_queue && logs_queue->isNeeded(msg_priority, msg_source))
+            logs_queue && logs_queue->isNeeded(msg_priority, notification->msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);

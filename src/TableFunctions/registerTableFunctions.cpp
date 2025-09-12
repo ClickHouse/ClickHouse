@@ -70,6 +70,11 @@ void registerTableFunctions()
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
     registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

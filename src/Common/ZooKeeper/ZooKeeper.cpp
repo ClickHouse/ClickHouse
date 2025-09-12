@@ -221,10 +221,10 @@ ZooKeeper::~ZooKeeper()
         (*reconnect_task)->deactivate();
 }
 
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeper::ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
 {
-    init(args_, /*existing_impl*/ {});
+    init(std::move(args_), /*existing_impl*/ {});
 }
 
 
@@ -235,13 +235,6 @@ ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperL
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Argument sizes mismatch: availability_zones count {} and hosts count {}",
                             availability_zones.size(), args_.hosts.size());
     init(args_, std::move(existing_impl));
-}
-
-
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
-{
-    init(ZooKeeperArgs(config, config_name), /*existing_impl*/ {});
 }
 
 ShuffleHosts ZooKeeper::shuffleHosts() const
@@ -1176,9 +1169,9 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     return future_result.get();
 }
 
-ZooKeeperPtr ZooKeeper::create(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(config, config_name, zk_log_));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(std::move(args_), std::move(zk_log_)));
     res->initSession();
     return res;
 }
@@ -1224,7 +1217,7 @@ bool ZooKeeper::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
     return impl->isFeatureEnabled(feature_flag);
 }
 
-Int64 ZooKeeper::getClientID()
+Int64 ZooKeeper::getClientID() const
 {
     return impl->getSessionID();
 }
@@ -1727,13 +1720,20 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     return request;
 }
 
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
+template <class Client>
+Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit)
 {
+    if (!client.isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to use RemoveRecursive request while Keeper doesn't support it or feature flag is disabled");
+
     auto request = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
     request->path = path;
     request->remove_nodes_limit = remove_nodes_limit;
     return request;
 }
+
+template Coordination::RequestPtr makeRemoveRecursiveRequest<zkutil::ZooKeeper>(const zkutil::ZooKeeper & client, const std::string & path, uint32_t remove_nodes_limit);
+template Coordination::RequestPtr makeRemoveRecursiveRequest<DB::ZooKeeperWithFaultInjection>(const DB::ZooKeeperWithFaultInjection & client, const std::string & path, uint32_t remove_nodes_limit);
 
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {

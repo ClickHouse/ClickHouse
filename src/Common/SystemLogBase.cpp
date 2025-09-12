@@ -14,12 +14,14 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
 #endif
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>

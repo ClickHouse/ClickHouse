@@ -83,7 +83,34 @@ public:
 
 REGISTER_FUNCTION(GetMacro)
 {
-    factory.registerFunction<FunctionGetMacro>();
+    FunctionDocumentation::Description description = R"(
+Returns the value of a macro from the server configuration file.
+Macros are defined in the [`<macros>`](/operations/server-configuration-parameters/settings#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
+If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
+)";
+    FunctionDocumentation::Syntax syntax = "getMacro(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "The name of the macro to retrieve.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the specified macro.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            R"(
+SELECT getMacro('test');
+            )",
+            R"(
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetMacro>(documentation);
 }
 
 }

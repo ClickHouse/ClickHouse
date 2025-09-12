@@ -34,7 +34,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace MergeTreeSetting
@@ -85,6 +86,7 @@ private:
 
     MergeTreeReadTask::Readers readers;
     MergeTreeReadersChain readers_chain;
+    PatchJoinCachePtr patch_join_cache;
 
     /// Should read using direct IO
     bool read_with_direct_io;
@@ -131,12 +133,18 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
-    size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
-    RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
+    if (!read_task_info->patch_parts.empty())
+    {
+        size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
+        RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
 
-    ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
-    ranges_in_patch_parts.optimize();
-    patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
+        ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
+        ranges_in_patch_parts.optimize();
+
+        patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
+        patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
+        patch_join_cache->init(ranges_in_patch_parts);
+    }
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
@@ -172,6 +180,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
+        .patch_join_cache = patch_join_cache.get(),
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
     };

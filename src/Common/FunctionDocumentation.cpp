@@ -1,6 +1,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Common/Exception.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
@@ -18,7 +19,7 @@ VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
+String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const FunctionDocumentation::Syntax & syntax)
 {
     String result;
     bool is_first = true;
@@ -115,7 +116,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type: {}", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }
     result += "\n";
     return result;
@@ -132,7 +133,7 @@ String FunctionDocumentation::argumentsAsString() const
         /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
         /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
         if (!types.empty())
-            result += mapTypesToTypesWithLinks(types);
+            result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
 }
@@ -147,7 +148,17 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::syntaxAsString() const
 {
-    return boost::algorithm::trim_copy(syntax);
+    String trimmed_syntax = boost::algorithm::trim_copy(syntax);
+
+    /// It is tempting to write 'SELECT someFunction(arg1, arg2)' in the syntax field but we
+    /// really want 'someFunction(arg1, arg2)'.
+    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT "))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not start with 'SELECT': {}", syntax);
+
+    if (syntax.ends_with(";"))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not end with ';': {}", syntax);
+
+    return trimmed_syntax;
 }
 
 String FunctionDocumentation::returnedValueAsString() const
@@ -157,7 +168,7 @@ String FunctionDocumentation::returnedValueAsString() const
     /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
     /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
     if (!returned_value.types.empty())
-        result += mapTypesToTypesWithLinks(returned_value.types);
+        result += mapTypesToTypesWithLinks(returned_value.types, syntax);
     return boost::algorithm::trim_copy(result);
 }
 
@@ -198,13 +209,13 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Comparison, "Comparison"},
         {Category::Conditional, "Conditional"},
         {Category::DateAndTime, "Dates and Times"},
+        {Category::Decimal, "Decimal"},
         {Category::Dictionary, "Dictionary"},
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
-        {Category::File, "File"},
         {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},

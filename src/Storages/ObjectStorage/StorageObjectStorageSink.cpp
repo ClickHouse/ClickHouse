@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -111,6 +112,7 @@ void StorageObjectStorageSink::finalizeBuffers()
     }
 
     write_buf->finalize();
+    result_file_size = write_buf->count();
 }
 
 void StorageObjectStorageSink::releaseBuffers()
@@ -125,6 +127,13 @@ void StorageObjectStorageSink::cancelBuffers()
         writer->cancel();
     if (write_buf)
         write_buf->cancel();
+}
+
+size_t StorageObjectStorageSink::getFileSize() const
+{
+    if (!result_file_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sink must be finalized before requesting result file size");
+    return *result_file_size;
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(

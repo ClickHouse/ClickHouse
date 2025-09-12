@@ -4,8 +4,11 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBuffer.h>
+#include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Core/Range.h>
+#include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
 
@@ -15,6 +18,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Common/randomSeed.h>
 
 #include <Poco/JSON/Array.h>
@@ -26,6 +30,8 @@
 #include <Generic.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+#include <new>
+
 
 namespace DB
 {
@@ -49,6 +55,7 @@ public:
     FileNamesGenerator() = default;
     explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
 
+    FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
     Result generateDataFileName();
@@ -56,10 +63,12 @@ public:
     Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
     Result generateMetadataName();
     Result generateVersionHint();
+    Result generatePositionDeleteFile();
 
     String convertMetadataPathToStoragePath(const String & metadata_path) const;
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
+    void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
 private:
     Poco::UUIDGenerator uuid_generator;
@@ -76,16 +85,93 @@ private:
     Int32 initial_version = 0;
 };
 
+class DataFileStatistics
+{
+public:
+    explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
+
+    void update(const Chunk & chunk);
+
+    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+
+    const std::vector<Int64> & getFieldIds() const { return field_ids; }
+private:
+    static Range uniteRanges(const Range & left, const Range & right);
+
+    std::vector<Int64> field_ids;
+    std::vector<Int64> column_sizes;
+    std::vector<Int64> null_counts;
+    std::vector<Range> ranges;
+};
+
+class MultipleFileWriter
+{
+public:
+    explicit MultipleFileWriter(
+        UInt64 max_data_file_num_rows_,
+        UInt64 max_data_file_num_bytes_,
+        Poco::JSON::Array::Ptr schema,
+        FileNamesGenerator & filename_generator_,
+        ObjectStoragePtr object_storage_,
+        ContextPtr context_,
+        const std::optional<FormatSettings> & format_settings_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        SharedHeader sample_block_);
+
+    void consume(const Chunk & chunk);
+    void finalize();
+    void release();
+    void cancel();
+    void clearAllDataFiles() const;
+
+    UInt64 getResultBytes() const;
+
+    const std::vector<String> & getDataFiles() const
+    {
+        return data_file_names;
+    }
+
+    const DataFileStatistics & getResultStatistics() const
+    {
+        return stats;
+    }
+
+private:
+    UInt64 max_data_file_num_rows;
+    UInt64 max_data_file_num_bytes;
+    DataFileStatistics stats;
+    std::optional<size_t> current_file_num_rows = std::nullopt;
+    std::optional<size_t> current_file_num_bytes = std::nullopt;
+    std::vector<String> data_file_names;
+    std::unique_ptr<WriteBufferFromFileBase> buffer;
+    OutputFormatPtr output_format;
+    FileNamesGenerator & filename_generator;
+    ObjectStoragePtr object_storage;
+    ContextPtr context;
+    std::optional<FormatSettings> format_settings;
+    StorageObjectStorageConfigurationPtr configuration;
+    SharedHeader sample_block;
+    UInt64 total_bytes = 0;
+};
+
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const String & data_file_name,
+    const std::vector<DataTypePtr> & partition_types,
+    const std::vector<String> & data_file_names,
+    const std::optional<DataFileStatistics> & data_file_statistics,
+    SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type);
 
 void generateManifestList(
     const FileNamesGenerator & filename_generator,
@@ -95,7 +181,9 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type,
+    bool use_previous_snapshots = true);
 
 class MetadataGenerator
 {
@@ -104,7 +192,7 @@ public:
 
     struct NextMetadataResult
     {
-        Poco::JSON::Object::Ptr snapshot;
+        Poco::JSON::Object::Ptr snapshot = nullptr;
         String metadata_path;
         String storage_metadata_path;
     };
@@ -116,7 +204,15 @@ public:
         Int32 added_files,
         Int32 added_records,
         Int32 added_files_size,
-        Int32 num_partitions);
+        Int32 num_partitions,
+        Int32 added_delete_files,
+        Int32 num_deleted_rows,
+        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+        std::optional<Int64> user_defined_timestamp = std::nullopt);
+
+    void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
+    void generateDropColumnMetadata(const String & column_name);
+    void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
@@ -146,12 +242,15 @@ public:
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
+    const std::vector<DataTypePtr> & getResultTypes() const { return result_data_types; }
+
 private:
     SharedHeader sample_block;
 
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
     std::vector<String> columns_to_apply;
+    std::vector<DataTypePtr> result_data_types;
 };
 
 class IcebergStorageSink : public SinkToStorage
@@ -176,11 +275,10 @@ public:
 
 private:
     SharedHeader sample_block;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
+    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
+    Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
