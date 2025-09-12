@@ -1097,7 +1097,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             if (current_table_expression.get() == left_table_expr.get())
                                 return true;
 
-                            return (current_table_expression->getNodeType() != QueryTreeNodeType::QUERY);
+                            // current table expression is right one
+                            // check if left one is not subquery
+                            return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::UNION;
                         }
 
 
