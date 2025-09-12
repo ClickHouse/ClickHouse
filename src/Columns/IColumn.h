@@ -272,6 +272,16 @@ public:
       */
     virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
 
+    /// The same as serializeValueIntoArena but is used to store values inside aggregation states.
+    /// It's used in generic implementation of some aggregate functions.
+    /// serializeValueIntoArena is used for in-memory value representations, so it's implementation can be changed.
+    /// This method must respect compatibility with older versions because aggregation states may be serialized/deserialized
+    /// by servers with different versions.
+    virtual StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+    {
+        return serializeValueIntoArena(n, arena, begin);
+    }
+
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
@@ -300,6 +310,13 @@ public:
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
     [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+
+    /// Deserializes a value that was serialized using IColumn::serializeAggregationStateValueIntoArena method.
+    /// Returns pointer to the position after the read data.
+    [[nodiscard]] virtual const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+    {
+        return deserializeAndInsertFromArena(pos);
+    }
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns a pointer to the position after the deserialized data.
