@@ -2590,8 +2590,8 @@ def test_writes_with_compression_metadata(started_cluster, format_version, stora
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "iceberg_metadata_compression_method": "gzip"})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t1\n'
 
-def test_writes_create_table_bugs(started_cluster_iceberg_no_spark):
-    instance = started_cluster_iceberg_no_spark.instances["node1"]
+def test_writes_create_table_bugs(started_cluster):
+    instance = started_cluster.instances["node1"]
     TABLE_NAME = "test_writes_create_table_bugs_" + get_uuid_str()
     TABLE_NAME_1 = "test_writes_create_table_bugs_" + get_uuid_str()
     instance.query(
