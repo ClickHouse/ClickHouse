@@ -19,9 +19,14 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -31,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
 }
@@ -50,6 +56,11 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+}
+
+namespace Setting
+{
+    extern const SettingsString datalake_disk_name;
 }
 
 template <typename T>
@@ -161,6 +172,13 @@ public:
 
     }
 
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    {
+        if (ready_object_storage)
+            return ready_object_storage;
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -223,12 +241,12 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
+#if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
     /// (Because it does not make sense to support it in a nice way
     /// because the code will be removed ASAP anyway)
-#if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         assertInitialized();
@@ -329,10 +347,21 @@ public:
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
+    {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
+
+        BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        auto disk = context->getDisk(disk_name);
+        ready_object_storage = disk->getObjectStorage();
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
+    ObjectStoragePtr ready_object_storage;
 
     void assertInitialized() const
     {

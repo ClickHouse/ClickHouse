@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"datalake_disk_name", "", "", "New setting."},
+            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
@@ -49,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
+            {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"jemalloc_enable_profiler", false, false, "New setting"},
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
@@ -56,6 +59,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
+            {"os_threads_nice_value_query", 0, 0, "New setting."},
+            {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
+            {"os_thread_priority", 0, 0, "Obsolete setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -869,6 +875,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
+            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
+            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},

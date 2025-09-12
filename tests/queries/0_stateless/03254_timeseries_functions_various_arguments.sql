@@ -14,11 +14,19 @@ SELECT timeSeriesInstantRateToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_
 SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 
 -- Filter out invalid rows where timestamp and values arrays lengths do not match
+SELECT 'staleness = 10:';
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM (SELECT * FROM ts_data WHERE length(timestamps) = length(values));
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
+SELECT 'staleness = 11:';
+SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 11)(timestamps, values) FROM (SELECT * FROM ts_data WHERE length(timestamps) = length(values));
+SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 11)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 11)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 11)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
+
+SELECT 'staleness = 60:';
 SELECT timeSeriesRateToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(true)) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
@@ -34,6 +42,12 @@ SELECT timeSeriesInstantRateToGridIf(10, 120, 10, 60)(timestamps, values, if(len
 SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
+
+SELECT 'staleness = 61:';
+SELECT timeSeriesRateToGrid(10, 120, 10, 61)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesDeltaToGrid(10, 120, 10, 61)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesInstantRateToGrid(10, 120, 10, 61)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 61)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
