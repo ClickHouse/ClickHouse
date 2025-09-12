@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -71,6 +70,8 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
+    virtual bool canSkipMark(size_t) const { return false; }
+
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
@@ -123,6 +124,8 @@ protected:
     AlterConversionsPtr alter_conversions;
 
 private:
+    friend class MergeTreeReaderIndex;
+
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;

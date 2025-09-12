@@ -1,5 +1,7 @@
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+
+#include <Common/Exception.h>
+#include <IO/WriteBuffer.h>
 
 #include <thrift/protocol/TCompactProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
@@ -37,15 +39,23 @@ size_t serializeThriftStruct(const T & obj, WriteBuffer & out)
 template <typename T>
 size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
 {
-    limit = std::min(limit, size_t(UINT32_MAX));
-    /// TMemoryBuffer promises to not write to the buffer (in OBSERVE mode),
-    /// so it should be ok to const_cast.
-    uint8_t * cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
-    auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit));
-    apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
-    uint32_t bytes_read = out.read(&proto);
-    chassert(size_t(bytes_read + trans->available_read()) == limit);
-    return size_t(bytes_read);
+    try
+    {
+        limit = std::min(limit, size_t(UINT32_MAX));
+        /// TMemoryBuffer promises to not write to the buffer (in OBSERVE mode),
+        /// so it should be ok to const_cast.
+        uint8_t * cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
+        auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit));
+        apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
+        uint32_t bytes_read = out.read(&proto);
+        chassert(size_t(bytes_read + trans->available_read()) == limit);
+        return size_t(bytes_read);
+    }
+    catch (const std::exception & e)
+    {
+        /// Convert to DB::Exception for convenience, so that callers can catch+addMessage+rethrow.
+        throw Exception(Exception::CreateFromSTDTag(), e);
+    }
 }
 
 template <typename T>

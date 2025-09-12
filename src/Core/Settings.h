@@ -62,6 +62,7 @@ class WriteBuffer;
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \
+    M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \

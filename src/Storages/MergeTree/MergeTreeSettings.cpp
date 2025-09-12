@@ -896,7 +896,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Replication settings. */ \
-    DECLARE(UInt64, replicated_deduplication_window, 1000, R"(
+    DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
     The number of most recently inserted blocks for which ClickHouse Keeper stores
     hash sums to check for duplicates.
 
@@ -1269,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
@@ -1284,6 +1284,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
+    )", 0) \
+    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
+    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
+    Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
@@ -1372,6 +1376,9 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_remote_filesystem_prefetch, true, R"(
     If true prefetching of data from remote filesystem is used for the next
     column during merge
+    )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
+    If true, lightweight delete is optimized on vertical merge.
     )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
@@ -1778,6 +1785,12 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    Enabled cleanup of Keeper entries of empty partition.
+    )", 0) \
+    DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
+    How many seconds partition will be stored in keeper if it has no parts.
+    )", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

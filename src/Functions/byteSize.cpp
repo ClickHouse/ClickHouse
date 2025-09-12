@@ -82,7 +82,45 @@ public:
 
 REGISTER_FUNCTION(ByteSize)
 {
-    factory.registerFunction<FunctionByteSize>();
+    FunctionDocumentation::Description description = R"(
+Returns an estimation of the uncompressed byte size of its arguments in memory.
+For `String` arguments, the function returns the string length + 8 (length).
+If the function has multiple arguments, the function accumulates their byte sizes.
+    )";
+    FunctionDocumentation::Syntax syntax = "byteSize(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arg1[, arg2, ...]", "Values of any data type for which to estimate the uncompressed byte size.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimation of the byte size of the arguments in memory.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT byteSize('string')
+        )",
+        R"(
+┌─byteSize('string')─┐
+│                 15 │
+└────────────────────┘
+        )"
+    },
+    {
+        "Multiple arguments",
+        R"(
+SELECT byteSize(NULL, 1, 0.3, '')
+        )",
+        R"(
+┌─byteSize(NULL, 1, 0.3, '')─┐
+│                         19 │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionByteSize>(documentation);
 }
 
 }

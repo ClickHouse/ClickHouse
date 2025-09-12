@@ -97,6 +97,9 @@ namespace ProfileEvents
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
+    extern const Event FailedInternalQuery;
+    extern const Event FailedInternalInsertQuery;
+    extern const Event FailedInternalSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -176,7 +179,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto evaluation_time;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ServerSetting
@@ -724,6 +727,15 @@ void logQueryException(
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
 
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (query_ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
+
     QueryStatusInfoPtr info;
     if (process_list_elem)
     {
@@ -1082,7 +1094,7 @@ static BlockIO executeQueryImpl(
         {
             if (!settings[Setting::allow_experimental_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
-            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::evaluation_time]});
+            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else

@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/randomSeed.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -59,11 +60,15 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
 }
 
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
+    extern const char object_storage_queue_fail_commit_once[];
     extern const char object_storage_queue_fail_startup[];
 }
 
@@ -99,6 +104,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
+    extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
 }
 
 namespace ErrorCodes
@@ -110,6 +117,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace
@@ -133,7 +141,8 @@ namespace
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value, queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
         }
     }
 
@@ -249,6 +258,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
+        (*queue_settings_)[ObjectStorageQueueSetting::use_persistent_processing_nodes],
+        (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
@@ -823,18 +834,53 @@ void StorageObjectStorageQueue::commit(
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
     }
 
-    auto zk_client = getZooKeeper();
-    Coordination::Responses responses;
+    auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        log,
+        ZooKeeperRetriesInfo{
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context->getProcessListElement()}};
 
-    fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to commit processed files");
+    std::optional<Coordination::Error> code;
+    Coordination::Responses responses;
+    size_t try_num = 0;
+    zk_retry.retryLoop([&]
+    {
+        ++try_num;
+        auto zk_client = getZooKeeper();
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+        });
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+        });
+
+        code = zk_client->tryMulti(requests, responses);
+    },
+    [&]
+    {
+        LOG_TRACE(
+            log, "Failed to commit processed files at try {}/{}",
+            try_num, toString(settings[Setting::keeper_max_retries].value));
     });
 
-    auto code = zk_client->tryMulti(requests, responses);
-    if (code != Coordination::Error::ZOK)
+    if (!code.has_value())
+    {
+        throw Exception(
+            ErrorCodes::KEEPER_EXCEPTION,
+            "Failed to commit files with {} retries, last error message: {}",
+            settings[Setting::keeper_max_retries].value, zk_retry.getLastKeeperErrorMessage());
+    }
+
+    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+    if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        throw zkutil::KeeperMultiException(code, requests, responses);
+        throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
@@ -880,6 +926,10 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "list_objects_batch_size",
     "min_insert_block_size_rows_for_materialized_views",
     "min_insert_block_size_bytes_for_materialized_views",
+    "cleanup_interval_max_ms",
+    "cleanup_interval_min_ms",
+    "use_persistent_processing_nodes",
+    "persistent_processing_node_ttl_seconds",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -897,6 +947,10 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "list_objects_batch_size",
     "min_insert_block_size_rows_for_materialized_views",
     "min_insert_block_size_bytes_for_materialized_views",
+    "cleanup_interval_max_ms",
+    "cleanup_interval_min_ms",
+    "use_persistent_processing_nodes",
+    "persistent_processing_node_ttl_seconds",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1142,30 +1196,29 @@ void StorageObjectStorageQueue::alter(
 
             if (change.name == "polling_min_timeout_ms")
                 polling_min_timeout_ms = change.value.safeGet<UInt64>();
-            if (change.name == "polling_max_timeout_ms")
+            else if (change.name == "polling_max_timeout_ms")
                 polling_max_timeout_ms = change.value.safeGet<UInt64>();
-            if (change.name == "polling_backoff_ms")
+            else if (change.name == "polling_backoff_ms")
                 polling_backoff_ms = change.value.safeGet<UInt64>();
-
-            if (change.name == "max_processed_files_before_commit")
+            else if (change.name == "max_processed_files_before_commit")
                 commit_settings.max_processed_files_before_commit = change.value.safeGet<UInt64>();
-            if (change.name == "max_processed_rows_before_commit")
+            else if (change.name == "max_processed_rows_before_commit")
                 commit_settings.max_processed_rows_before_commit = change.value.safeGet<UInt64>();
-            if (change.name == "max_processed_bytes_before_commit")
+            else if (change.name == "max_processed_bytes_before_commit")
                 commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
-            if (change.name == "max_processing_time_sec_before_commit")
+            else if (change.name == "max_processing_time_sec_before_commit")
                 commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
-
-            if (change.name == "min_insert_block_size_rows_for_materialized_views")
+            else if (change.name == "min_insert_block_size_rows_for_materialized_views")
                 min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
-            if (change.name == "min_insert_block_size_bytes_for_materialized_views")
+            else if (change.name == "min_insert_block_size_bytes_for_materialized_views")
                 min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
-
-            if (change.name == "list_objects_batch_size")
+            else if (change.name == "list_objects_batch_size")
                 list_objects_batch_size = change.value.safeGet<UInt64>();
-            if (change.name == "enable_hash_ring_filtering")
+            else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
         }
+
+        files_metadata->updateSettings(changed_settings);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
         setInMemoryMetadata(new_metadata);
@@ -1235,9 +1288,13 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = 0;
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = 0;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+
+    auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
+    settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {
         std::lock_guard lock(mutex);
