@@ -4289,6 +4289,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
     if (!shared->zookeeper)
     {
         Stopwatch creation_watch;
+        const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
