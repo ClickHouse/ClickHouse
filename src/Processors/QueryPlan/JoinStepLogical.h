@@ -155,7 +155,12 @@ public:
     std::string_view getDummyStats() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
+    bool canRemoveUnusedColumns() const override;
+    UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
 protected:
+    SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
@@ -163,10 +168,10 @@ protected:
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
 
-    /// This is the nodes which used to split expressions calculated before and after join
+    /// These are the nodes which are used to split expressions calculated before and after join
     /// Nodes from this list are used as inputs for ActionsDAG executed after join operation
     /// It can be input or node with toNullable function applied to input
-    std::vector<const ActionsDAG::Node *> actions_after_join = {};
+    ActionsDAG::NodeRawConstPtrs actions_after_join = {};
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
