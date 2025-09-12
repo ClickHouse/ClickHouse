@@ -1916,7 +1916,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
     if (!request)
     {
         chassert(response->xid == PING_XID || response->xid == WATCH_XID);
-        if (const auto watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
+        if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
         {
             aggregated_zookeeper_log_->observe(session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
         }
@@ -1925,8 +1925,8 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
 
     aggregated_zookeeper_log_->observe(session_id, response->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
-    const auto multi_request = dynamic_cast<const ZooKeeperMultiRequest *>(request);
-    const auto multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
+    const auto * multi_request = dynamic_cast<const ZooKeeperMultiRequest *>(request);
+    const auto * multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
 
     chassert(!multi_request == !multi_response);
 
