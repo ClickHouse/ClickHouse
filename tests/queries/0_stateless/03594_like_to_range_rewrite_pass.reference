@@ -1,0 +1,82 @@
+Test LIKE with perfect prefix patterns - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string >= \'Test\') AND (__table1.col_string < \'Tesu\')
+2
+2
+Test LIKE with FixedString column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\')
+2
+2
+Test NOT LIKE with perfect prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string < \'app\') OR (__table1.col_string >= \'apq\')
+4
+4
+Test ILIKE with perfect prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (lower(__table1.col_string) >= \'app\') AND (lower(__table1.col_string) < \'apq\')
+3
+3
+Test multiple LIKE conditions - all eligible ones should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE ((__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')) AND ((__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\'))
+1
+1
+Test without prefix patterns - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%app%\'
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'_est%\'
+2
+2
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'Test\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%\'
+7
+7
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+6
+6
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+6
+6
+Test low cardinality attribute - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_string LIKE \'a%\'
+3
+3

@@ -5086,6 +5086,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_like_to_range, true, R"(
+Rewrite LIKE expressions with perfect prefix (e.g. `col LIKE 'ClickHouse%'`) to range expressions (e.g. `col >= 'ClickHouse' AND col < 'ClickHousf'`).
+)", 0) \
 DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
 Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
     )", 0) \
