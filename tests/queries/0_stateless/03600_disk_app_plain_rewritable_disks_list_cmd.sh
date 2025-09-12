@@ -6,22 +6,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 config="$CUR_DIR/03600_disk_app_plain_rewritable_disks_list_cmd.xml"
+prefix="$CLICKHOUSE_TEST_UNIQUE_NAME"
 
 function test_copy()
 {
     disk_name="$1"
 
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "current_disk_with_path"
-    # Disk before adding directories
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "ls --recursive"
-    # Disk after adding directories
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir hello;"
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello; mkdir world;"
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello/world; mkdir Clickhouse"
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "ls --recursive"
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello; current_disk_with_path; cd world; current_disk_with_path; ls; ls --recursive"
-
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "rm -r /hello/"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir ${prefix}_hello; cd ${prefix}_hello; mkdir ${prefix}_world; cd ${prefix}_world; mkdir ${prefix}_Clickhouse;"
+    echo "Test with implicit path"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; ls; ls --recursive; ls ${prefix}_world; ls --recursive ${prefix}_world"
+    echo "Test with explicit path"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "ls ${prefix}_hello/${prefix}_world; ls --recursive ${prefix}_hello/${prefix}_world"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "rm -r /${prefix}_hello/"
 }
 
 test_copy "test_plain_rewritable_metadata_object_storage"
