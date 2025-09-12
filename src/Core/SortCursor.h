@@ -28,6 +28,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include "config.h"
 
@@ -111,6 +114,23 @@ struct SortCursorImpl
         if (permutation)
             return (*permutation)[pos];
         return pos;
+    }
+
+    String dumpSortedKeys() const
+    {
+        if (!isValid())
+            return "()";
+        size_t row = getRow();
+        WriteBufferFromOwnString s;
+        s << "(";
+        for (size_t i = 0; i < sort_columns.size(); ++i)
+        {
+            if (i != 0)
+                s << ", ";
+            s << (*sort_columns[i])[row].dump();
+        }
+        s << ")";
+        return s.str();
     }
 
     /// We need a possibility to change pos (see MergeJoin).
@@ -650,8 +670,6 @@ public:
         if (queue.empty())
             return;
 
-        size = queue.size();
-        loser_tree.assign(size, -1);
         buildLoserTree();
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
@@ -699,7 +717,7 @@ public:
     void ALWAYS_INLINE next() requires (strategy == SortingQueueStrategy::Default)
     {
         assert(isValid());
-
+        read_rows += 1;
         size_t winner = loser_tree[0];
         if (!queue[winner]->isLast())
         {
@@ -726,7 +744,6 @@ public:
             queue[winner]->next(batch_size_value);
             return;
         }
-
         if (!queue[winner]->isLast(batch_size_value))
         {
             queue[winner]->next(batch_size_value);
@@ -740,10 +757,9 @@ public:
             switch_winners_count += 1;
             removeTop();
         }
-        if (isValid() && current_batch_size == 0 && strategy == SortingQueueStrategy::Batch)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "current_batch_size is 0 after next");
-        }
+#ifndef NDEBUG
+        LOG_TRACE(getLogger("LoserTreeSortingQueue"), "{} After update tree:\n{}", fmt::ptr(this), dumpLoserTree());
+#endif
     }
 
     void replaceTop(Cursor new_top)
@@ -760,6 +776,7 @@ public:
         if (size == 1)
         {
             loser_tree[0] = -1;
+            queue.clear();
             if constexpr (strategy == SortingQueueStrategy::Batch)
                 current_batch_size = 0;
             return;
@@ -771,10 +788,6 @@ public:
         if (winner >= 0 && static_cast<size_t>(winner) != size - 1)
             queue[winner] = std::move(queue.back());
         queue.pop_back();
-        size -= 1;
-        loser_tree.resize(size);
-        for (auto & idx : loser_tree)
-            idx = -1;
         buildLoserTree();
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
@@ -784,7 +797,6 @@ public:
     void push(SortCursorImpl & cursor)
     {
         queue.emplace_back(&cursor);
-        loser_tree.resize(this->size(), -1);
         buildLoserTree();
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
@@ -804,6 +816,7 @@ private:
 
     void buildLoserTree()
     {
+        resetLoserTree(this->size());
         Int32 k = this->size();
         for (int i = k - 1; i >= 0; --i)
             adjustLoserTree(i);
@@ -897,6 +910,29 @@ private:
                 end_offset = mid_offset;
         }
         current_batch_size = start_offset;
+    }
+
+    String dumpLoserTree() const
+    {
+        WriteBufferFromOwnString s;
+        for (size_t i = 0; i < queue.size(); ++i)
+        {
+            if (i != 0)
+                s << "\n";
+            s << "leaf[" << i << "] : " << queue[i]->dumpSortedKeys();
+        }
+        for (size_t i = 0; i < loser_tree.size(); ++i)
+        {
+            s << "\nnode[" << i << "] : " << loser_tree[i];
+        }
+        return s.str();
+    }
+
+    void resetLoserTree(size_t new_size)
+    {
+        loser_tree.resize(new_size);
+        for (auto & idx : loser_tree)
+            idx = -1;
     }
 };
 
