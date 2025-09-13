@@ -589,6 +589,12 @@ void WorkloadResourceManager::loadWorkloadsFromConfig(const Poco::Util::Abstract
             
             ASTPtr ast = parseQuery(parser, begin, end, "", 0, 0, 0);
             
+            if (!ast)
+            {
+                LOG_WARNING(log, "Failed to parse workload '{}' from configuration: empty AST", workload_name);
+                continue;
+            }
+            
             if (auto * create_workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
             {
                 // Verify that the workload name in SQL matches the config key
@@ -612,6 +618,10 @@ void WorkloadResourceManager::loadWorkloadsFromConfig(const Poco::Util::Abstract
                 );
                 
                 LOG_INFO(log, "Loaded workload '{}' from configuration", workload_name);
+            }
+            else
+            {
+                LOG_WARNING(log, "Invalid workload SQL in config for '{}': not a CREATE WORKLOAD statement", workload_name);
             }
         }
         catch (const Exception & e)
@@ -648,6 +658,12 @@ void WorkloadResourceManager::loadResourcesFromConfig(const Poco::Util::Abstract
             
             ASTPtr ast = parseQuery(parser, begin, end, "", 0, 0, 0);
             
+            if (!ast)
+            {
+                LOG_WARNING(log, "Failed to parse resource '{}' from configuration: empty AST", resource_name);
+                continue;
+            }
+            
             if (auto * create_resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
             {
                 // Verify that the resource name in SQL matches the config key
@@ -671,6 +687,10 @@ void WorkloadResourceManager::loadResourcesFromConfig(const Poco::Util::Abstract
                 );
                 
                 LOG_INFO(log, "Loaded resource '{}' from configuration", resource_name);
+            }
+            else
+            {
+                LOG_WARNING(log, "Invalid resource SQL in config for '{}': not a CREATE RESOURCE statement", resource_name);
             }
         }
         catch (const Exception & e)

@@ -89,3 +89,56 @@ TEST(SchedulerWorkloadResourceManager, ConfigurationErrorHandling)
     EXPECT_NO_THROW(c_good = t.manager->acquire("good_workload"));
     EXPECT_TRUE(c_good != nullptr);
 }
+
+TEST(SchedulerWorkloadResourceManager, ConfigurationEdgeCases)
+{
+    // Test configuration with various edge cases
+    std::stringstream config_stream;
+    config_stream << R"(
+        <clickhouse>
+            <workloads>
+                <name_mismatch>
+                    <sql>WORKLOAD different_name SETTINGS max_io_requests = 30</sql>
+                </name_mismatch>
+                <missing_sql>
+                    <description>This workload has no sql section</description>
+                </missing_sql>
+                <wrong_statement>
+                    <sql>CREATE TABLE test (id Int32) ENGINE = Memory</sql>
+                </wrong_statement>
+            </workloads>
+            <resources>
+                <resource_name_mismatch>
+                    <sql>RESOURCE different_resource_name (WRITE DISK default)</sql>
+                </resource_name_mismatch>
+            </resources>
+        </clickhouse>
+    )";
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_stream);
+
+    ResourceTest t;
+    
+    // Should not throw even with edge cases - just log warnings/errors
+    EXPECT_NO_THROW(t.manager->updateConfiguration(*config));
+}
+
+TEST(SchedulerWorkloadResourceManager, ConfigurationEmpty)
+{
+    // Test configuration without workloads/resources sections
+    std::stringstream config_stream;
+    config_stream << R"(
+        <clickhouse>
+            <other_settings>
+                <some_value>test</some_value>
+            </other_settings>
+        </clickhouse>
+    )";
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_stream);
+
+    ResourceTest t;
+    
+    // Should not throw with empty configuration
+    EXPECT_NO_THROW(t.manager->updateConfiguration(*config));
+}
