@@ -13,7 +13,7 @@ CREATE TABLE check_system_tables
     ORDER BY name1
     PARTITION BY name2
     SAMPLE BY name1
-    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1;
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialize_string_with_size_stream = 0;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()

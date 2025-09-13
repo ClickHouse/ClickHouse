@@ -29,7 +29,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
     src_column->insertMany("foobar", rows);
 
     {
-        auto serialization = std::make_shared<SerializationString>();
+        auto serialization = std::make_shared<SerializationString>(false);
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
         settings.position_independent_encoding = false;

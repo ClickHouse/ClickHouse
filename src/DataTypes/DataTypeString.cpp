@@ -1,16 +1,15 @@
 #include <Columns/ColumnString.h>
+
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
-
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationString.h>
-
-#include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -36,7 +35,14 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeString::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationString>();
+    return std::make_shared<SerializationString>(false);
+}
+
+SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
+{
+    if (info.getSettings().string_with_size_stream)
+        return IDataType::getSerialization(info.getKind(), std::make_shared<SerializationString>(true));
+    return IDataType::getSerialization(info);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -44,17 +50,22 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "String data type family mustn't have more than one argument - size in characters");
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "String data type family mustn't have more than one argument - size in characters");
+        }
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+        {
+            throw Exception(
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+        }
     }
 
     return std::make_shared<DataTypeString>();
 }
-
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
@@ -94,6 +105,6 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("GEOMETRY", "String", DataTypeFactory::Case::Insensitive); //mysql
-
 }
+
 }

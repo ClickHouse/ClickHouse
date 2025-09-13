@@ -33,6 +33,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
 }
 
 namespace ErrorCodes
@@ -196,14 +197,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     };
 
     auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
-    SerializationInfoByName serialization_infos;
-
+    auto serialize_string_with_size_stream = (*data_part->storage.getSettings())[MergeTreeSetting::serialize_string_with_size_stream];
+    SerializationInfo::Settings settings{ratio_of_defaults, false, serialize_string_with_size_stream};
+    SerializationInfoByName serialization_infos(settings);
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            SerializationInfo::Settings settings{ratio_of_defaults, false};
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
         }
         catch (...)
@@ -211,12 +212,16 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
         }
     }
+    else
+    {
+        serialization_infos.fallbackSettingsToVersion(DEFAULT_SERIALIZATION_INFO_VERSION);
+    }
 
     auto get_serialization = [&serialization_infos](const auto & column)
     {
         auto it = serialization_infos.find(column.name);
         return it == serialization_infos.end()
-            ? column.type->getDefaultSerialization()
+            ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
     };
 

@@ -18,10 +18,18 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; d
 
     $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "DROP TABLE IF EXISTS test_02313" > /dev/null
 
+    # s3_cache_multi is incompatible with types that use multiple streams.
+    # Therefore, we must disable `serialize_string_with_size_stream`.
+    if [ "$STORAGE_POLICY" = "s3_cache_multi" ]; then
+        STRING_SERIALIZE_SETTING=", serialize_string_with_size_stream = 0"
+    else
+        STRING_SERIALIZE_SETTING=""
+    fi
+
     $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "CREATE TABLE test_02313 (id Int32, val String)
     ENGINE = MergeTree()
     ORDER BY tuple()
-    SETTINGS storage_policy = '$STORAGE_POLICY'" > /dev/null
+    SETTINGS storage_policy = '$STORAGE_POLICY' $STRING_SERIALIZE_SETTING" > /dev/null
 
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02313
     SELECT * FROM

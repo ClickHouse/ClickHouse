@@ -24,6 +24,7 @@ SETTINGS
     primary_key_lazy_load = 0,
     merge_selecting_sleep_ms = 200,
     max_merge_selecting_sleep_ms = 200,
+    serialize_string_with_size_stream = 0,
     storage_policy = 's3_cache';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;
