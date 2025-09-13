@@ -1,8 +1,11 @@
 #pragma once
 
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
+#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -14,6 +17,8 @@ class WorkloadEntityDiskStorage : public WorkloadEntityStorageBase
 public:
     WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
     void loadEntities() override;
+
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
     OperationResult storeEntityImpl(
@@ -39,6 +44,10 @@ private:
 
     String dir_path;
     std::atomic<bool> entities_loaded = false;
+    
+    /// Config-based entities storage
+    std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
+    scope_guard config_subscription;
 };
 
 }

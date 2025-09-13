@@ -1,4 +1,5 @@
 #include <Common/Scheduler/Workload/WorkloadEntityKeeperStorage.h>
+#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -14,6 +15,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -35,6 +38,7 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch{std::make_shared<WatchEvent>()}
+    , config_storage(std::make_shared<WorkloadEntityConfigStorage>(global_context_))
 {
     log = getLogger("WorkloadEntityKeeperStorage");
     if (zookeeper_path.empty())
@@ -92,6 +96,10 @@ void WorkloadEntityKeeperStorage::loadEntities()
 {
     /// loadEntities() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
+    
+    // Load config entities first
+    config_storage->loadEntities();
+    
     try
     {
         auto lock = getLock();
@@ -102,6 +110,23 @@ void WorkloadEntityKeeperStorage::loadEntities()
         tryLogCurrentException(log, "Failed to load workload entities");
     }
     startWatchingThread();
+}
+
+void WorkloadEntityKeeperStorage::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    // Update config storage
+    config_storage->updateConfiguration(config);
+    
+    // Refresh entities from ZooKeeper to merge with updated config entities
+    try
+    {
+        auto lock = getLock();
+        refreshEntities(getZooKeeper());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to refresh workload entities after config update");
+    }
 }
 
 
@@ -157,10 +182,18 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     WorkloadEntityType entity_type,
     const String & entity_name,
     ASTPtr create_entity_query,
-    bool /*throw_if_exists*/,
+    bool throw_if_exists,
     bool /*replace_if_exists*/,
     const Settings &)
 {
+    // Check if this entity exists in config storage (config entities cannot be stored to ZooKeeper)
+    if (config_storage->has(entity_name))
+    {
+        if (throw_if_exists)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot store workload entity '{}' to ZooKeeper: it is defined in configuration", entity_name);
+        return OperationResult::Failed;
+    }
+
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
     String new_data = serializeAllEntities(Event{entity_type, entity_name, create_entity_query});
@@ -186,8 +219,16 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     const ContextPtr & /*current_context*/,
     WorkloadEntityType entity_type,
     const String & entity_name,
-    bool /*throw_if_not_exists*/)
+    bool throw_if_not_exists)
 {
+    // Check if this entity exists in config storage (config entities cannot be removed)
+    if (config_storage->has(entity_name))
+    {
+        if (throw_if_not_exists)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove workload entity '{}': it is defined in configuration", entity_name);
+        return OperationResult::Failed;
+    }
+
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
     String new_data = serializeAllEntities(Event{entity_type, entity_name, {}});
@@ -238,6 +279,24 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
         return;
 
     LOG_DEBUG(log, "Refreshing workload entities from keeper");
+    
+    std::vector<std::pair<String, ASTPtr>> new_entities;
+
+    // First, add entities from config (they take precedence)
+    auto config_entities = config_storage->getAllEntities();
+    for (const auto & [name, ast] : config_entities)
+    {
+        new_entities.emplace_back(name, ast);
+    }
+
+    // Create a set of config entity names for quick lookup
+    std::unordered_set<String> config_entity_names;
+    for (const auto & [name, ast] : config_entities)
+    {
+        config_entity_names.insert(name);
+    }
+
+    // Then parse and add ZooKeeper entities, but skip those that exist in config
     ASTs queries;
     ParserCreateWorkloadEntity parser;
     const char * begin = data.data(); /// begin of current query
@@ -251,16 +310,20 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     }
 
     /// Read and parse all SQL entities from data we just read from ZooKeeper
-    std::vector<std::pair<String, ASTPtr>> new_entities;
     for (const auto & query : queries)
     {
         LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
+        String entity_name;
         if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
-            new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
+            entity_name = create_workload_query->getWorkloadName();
         else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
-            new_entities.emplace_back(create_resource_query->getResourceName(), query);
+            entity_name = create_resource_query->getResourceName();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
+
+        // Skip if this entity exists in config (config takes precedence)
+        if (!config_entity_names.contains(entity_name))
+            new_entities.emplace_back(entity_name, query);
     }
 
     setAllEntities(new_entities);

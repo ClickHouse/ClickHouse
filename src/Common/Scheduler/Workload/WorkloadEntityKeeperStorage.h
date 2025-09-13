@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
+#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeperCachingGetter.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <condition_variable>
 #include <mutex>
 
@@ -24,6 +26,8 @@ public:
 
     void loadEntities() override;
     void stopWatching() override;
+
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
     OperationResult storeEntityImpl(
@@ -66,6 +70,9 @@ private:
         UInt64 triggered = 0;
     };
     std::shared_ptr<WatchEvent> watch;
+    
+    /// Config-based entities storage
+    std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
 };
 
 }
