@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -157,6 +158,7 @@ public:
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
+        std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback_ = std::nullopt,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
         std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
@@ -167,6 +169,7 @@ public:
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,
+        MergeTreeDistributedAnalysisCallback distributed_analysis_results_callback_,
         MergeTreeAllRangesCallback all_ranges_callback_,
         MergeTreeReadTaskCallback read_task_callback_,
         size_t replica_number);
@@ -224,7 +227,8 @@ public:
         LoggerPtr log,
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
-        bool is_parallel_reading_from_replicas_);
+        bool is_parallel_reading_from_replicas_,
+        const std::optional<MergeTreeDistributedAnalysisCallback> & distributed_analysis_results_callback_ = std::nullopt);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -392,6 +396,7 @@ private:
     VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;
+    std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
