@@ -1589,6 +1589,17 @@
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
     -->
 
+    <!-- Settings to tune cpu and memory overload warnings for system.warnings.
+    <resource_overload_warnings>
+        <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
+        <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
+        <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
+        <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+        <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
+        <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
+    </resource_overload_warnings>
+    -->
+
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
