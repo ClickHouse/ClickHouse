@@ -47,7 +47,7 @@ using ColumnCandidatesStack = std::vector<ColumnCandidatePtr>;
 using PushdownRequestPtr = std::shared_ptr<PushdownRequest>;
 using PushdownRequestsStack = std::vector<PushdownRequestPtr>;
 
-/// Represents a column that can potentially have functions pushed down through it
+/// Represent a pushable function or a column that can be pushed down
 struct ColumnCandidate
 {
     /// This represents how far back functions using this node can be pushed down
@@ -67,7 +67,9 @@ struct ColumnCandidate
 struct PushdownRequest
 {
     QueryPlan::Node * requesting_node;
+    // the input column candidate is the column that would be replaced by function results
     std::shared_ptr<ColumnCandidate> input_column_candidate;
+    // the function column candidates are the functions which use the input column to produce the final output columns
     std::vector<std::shared_ptr<ColumnCandidate>> function_column_candidates;
 
     [[maybe_unused]] PushdownRequest(
@@ -91,8 +93,10 @@ struct PushdownRequest
         ActionsDAG & actions_dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
 
         for (const ActionsDAG::Node * child : actions_dag.getOutputs())
+        {
             if (child->result_name == name)
                 return dealiasNode(child);
+        }
 
         return nullptr;
     }
@@ -152,14 +156,14 @@ findOutputColumn(const ColumnCandidatesStack & column_candidates, QueryPlan::Nod
 }
 
 
-bool isColumnCandidateOnlyInputOfFunction(
+bool isColumnOnlyInputOfFunctionWithNoArrayJoin(
     const ActionsDAG::Node * function_node, const ColumnCandidatePtr & candidate, QueryPlan::Node * current_node)
 {
     if (!function_node || !candidate || !current_node)
         return false;
 
-    bool the_candidate_is_the_only_input_of_the_function = true;
-    bool the_candidate_is_there = false;
+    bool function_has_no_other_colmns_or_array_joins = true;
+    bool candidate_is_used_by_function = false;
 
     auto input_it = candidate->node_to_input_name.find(current_node);
     if (input_it == candidate->node_to_input_name.end())
@@ -170,15 +174,16 @@ bool isColumnCandidateOnlyInputOfFunction(
     for (const ActionsDAG::Node * input_node : function_node->children)
     {
         const ActionsDAG::Node * dealiased_input_node = dealiasNode(input_node);
-
-        if (dealiased_input_node->type == ActionsDAG::ActionType::INPUT && dealiased_input_node->result_name != candidate_input_name)
-            the_candidate_is_the_only_input_of_the_function = false;
+        // we can't push down in such cases
+        if ((dealiased_input_node->type == ActionsDAG::ActionType::INPUT && dealiased_input_node->result_name != candidate_input_name)
+            || (dealiased_input_node->type == ActionsDAG::ActionType::ARRAY_JOIN))
+            function_has_no_other_colmns_or_array_joins = false;
 
         if (dealiased_input_node->result_name == candidate_input_name)
-            the_candidate_is_there = true;
+            candidate_is_used_by_function = true;
     }
 
-    return the_candidate_is_the_only_input_of_the_function && the_candidate_is_there;
+    return function_has_no_other_colmns_or_array_joins && candidate_is_used_by_function;
 }
 
 void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack & candidates)
@@ -220,6 +225,7 @@ void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack
 
         if (dealiased_output_node->type == ActionsDAG::ActionType::INPUT)
         {
+            // these should already be added through the input header loop
             ColumnCandidatePtr column_candidate = findInputColumn(candidates, node, dealiased_output_node->result_name);
 
             chassert(column_candidate);
@@ -228,15 +234,12 @@ void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack
         }
         else
         {
-            // make sure we update max pushdown point for filter columns
-            if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION
-                && !(filter_step && filter_step->removesFilterColumn() && output_node->result_name == filter_step->getFilterColumnName()))
+            if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION)
                 candidates.emplace_back(std::make_shared<ColumnCandidate>(node, "", output_node->result_name));
             if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION
-                && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter()
-                && !(filter_step && filter_step->removesFilterColumn() && output_node->result_name == filter_step->getFilterColumnName()))
+                && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter())
                 continue;
-
+            // update pushdown point for every column used by non suitable functions
             std::vector<const ActionsDAG::Node *> stack;
             stack.push_back(dealiased_output_node);
             while (!stack.empty())
@@ -252,8 +255,10 @@ void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack
                     column_candidate->max_pushdown_point = node;
                 }
                 for (const ActionsDAG::Node * child : curr->children)
+                {
                     if (child->type != ActionsDAG::ActionType::FUNCTION || !child->function_base->isSuitableForPushDownBeforeFilter())
                         stack.push_back(child);
+                }
             }
         }
     }
@@ -365,7 +370,7 @@ PushdownRequestsStack createPushdownRequestsForColumnCandidates(QueryPlan::Node 
                 break;
             }
 
-            if (!isColumnCandidateOnlyInputOfFunction(dealiased_output_node, column_candidate_for_input, node))
+            if (!isColumnOnlyInputOfFunctionWithNoArrayJoin(dealiased_output_node, column_candidate_for_input, node))
             {
                 unsuitable_columns.insert(column_candidate_for_input);
                 break;
@@ -497,18 +502,9 @@ void updateInputsAfterChildAppliesRequest(
             // either replace input column or function instance with the new function node (TODO: check order)
             if (column_output_names.find(node_to_update) != column_output_names.end())
             {
-                auto it = new_dag.getOutputs().begin();
-                for (; it != new_dag.getOutputs().end(); ++it)
-                {
-                    const ActionsDAG::Node * output = *it;
-
-                    if ((output->result_name == column_output_names[node_to_update]))
-                    {
-                        new_dag.removeUnusedResult(output->result_name);
-                        column_output_names.erase(node_to_update);
-                        break;
-                    }
-                }
+                if (new_dag.tryFindInOutputs(column_output_names[node_to_update]))
+                    new_dag.removeUnusedResult(column_output_names[node_to_update]);
+                column_output_names.erase(node_to_update);
             }
 
             new_dag.addOrReplaceInOutputs(*new_function_node);
@@ -575,6 +571,8 @@ bool tryExecuteRequestOnStepOrParents(
     FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (!expression_step && !filter_step)
     {
+        // if the node is not an expression or filter step, try to execute the request on its parents
+        // this can happen if the node is a limit step, for example
         for (QueryPlan::Node * parent_node : direct_parent_nodes_map[node])
         {
             if (!parent_node)
@@ -583,9 +581,9 @@ bool tryExecuteRequestOnStepOrParents(
         }
         return false;
     }
+
     ActionsDAG expression = expression_step ? expression_step->getExpression().clone() : filter_step->getExpression().clone();
     const ActionsDAG::Node * node_to_remove = nullptr;
-    // const ActionsDAG::Node * one_of_the_functions = nullptr;
     for (ColumnCandidatePtr & function_candidate : request->function_column_candidates)
     {
         const ActionsDAG::Node * function_node = request->getFunctionNode(function_candidate);
@@ -640,21 +638,13 @@ bool tryExecuteRequestOnStepOrParents(
         expression.addOrReplaceInOutputs(*new_function_node);
 
         function_output_names[node] = new_function_node->result_name;
-        // one_of_the_functions = new_function_node;
     }
-    // ensure order is preserved by replacing existing nodes
+
     if (node_to_remove)
     {
-        for (auto & output : expression.getOutputs())
-        {
-            if (output == node_to_remove)
-            {
-                //output = one_of_the_functions;
-                expression.removeUnusedResult(output->result_name);
-                request->input_column_candidate->node_to_output_name.erase(node);
-                break;
-            }
-        }
+        if (expression.tryFindInOutputs(node_to_remove->result_name))
+            expression.removeUnusedResult(node_to_remove->result_name);
+        request->input_column_candidate->node_to_output_name.erase(node);
     }
 
     if (expression_step)
