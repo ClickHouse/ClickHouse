@@ -269,6 +269,10 @@ private:
     void topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads);
     std::vector<Workload *> topologicallySortedWorkloads();
 
+    // Configuration loading methods
+    void loadWorkloadsFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void loadResourcesFromConfig(const Poco::Util::AbstractConfiguration & config);
+
     IWorkloadEntityStorage & storage;
     scope_guard subscription;
 

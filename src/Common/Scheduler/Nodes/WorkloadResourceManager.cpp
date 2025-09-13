@@ -12,6 +12,13 @@
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ParserCreateWorkloadQuery.h>
+#include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/parseQuery.h>
+
+#include <Core/Settings.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <memory>
 #include <mutex>
@@ -293,9 +300,11 @@ WorkloadResourceManager::~WorkloadResourceManager()
     workloads.clear();
 }
 
-void WorkloadResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration &)
+void WorkloadResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    // No-op
+    // Load workloads and resources from configuration
+    loadWorkloadsFromConfig(config);
+    loadResourcesFromConfig(config);
 }
 
 void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
@@ -551,6 +560,124 @@ std::vector<WorkloadResourceManager::Workload *> WorkloadResourceManager::topolo
     for (auto & [workload_name, workload] : workloads)
         topologicallySortedWorkloadsImpl(workload.get(), visited, sorted_workloads);
     return sorted_workloads;
+}
+
+void WorkloadResourceManager::loadWorkloadsFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has("workloads"))
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys workload_names;
+    config.keys("workloads", workload_names);
+
+    for (const auto & workload_name : workload_names)
+    {
+        String config_key = "workloads." + workload_name;
+        if (!config.has(config_key + ".sql"))
+        {
+            LOG_WARNING(log, "Workload '{}' is missing 'sql' configuration", workload_name);
+            continue;
+        }
+
+        String sql = config.getString(config_key + ".sql");
+        
+        try
+        {
+            ParserCreateWorkloadQuery parser;
+            const char * begin = sql.data();
+            const char * end = sql.data() + sql.size();
+            
+            ASTPtr ast = parseQuery(parser, begin, end, "", 0, 0, 0);
+            
+            if (auto * create_workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
+            {
+                // Verify that the workload name in SQL matches the config key
+                if (create_workload->getWorkloadName() != workload_name)
+                {
+                    LOG_WARNING(log, "Workload name mismatch in config: key '{}' vs SQL '{}'", 
+                               workload_name, create_workload->getWorkloadName());
+                    continue;
+                }
+                
+                // Store the parsed workload in entity storage
+                // Mark as config-based (immutable from SQL operations)
+                storage.storeEntity(
+                    nullptr, // current_context (nullptr for config-based)
+                    WorkloadEntityType::Workload,
+                    workload_name,
+                    ast,
+                    false, // throw_if_exists
+                    true,  // replace_if_exists
+                    Settings{} // settings
+                );
+                
+                LOG_INFO(log, "Loaded workload '{}' from configuration", workload_name);
+            }
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(log, "Failed to parse workload '{}' from configuration: {}", workload_name, e.what());
+        }
+    }
+}
+
+void WorkloadResourceManager::loadResourcesFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has("resources"))
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys resource_names;
+    config.keys("resources", resource_names);
+
+    for (const auto & resource_name : resource_names)
+    {
+        String config_key = "resources." + resource_name;
+        if (!config.has(config_key + ".sql"))
+        {
+            LOG_WARNING(log, "Resource '{}' is missing 'sql' configuration", resource_name);
+            continue;
+        }
+
+        String sql = config.getString(config_key + ".sql");
+        
+        try
+        {
+            ParserCreateResourceQuery parser;
+            const char * begin = sql.data();
+            const char * end = sql.data() + sql.size();
+            
+            ASTPtr ast = parseQuery(parser, begin, end, "", 0, 0, 0);
+            
+            if (auto * create_resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
+            {
+                // Verify that the resource name in SQL matches the config key
+                if (create_resource->getResourceName() != resource_name)
+                {
+                    LOG_WARNING(log, "Resource name mismatch in config: key '{}' vs SQL '{}'", 
+                               resource_name, create_resource->getResourceName());
+                    continue;
+                }
+                
+                // Store the parsed resource in entity storage
+                // Mark as config-based (immutable from SQL operations)
+                storage.storeEntity(
+                    nullptr, // current_context (nullptr for config-based)
+                    WorkloadEntityType::Resource,
+                    resource_name,
+                    ast,
+                    false, // throw_if_exists
+                    true,  // replace_if_exists
+                    Settings{} // settings
+                );
+                
+                LOG_INFO(log, "Loaded resource '{}' from configuration", resource_name);
+            }
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(log, "Failed to parse resource '{}' from configuration: {}", resource_name, e.what());
+        }
+    }
 }
 
 }
