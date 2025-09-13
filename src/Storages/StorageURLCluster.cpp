@@ -1,4 +1,4 @@
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
@@ -11,6 +11,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -22,6 +23,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -39,6 +41,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -80,7 +83,17 @@ StorageURLCluster::StorageURLCluster(
         storage_metadata.setColumns(columns_);
     }
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
+    auto & storage_columns = storage_metadata.columns;
+
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        getSampleURI(uri, context),
+        columns_.empty(),
+        std::nullopt,
+        context);
+
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -114,11 +127,23 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     );
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * /* filter */,
+    const ContextPtr & context,
+    ClusterPtr) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
-    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)](size_t) mutable -> String { return iter->next(); });
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
+
+    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    {
+        auto url = iter->next();
+        if (url.empty())
+            return std::make_shared<ClusterFunctionReadTaskResponse>();
+        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
+    };
+    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

@@ -3,6 +3,8 @@ SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
 SET allow_experimental_full_text_index=1;
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read=0;
 
 CREATE TABLE 03165_token_bf
 (
@@ -118,17 +120,16 @@ SELECT '';
 SELECT '-------- GIN filter --------';
 SELECT '';
 
-SET allow_experimental_inverted_index=1;
+SET allow_experimental_full_text_index = 1;
 DROP TABLE IF EXISTS 03165_token_ft;
 CREATE TABLE 03165_token_ft
 (
     id Int64,
     message String,
-    INDEX idx_message message TYPE gin() GRANULARITY 1
+    INDEX idx_message message TYPE text(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
+ORDER BY id;
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 
@@ -196,35 +197,3 @@ FROM (
 WHERE explain LIKE '%Parts:%';
 
 SELECT * FROM 03165_token_ft WHERE match(message, ' xyz ');
-
-SELECT '';
-SELECT '-- No skip for multiple substrings';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, ['ce', 'no'])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, ['ce', 'no']);
-
-SELECT '';
-SELECT '-- Skip for multiple substrings with complete tokens';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', ' yz '])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', ' yz ']);
-
-SELECT '';
-SELECT '-- No skip for multiple non-existsing substrings, only one with complete token';
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', 'yz'])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', 'yz']);

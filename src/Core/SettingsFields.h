@@ -340,7 +340,7 @@ struct SettingFieldEnum
     EnumType value;
     bool changed = false;
 
-    explicit SettingFieldEnum(EnumType x = EnumType{0}) : value(x) {}
+    explicit SettingFieldEnum(EnumType x = EnumType{}) : value(x) {}
     explicit SettingFieldEnum(const Field & f) : SettingFieldEnum(Traits::fromString(f.safeGet<String>())) {}
 
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
@@ -526,5 +526,7 @@ public:
 private:
     void checkValueNonZero() const;
 };
+
+bool stringToBool(const String & str);
 
 }

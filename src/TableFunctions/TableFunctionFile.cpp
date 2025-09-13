@@ -2,7 +2,7 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -11,6 +11,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
@@ -114,9 +115,22 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             archive_info
                 = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
+        ColumnsDescription columns;
         if (format == "auto")
-            return StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
+            columns = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
+        else
+            columns = StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
+
+        auto sample_path = paths.empty() ? String{} : paths.front();
+
+        HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+            columns,
+            sample_path,
+            /* inferred_schema */ true,
+            /* format_settings */ std::nullopt,
+            context);
+
+        return columns;
     }
 
     return parseColumnsListFromString(structure, context);

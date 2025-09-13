@@ -225,16 +225,14 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -442,6 +440,9 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    /// If the disk is plain object storage.
+    virtual bool isPlain() const { return false; }
+
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
@@ -455,10 +456,10 @@ public:
     virtual void shutdown() {}
 
     /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
+    void startup(bool skip_access_check);
 
     /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    virtual void startupImpl() {}
 
     /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
     /// but don't do it more frequently than the specified parameter.
@@ -477,9 +478,6 @@ public:
     /// Overrode in remote FS disks (s3/hdfs)
     /// Required for remote disk to ensure that the replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
-
-    /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) {}
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;

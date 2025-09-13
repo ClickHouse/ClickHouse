@@ -167,7 +167,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
@@ -189,6 +189,7 @@ void DatabaseOnDisk::createDirectories()
 
 void DatabaseOnDisk::createDirectoriesUnlocked()
 {
+    auto db_disk = getDisk();
     db_disk->createDirectories(metadata_path);
     db_disk->createDirectories(data_path);
 }
@@ -207,6 +208,7 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    auto db_disk = getDisk();
     createDirectories();
 
     const auto & create = query->as<ASTCreateQuery &>();
@@ -246,7 +248,7 @@ void DatabaseOnDisk::createTable(
 
     if (create.attach && db_disk->existsFileOrDirectory(table_metadata_path))
     {
-        ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
+        ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
         auto & create_detached = ast_detached->as<ASTCreateQuery &>();
 
         // either both should be Nil, either values should be equal
@@ -267,7 +269,10 @@ void DatabaseOnDisk::createTable(
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         const auto & settings = local_context->getSettingsRef();
         writeMetadataFile(
-            db_disk, /*file_path=*/table_metadata_tmp_path, /*content=*/statement, /*fsync_metadata=*/settings[Setting::fsync_metadata]);
+            db_disk,
+            /*file_path=*/table_metadata_tmp_path,
+            /*content=*/statement,
+            /*fsync_metadata=*/settings[Setting::fsync_metadata]);
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
@@ -278,6 +283,7 @@ void DatabaseOnDisk::createTable(
 /// .sql.detached extension, is not needed anymore since we attached the table back
 void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
 {
+    auto db_disk = getDisk();
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
@@ -294,6 +300,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                                        ContextPtr query_context)
 {
+    auto db_disk = getDisk();
     try
     {
         createDirectories();
@@ -321,6 +328,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
+        auto db_disk = getDisk();
         db_disk->createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);
@@ -351,6 +359,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
     StoragePtr table = detachTable(local_context, table_name);
 
+    auto db_disk = getDisk();
     bool renamed = false;
     try
     {
@@ -394,6 +403,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
+    auto db_disk = getDisk();
     const String table_metadata_path = getObjectMetadataPath(to_table_name);
     if (db_disk->existsFile(table_metadata_path))
     {
@@ -457,10 +467,11 @@ void DatabaseOnDisk::renameTable(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table was detached without locking, it's a bug");
 
     UUID prev_uuid = UUIDHelpers::Nil;
+    auto db_disk = getDisk();
     try
     {
         table_metadata_path = getObjectMetadataPath(table_name);
-        attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
+        attach_query = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
         create.setDatabase(to_database.getDatabaseName());
         create.setTable(to_table_name);
@@ -548,13 +559,14 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
 
 ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
+    auto default_db_disk = getContext()->getDatabaseDisk();
     ASTPtr ast;
 
     const auto & settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -582,6 +594,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     waitDatabaseStarted();
 
+    auto db_disk = getDisk();
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
@@ -617,6 +630,7 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
+    auto db_disk = getDisk();
     String table_metadata_path = getObjectMetadataPath(object_name);
     if (!db_disk->existsFileOrDirectory(table_metadata_path))
         return static_cast<time_t>(0);
@@ -637,6 +651,7 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
+    auto db_disk = getDisk();
     if (!db_disk->existsDirectory(metadata_path))
         return;
 
@@ -726,23 +741,22 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     LoggerPtr logger,
     ContextPtr local_context,
+    DiskPtr disk,
     const String & metadata_file_path,
     bool throw_on_error /*= true*/,
     bool remove_empty /*= false*/)
 {
-    auto db_disk = local_context->getDatabaseDisk();
-
-    if (!db_disk->existsFile(metadata_file_path))
+    if (!disk->existsFile(metadata_file_path))
     {
         if (!throw_on_error)
             return nullptr;
         int ec = ErrorCodes::FILE_DOESNT_EXIST;
-        if (auto disk_local = std::dynamic_pointer_cast<DiskLocal>(db_disk))
+        if (auto disk_local = std::dynamic_pointer_cast<DiskLocal>(disk))
             ec = errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
         ErrnoException::throwFromPath(ec, metadata_file_path, "Cannot open file {}", metadata_file_path);
     }
 
-    String query = readMetadataFile(db_disk, metadata_file_path);
+    String query = readMetadataFile(disk, metadata_file_path);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
@@ -752,7 +766,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
 
-        db_disk->removeFileIfExists(metadata_file_path);
+        disk->removeFileIfExists(metadata_file_path);
         return nullptr;
     }
 
@@ -808,7 +822,8 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(log, getContext(), getObjectMetadataPath(table_name), throw_on_error);
+    auto db_disk = getDisk();
+    ASTPtr ast = parseQueryFromMetadata(log, getContext(), db_disk, getObjectMetadataPath(table_name), throw_on_error);
 
     if (ast)
     {
@@ -883,7 +898,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
@@ -892,10 +907,14 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
+    auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
-        db_disk, /*file_path=*/metadata_file_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        default_db_disk,
+        /*file_path=*/metadata_file_tmp_path,
+        /*content=*/statement,
+        getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
+    default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 
 void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
@@ -906,18 +925,18 @@ void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    checkTableNameLengthUnlocked(table_name);
+    checkTableNameLengthUnlocked(database_name, table_name, getContext());
 }
 
-void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex)
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_)
 {
-    const size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, context_);
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "The max length of table name for database {} is {}, current length is {}",
-            database_name, allowed_max_length, escaped_name_length);
+            database_name_, allowed_max_length, escaped_name_length);
     }
 }
 

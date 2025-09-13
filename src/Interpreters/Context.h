@@ -1,9 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Block_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
@@ -118,10 +119,11 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
-class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class ZooKeeperConnectionLog;
+class IcebergMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -132,14 +134,17 @@ class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
+class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
+struct DatabaseReplicatedSettings;
 struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
+class AzureSettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -233,10 +238,14 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
-using ReadTaskCallback = std::function<String()>;
+struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
+
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
@@ -247,12 +256,20 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class ContextTimeSeriesTagsCollector;
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
 
 struct ServerSettings;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -340,14 +357,19 @@ protected:
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
+    /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
+    std::shared_ptr<ContextTimeSeriesTagsCollector> time_series_tags_collector;
+
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
-    std::optional<ReadTaskCallback> next_task_callback;
+    std::optional<ClusterFunctionReadTaskCallback> next_task_callback;
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+
+    BlockMarshallingCallback block_marshalling_callback;
 
     bool is_under_restore = false;
 
@@ -428,6 +450,8 @@ public:
             functions = rhs.functions;
             storages = rhs.storages;
             table_functions = rhs.table_functions;
+            executable_user_defined_functions = rhs.executable_user_defined_functions;
+            sql_user_defined_functions = rhs.sql_user_defined_functions;
         }
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
@@ -441,6 +465,8 @@ public:
         std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> executable_user_defined_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> sql_user_defined_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
@@ -505,6 +531,12 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
+    /// indicates how the query operates storage alias:
+    /// 0: operate on original storage
+    /// 1: operate on alias storage, for example, drop table ...
+    /// 2: throw exception on DDL, for example, alter table ... add column ...
+    uint8_t storage_alias_behaviour = 0;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -532,9 +564,17 @@ public:
     void resetSharedContext();
 
 protected:
-    using SampleBlockCache = std::unordered_map<std::string, Block>;
+    using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
+
+    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
+    mutable StorageMetadataCache storage_metadata_cache;
+    mutable std::mutex storage_metadata_cache_mutex;
+
+    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
+    mutable StorageSnapshotCache storage_snapshot_cache;
+    mutable std::mutex storage_snapshot_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -624,40 +664,43 @@ public:
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
-        DELAY_ACCOUNTING_DISABLED,
         DB_ORDINARY_DEPRECATED,
-        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        LINUX_MAX_PID_TOO_LOW,
-        LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
+        LINUX_MEMORY_OVERCOMMIT_DISABLED,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ACTIVE_PARTS,
+        MAX_ATTACHED_DATABASES,
+        MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
         MAX_ATTACHED_VIEWS,
-        MAX_ATTACHED_DICTIONARIES,
-        MAX_ATTACHED_DATABASES,
-        MAX_ACTIVE_PARTS,
+        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        MAYBE_BROKEN_TABLES,
+        OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
+        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_COVERAGE,
+        SERVER_BUILT_WITH_SANITIZERS,
         SERVER_LOGGING_LEVEL_TEST,
         SERVER_RUN_UNDER_DEBUGGER,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_SANITIZERS,
-        SERVER_BUILT_WITH_COVERAGE,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
+        THREAD_FUZZER_IS_ENABLED,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
+    void removeAllWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -677,6 +720,10 @@ public:
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
     void setTemporaryStoragePath(const String & path, size_t max_size);
+#if !ENABLE_DISTRIBUTED_CACHE
+    [[noreturn]]
+#endif
+    void setTemporaryStorageInDistributedCache(size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -753,6 +800,10 @@ public:
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
+    bool getCPUSlotPreemption() const;
+    UInt64 getCPUSlotQuantum() const;
+    UInt64 getCPUSlotPreemptionTimeout() const;
+    void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -839,9 +890,17 @@ public:
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
+    /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
+    const ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector() const;
+    ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector();
+
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
+
+    void addQueryAccessInfo(
+        const StorageID & table_id,
+        const Names & column_names);
 
     void addQueryAccessInfo(
         const String & quoted_database_name,
@@ -871,7 +930,9 @@ public:
         Format,
         Function,
         Storage,
-        TableFunction
+        TableFunction,
+        ExecutableUserDefinedFunction,
+        SQLUserDefinedFunction
     };
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
@@ -986,12 +1047,13 @@ public:
 
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
+    void cancelAllBackupsAndRestores() const;
     BackupsInMemoryHolder & getBackupsInMemory();
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1035,6 +1097,13 @@ public:
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
+
+    double getMinOSCPUWaitTimeRatioToDropConnection() const;
+    double getMaxOSCPUWaitTimeRatioToDropConnection() const;
+    void setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection);
+
+    bool getS3QueueDisableStreaming() const;
+    void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1146,14 +1215,12 @@ public:
     bool hasZooKeeper() const;
     /// Has ready or expired auxiliary ZooKeeper
     bool hasAuxiliaryZooKeeper(const String & name) const;
-    /// Reset current zookeeper session. Do not create a new one.
-    void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
     void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
-    void setSystemZooKeeperLogAfterInitializationIfNeeded();
+    void handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
 
@@ -1289,7 +1356,6 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
-    std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1304,6 +1370,9 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
+    std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
+    std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
+    std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1317,8 +1386,10 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    const DatabaseReplicatedSettings & getDatabaseReplicatedSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const AzureSettingsByEndpoint & getStorageAzureSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -1403,6 +1474,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
+    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
+    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1423,8 +1496,6 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-    /// Removes context of current distributed DDL.
-    void resetZooKeeperMetadataTransaction();
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
@@ -1460,14 +1531,18 @@ public:
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
-    ReadTaskCallback getReadTaskCallback() const;
-    void setReadTaskCallback(ReadTaskCallback && callback);
+    ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
+    void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
+    bool hasClusterFunctionReadTaskCallback() const;
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    BlockMarshallingCallback getBlockMarshallingCallback() const;
+    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
@@ -1510,6 +1585,9 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
+    uint8_t getStorageAliasBehaviour() const;
 
     void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
@@ -1596,6 +1674,7 @@ public:
     ThrottlerPtr getMergesThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

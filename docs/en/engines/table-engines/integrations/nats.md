@@ -7,7 +7,7 @@ slug: /engines/table-engines/integrations/nats
 title: 'NATS Engine'
 ---
 
-# NATS Engine {#redisstreams-engine}
+# NATS engine {#redisstreams-engine}
 
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
@@ -16,7 +16,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 - Publish or subscribe to message subjects.
 - Process new messages as they become available.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,9 @@ Required parameters:
 Optional parameters:
 
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
+- `nats_stream` – Stream name for NATS JetStream.
+- `nats_consumer` – Name of a durable consumer for NATS JetStream.
+- `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
@@ -166,7 +168,7 @@ To stop receiving streams data or to change the conversion logic, detach the mat
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_subject` - NATS message subject. Data type: `String`.
 
@@ -176,7 +178,6 @@ Additional virtual columns when `nats_handle_error_mode='stream'`:
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
-
 
 ## Data formats support {#data-formats-support}
 

@@ -17,6 +17,10 @@ node_no_keys = cluster.add_instance(
     "node_no_keys", main_configs=["configs/config_no_keys_json.xml"]
 )
 
+node_json_logging_per_channel = cluster.add_instance(
+    "node_json_logging_per_channel", main_configs=["configs/config_json_logging_per_channel.xml"]
+)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -147,3 +151,12 @@ def test_structured_logging_json_format(start_cluster):
         == True
     )
     assert validate_everything(config_no_keys, node_no_keys, "config_no_keys") == True
+
+def test_structured_logging_per_channel(start_cluster):
+    logs = node_json_logging_per_channel.grep_in_log("").split("\n")
+    assert len(logs) > 0
+    assert not validate_logs(logs)
+
+    error_logs = node_json_logging_per_channel.grep_in_log("", filename="clickhouse-server.err.log").strip().split("\n")
+    assert len(error_logs) > 0
+    assert validate_logs(error_logs)

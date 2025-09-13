@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -10,7 +11,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -27,10 +27,8 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = false;
 #else
 constexpr UInt64 default_min_bytes_for_wide_part = 1024lu * 1024lu * 1024lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = true; /// TODO: Fix
 #endif
 
 namespace DB
@@ -66,9 +64,6 @@ namespace ErrorCodes
     DECLARE(UInt64, index_granularity, 8192, R"(
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
-    )", 0) \
-    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
-    Max number of bytes to digest per segment to build GIN index.
     )", 0) \
     \
     /** Data storing format settings. */ \
@@ -252,6 +247,48 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    Serialization version for JSON data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
+
+    Only version `v3` supports changing the shared data serialization version.
+    )", 0) \
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    Serialization version for shared data inside JSON data type.
+
+    Possible values:
+    - `map` - store shared data as `Map(String, String)`
+    - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
+    - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
+    Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+
+    Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+    [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
+    )", 0) \
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    This setting allows to specify different serialization version of the
+    shared data inside JSON type for zero level parts that are created during inserts.
+    It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+    the insertion time significantly.
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
+    Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
+    Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    )", 0) \
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    Serialization version for Dynamic data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
+    )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
@@ -267,7 +304,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -600,7 +637,15 @@ namespace ErrorCodes
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
+    DECLARE(Bool, apply_patches_on_merge, true, R"(
+    If true patch parts are applied on merges
+    )", 0) \
     \
+    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
+    The maximum uncompressed size of data in all patch parts in bytes.
+    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+    0 - unlimited.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -851,7 +896,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Replication settings. */ \
-    DECLARE(UInt64, replicated_deduplication_window, 1000, R"(
+    DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
     The number of most recently inserted blocks for which ClickHouse Keeper stores
     hash sums to check for duplicates.
 
@@ -987,8 +1032,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage and
-    `allow_remote_fs_zero_copy_replication` is enabled.
+    the merge immediately if merged part on shared storage.
 
     :::note
     Zero-copy replication is not ready for production
@@ -1225,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
@@ -1240,6 +1284,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
+    )", 0) \
+    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
+    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
+    Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
@@ -1271,6 +1319,9 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
+    How often replica will try to reload it's flags according to background schedule.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1300,9 +1351,6 @@ namespace ErrorCodes
     Preferred batch size for background cleanup (points are abstract but 1 point
     is approximately equivalent to 1 inserted block).
     )", 0) \
-    DECLARE(UInt64, cleanup_threads, 128, R"(
-    Threads for cleanup of outdated threads. Only available in ClickHouse Cloud
-    )", 0) \
     DECLARE(UInt64, min_relative_delay_to_close, 300, R"(
     Minimal delay from other replicas to close, stop serving
     requests and not return Ok during status check.
@@ -1328,6 +1376,9 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_remote_filesystem_prefetch, true, R"(
     If true prefetching of data from remote filesystem is used for the next
     column during merge
+    )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
+    If true, lightweight delete is optimized on vertical merge.
     )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
@@ -1444,9 +1495,15 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
+    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
+    Allow usage of '_part_offset' column in projections select query.
+    )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
+    )", 0) \
+    DECLARE(Bool, remove_unused_patch_parts, true, R"(
+    Remove in background patch parts which are applied for all active parts.
     )", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
     When enabled, a unique part identifier will be assigned for every new part.
@@ -1581,11 +1638,14 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of
-    the table.
+    When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
     \
@@ -1597,9 +1657,9 @@ namespace ErrorCodes
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
     Time to wait before/after moving parts between shards.
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_remote_fs_zero_copy_replication, default_allow_remote_fs_zero_copy_replication, R"(
+    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
     Don't use this setting in production, because it is not ready.
-    )", BETA) \
+    )", EXPERIMENTAL) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
     ZooKeeper path for zero-copy table-independent info.
     )", EXPERIMENTAL) \
@@ -1627,6 +1687,13 @@ namespace ErrorCodes
     - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+    )", 0) \
+    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
+    :::note
+    This setting applies only to ClickHouse Cloud.
+    :::
+
+    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
     )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
@@ -1685,6 +1752,45 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    Enables coordinated merges strategy
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
+    Number of merge entries that coordinator should prepare and distribute across workers
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    How often merge coordinator should sync with zookeeper to take fresh metadata
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
+    Number of merges that coordinator can request from MergerMutator at once
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    Time between runs of merge coordinator election thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    Minimum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    Maximum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
+    Time changing factor for delay of coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    Time between runs of merge worker thread
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    How many partition discoveries should be packed into batch
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    Enabled cleanup of Keeper entries of empty partition.
+    )", 0) \
+    DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
+    How many seconds partition will be stored in keeper if it has no parts.
+    )", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
@@ -1703,10 +1809,10 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
-    DECLARE(UInt64, marks_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
-    DECLARE(UInt64, primary_key_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
@@ -1787,6 +1893,17 @@ namespace ErrorCodes
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
     )", 0) \
+    DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
+    ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
+    in order to not allow to miss data parts at undefined (not included in policy) disks.
+    Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
+    This setting limits scope of disks to search by traits of the disks.
+
+    Possible values:
+    - any - scope is not limited.
+    - local - scope is limited by local disks .
+    - none - empty scope, do not search
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -1817,9 +1934,11 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_receive_timeout, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, max_digestion_size_per_segment, 256_MiB) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period, 30) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2245,16 +2364,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
-        res_columns[3]->insert(setting.isValueChanged());
-        res_columns[4]->insert(setting.getDescription());
-
+        size_t col = 0;
+        res_columns[col++]->insert(setting_name);
+        res_columns[col++]->insert(setting.getValueString());
+        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.isValueChanged());
+        res_columns[col++]->insert(setting.getDescription());
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, writability);
+        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -2262,15 +2382,31 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[5]->insert(min);
-        res_columns[6]->insert(max);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[10]->insert(setting.getTier());
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
+
+        res_columns[col++]->insert(min);
+        res_columns[col++]->insert(max);
+        res_columns[col++]->insert(disallowed_array);
+        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[col++]->insert(setting.getTypeName());
+        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.getTier());
     }
 }
 
+void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
+{
+    static constexpr const char * MERGE_TREE_SETTING_CONTEXT = "merge tree setting";
+    for (const auto & setting : impl->all())
+    {
+        const auto & setting_name = setting.getName();
+        res_columns[0]->insert(setting_name);
+        res_columns[1]->insert(MERGE_TREE_SETTING_CONTEXT);
+        res_columns[2]->insertDefault();
+    }
+}
 
 namespace
 {

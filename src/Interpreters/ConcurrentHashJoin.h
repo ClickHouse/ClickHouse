@@ -44,7 +44,7 @@ public:
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
@@ -54,7 +54,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
@@ -62,23 +62,20 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    bool isScatteredJoin() const override { return true; }
-    void joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res) override;
-
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
-    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
     }
 
-    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
+    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }

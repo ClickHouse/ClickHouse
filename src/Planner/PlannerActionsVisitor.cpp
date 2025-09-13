@@ -215,7 +215,7 @@ public:
                     {
                         if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            if (type_tuple->haveExplicitNames())
+                            if (type_tuple->hasExplicitNames())
                             {
                                 const auto & names = type_tuple->getElementNames();
                                 size_t size = names.size();
@@ -941,7 +941,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
     FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash();
+    auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
     if (!subquery_or_table)
     {

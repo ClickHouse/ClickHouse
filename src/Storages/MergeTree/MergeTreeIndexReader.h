@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class VectorSimilarityIndexCache;
+
 class MergeTreeIndexReader
 {
 public:
@@ -21,6 +23,7 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         MergeTreeReaderSettings settings_);
+    virtual ~MergeTreeIndexReader();
 
     void read(size_t mark, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);

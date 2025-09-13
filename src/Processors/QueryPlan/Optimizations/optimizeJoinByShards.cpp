@@ -41,7 +41,7 @@ ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
     if (const auto & prewhere_info = source.getPrewhereInfo())
         return prewhere_info->prewhere_actions.clone();
 
-    return ActionsDAG(source.getOutputHeader().getColumnsWithTypeAndName());
+    return ActionsDAG(source.getOutputHeader()->getColumnsWithTypeAndName());
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -216,10 +216,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     {
         auto analysis_result = source->getAnalyzedResult();
         if (!analysis_result)
-        {
             analysis_result = source->selectRangesToRead();
-            source->setAnalyzedResult(analysis_result);
-        }
 
         size_t added_parts = all_parts.size();
         for (const auto & part : analysis_result->parts_with_ranges)
