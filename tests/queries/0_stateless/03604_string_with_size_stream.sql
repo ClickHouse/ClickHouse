@@ -2,12 +2,9 @@
 
 drop table if exists test;
 
-create table test (s String, s2 StringWithSizeStream) engine MergeTree order by () settings serialize_string_with_size_stream = 0;
+create table test (s String) engine MergeTree order by () settings serialize_string_with_size_stream = 0;
 
-insert into test values ('hello', 'world');
-
--- New string type supports .size subcolumn
-select s2.size from test;
+insert into test values ('hello world');
 
 -- Old string type also supports .size subcolumn
 select s.size from test;

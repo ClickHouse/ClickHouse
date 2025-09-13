@@ -292,32 +292,35 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
 }
 
-SerializationPtr IDataType::getDefaultSerialization() const
+SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
 {
+    if (override_default)
+        return override_default;
+
     if (custom_serialization)
         return custom_serialization;
 
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSparseSerialization() const
+SerializationPtr IDataType::getSparseSerialization(SerializationPtr override_default) const
 {
-    return std::make_shared<SerializationSparse>(getDefaultSerialization());
+    return std::make_shared<SerializationSparse>(getDefaultSerialization(override_default));
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
+SerializationPtr IDataType::getSerialization(ISerialization::Kind kind, SerializationPtr override_default) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization();
+        return getSparseSerialization(override_default);
 
     if (kind == ISerialization::Kind::DETACHED)
-        return std::make_shared<SerializationDetached>(getDefaultSerialization());
+        return std::make_shared<SerializationDetached>(getDefaultSerialization(override_default));
 
     if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return std::make_shared<SerializationDetached>(
-            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
+            supportsSparseSerialization() ? getSparseSerialization(override_default) : getDefaultSerialization(override_default));
 
-    return getDefaultSerialization();
+    return getDefaultSerialization(override_default);
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const

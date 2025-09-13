@@ -1,18 +1,14 @@
 -- { echo ON }
 
 drop table if exists test;
-create table test (s String, s2 StringWithSizeStream) engine MergeTree order by () settings serialize_string_with_size_stream = 0;
-insert into test values ('hello', 'world');
--- New string type supports .size subcolumn
-select s2.size from test;
-5
+create table test (s String) engine MergeTree order by () settings serialize_string_with_size_stream = 0;
+insert into test values ('hello world');
 -- Old string type also supports .size subcolumn
 select s.size from test;
-5
+11
 -- system.parts_columns table only lists physical subcolumns/substreams
 select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
 s	['s']	[]	[]
-s2	['s2.size','s2']	['size']	['UInt64']
 drop table test;
 create table test (s String) engine MergeTree order by () settings serialize_string_with_size_stream = 1;
 insert into test values ('hello world');

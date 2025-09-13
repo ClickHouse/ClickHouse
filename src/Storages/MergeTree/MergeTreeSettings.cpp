@@ -197,10 +197,9 @@ namespace ErrorCodes
     DECLARE(Bool, serialize_string_with_size_stream, true, R"(
     Enables using a separate size stream when serializing top-level `String` columns.
 
-    When enabled, `String` columns at the top level of a table schema
-    are serialized as `StringWithSizeStream`, which stores string lengths
-    in a dedicated stream rather than inline. This allows real `.size` subcolumns
-    and may improve compression efficiency.
+    When enabled, top-level `String` columns are serialized with a separate `.size`
+    subcolumn that stores string lengths in its own stream instead of inline. This
+    enables real `.size` subcolumns and can improve compression efficiency.
 
     Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
     are not affected, except when they appear in a `Tuple`.

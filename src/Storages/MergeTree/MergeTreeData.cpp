@@ -8326,6 +8326,10 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
 
+    auto ratio_of_defaults = settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
+    auto serialize_string_with_size_stream = settings[MergeTreeSetting::serialize_string_with_size_stream];
+    SerializationInfo::Settings serialization_settings{ratio_of_defaults, false, serialize_string_with_size_stream};
+
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
@@ -8343,14 +8347,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
             column_streams.emplace(stream_name, full_stream_name);
         };
 
-        auto serialization = column.type->getDefaultSerialization();
+        auto serialization = column.type->getSerialization(serialization_settings);
         serialization->enumerateStreams(callback);
-
-        if (column.type->supportsSparseSerialization() && settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization] < 1.0)
-        {
-            auto sparse_serialization = column.type->getSparseSerialization();
-            sparse_serialization->enumerateStreams(callback);
-        }
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {

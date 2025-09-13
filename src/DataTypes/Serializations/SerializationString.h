@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
 {
@@ -13,10 +13,10 @@ namespace DB
 /// - Avoids re-parsing and allows consistent handling of partially read substreams.
 ///
 /// Typical usage by different serializers:
-/// - `SerializationString` uses {data, partial_data} and updates `data`
-/// - `SerializationStringWithSizeStream` uses {data, size, skipped_bytes} and updates {data, partial_size}
-/// - `SerializationStringSize` uses {data, size, partial_size} and updates `size` (and may update `skipped_bytes`)
-/// - `SerializationStringInlineSize` uses {data, size} and updates `size` (and may update `partial_data`)
+/// - `SerializationString(false)` uses {data, partial_data} and updates `data`
+/// - `SerializationString(true)` uses {data, size, skipped_bytes} and updates {data, partial_size}
+/// - `SerializationStringSize(false)` uses {data, size, partial_size} and updates `size` (and may update `skipped_bytes`)
+/// - `SerializationStringSize(true)` uses {data, size} and updates `size` (and may update `partial_data`)
 struct SubstreamsCacheStringElement : public ISerialization::ISubstreamsCacheElement
 {
     explicit SubstreamsCacheStringElement(
@@ -43,12 +43,23 @@ struct SubstreamsCacheStringElement : public ISerialization::ISubstreamsCacheEle
 class SerializationString final : public ISerialization
 {
 public:
+    /// If true, this string column has an explicit `.size` substream (new serialization).
+    /// If false, the size information is implicit/virtual (old serialization).
+    explicit SerializationString(bool with_size_stream_);
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
@@ -84,6 +95,104 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
+private:
+    /// Indicates whether this serializer uses an explicit `.size` substream.
+    bool with_size_stream;
+
+    /// dispatch helpers for enumerateStreams
+    void enumerateStreamsWithSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
+    void enumerateStreamsWithoutSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
+
+    /// dispatch helpers for serializeBinaryBulkWithMultipleStreams
+    void serializeBinaryBulkWithSizeStream(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+    void serializeBinaryBulkWithoutSizeStream(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
+    /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
+    void deserializeBinaryBulkWithSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    void deserializeBinaryBulkWithoutSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+};
+
+/// Enables the `.size` subcolumn for string columns.
+class SerializationStringSize final : public SimpleTextSerialization
+{
+public:
+    /// If true, the `.size` subcolumn is a real substream (new serialization).
+    /// If false, it is a virtual subcolumn derived from the data (old serialization).
+    explicit SerializationStringSize(bool with_size_stream_);
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
+    void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override;
+    void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override;
+    void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override;
+    void deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const override;
+    void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override;
+    void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override;
+    bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override;
+
+private:
+    /// Indicates whether `.size` is a real substream (true) or virtual (false).
+    bool with_size_stream;
+
+    /// Helper to access base string serialization logic.
+    SerializationString serialization_string;
+
+    /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
+    void deserializeBinaryBulkWithSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    void deserializeBinaryBulkWithoutSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
 };
 
 }

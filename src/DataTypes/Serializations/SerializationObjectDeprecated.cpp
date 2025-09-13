@@ -256,7 +256,7 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkStatePrefix(
     else if (state_object->kind == BinarySerializationKind::STRING)
     {
         state_object->nested_type = std::make_shared<DataTypeString>();
-        state_object->nested_serialization = std::make_shared<SerializationString>();
+        state_object->nested_serialization = std::make_shared<SerializationString>(false);
     }
     else
     {

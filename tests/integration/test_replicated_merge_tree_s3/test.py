@@ -143,6 +143,7 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
         additional_settings={
             "min_rows_for_wide_part": min_rows_for_wide_part,
             "write_marks_for_substreams_in_compact_parts": 1,
+            "serialize_string_with_size_stream": 0,
         },
     )
 
