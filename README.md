@@ -21,7 +21,7 @@ curl https://clickhouse.com/ | sh
 
 ## Open House Conference, Oct 28 2025
 
-[<img width="1280" height="368" alt="Open House Conference in Amsterdam will be held on Oct 28 2025 at Artis Royal Zoo" src="https://github.com/user-attachments/assets/c6233f7c-90c6-4e50-a812-a0077e035ed4" />
+[<img width="1280" height="368" alt="Open House Conference in Amsterdam will be held on Oct 28 2025 at Artis Royal Zoo" src="https://github.com/user-attachments/assets/7ee3c1c6-ef81-4523-924b-7b55f9f6b975" />
 ](https://clickhouse.com/openhouse/amsterdam)
 
 ## Useful Links
