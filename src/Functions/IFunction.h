@@ -280,6 +280,9 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /** Indicates whether this function is suitable for being pushed down before a filter operation.
+      * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
+      */
     virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
 
     /// The property of monotonicity for a certain range.
@@ -500,7 +503,7 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    /** Indicates whether this function is suitable for being pushed up before a filter operation.
+    /** Indicates whether this function is suitable for being pushed down before a filter operation.
       * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
       */
     virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
