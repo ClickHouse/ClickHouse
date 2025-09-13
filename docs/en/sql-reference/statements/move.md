@@ -4,6 +4,7 @@ sidebar_label: 'MOVE'
 sidebar_position: 54
 slug: /sql-reference/statements/move
 title: 'MOVE access entity statement'
+doc_type: 'reference'
 ---
 
 # MOVE access entity statement

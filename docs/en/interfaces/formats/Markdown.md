@@ -3,6 +3,7 @@ description: 'Documentation for the Markdown format'
 keywords: ['Markdown']
 slug: /interfaces/formats/Markdown
 title: 'Markdown'
+doc_type: 'reference'
 ---
 
 ## Description {#description}

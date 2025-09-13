@@ -3,6 +3,7 @@ description: 'Applies bit-wise `AND` for series of numbers.'
 sidebar_position: 147
 slug: /sql-reference/aggregate-functions/reference/groupbitand
 title: 'groupBitAnd'
+doc_type: 'reference'
 ---
 
 # groupBitAnd

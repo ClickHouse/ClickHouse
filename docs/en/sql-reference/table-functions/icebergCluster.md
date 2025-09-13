@@ -5,6 +5,7 @@ sidebar_label: 'icebergCluster'
 sidebar_position: 91
 slug: /sql-reference/table-functions/icebergCluster
 title: 'icebergCluster'
+doc_type: 'guide'
 ---
 
 # icebergCluster Table Function

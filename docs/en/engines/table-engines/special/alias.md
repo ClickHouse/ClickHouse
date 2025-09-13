@@ -4,6 +4,7 @@ sidebar_label: 'Alias'
 sidebar_position: 120
 slug: /en/engines/table-engines/special/alias
 title: 'Alias Table Engine'
+doc_type: 'reference'
 ---
 
 # Alias Table Engine

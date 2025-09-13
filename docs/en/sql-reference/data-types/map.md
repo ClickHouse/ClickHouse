@@ -4,6 +4,7 @@ sidebar_label: 'Map(K, V)'
 sidebar_position: 36
 slug: /sql-reference/data-types/map
 title: 'Map(K, V)'
+doc_type: 'reference'
 ---
 
 # Map(K, V)

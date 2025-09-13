@@ -4,6 +4,7 @@ description: 'System table containing information about memory allocations done 
 keywords: ['system table', 'jemalloc_bins']
 slug: /operations/system-tables/jemalloc_bins
 title: 'system.jemalloc_bins'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
