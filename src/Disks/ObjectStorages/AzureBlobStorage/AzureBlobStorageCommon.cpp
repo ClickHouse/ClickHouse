@@ -229,6 +229,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     String account_name;
     String container_name;
     String prefix;
+    bool endpoint_contains_account_name = false;
 
     auto get_container_name = [&]
     {
@@ -247,7 +248,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
@@ -327,7 +328,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
+    return {storage_url, account_name, "", container_name, prefix, "", container_already_exists, endpoint_contains_account_name};
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)

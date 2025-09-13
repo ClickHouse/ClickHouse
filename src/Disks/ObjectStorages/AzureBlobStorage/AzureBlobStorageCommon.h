@@ -67,10 +67,12 @@ struct Endpoint
 {
     String storage_account_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
     String sas_auth;
     std::optional<bool> container_already_exists;
+    std::optional<bool> add_account_name_to_url;
 
     String getContainerEndpoint() const
     {
@@ -78,7 +80,7 @@ struct Endpoint
         if (url.ends_with('/'))
           url.pop_back();
 
-        if (!account_name.empty())
+        if (!account_name.empty() && (!add_account_name_to_url.has_value() || (add_account_name_to_url.value())))
             url += "/" + account_name;
 
         if (!container_name.empty())
@@ -94,7 +96,7 @@ struct Endpoint
     {
         String url = storage_account_url;
 
-        if (!account_name.empty())
+        if (!account_name.empty() && (!add_account_name_to_url.has_value() || (add_account_name_to_url.value())))
             url += "/" + account_name;
 
         if (!sas_auth.empty())
