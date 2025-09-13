@@ -9,6 +9,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
@@ -22,8 +23,9 @@ struct RangesInPatchParts;
   *  Therefore, we rarely switch between hash maps for blocks.
   *  It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (block_idx, row_idx)).
   */
-using OffsetsHashMap = absl::flat_hash_map<UInt64, std::pair<UInt32, UInt32>, DefaultHash<UInt64>>;
-using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
+
+using PatchOffsetsMap = absl::btree_map<UInt64, std::pair<UInt32, UInt32>>;
+using PatchHashMap = absl::node_hash_map<UInt64, PatchOffsetsMap, HashCRC32<UInt64>>;
 
 /**  A cache of hash tables and blocks for applying patch parts in Join mode.
   *  It avoids re-reading the same ranges of patch parts and rebuilding hash tables multiple times.

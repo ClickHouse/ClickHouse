@@ -485,32 +485,62 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
+    struct IteratorsPair
+    {
+        bool found = false;
+        PatchOffsetsMap::const_iterator it;
+        PatchOffsetsMap::const_iterator end;
+    };
+
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    const OffsetsHashMap * offsets_hash_map = nullptr;
+    absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
+    IteratorsPair * current_offset_iterators = nullptr;
 
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
-        {
             continue;
-        }
 
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto it = join_entry.hash_map.find(prev_block_number);
-            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
+            auto [block_number_it, inserted] = offsets_iterators.try_emplace(result_block_number[row]);
+
+            if (inserted)
+            {
+                auto it = join_entry.hash_map.find(result_block_number[row]);
+
+                if (it != join_entry.hash_map.end())
+                {
+                    const auto & offsets_map = it->second;
+                    auto & iterators = block_number_it->second;
+
+                    iterators.found = true;
+                    iterators.it = offsets_map.lower_bound(result_block_offset[row]);
+                    iterators.end = offsets_map.end();
+                }
+            }
+
+            current_offset_iterators = &block_number_it->second;
         }
 
-        if (offsets_hash_map)
-        {
-            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
+        chassert(current_offset_iterators);
+        auto & iterators = *current_offset_iterators;
 
-            if (offset_it != offsets_hash_map->end())
+        if (iterators.found)
+        {
+            while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
             {
+                ++iterators.it;
+            }
+
+            if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
+            {
+                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
+
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_block_indices.push_back(offset_it->second.first);
-                patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
+                patch_to_apply->patch_block_indices.push_back(patch_block_index);
+                patch_to_apply->patch_row_indices.push_back(patch_row_index);
             }
         }
     }
