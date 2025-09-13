@@ -1,5 +1,6 @@
-SELECT materialize([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\']) AS arr
-WHERE hasAny(arr, [\'o\']) OR hasAny(arr, [\'u\']) OR hasAny(arr, [\'ą\']) OR hasAny(arr, [\'ę\'])
+SELECT materialize(_CAST([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], \'Array(String)\')) AS arr
+FROM system.one
+WHERE hasAny(arr, _CAST([\'o\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'u\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'ą\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'ę\'], \'Array(String)\'))
 SETTINGS optimize_or_has_any_chain = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -49,8 +50,9 @@ QUERY id: 0
                       CONSTANT id: 30, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
                 CONSTANT id: 31, constant_value: Array_[\'ę\'], constant_value_type: Array(String)
   SETTINGS optimize_or_has_any_chain=0 enable_analyzer=1
-SELECT materialize([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\']) AS arr
-WHERE hasAny(arr, [\'o\', \'u\', \'ą\', \'ę\']) OR false
+SELECT materialize(_CAST([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], \'Array(String)\')) AS arr
+FROM system.one
+WHERE hasAny(arr, _CAST([\'o\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'u\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'ą\'], \'Array(String)\')) OR hasAny(arr, _CAST([\'ę\'], \'Array(String)\'))
 SETTINGS optimize_or_has_any_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
