@@ -24,7 +24,7 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine, test-ffi, tracing"
+    FEATURES "default-engine-rustls, test-ffi, tracing"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
