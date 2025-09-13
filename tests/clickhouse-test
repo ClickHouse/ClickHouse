@@ -3626,6 +3626,10 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
+
     if args.report_logs_stats:
         try:
             reportLogStats(args)

@@ -122,6 +122,8 @@ namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
     extern const Event PageCacheOvercommitResize;
+    extern const Event MemoryAllocatedWithoutCheck;
+    extern const Event MemoryAllocatedWithoutCheckBytes;
 }
 
 using namespace std::chrono_literals;
@@ -208,13 +210,15 @@ void MemoryTracker::injectFault() const
 
 /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
 /// Let's find them.
-void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
+    if (size < 0)
+        return;
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
+
     if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
     {
-        if (size < 0)
-            return;
-
         /// The choice is arbitrary (maybe we should decrease it)
         constexpr Int64 threshold = 16 * 1024 * 1024;
         if (size < threshold)
@@ -227,7 +231,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
         /// Forbid recursive calls, since the first time debugLogBigAllocationWithoutCheck() can be called from logging,
         /// and then it may be called again for the line below
         [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
-        LOG_TEST(
+        LOG_TRACE(
             getLogger("MemoryTracker"),
             "Too big allocation ({} bytes) without checking memory limits, "
             "it may lead to OOM. Stack trace: {}",
