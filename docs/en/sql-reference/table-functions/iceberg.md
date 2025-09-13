@@ -302,6 +302,176 @@ Table function `iceberg` is an alias to `icebergS3` now.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
+## Writes into iceberg table {#writes-into-iceberg-table}
+
+Starting from version 25.7, ClickHouse supports modifications of user’s Iceberg tables.
+
+Currently, this is an experimental feature, so you first need to enable it:
+
+```sql
+SET allow_experimental_insert_into_iceberg = 1;
+```
+
+### Creating table {#create-iceberg-table}
+
+To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
+
+### Example {#example-iceberg-writes-create}
+
+```sql
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
+```
+
+Note: To create a version hint file, enable the `iceberg_use_version_hint` setting.
+If you want to compress the metadata.json file, specify the codec name in the `iceberg_metadata_compression_method` setting.
+
+### INSERT {#writes-inserts}
+
+After creating a new table, you can insert data using the usual ClickHouse syntax.
+
+### Example {#example-iceberg-writes-insert}
+
+```sql
+INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993), ('Maryia Kurdun', 1), ('Anton Gerasimenko', 2), ('Kirill Batrakov', 3), ('Igor Markelov', 4), ('Igor Panshin', 5), ('Maksim Petlyak', 6), ('Valery Vorobiev', 7), ('Eduard Ryabov', 8), ('diana', 9), ('Artemy Novikov', 10), ('manul', 11), ('Goshan DR', 12), ('Ulad', 13), ('Evgenii Kushnir', 14), ('Krol', 15), ('Daniil Timizev', 16), ('Almira', 17), ('Muzzaffar Sadullaev', 18), ('Yaraslau Plishan', 19), ('Sergey Mironov', 20), ('Kamil Ninevsky', 21), ('Vera Buylova', 22), ('Maria Rozaeva', 23), ('Maxim Lutan', 24), ('Amir Garaev', 25), ('Ilona', 26), ('Sllow', 27), ('Kirill Lebedev', 28), ('German Perov', 29), ('Maksim Petrenko', 30), ('Ilya L.', 31), ('Raman Jeudakimau', 32), ('Yuty Fedorov', 33), ('Timofey Novikov', 34), ('Oleg', 35), ('Alexander chalkin', 36), ('dasha onikova', 37), ('IgorD', 38), ('Gleb', 39), ('Alexander Kudriavtsev', 40), ('Anya Ropai', 41), ('Roman', 42), ('Danila Bohanov', 43), ('Vladimir', 44), ('Danila', 45), ('Dima Bonich', 46), ('Nikita Shorin', 47), ('Yan Olerinskiy', 48), ('zhan', 49), ('Denis', 50), ('Ilya', 51), ('Denis Vidyaev', 52), ('Erdeni Khatunov', 53), ('Cimafei Zamojdzin', 54), ('Darya F.', 55), ('Artem Mitin', 56), ('Maxim Dergousov', 57), ('Dmitrii shashkov', 58), ('george', 59), ('Ian Maksimov', 60), ('I_love_geom', 61), ('Maksim Kazadaev', 62), ('Arsenii Varaksin', 63), ('Aleksander Osokin', 64), ('Timur Uttsal', 65), ('Aleksandr', 66), ('Iurii Zamiatin', 67), ('Artem', 68), ('Daniil', 69), ('34 defective braincells', 70), ('hekr', 71), ('dashhhi', 72), ('Danila Solunov', 73), ('Maksim Alekseev', 74), ('Ilya', 75), ('Ivan Bond', 76), ('Askar', 77), ('Lev Morozov', 78), ('Ksysha', 79), ('Georgy Karlinsky', 80), ('Roman', 81), ('Dmitry Terenichev', 82), ('greg', 83), ('Sergey Fadeev', 84), ('Rita Kozlova', 85), ('Ilya Antonov', 86), ('shiro', 87), ('Aleksander Matosyan', 88), ('Catherine', 89), ('avedus', 90), ('suffocation', 91), ('egor', 92), ('Vladimir rudavsky', 93), ('Anton Aksenov', 94), ('lizocek', 95), ('Stanley', 96), ('Pavel Mokeev', 97), ('Ilya', 98), ('Slava Burgeresku', 99), ('Maxim', 100), ('helloclock', 101), ('Maxim Bekoev', 102), ('3LayerPerceptron', 103), ('Anton Pichushkin', 104), ('egor', 105), ('Egor Bocharov', 106), ('zhivem', 107), ('Konstantin Zhar', 108), ('Pavel Khakimov', 109), ('Arseniy', 110), ('Timofey Chernov', 111), ('Mikhail', 112), ('Ilya Tharin', 113), ('Dinar S.', 114), ('qervete', 115), ('Ilya Shakhov', 116), ('Boris Panfilov', 117), ('Ilya vdovets', 118), ('Fedor Astashkin', 119), ('Timofey Ravnushkin', 120), ('Misha Zameshaev', 121), ('Kkamenskaia', 122), ('Artem', 123), ('Roman', 124), ('Mikhail Ledenev', 125), ('Pavel Vasiliev', 126), ('Matfey', 127), ('Daniil Ivanik', 128), ('Inna Vakulenko', 129), ('Zakhar', 130), ('TigodanAC', 131), ('George R vol. Ciel', 132), ('yana', 133), ('Vasilii', 134), ('Albert Davletshin', 135), ('Ramazan', 136), ('Pavel', 137), ('Egor Egorov', 138), ('Evgenii Katasonov', 139), ('Namig Damirov', 140), ('Roman Golovachev', 141), ('Sergei Grshko', 142), ('Alexey Melnikov', 143), ('Georgii Gromov', 144), ('Pasha Bitykov', 145), ('Kirill', 146), ('Tema shevchenko', 147), ('Alexander Gornak', 148), ('Nikita Chervov', 149), ('Roman Shv', 150), ('Marina Rezcova', 151), ('Komila', 152), ('Anna Egonian', 153), ('Mikhail Artemenko', 154), ('Vlad', 155), ('Mikhail Marufich', 156), ('Roman Povolotskii', 157), ('Alina', 158), ('Artem Zuikov', 159), ('Ivan Lichutin', 160), ('Anton Profiriev', 161), ('Nikitka Sheverdov', 162), ('Alexey Perevyshin', 163), ('Ivan', 164), ('Dima Lishudi', 165), ('Rinat', 166), ('Vlad', 167), ('Evgenii[kanikuly]', 168), ('Sema', 169), ('Alexey', 170), ('Katya sh', 171), ('Skeletonchik', 172), ('Matvey Korinenko', 173), ('Pasha Perminov', 174), ('Alsu Gilyazova', 175), ('<3', 176), ('Dmitriy Golovinov', 177), ('Mikhail', 178), ('Pashulya', 179), ('Liza Yashchinskaya', 180), ('Dmitrii.S', 181), ('Egor', 182), ('wiendekapec', 183), ('Aleksei Filatov', 184), ('Ilya Udalov', 185), ('Yaroslav', 186), ('Masha Baybakova', 187);
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Pavel
+y: 777
+
+Row 2:
+──────
+x: Ivanov
+y: 993
+```
+
+### DELETE {#example-iceberg-writes-delete}
+
+Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
+This query will create a new snapshot with position delete files.
+
+NOTE: If you want to read your tables in the future with other Iceberg engines (such as Spark), you need to disable the settings `output_format_parquet_use_custom_encoder` and `output_format_parquet_parallel_encoding`.
+This is because Spark reads these files by parquet field-ids, while ClickHouse does not currently support writing field-ids when these flags are enabled.
+We plan to fix this behavior in the future.
+
+### Example {#example-iceberg-writes-delete}
+
+```sql
+ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+### Schema evolution {#iceberg-writes-schema-evolution}
+
+ClickHouse allows you to add, drop, or modify columns with simple types (non-tuple, non-array, non-map).
+
+### Example {#example-iceberg-writes-evolution}
+
+```sql
+ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+ALTER TABLE iceberg_writes_example ADD COLUMN z Nullable(Int32);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64),                                 ↴│
+   │↳    `z` Nullable(Int32)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+z: ᴺᵁᴸᴸ
+
+ALTER TABLE iceberg_writes_example DROP COLUMN z;
+SHOW CREATE TABLE iceberg_writes_example;
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+### Compaction {#iceberg-writes-compaction}
+
+ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
+
+How to use it:
+
+```sql
+SET allow_experimental_iceberg_compaction = 1
+
+OPTIMIZE TABLE iceberg_writes_example;
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+## Table with catalogs {#iceberg-writes-catalogs}
+
+All the write features described above are also available with REST and Glue catalogs.
+To use them, create a table with the `IcebergS3` engine and provide the necessary settings:
+
+```sql
+CREATE TABLE `database_name.table_name`  ENGINE = IcebergS3('http://minio:9000/warehouse-rest/table_name/', 'minio_access_key', 'minio_secret_key')
+SETTINGS storage_catalog_type="rest", storage_warehouse="demo", object_storage_endpoint="http://minio:9000/warehouse-rest", storage_region="us-east-1", storage_catalog_url="http://rest:8181/v1",
+```
+
 ## See Also {#see-also}
 
 * [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
