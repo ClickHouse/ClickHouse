@@ -30,7 +30,7 @@ def test_metadata_file_selection_from_version_hint(started_cluster_iceberg_with_
         )
         
     # test the case where version_hint.text file contains just the version number
-    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
         f.write('5')
 
     default_upload_directory(
@@ -45,7 +45,7 @@ def test_metadata_file_selection_from_version_hint(started_cluster_iceberg_with_
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
 
     # test the case where version_hint.text file contains the whole metadata file name
-    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
         f.write('v3.metadata.json')
 
     default_upload_directory(

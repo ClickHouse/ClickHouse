@@ -29,8 +29,8 @@ def test_writes_multiple_files(started_cluster_iceberg_no_spark, format_version,
     files = default_download_directory(
         started_cluster_iceberg_no_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
     assert sum([file[-7:] == "parquet" for file in files]) == 2
