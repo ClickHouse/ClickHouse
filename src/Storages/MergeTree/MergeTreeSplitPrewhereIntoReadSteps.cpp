@@ -157,7 +157,7 @@ const ActionsDAG::Node & addCast(
         const ActionsDAG::Node & node_to_cast,
         const DataTypePtr & to_type)
 {
-    if (!node_to_cast.result_type->equals(*to_type))
+    if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     const auto & new_node = dag->addCast(node_to_cast, to_type, {});
