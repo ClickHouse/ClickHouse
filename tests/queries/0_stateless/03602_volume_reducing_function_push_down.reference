@@ -1,62 +1,18 @@
-1	8	100000001
-2	8	100000002
-1	8	100000001
-2	8	100000002
-(Expression)
-ExpressionTransform
-Header: length(s) UInt64: length(s) UInt64 UInt64(size = 0)
-        length(\'constant\') UInt64: length(\'constant\') UInt64 Const(size = 0, UInt64(size = 1))
-        test_uint64 UInt64: test_uint64 UInt64 UInt64(size = 0)
-  (Sorting)
-  MergeSortingTransform
-  Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-          __table1.s String: __table1.s String String(size = 0)
-          __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-    LimitsCheckingTransform
-    Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-            __table1.s String: __table1.s String String(size = 0)
-            __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-      PartialSortingTransform
-      Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-              __table1.s String: __table1.s String String(size = 0)
-              __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-        (Expression)
-        ExpressionTransform
-        Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-                __table1.s String: __table1.s String String(size = 0)
-                __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-          (Filter)
-          FilterTransform
-          Header: __table1.s String: __table1.s String String(size = 0)
-                  __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-                  __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-            (ReadFromMemoryStorage)
-(Expression)
-ExpressionTransform
-Header: length(s) UInt64: length(s) UInt64 UInt64(size = 0)
-        length(\'constant\') UInt64: length(\'constant\') UInt64 Const(size = 0, UInt64(size = 1))
-        test_uint64 UInt64: test_uint64 UInt64 UInt64(size = 0)
-  (Sorting)
-  MergeSortingTransform
-  Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-          length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
-          __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-    LimitsCheckingTransform
-    Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-            length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
-            __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-      PartialSortingTransform
-      Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-              length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
-              __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-        (Expression)
-        ExpressionTransform
-        Header: __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-                length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
-                __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-          (Filter)
-          FilterTransform
-          Header: __table1.test_uint64 UInt64: __table1.test_uint64 UInt64 UInt64(size = 0)
-                  __table1.id UInt32: __table1.id UInt32 UInt32(size = 0)
-                  length(__table1.s) UInt64: length(__table1.s) UInt64 UInt64(size = 0)
-            (ReadFromMemoryStorage)
+Test 1: Basic length function
+Test 2: notEmpty function
+Test 3: empty function
+Test 4: Multiple volume reducing functions
+Test 5: With LIMIT
+Test 6: With GROUP BY
+Test 7: With JOINs
+Test 8: With subqueries
+Test 9: Complex WHERE conditions
+Test 10: Nested functions
+Test 11: UNION ALL
+Test 12: Array length functions
+Test 13: Array empty/notEmpty functions
+Test 14: Map length and empty functions
+Test 15: ARRAY JOIN with volume reducing functions
+Test 16: Array functions in WHERE with complex conditions
+Test 17: Map functions in aggregations
+Test 18: Combined array and map operations

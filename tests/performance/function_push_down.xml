@@ -1,0 +1,17 @@
+<test>
+    <create_query>CREATE TABLE random_articles (id UInt32, username String, article String, upvotes UInt32) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO random_articles SELECT
+    number AS id,
+    concat('user_', toString(id)) AS username,
+    randomString(rand() % 3000) AS article,
+    rand() % 100 AS upvotes
+FROM system.numbers
+LIMIT 1000000</fill_query>
+
+    <query>SELECT length(username), length(article) FROM random_articles ORDER BY id DESC</query>
+
+    <query>SELECT avg(length(article)) FROM random_articles WHERE notEmpty(article)</query>
+
+    <drop_query>DROP TABLE random_articles</drop_query>
+</test>
