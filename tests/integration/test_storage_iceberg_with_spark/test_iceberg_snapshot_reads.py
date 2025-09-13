@@ -58,7 +58,7 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
     snapshot2_timestamp = datetime.now(timezone.utc)
@@ -75,7 +75,7 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
     snapshot3_timestamp = datetime.now(timezone.utc)

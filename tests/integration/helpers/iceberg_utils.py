@@ -449,8 +449,8 @@ def execute_spark_query_general(
     default_upload_directory(
         started_cluster,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/",
+        f"/user_files/iceberg_data/default/{table_name}/",
+        f"/user_files/iceberg_data/default/{table_name}/",
     )
     return
 
