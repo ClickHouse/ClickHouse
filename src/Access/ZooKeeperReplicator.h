@@ -4,12 +4,14 @@
 #include <memory>
 #include <optional>
 #include <mutex>
+#include <unordered_map>
 
 #include <base/defines.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Access/IAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 
@@ -70,6 +72,8 @@ private:
     std::atomic<bool> watching = false;
     std::unique_ptr<ThreadFromGlobalPool> watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
+
+    Coordination::WatchCallbackPtr watch_entities_list;
 
     MemoryAccessStorage & memory_storage TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
