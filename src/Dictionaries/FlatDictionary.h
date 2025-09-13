@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
@@ -31,6 +32,7 @@ public:
     };
 
     FlatDictionary(
+        ContextPtr global_context,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -59,7 +61,7 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(context, getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -103,7 +105,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -148,9 +150,10 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 
@@ -173,6 +176,8 @@ private:
     void resize(Attribute & attribute, UInt64 key);
 
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
+
+    ContextPtr context;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

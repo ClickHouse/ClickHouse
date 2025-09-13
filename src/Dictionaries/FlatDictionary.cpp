@@ -2,9 +2,12 @@
 #include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
+#include "Common/tests/gtest_global_context.h"
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
+#include "Dictionaries/DictionarySourceHelpers.h"
+#include "Interpreters/Context_fwd.h"
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -31,12 +34,14 @@ namespace ErrorCodes
 }
 
 FlatDictionary::FlatDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     Configuration configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
+    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , configuration(configuration_)
@@ -449,11 +454,11 @@ void FlatDictionary::blockToAttributes(const Block & block)
     }
 }
 
-void FlatDictionary::updateData()
+void FlatDictionary::updateData(ContextMutablePtr query_context)
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -480,7 +485,7 @@ void FlatDictionary::updateData()
     }
     else
     {
-        auto pipeline(source_ptr->loadUpdatedAll());
+        auto pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
@@ -493,18 +498,23 @@ void FlatDictionary::updateData()
 
 void FlatDictionary::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-
-        Block block;
-        while (executor.pull(block))
-            blockToAttributes(block);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        try
+        {
+            loadDataImpl(io.pipeline);
+            io.onFinish();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
     }
     else
-        updateData();
+        updateData(std::move(query_context));
 
     element_count = 0;
 
@@ -514,6 +524,16 @@ void FlatDictionary::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+void FlatDictionary::loadDataImpl(QueryPipeline & pipeline)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+
+    Block block;
+    while (executor.pull(block))
+        blockToAttributes(block);
 }
 
 void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()
@@ -723,7 +743,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe FlatDictionary::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const auto keys_count = loaded_keys.size();
 
@@ -751,7 +771,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* global_context */,
+                            ContextPtr global_context,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)
@@ -779,7 +799,9 @@ void registerDictionaryFlat(DictionaryFactory & factory)
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
-        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        return std::make_unique<FlatDictionary>(std::move(context), dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("flat", create_layout, false, false);
