@@ -24,7 +24,7 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(query_ptr, getContext(), DDLQueryOnClusterParams{getContext()});
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 

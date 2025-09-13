@@ -200,7 +200,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (create.if_not_exists)
             return {};
-        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", database_name);
     }
 
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
@@ -2331,7 +2331,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
-    DDLQueryOnClusterParams params;
+    DDLQueryOnClusterParams params(getContext());
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }

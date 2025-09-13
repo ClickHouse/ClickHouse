@@ -111,6 +111,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
@@ -393,7 +394,7 @@ struct ContextSharedPart : boost::noncopyable
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex zookeeper_mutex;
+    mutable std::shared_timed_mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
@@ -4270,14 +4271,25 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
-zkutil::ZooKeeperPtr Context::getZooKeeper() const
+zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 {
-    std::lock_guard lock(shared->zookeeper_mutex);
+    Stopwatch get_keeper_watch;
+    /// We used to lock here indifinitely, but this potentially leads to unkillable queries and processes stuck for long
+    /// Once keeper retries are added in more places it doesn't make sense to wait much as we want the retries to keep counting
+    /// while there is no keeper session available (to throw errors or cancel processes)
+    static const UInt64 DEFAULT_KEEPER_LOCK_TIMEOUT = 10000;
+    max_lock_milliseconds = !max_lock_milliseconds ? DEFAULT_KEEPER_LOCK_TIMEOUT : std::max(UInt64{100}, max_lock_milliseconds);
 
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+    if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
+        throw zkutil::KeeperException(
+            Coordination::Error::ZOPERATIONTIMEOUT,
+            "Cannot get a Keeper connection. Other thread is creating a new one");
+    std::lock_guard lock(shared->zookeeper_mutex, std::adopt_lock);
 
     if (!shared->zookeeper)
     {
+        Stopwatch creation_watch;
+        const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
@@ -4285,12 +4297,15 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms ({}ms in total)",
+            shared->zookeeper->getClientID(), creation_watch.elapsedMilliseconds(), get_keeper_watch.elapsedMilliseconds());
     }
 
     if (shared->zookeeper->expired())
     {
-        Stopwatch watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+        Stopwatch creation_watch;
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper after the previous one expired (Old session id: {})",
+            shared->zookeeper->getClientID());
 
         auto old_zookeeper = shared->zookeeper;
 
@@ -4306,7 +4321,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
         if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms ({}ms in total)",
+            shared->zookeeper->getClientID(), creation_watch.elapsedMilliseconds(), get_keeper_watch.elapsedMilliseconds());
     }
 
     return shared->zookeeper;
