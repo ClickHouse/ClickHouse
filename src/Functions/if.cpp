@@ -40,7 +40,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool optimize_if_transform_strings_to_enum;
@@ -273,8 +272,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         auto const & settings = context->getSettingsRef();
-        auto const use_variant_as_common_type
-            = settings[Setting::allow_experimental_variant_type] && settings[Setting::use_variant_as_common_type];
+        auto const use_variant_as_common_type = settings[Setting::use_variant_as_common_type];
         auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
         return std::make_shared<FunctionIf>(use_variant_as_common_type, use_low_cardinality_optimisation);
     }
@@ -1405,9 +1403,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
 }
 
 }

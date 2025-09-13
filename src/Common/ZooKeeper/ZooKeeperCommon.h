@@ -42,6 +42,7 @@ struct ZooKeeperRequest : virtual Request
 {
     XID xid = 0;
     bool has_watch = false;
+    Coordination::WatchCallbackPtr watch_callback;
     /// If the request was not send and the error happens, we definitely sure, that it has not been processed by the server.
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
@@ -692,9 +693,9 @@ enum class PathMatchResult : uint8_t
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);
 
-StringRef parentNodePath(StringRef path);
+std::string_view parentNodePath(std::string_view path);
 
-StringRef getBaseNodeName(StringRef path);
+std::string_view getBaseNodeName(std::string_view path);
 
 
 }

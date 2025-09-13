@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -65,6 +67,7 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
 class ActionsDAG;
 
@@ -117,7 +120,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
+    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -174,7 +177,7 @@ public:
     virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
-    /// Currently it's only used by the MergeTree family for query optimizations.
+    /// Used for query optimizations by the MergeTree family of storages and by Parquet reader.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
@@ -219,6 +222,8 @@ public:
     VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
+
+    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;
 
@@ -290,6 +295,11 @@ private:
 
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
+
+    /// Description of common virtual columns.
+    static const VirtualColumnsDescription common_virtuals;
+
+    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

@@ -65,10 +65,10 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Storages/StorageAlias.h>
 
 
 namespace ProfileEvents
@@ -130,6 +130,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     String interpreter_name;
 
+    StorageAlias::modifyContextByQueryAST(query, context);
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -327,10 +328,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowPrivilegesQuery>())
     {
         interpreter_name = "InterpreterShowPrivilegesQuery";
-    }
-    else if (query->as<ASTExternalDDLQuery>())
-    {
-        interpreter_name = "InterpreterExternalDDLQuery";
     }
     else if (query->as<ASTTransactionControl>())
     {

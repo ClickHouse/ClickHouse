@@ -1,3 +1,4 @@
+#include <Common/OSThreadNiceValue.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -25,9 +26,12 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Coordination/KeeperConstants.h>
 #include "config.h"
@@ -56,6 +60,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperCheck;
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
+    extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -66,6 +71,11 @@ namespace CurrentMetrics
 {
     extern const Metric ZooKeeperRequest;
     extern const Metric ZooKeeperWatch;
+}
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
 namespace Metrics::ResponseTime
@@ -90,6 +100,7 @@ namespace Metrics::ResponseTime
     Histogram::Metric & sync = mf.withLabels({"sync"});
     Histogram::Metric & reconfig = mf.withLabels({"reconfig"});
     Histogram::Metric & multi = mf.withLabels({"multi"});
+    Histogram::Metric & get_acl = mf.withLabels({"get_acl"});
 
     template <typename Response>
     void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
@@ -392,7 +403,9 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : path_acls(args_.path_acls), args(args_)
+    : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
+    , path_acls(args_.path_acls)
+    , args(args_)
 {
     log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -431,7 +444,7 @@ ZooKeeper::ZooKeeper(
             use_xid_64 = true;
             close_xid = CLOSE_XID_64;
         }
-        connect(nodes, args.connection_timeout_ms * 1000);
+        connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
     {
@@ -440,7 +453,7 @@ ZooKeeper::ZooKeeper(
         if (use_compression)
         {
             use_compression = false;
-            connect(nodes, args.connection_timeout_ms * 1000);
+            connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
         }
         else
             throw;
@@ -455,7 +468,7 @@ ZooKeeper::ZooKeeper(
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
         initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+        keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -554,8 +567,8 @@ void ZooKeeper::connect(
                 socket.connect(*node.address, connection_timeout);
                 socket_address = socket.peerAddress();
 
-                socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
-                socket.setSendTimeout(args.operation_timeout_ms * 1000);
+                socket.setReceiveTimeout(static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);
+                socket.setSendTimeout(static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);
                 socket.setNoDelay(true);
 
                 in.emplace(socket);
@@ -630,7 +643,6 @@ void ZooKeeper::connect(
 
     LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
 }
-
 
 void ZooKeeper::sendHandshake()
 {
@@ -761,6 +773,12 @@ void ZooKeeper::sendThread()
 {
     setThreadName("ZooKeeperSend");
 
+    scope_guard os_thread_nice_value_guard;
+    if (send_receive_os_threads_nice_value != 0)
+    {
+        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
+    }
+
     auto prev_heartbeat_time = clock::now();
 
     try
@@ -844,6 +862,12 @@ void ZooKeeper::receiveThread()
 {
     setThreadName("ZooKeeperRecv");
 
+    scope_guard os_thread_nice_value_guard;
+    if (send_receive_os_threads_nice_value != 0)
+    {
+        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
+    }
+
     try
     {
         Int64 waited_us = 0;
@@ -853,7 +877,7 @@ void ZooKeeper::receiveThread()
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
-            UInt64 max_wait_us = args.operation_timeout_ms * 1000;
+            UInt64 max_wait_us = static_cast<UInt64>(args.operation_timeout_ms) * 1000;
             std::optional<RequestInfo> earliest_operation;
 
             {
@@ -862,7 +886,7 @@ void ZooKeeper::receiveThread()
                 {
                     /// Operations are ordered by xid (and consequently, by time).
                     earliest_operation = operations.begin()->second;
-                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
+                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
                     if (now > earliest_operation_deadline)
                         throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
                                         args.operation_timeout_ms, earliest_operation->request->getPath());
@@ -886,7 +910,7 @@ void ZooKeeper::receiveThread()
                         args.operation_timeout_ms, earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
-                if (waited_us >= args.session_timeout_ms * 1000)
+                if (waited_us >= static_cast<Int64>(args.session_timeout_ms) * 1000)
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
 
             }
@@ -1012,34 +1036,57 @@ void ZooKeeper::receiveEvent()
             if (!request_info.request || request_info.request->add_root_path)
                 response->removeRootPath(args.chroot);
         }
-        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
-        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
-        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
-        if (request_info.watch)
+
+        /// Just helper for watch callbacks update. The main logic is below.
+        const auto update_watch_callbacks = [this](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp, const Coordination::WatchCallbackPtr & watch)
         {
             bool add_watch = false;
             /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
-            if (request_info.request->getOpNum() == OpNum::Exists)
-                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
+            if (req->getOpNum() == OpNum::Exists)
+                add_watch = (resp->error == Error::ZOK || resp->error == Error::ZNONODE);
             else
-                add_watch = response->error == Error::ZOK;
+                add_watch = resp->error == Error::ZOK;
 
             if (add_watch)
             {
 
                 /// The key of wathces should exclude the args.chroot
-                String req_path = request_info.request->getPath();
+                String req_path = req->getPath();
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
                 auto & callbacks = watches[req_path];
-                if (request_info.watch && *request_info.watch)
+                if (watch && *watch)
                 {
-                    if (callbacks.insert(request_info.watch).second)
+                    if (callbacks.insert(watch).second)
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                 }
             }
+        };
+
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
+        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
+        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
+        if (request_info.request && request_info.request->getOpNum() == OpNum::MultiRead)
+        {
+            const auto * multi_read_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(request_info.request.get());
+            const auto * multi_read_response = dynamic_cast<const Coordination::ZooKeeperMultiReadResponse *>(response.get());
+            chassert(multi_read_request != nullptr);
+            chassert(multi_read_response != nullptr);
+
+            for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
+            {
+                if (subrequest->watch_callback)
+                {
+                    chassert(isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES));
+                    update_watch_callbacks(subrequest, subresponse, subrequest->watch_callback);
+                }
+            }
+        }
+        else if (request_info.watch)
+        {
+            update_watch_callbacks(request_info.request, response, request_info.watch);
         }
 
         if (!use_compression)
@@ -1649,6 +1696,21 @@ void ZooKeeper::multi(
     multi(std::span(requests), std::move(callback));
 }
 
+void ZooKeeper::getACL(const String & path, GetACLCallback callback)
+{
+    ZooKeeperGetACLRequest request;
+    request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get_acl);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperGetACLRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGetACL);
+}
+
 void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
@@ -1682,8 +1744,15 @@ void ZooKeeper::multi(
 
     ZooKeeperMultiRequest request(requests, default_acls);
 
-    if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+    if (request.getOpNum() == OpNum::MultiRead)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
+
+        for (const auto & subrequest : request.requests)
+            if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+    }
 
     Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::multi);
 

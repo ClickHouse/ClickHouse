@@ -15,17 +15,22 @@
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
+#endif
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
@@ -389,16 +394,14 @@ struct BackupsWorker::BackupStarter
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
 
         /// `backup_id` will be used as a key to the `infos` map, so it should be unique.
-        if (is_internal_backup)
-            backup_id = "internal-" + toString(UUIDHelpers::generateV4()); /// Always generate `backup_id` for internal backup to avoid collision if both internal and non-internal backups are on the same host
-        else if (!backup_settings.id.empty())
+        if (!backup_settings.id.empty())
             backup_id = backup_settings.id;
         else
             backup_id = toString(*backup_settings.backup_uuid);
 
-        String base_backup_name;
-        if (backup_settings.base_backup_info)
-            base_backup_name = backup_settings.base_backup_info->toStringForLogging();
+        /// We should avoid a collision if both internal and non-internal backups are on the same host.
+        if (is_internal_backup)
+            backup_id += "-internal-" + backup_settings.host_id;
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
@@ -421,8 +424,17 @@ struct BackupsWorker::BackupStarter
                 "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
                 formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
         }
+    }
 
-        backups_worker.addInfo(backup_id,
+    std::pair<bool, BackupStatus> addInfo()
+    {
+        String base_backup_name;
+        if (backup_settings.base_backup_info)
+            base_backup_name = backup_settings.base_backup_info->toStringForLogging();
+
+        auto process_list_element = backup_context->getProcessListElement();
+
+        return backups_worker.addInfo(backup_id,
             backup_name_for_logging,
             base_backup_name,
             backup_context->getCurrentQueryId(),
@@ -521,6 +533,10 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 {
     auto starter = std::make_shared<BackupStarter>(*this, query, context);
 
+    auto [info_added, current_status] = starter->addInfo();
+    if (!info_added)
+        return {starter->backup_id, current_status};
+
     try
     {
         auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
@@ -540,7 +556,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
             },
             Priority{});
 
-        return {starter->backup_id, BackupStatus::CREATING_BACKUP};
+        return {starter->backup_id, current_status};
     }
     catch (...)
     {
@@ -591,6 +607,15 @@ void BackupsWorker::doBackup(
     bool on_cluster,
     const ClusterPtr & cluster)
 {
+#if CLICKHOUSE_CLOUD
+    if (backup_settings.experimental_lightweight_snapshot)
+    {
+        auto zookeeper = context->getGlobalContext()->getZooKeeper();
+        if (zookeeper->exists(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup ID {} has existed. Please unlock this backup or change another name", backup_id);
+    }
+#endif
+
     bool is_internal_backup = backup_settings.internal;
 
     /// Checks access rights if this is not ON CLUSTER query.
@@ -655,6 +680,16 @@ void BackupsWorker::doBackup(
         uncompressed_size = backup->getUncompressedSize();
         compressed_size = backup->getCompressedSize();
     }
+
+#if CLICKHOUSE_CLOUD
+    /// We need to commit the lightweight backup in keeper indicating the transaction of the backup is done.
+    if (backup_settings.experimental_lightweight_snapshot && !is_internal_backup)
+    {
+        auto zookeeper = context->getGlobalContext()->getZooKeeper();
+        zookeeper->create(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id, "", zkutil::CreateMode::Persistent);
+        LOG_INFO(log, "Snapshot {} has been created", backup_id);
+    }
+#endif
 
     /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
     setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
@@ -807,16 +842,21 @@ struct BackupsWorker::RestoreStarter
         else
             restore_id = toString(*restore_settings.restore_uuid);
 
-        String base_backup_name;
-        if (restore_settings.base_backup_info)
-            base_backup_name = restore_settings.base_backup_info->toStringForLogging();
-
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = restore_context->getProcessListElement();
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
+    }
 
-        backups_worker.addInfo(restore_id,
+    std::pair<bool, BackupStatus> addInfo()
+    {
+        String base_backup_name;
+        if (restore_settings.base_backup_info)
+            base_backup_name = restore_settings.base_backup_info->toStringForLogging();
+
+        auto process_list_element = restore_context->getProcessListElement();
+
+        return backups_worker.addInfo(restore_id,
             backup_name_for_logging,
             base_backup_name,
             restore_context->getCurrentQueryId(),
@@ -896,6 +936,10 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
 {
     auto starter = std::make_shared<RestoreStarter>(*this, query, context);
 
+    auto [info_added, current_status] = starter->addInfo();
+    if (!info_added)
+        return {starter->restore_id, current_status};
+
     try
     {
         auto thread_pool_id = starter->is_internal_restore ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE : ThreadPoolId::ASYNC_BACKGROUND_RESTORE;
@@ -915,7 +959,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
             },
             Priority{});
 
-        return {starter->restore_id, BackupStatus::RESTORING};
+        return {starter->restore_id, current_status};
     }
     catch (...)
     {
@@ -945,7 +989,6 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     LOG_TRACE(log, "Opened backup for reading");
     return backup;
 }
-
 
 void BackupsWorker::doRestore(
     const std::shared_ptr<ASTBackupQuery> & restore_query,
@@ -1120,8 +1163,9 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 }
 
 
-void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                            bool internal, QueryStatusPtr process_list_element, BackupStatus status)
+std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name,
+                                                     const String & query_id, bool internal, QueryStatusPtr process_list_element,
+                                                     BackupStatus status)
 {
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
@@ -1150,10 +1194,21 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     auto it = infos.find(id);
     if (it != infos.end())
     {
-        /// It's better not allow to overwrite the current status if it's in progress.
         auto current_status = it->second.info.status;
-        if (!isFinalStatus(current_status))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
+        if (internal && it->second.info.internal && (name == it->second.info.name) && (base_backup_name == it->second.info.base_backup_name) &&
+            (isBackupStatus(status) == isBackupStatus(current_status)))
+        {
+            /// In case of connection problems DDLWorker may enqueue multiple internal backup or restore queries
+            /// causing the same internal backup or restore to be started on the same host multiple times.
+            /// We need to handle that and ignore superfluous internal backups or restores.
+            return {false, current_status};
+        }
+
+        /// Normally we don't allow using the same ID for another backup or restore again.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start {} with ID {} because there is another {} with the same ID",
+            isBackupStatus(status) ? "backup" : "restore",
+            quoteString(id),
+            isBackupStatus(current_status) ? "backup" : "restore");
     }
 
     if (backup_log)
@@ -1163,6 +1218,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
 
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
+    return {true, status};
 }
 
 

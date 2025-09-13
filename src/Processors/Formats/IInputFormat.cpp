@@ -15,7 +15,8 @@ Chunk IInputFormat::generate()
 {
     try
     {
-        return read();
+        Chunk res = read();
+        return res;
     }
     catch (Exception & e)
     {
@@ -28,8 +29,9 @@ Chunk IInputFormat::generate()
 
 void IInputFormat::resetParser()
 {
-    chassert(in);
-    in->ignoreAll();
+    if (in)
+        in->ignoreAll();
+
     // those are protected attributes from ISource (I didn't want to propagate resetParser up there)
     finished = false;
     got_exception = false;
@@ -48,4 +50,13 @@ Chunk IInputFormat::getChunkForCount(size_t rows)
     return cloneConstWithDefault(Chunk{header.getColumns(), 0}, rows);
 }
 
+void IInputFormat::resetOwnedBuffers()
+{
+    owned_buffers.clear();
+}
+
+void IInputFormat::onFinish()
+{
+    resetReadBuffer();
+}
 }

@@ -100,12 +100,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   \
   /etc/ssl/
 
-# Same options as in test/base/Dockerfile
-# (in case you need to override them in tests)
-ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
-ENV UBSAN_OPTIONS='print_stacktrace=1'
-ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
-
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 # To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS

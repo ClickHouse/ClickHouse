@@ -81,7 +81,7 @@ The supported formats are:
 | [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔   | ✔     |
 | [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔   | ✔     |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔   | ✔     |
-| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗    | ✔     |
+| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗   | ✔     |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔   | ✔     |
@@ -104,7 +104,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
-| [ProtobufList](#protobuflist)                                                                                     | ✔   | ✔     |
+| [ProtobufList](#protobuflist)                                                             | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |
@@ -120,6 +120,7 @@ The supported formats are:
 | [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔   | ✗     |
 | [Native](#native)                                                                         | ✔   | ✔     |
 | [Null](#null)                                                                             | ✗   | ✔     |
+| [Hash](#hash)                                                                             | ✗   | ✔     |
 | [XML](#xml)                                                                               | ✗   | ✔     |
 | [CapnProto](#capnproto)                                                                   | ✔   | ✔     |
 | [LineAsString](#lineasstring)                                                             | ✔   | ✔     |
@@ -300,6 +301,10 @@ See [Native](/interfaces/formats/Native)
 ### Null {#null}
 
 See [Null](/interfaces/formats/Null)
+
+### Hash {#hash}
+
+See [Hash](/interfaces/formats/Hash)
 
 ### Pretty {#pretty}
 

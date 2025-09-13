@@ -57,7 +57,7 @@ struct MultiSearchAllPositionsImpl
             for (size_t j = 0, from = 0; j < haystack_size; ++j, from += needles_size)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 searcher.searchOneAll(haystack, haystack_end, vec_res.begin() + from, res_callback);
                 prev_haystack_offset = haystack_offsets[j];
             }
@@ -119,7 +119,7 @@ struct MultiSearchAllPositionsImpl
             while (searcher.hasMoreToSearch())
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset;
                 searcher.searchOneAll(haystack, haystack_end, vec_res.begin() + vec_res.size() - needles_size, res_callback);
             }
 

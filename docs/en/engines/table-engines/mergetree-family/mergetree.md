@@ -345,40 +345,87 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-### Available Types of Indices {#available-types-of-indices}
+### Skip Index Types {#skip-index-types}
 
-#### MinMax {#minmax}
+The `MergeTree` table engine supports the following types of skip indexes.
+For more information on how skip indexes can be used for performance optimization
+see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexes).
 
-Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
+- [`MinMax`](#minmax) index
+- [`Set`](#set) index
+- [`bloom_filter`](#bloom-filter) index
+- [`ngrambf_v1`](#n-gram-bloom-filter) index
+- [`tokenbf_v1`](#token-bloom-filter) index
 
-Syntax: `minmax`
+#### MinMax skip index {#minmax}
+
+For each index granule, the minimum and maximum values of an expression are stored.
+(If the expression is of type `tuple`, it stores the minimum and maximum for each tuple element.)
+
+```text title="Syntax"
+minmax
+```
 
 #### Set {#set}
 
-Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
+For each index granule at most `max_rows` many unique values of the specified expression are stored.
+`max_rows = 0` means "store all unique values".
 
-Syntax: `set(max_rows)`
+```text title="Syntax"
+set(max_rows)
+```
 
 #### Bloom filter {#bloom-filter}
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns. An optional `false_positive` parameter with possible values between 0 and 1 specifies the probability of receiving a false positive response from the filter. Default value: 0.025. Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`. For the `Map` data type, the client can specify if the index should be created for keys or values using [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
+For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-Syntax: `bloom_filter([false_positive])`
+```text title="Syntax"
+bloom_filter([false_positive_rate])
+```
+
+The `false_positive_rate` parameter can take on a value between 0 and 1 (by default: `0.025`) and specifies the probability of generating a positive (which increases the amount of data to be read).
+
+The following data types are supported:
+- `(U)Int*`
+- `Float*`
+- `Enum`
+- `Date`
+- `DateTime`
+- `String`
+- `FixedString`
+- `Array`
+- `LowCardinality`
+- `Nullable`
+- `UUID`
+- `Map`
+
+:::note Map data type: specifying index creation with keys or values
+For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapvalues) functions.
+:::
 
 #### N-gram bloom filter {#n-gram-bloom-filter}
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all n-grams from a block of data. Only works with datatypes: [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) and [Map](/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
+For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
-Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+```text title="Syntax"
+ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
+```
 
-- `n` — ngram size,
-- `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-- `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
-- `random_seed` — The seed for Bloom filter hash functions.
+| Parameter                       | Description |
+|---------------------------------|-------------|
+| `n`                             | ngram size  |
+| `size_of_bloom_filter_in_bytes` | Bloom filter size in bytes. You can use a large value here, for example, `256` or `512`, because it can be compressed well).|
+|`number_of_hash_functions`       |The number of hash functions used in the bloom filter.|
+|`random_seed` |Seed for the bloom filter hash functions.|
 
-Users can create [UDF](/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
+This index only works with the following data types:
+- [`String`](/sql-reference/data-types/string.md)
+- [`FixedString`](/sql-reference/data-types/fixedstring.md)
+- [`Map`](/sql-reference/data-types/map.md)
 
-```sql
+To estimate the parameters of `ngrambf_v1`, you can use the following [User Defined Functions (UDFs)](/sql-reference/statements/create/function.md).
+
+```sql title="UDFs for ngrambf_v1"
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
 (total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
@@ -394,10 +441,14 @@ AS
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
-
 ```
-To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
+
+To use these functions, you need to specify at least two parameters:
+- `total_number_of_all_grams`
+- `probability_of_false_positives`
+
+For example, there are `4300` ngrams in the granule and you expect false positives to be less than `0.0001`.
+The other parameters can then be estimated by executing the following queries:
 
 ```sql
 --- estimate number of bits in the filter
@@ -413,21 +464,26 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
-
 ```
-Of course, you can also use those functions to estimate parameters by other conditions.
-The functions refer to the content [here](https://hur.st/bloomfilter).
+
+Of course, you can also use those functions to estimate parameters for other conditions.
+The functions above refer to the bloom filter calculator [here](https://hur.st/bloomfilter).
 
 #### Token bloom filter {#token-bloom-filter}
 
-The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
+The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
 
-Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+```text title="Syntax"
+tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
+```
 
-#### Special-purpose {#special-purpose}
+#### Vector similarity {#vector-similarity}
 
-- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
-- An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
+
+### Text (experimental) {#text}
+
+Support full-text search, see [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -444,7 +500,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |

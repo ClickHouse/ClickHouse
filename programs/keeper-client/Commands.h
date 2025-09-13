@@ -295,4 +295,18 @@ class MVCommand : public IKeeperClientCommand
     }
 };
 
+class GetAclCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_acl"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get ACL for specified path.";
+    }
+};
+
 }

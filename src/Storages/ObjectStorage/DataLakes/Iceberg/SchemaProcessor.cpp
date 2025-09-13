@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 
@@ -45,8 +46,51 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
+
 namespace
 {
+
+void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
+{
+    auto type_str = type->getValue<String>(Iceberg::f_type);
+    if (type_str == "map")
+    {
+        auto key_id = type->getValue<Int64>(Iceberg::f_key_id);
+        auto value_id = type->getValue<Int64>(Iceberg::f_value_id);
+        auto key_name = Nested::concatenateName(current_path, "key");
+        auto value_name = Nested::concatenateName(current_path, "value");
+        if (type->isObject(Iceberg::f_key))
+            traverseComplexType(type->getObject(Iceberg::f_key), result, key_name);
+        result[key_name] = key_id;
+
+        if (type->isObject(Iceberg::f_value))
+            traverseComplexType(type->getObject(Iceberg::f_value), result, value_name);
+        result[value_name] = value_id;
+        return;
+    }
+    if (type_str == "list")
+    {
+        auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
+        if (type->isObject(Iceberg::f_element))
+            traverseComplexType(type->getObject(Iceberg::f_element), result, Nested::concatenateName(current_path, "list.element"));
+        result[current_path] = element_id;
+        return;
+    }
+    if (type_str == "struct")
+    {
+        auto fields = type->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            auto field_id = field->getValue<Int32>(Iceberg::f_id);
+            auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
+            if (field->isObject(Iceberg::f_type))
+                traverseComplexType(field->getObject(Iceberg::f_type), result, child_path);
+            result[child_path] = field_id;
+        }
+        return;
+    }
+}
 
 using namespace Iceberg;
 
@@ -94,6 +138,9 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 }
 
 }
+
+namespace Iceberg
+{
 
 std::string IcebergSchemaProcessor::default_link{};
 
@@ -257,10 +304,11 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>(f_id)}]
-                    = NameAndTypePair{current_full_name, element_types.back()};
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
+                [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)
+                [{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {
@@ -423,6 +471,56 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
+Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const
+{
+    SharedLockGuard lock(mutex);
+
+    auto it = iceberg_table_schemas_by_ids.find(id);
+    if (it == iceberg_table_schemas_by_ids.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
+    return it->second;
+}
+
+void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id)
+{
+    std::lock_guard lock(mutex);
+    auto it = schema_id_by_snapshot.find(snapshot_id);
+    if (it != schema_id_by_snapshot.end())
+    {
+        Int32 old_id = it->second;
+        if (old_id != schema_id)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Snapshot with id {} already registered with schema id {}, trying to register with new schema id {}",
+                snapshot_id,
+                old_id,
+                schema_id);
+        }
+    }
+    else
+    {
+        schema_id_by_snapshot[snapshot_id] = schema_id;
+    }
+}
+
+Int32 IcebergSchemaProcessor::getSchemaIdForSnapshot(Int64 snapshot_id) const
+{
+    SharedLockGuard lock(mutex);
+    return schema_id_by_snapshot.at(snapshot_id);
+}
+
+
+std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 snapshot_id) const
+{
+    SharedLockGuard lock(mutex);
+    auto it = schema_id_by_snapshot.find(snapshot_id);
+    if (it != schema_id_by_snapshot.end())
+        return it->second;
+    return std::nullopt;
+}
+
+
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
@@ -438,5 +536,39 @@ bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
     SharedLockGuard lock(mutex);
 
     return clickhouse_table_schemas_by_ids.contains(id);
+}
+
+std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_map<String, Int64> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        auto field_id = current_object->getValue<Int32>(Iceberg::f_id);
+        auto cur_name = current_object->getValue<String>(Iceberg::f_name);
+        if (current_object->isObject(Iceberg::f_type))
+            traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
+        result[cur_name] = field_id;
+    }
+    return result;
+}
+
+ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
+{
+    auto schema = getIcebergTableSchemaById(id);
+    if (!schema)
+        return nullptr;
+    return createColumnMapper(schema);
+}
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+{
+    auto column_mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+    return column_mapper;
+}
+
 }
 }

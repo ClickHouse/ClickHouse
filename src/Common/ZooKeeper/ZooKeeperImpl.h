@@ -195,6 +195,8 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
+    void getACL(const String & path, GetACLCallback callback) override;
+
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
@@ -218,6 +220,8 @@ public:
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
 private:
+    const Int32 send_receive_os_threads_nice_value;
+
     ACLs default_acls;
     zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
@@ -269,7 +273,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024};
+    RequestsQueue requests_queue{1024, "zookeeper-client"};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
