@@ -19,6 +19,11 @@
 curl https://clickhouse.com/ | sh
 ```
 
+## Open House Conference, Oct 28 2025
+
+[<img width="1280" height="368" alt="Screenshot 2025-09-12 at 20 43 14" src="https://github.com/user-attachments/assets/c6233f7c-90c6-4e50-a812-a0077e035ed4" />
+](https://clickhouse.com/openhouse/amsterdam)
+
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
