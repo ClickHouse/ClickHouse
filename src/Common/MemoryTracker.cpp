@@ -232,7 +232,7 @@ void incrementAllocationWithoutCheck(Int64 size)
         {
             DB::TraceSender::send(DB::TraceType::MemoryAllocatedWithoutCheck, StackTrace(), DB::TraceSender::Extras{.size = size});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Ignore failures, we have ProfileEvents anyway
         }
