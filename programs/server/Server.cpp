@@ -2231,6 +2231,19 @@ try
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
+            /// Update workload entities from configuration.
+            if (!initial_loading)
+            {
+                try
+                {
+                    global_context->getWorkloadEntityStorage().updateConfiguration(*config);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to update workload entities from configuration");
+                }
+            }
+
             /// Must be the last.
             latest_config = config;
         });

@@ -999,3 +999,131 @@ def test_throw_on_unknown_workload():
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "RESOURCE_ACCESS_DENIED" in str(ex)
+
+
+def test_config_based_workloads_and_resources():
+    """Test config-based workloads and resources loading and precedence over SQL."""
+    # First, ensure we start clean
+    node.query("system reload config")
+    
+    # Create a test configuration with predefined workloads and resources
+    workloads_config = """
+    <clickhouse>
+        <predefined_resources>
+            <config_io_read>
+                <sql>RESOURCE config_io_read (READ DISK s3_no_resource)</sql>
+            </config_io_read>
+            <config_io_write>
+                <sql>RESOURCE config_io_write (WRITE DISK s3_no_resource)</sql>
+            </config_io_write>
+        </predefined_resources>
+        <predefined_workloads>
+            <config_all>
+                <sql>WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read, max_bytes_inflight = 2000000 FOR config_io_write</sql>
+            </config_all>
+            <config_production>
+                <sql>WORKLOAD config_production IN config_all SETTINGS priority = 1, weight = 3</sql>
+            </config_production>
+        </predefined_workloads>
+    </clickhouse>
+    """
+    
+    # Update config and reload
+    with open("/etc/clickhouse-server/config.d/test_config_workloads.xml", "w") as f:
+        f.write(workloads_config)
+    
+    node.query("system reload config")
+    
+    # Verify config-based entities are loaded
+    resources_result = node.query("SELECT name FROM system.resources WHERE name LIKE 'config_%' ORDER BY name")
+    assert "config_io_read\nconfig_io_write\n" == resources_result
+    
+    workloads_result = node.query("SELECT name FROM system.workloads WHERE name LIKE 'config_%' ORDER BY name")
+    assert "config_all\nconfig_production\n" == workloads_result
+    
+    # Verify scheduler nodes exist for config entities
+    scheduler_result = node.query(
+        "SELECT count() FROM system.scheduler WHERE resource IN ('config_io_read', 'config_io_write') AND path LIKE '%config_%'"
+    )
+    assert int(scheduler_result.strip()) > 0
+    
+    # Try to create SQL entities with same names - should fail
+    try:
+        node.query("CREATE RESOURCE config_io_read (READ DISK s3_no_resource)")
+        assert False, "Should not be able to create resource with same name as config entity"
+    except Exception as ex:
+        assert "defined in configuration" in str(ex)
+    
+    try:
+        node.query("CREATE WORKLOAD config_all")
+        assert False, "Should not be able to create workload with same name as config entity"
+    except Exception as ex:
+        assert "defined in configuration" in str(ex)
+    
+    # Create SQL entities with different names
+    node.query("CREATE RESOURCE sql_io_read (READ DISK s3_no_resource)")
+    node.query("CREATE WORKLOAD sql_all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
+    
+    # Verify both config and SQL entities exist
+    all_resources = node.query("SELECT name FROM system.resources ORDER BY name")
+    assert "config_io_read" in all_resources
+    assert "config_io_write" in all_resources  
+    assert "sql_io_read" in all_resources
+    
+    all_workloads = node.query("SELECT name FROM system.workloads ORDER BY name")
+    assert "config_all" in all_workloads
+    assert "config_production" in all_workloads
+    assert "sql_all" in all_workloads
+    
+    # Test that config entities cannot be dropped
+    try:
+        node.query("DROP RESOURCE config_io_read")
+        assert False, "Should not be able to drop config-defined resource"
+    except Exception as ex:
+        assert "defined in configuration" in str(ex)
+    
+    try:
+        node.query("DROP WORKLOAD config_all")
+        assert False, "Should not be able to drop config-defined workload"
+    except Exception as ex:
+        assert "defined in configuration" in str(ex)
+    
+    # But SQL entities can be dropped
+    node.query("DROP WORKLOAD sql_all")
+    node.query("DROP RESOURCE sql_io_read")
+    
+    # Update config to remove some entities
+    updated_config = """
+    <clickhouse>
+        <predefined_resources>
+            <config_io_read>
+                <sql>RESOURCE config_io_read (READ DISK s3_no_resource)</sql>
+            </config_io_read>
+        </predefined_resources>
+        <predefined_workloads>
+            <config_all>
+                <sql>WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read</sql>
+            </config_all>
+        </predefined_workloads>
+    </clickhouse>
+    """
+    
+    with open("/etc/clickhouse-server/config.d/test_config_workloads.xml", "w") as f:
+        f.write(updated_config)
+    
+    node.query("system reload config")
+    
+    # Verify entities are updated
+    resources_after = node.query("SELECT name FROM system.resources WHERE name LIKE 'config_%' ORDER BY name")
+    assert "config_io_read\n" == resources_after  # config_io_write should be gone
+    
+    workloads_after = node.query("SELECT name FROM system.workloads WHERE name LIKE 'config_%' ORDER BY name") 
+    assert "config_all\n" == workloads_after  # config_production should be gone
+    
+    # Clean up
+    import os
+    try:
+        os.remove("/etc/clickhouse-server/config.d/test_config_workloads.xml")
+    except:
+        pass
+    node.query("system reload config")

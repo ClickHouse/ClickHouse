@@ -348,22 +348,22 @@ In addition to SQL-based definitions, workloads and resources can be predefined 
 
 ```xml
 <clickhouse>
-    <workloads>
+    <predefined_workloads>
         <all>
             <sql>WORKLOAD all SETTINGS max_io_requests = 1000 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 3355443200 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write</sql>
         </all>
         <production>
             <sql>WORKLOAD production IN all SETTINGS weight = 3</sql>
         </production>
-    </workloads>
-    <resources>
+    </predefined_workloads>
+    <predefined_resources>
         <s3disk_read>
             <sql>RESOURCE s3disk_read (READ DISK s3)</sql>
         </s3disk_read>
         <s3disk_write>
             <sql>RESOURCE s3disk_write (WRITE DISK s3)</sql>
         </s3disk_write>
-    </resources>
+    </predefined_resources>
 </clickhouse>
 ```
 

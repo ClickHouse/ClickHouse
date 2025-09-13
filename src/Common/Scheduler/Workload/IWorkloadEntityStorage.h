@@ -7,6 +7,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 
 namespace DB
 {
@@ -89,6 +91,9 @@ public:
 
     /// Returns the name of resource used for query slot scheduling
     virtual String getQueryResourceName() = 0;
+
+    /// Update configuration for config-based entities
+    virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) {}
 };
 
 }
