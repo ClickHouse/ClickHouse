@@ -316,12 +316,15 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         missing_parts_rows += part_ranges.getRowsCount();
     }
 
-    const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
-    LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
-    auto parts_ranges = local_index_analysis_callback(missing_parts);
-    LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
-    res[local_replica_index].first = local_replica_address;
-    res[local_replica_index].second.insert_range(std::move(parts_ranges));
+    if (!missing_parts.empty())
+    {
+        const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
+        LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
+        auto parts_ranges = local_index_analysis_callback(missing_parts);
+        LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
+        res[local_replica_index].first = local_replica_address;
+        res[local_replica_index].second.insert_range(std::move(parts_ranges));
+    }
 
     return res;
 }
