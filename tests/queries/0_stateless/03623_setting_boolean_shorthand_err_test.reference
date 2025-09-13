@@ -1,0 +1,5 @@
+true
+EXPECTED: String setting failed with exit code 62
+EXPECTED: UInt64 setting failed with exit code 62
+EXPECTED: UInt64 setting failed with exit code 62
+4
