@@ -25,7 +25,7 @@ struct CacheLine {
 }
 
 impl Disk for ClickHouseDisk {
-    fn from_config(config: &Config) -> Self {
+    async fn from_config(config: &Config) -> Self {
         let client = clickhouse::Client::default()
             .with_url(&config.hostname)
             .with_user(&config.user)
