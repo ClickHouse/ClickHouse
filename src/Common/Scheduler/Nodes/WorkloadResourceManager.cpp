@@ -302,9 +302,9 @@ WorkloadResourceManager::~WorkloadResourceManager()
 
 void WorkloadResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    // Load workloads and resources from configuration
-    loadWorkloadsFromConfig(config);
+    // Load resources first, then workloads (since workloads may reference resources)
     loadResourcesFromConfig(config);
+    loadWorkloadsFromConfig(config);
 }
 
 void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
