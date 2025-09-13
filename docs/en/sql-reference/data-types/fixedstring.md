@@ -37,11 +37,7 @@ When inserting the data, ClickHouse:
 Let's consider the following table with the single `FixedString(2)` column:
 
 ```sql
-CREATE OR REPLACE TABLE FixedStringTable
-(
-    `name` FixedString(2)
-)
-ENGINE = Memory;
+
 
 INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
 ```
@@ -65,10 +61,50 @@ FROM FixedStringTable;
 
 Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
 
-When selecting the data, ClickHouse removes the padded null bytes, if any, at the end of the string, so there is no need to add `\0` in `WHERE` clause. Thus the queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result:
+Selecting data with `WHERE` clause return various result depending on how the condition is specified:
 
-```text
-┌─name─┐
-│ a    │
-└──────┘
+- If equality operator `=` or `==` or `equals` function used, ClickHouse _doesn't_ take `\0` char into consideration, i.e. queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result.
+- If `LIKE` clause is used, ClickHouse _does_ take `\0` char into consideration, so one may need to explicitly specify `\0` char in the filter condition.
+
+```sql
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+Query id: c32cec28-bb9e-4650-86ce-d74a1694d79e
+
+{"name":"a\u0000"}
+
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a'
+FORMAT JSONStringsEachRow
+
+0 rows in set.
+
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
 ```
