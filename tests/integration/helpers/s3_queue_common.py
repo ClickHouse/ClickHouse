@@ -10,7 +10,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
 
-DEFAULT_AUTH = ["minio", minio_secret_key]
+DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
 
@@ -150,8 +150,7 @@ def create_table(
     move_to_prefix=None,
     move_to_bucket=None,
 ):
-    assert len(auth) == 2
-    minio_access_key_id, minio_secret_access_key = auth
+    auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
 
     settings = {
@@ -175,6 +174,7 @@ def create_table(
             if engine_name == "S3Queue":
                 move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{move_to_bucket}"
                 settings["after_processing_move_uri"] = move_uri
+                minio_access_key_id, minio_secret_access_key = [s.strip("'") for s in DEFAULT_AUTH]
                 settings["after_processing_move_access_key_id"] = minio_access_key_id
                 settings["after_processing_move_secret_access_key"] = minio_secret_access_key
             else:
@@ -186,7 +186,7 @@ def create_table(
     engine_def = None
     if engine_name == "S3Queue":
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
-        engine_def = f"{engine_name}('{url}', '{minio_access_key_id}', '{minio_secret_access_key}', {file_format})"
+        engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
         engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
