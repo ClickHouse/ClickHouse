@@ -1421,6 +1421,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
+    <!-- Aggregated ZooKeeper log.
+    -->
+    <aggregated_zookeeper_log>
+        <database>system</database>
+        <table>aggregated_zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </aggregated_zookeeper_log>
+
     <!-- Configure system.dashboards for dashboard.html.
 
          Could have any query parameters, for which there will be an input on the page.
