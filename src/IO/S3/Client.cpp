@@ -476,6 +476,12 @@ Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
         doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
+
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -545,6 +551,12 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
+}
+
+Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
+{
+    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+        request, [this](const Model::PutObjectTaggingRequest & req) { return PutObjectTagging(req); });
 }
 
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const

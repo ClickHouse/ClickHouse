@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 
 #include <functional>
@@ -32,5 +33,7 @@ struct StoredObject
 using StoredObjects = std::vector<StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
+
+Strings collectRemotePaths(const StoredObjects & objects);
 
 }
