@@ -2,8 +2,6 @@ import threading
 import time
 from contextlib import contextmanager
 
-## sudo -H pip install PyMySQL
-import pymysql.cursors
 import pytest
 
 from helpers.client import QueryRuntimeException

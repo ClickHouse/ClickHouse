@@ -3,11 +3,13 @@ import dataclasses
 import datetime
 import io
 import json
+import os
 import random
 import sys
 import time
+import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ._environment import _Environment
 from .s3 import S3
@@ -51,6 +53,7 @@ class Result(MetaClasses.Serializable):
         OK = "OK"
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
+        ERROR = "ERROR"
 
     class Label:
         REQUIRED = "required"
@@ -116,6 +119,7 @@ class Result(MetaClasses.Serializable):
                     Result.Status.SUCCESS,
                     Result.Status.SKIPPED,
                     Result.StatusExtended.OK,
+                    Result.StatusExtended.SKIPPED,
                 ):
                     continue
                 elif result.status == Result.Status.ERROR:
@@ -231,19 +235,20 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
-        # If no failures, nothing more to do
-        if self.is_ok():
-            return self
-
         if not self.info:
+            total = 0
+            fail_cnt = 0
             for r in self.results:
                 if not r.is_ok():
-                    self.set_info(f"{r.status}: {r.name}")
-                    break
-        # Suggest local command to rerun
-        command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-        command_info += f" [ --test TEST_NAME (if supported by the job)]"
-        self.set_info(command_info)
+                    fail_cnt += 1
+                total += 1
+            self.set_info(f"Failures: {fail_cnt}/{total}")
+
+        if not self.is_ok():
+            # Suggest local command to rerun
+            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+            command_info += f" [ --test TEST_NAME (if supported by the job)]"
+            self.set_info(command_info)
 
         return self
 
@@ -304,6 +309,66 @@ class Result(MetaClasses.Serializable):
         self.set_label(self.Label.REQUIRED)
 
     @classmethod
+    def from_pytest_run(
+        cls, command, cwd=None, name="Tests", env=None, pytest_report_file=None
+    ):
+        """
+        Runs a pytest command, captures results in jsonl format, and creates a Result object.
+
+        Args:
+            command (str): The pytest command to run (without 'pytest' itself)
+            cwd (str, optional): Working directory to run the command in
+            name (str, optional): Name for the root Result object
+            env (dict, optional): Environment variables for the pytest command
+            verbose (bool, optional): Whether to print pytest output to console
+
+        Returns:
+            Result: A Result object with test cases as sub-Results
+        """
+        sw = Utils.Stopwatch()
+        info = ""
+        status = ""
+        if pytest_report_file:
+            files = [pytest_report_file]
+        else:
+            files = []
+            pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
+
+        with ContextManager.cd(cwd):
+            # Construct the full pytest command with jsonl report
+            full_command = f"pytest {command} --report-log={pytest_report_file}"
+
+            # Apply environment
+            for key, value in (env or {}).items():
+                print(f"Setting environment variable {key} to {value}")
+                os.environ[key] = value
+
+            if name is None:
+                name = f"pytest_{command}"
+
+            # Run pytest
+            res = Shell.check(full_command, verbose=True)
+            info = []
+            if not res:
+                info.append("Pytest run terminated with an error")
+            subresults = ResultTranslator.from_pytest_jsonl(
+                pytest_report_file=pytest_report_file
+            )
+            if subresults is None:
+                status = Result.Status.ERROR
+                info.append("Failed to parse pytest jsonl report")
+                subresults = []
+
+        return Result.create_from(
+            name=name,
+            results=subresults,
+            status=status,
+            stopwatch=sw,
+            info=info,
+            files=files,
+        )
+
+    @classmethod
     def _filter_out_ok_results(cls, result_obj):
         if not result_obj.results:
             return result_obj
@@ -311,7 +376,7 @@ class Result(MetaClasses.Serializable):
         filtered = []
         for r in result_obj.results:
             if not r.is_ok():
-                filtered.append(cls.filter_out_ok_results(r))
+                filtered.append(cls._filter_out_ok_results(r))
 
         if len(filtered) == len(result_obj.results):
             return result_obj  # No filtering needed
@@ -838,7 +903,8 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "./ci/tmp/gtest.json"
+    GTEST_RESULT_FILE = Path("./ci/tmp/gtest.json").absolute()
+    PYTEST_RESULT_FILE = Path("./ci/tmp/pytest.jsonl").absolute()
 
     @classmethod
     def from_gtest(cls):
@@ -987,3 +1053,131 @@ class ResultTranslator:
             test_results,
             description,
         )
+
+    @classmethod
+    def from_pytest_jsonl(cls, pytest_report_file):
+        """
+        Parses a pytest jsonl report file and creates a hierarchical Result object.
+
+        Args:
+            jsonl_path (str): Path to the pytest jsonl report file
+            name (str): Name for the root Result object
+
+        Returns:
+            List[Result]: A list of Result objects representing individual test cases
+        """
+        if not os.path.isfile(pytest_report_file):
+            print(f"Pytest report file {pytest_report_file} not found")
+            return None
+
+        # Track test cases by their node_id, and also track failures by phase
+        test_results = {}
+        test_failures = {}  # To track failures in each phase (setup/call/teardown)
+
+        try:
+            with open(pytest_report_file, "r") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+
+                        # Process based on event type
+                        if entry.get("$report_type") == "TestReport":
+                            node_id = entry.get("nodeid")
+                            outcome = entry.get("outcome")
+                            duration = entry.get("duration")
+                            when = entry.get("when", "")
+
+                            # Convert node_id to more readable test name
+                            # Format: file_path::test_class::test_method[params]
+                            test_name = (
+                                node_id.split("::")[-1] if "::" in node_id else node_id
+                            )
+
+                            # Map pytest outcome to Result status
+                            status = {
+                                "passed": Result.StatusExtended.OK,
+                                "failed": Result.StatusExtended.FAIL,
+                                "skipped": Result.StatusExtended.SKIPPED,
+                                # "xfailed": Result.StatusExtended.OK,  # expected failure
+                                # "xpassed": Result.StatusExtended.FAIL,   # unexpected pass
+                                "error": Result.StatusExtended.ERROR,
+                            }.get(outcome, Result.StatusExtended.ERROR)
+
+                            # Track failures by phase
+                            if status in (
+                                Result.StatusExtended.FAIL,
+                                Result.StatusExtended.ERROR,
+                            ):
+                                if node_id not in test_failures:
+                                    test_failures[node_id] = {}
+                                test_failures[node_id][when] = status
+
+                            # Create or update test result
+                            if node_id not in test_results:
+                                test_result = Result(
+                                    name=node_id, status=status, duration=duration
+                                )
+                                test_result.ext["when"] = when
+                                test_results[node_id] = test_result
+                            else:
+                                # Always override with a failure, or keep existing failure
+                                existing_status = test_results[node_id].status
+                                if status in (
+                                    Result.StatusExtended.FAIL,
+                                    Result.StatusExtended.ERROR,
+                                ):
+                                    test_results[node_id].status = status
+                                    test_results[node_id].duration = duration
+                                    test_results[node_id].ext["when"] = when
+                                # Only update with non-failure if there's no existing failure
+                                elif existing_status not in (
+                                    Result.StatusExtended.FAIL,
+                                    Result.StatusExtended.ERROR,
+                                ):
+                                    # For non-failures, prefer 'call' phase over others
+                                    if (
+                                        when == "call"
+                                        or test_results[node_id].ext.get("when")
+                                        != "call"
+                                    ):
+                                        test_results[node_id].status = status
+                                        test_results[node_id].duration = duration
+                                        test_results[node_id].ext["when"] = when
+
+                            # Process sections (log output)
+                            if "sections" in entry:
+                                logs = []
+                                for section in entry["sections"]:
+                                    if isinstance(section, list) and len(section) == 2:
+                                        section_title, section_content = section
+                                        if section_content:
+                                            logs.append(f"===== {section_title} =====")
+                                            logs.append(section_content)
+
+                                # Add logs to the result info
+                                if logs and not test_results[node_id].is_ok():
+                                    test_results[node_id].info = "\n".join(logs)
+
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding line in jsonl file: {e}")
+                        traceback.print_exc()
+                        continue
+
+            # Make a final pass to ensure any test with failures in any phase is marked as failed
+            for node_id, failures in test_failures.items():
+                if failures:  # If there are any failures for this test
+                    # Prioritize failures: setup > call > teardown
+                    if "setup" in failures:
+                        test_results[node_id].status = failures["setup"]
+                    elif "call" in failures:
+                        test_results[node_id].status = failures["call"]
+                    elif "teardown" in failures:
+                        test_results[node_id].status = failures["teardown"]
+
+            # Return as a list of Result objects
+            return list(test_results.values())
+
+        except Exception as e:
+            print(f"Failed to parse pytest jsonl: {e}")
+            traceback.print_exc()
+            return None
