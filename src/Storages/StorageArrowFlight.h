@@ -26,6 +26,11 @@ public:
         bool use_basic_authentication = false;
         String username;
         String password;
+        bool enable_ssl = false;
+        /// Path to the file containing root certificates to use for validating server certificates.
+        String ssl_ca;
+        /// Override the hostname checked by TLS. Use with caution.
+        String ssl_override_hostname;
     };
 
     static Configuration getConfiguration(ASTs & engine_args, ContextPtr context);

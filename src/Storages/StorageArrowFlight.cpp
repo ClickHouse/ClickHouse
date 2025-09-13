@@ -106,7 +106,8 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
     StorageArrowFlight::Configuration configuration;
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {
-        "host", "hostname", "dataset", "use_basic_authentication", "user", "username", "password"
+        "host", "hostname", "dataset", "use_basic_authentication", "user", "username", "password",
+        "enable_ssl", "ssl_ca", "ssl_override_hostname"
     };
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"port"};
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
@@ -125,6 +126,13 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
     {
         configuration.username = named_collection.getAny<String>({"username", "user"});
         configuration.password = named_collection.getOrDefault<String>("password", "");
+    }
+
+    configuration.enable_ssl = named_collection.getOrDefault<bool>("enable_ssl", false);
+    if (configuration.enable_ssl)
+    {
+        configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
+        configuration.ssl_override_hostname = named_collection.getOrDefault<String>("ssl_override_hostname", "");
     }
 
     return configuration;

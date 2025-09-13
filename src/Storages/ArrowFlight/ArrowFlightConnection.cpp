@@ -2,6 +2,8 @@
 
 #if USE_ARROWFLIGHT
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -18,6 +20,9 @@ ArrowFlightConnection::ArrowFlightConnection(const StorageArrowFlight::Configura
     , use_basic_authentication(config.use_basic_authentication)
     , username(config.username)
     , password(config.password)
+    , enable_ssl(config.enable_ssl)
+    , ssl_ca(config.ssl_ca)
+    , ssl_override_hostname(config.ssl_override_hostname)
 {
 }
 
@@ -40,14 +45,23 @@ void ArrowFlightConnection::connect() const
     if (client)
         return;
 
-    auto location_result = arrow::flight::Location::ForGrpcTcp(host, port);
+    auto location_result = enable_ssl ? arrow::flight::Location::ForGrpcTls(host, port) : arrow::flight::Location::ForGrpcTcp(host, port);
     if (!location_result.ok())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Arrow Flight endpoint specified: {}", location_result.status().ToString());
     }
     auto location = std::move(location_result).ValueOrDie();
 
-    auto client_result = arrow::flight::FlightClient::Connect(location);
+    auto client_options = arrow::flight::FlightClientOptions::Defaults();
+
+    if (enable_ssl)
+    {
+        if (!ssl_ca.empty())
+            client_options.tls_root_certs = loadCertificate(ssl_ca);
+        client_options.override_hostname = ssl_override_hostname;
+    }
+
+    auto client_result = arrow::flight::FlightClient::Connect(location, client_options);
     if (!client_result.ok())
     {
         throw Exception(
@@ -69,6 +83,15 @@ void ArrowFlightConnection::connect() const
         auto auth_token = std::move(auth_result).ValueOrDie();
         res_options->headers.push_back(auth_token);
     }
+}
+
+String ArrowFlightConnection::loadCertificate(const String & path)
+{
+    ReadBufferFromFile buf{path};
+    String str;
+    readStringUntilEOF(str, buf);
+    buf.close();
+    return str;
 }
 
 }
