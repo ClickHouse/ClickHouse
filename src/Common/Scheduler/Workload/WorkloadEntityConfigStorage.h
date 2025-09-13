@@ -16,10 +16,7 @@ class WorkloadEntityConfigStorage : public WorkloadEntityStorageBase
 public:
     WorkloadEntityConfigStorage(const ContextPtr & global_context_);
 
-    void loadEntities() override;
-
-    /// Update configuration and refresh entities
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
     OperationResult storeEntityImpl(
@@ -42,9 +39,6 @@ private:
 
     /// Parse and validate a single entity from config
     ASTPtr parseEntityFromConfig(WorkloadEntityType entity_type, const String & entity_name, const String & sql);
-
-    std::atomic<bool> entities_loaded = false;
-    const Poco::Util::AbstractConfiguration * current_config = nullptr;
 };
 
 }

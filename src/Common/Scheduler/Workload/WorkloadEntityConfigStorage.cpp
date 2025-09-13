@@ -24,18 +24,8 @@ WorkloadEntityConfigStorage::WorkloadEntityConfigStorage(const ContextPtr & glob
 {
 }
 
-void WorkloadEntityConfigStorage::loadEntities()
+void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    if (entities_loaded.exchange(true))
-        return;
-    
-    // Config entities are loaded via updateConfiguration, not here
-    // Just mark as loaded so subsequent calls don't do anything
-}
-
-void WorkloadEntityConfigStorage::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    current_config = &config;
     refreshEntities(config);
 }
 
@@ -48,7 +38,7 @@ WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::storeE
     bool,
     const Settings &)
 {
-    // Config storage is read-only - entities come from config, not SQL
+    // Config storage is read-only - entities come from config, not SQL. This function should not be called
     return OperationResult::Failed;
 }
 
@@ -58,7 +48,7 @@ WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::remove
     const String &,
     bool)
 {
-    // Config storage is read-only - entities come from config, not SQL
+    // Config storage is read-only - entities come from config, not SQL. This function should not be called
     return OperationResult::Failed;
 }
 
@@ -77,14 +67,14 @@ void WorkloadEntityConfigStorage::refreshEntities(const Poco::Util::AbstractConf
         for (const auto & resource_name : resource_names)
         {
             String config_key = "predefined_resources." + resource_name;
-            if (!config.has(config_key + ".sql"))
+            String sql = config.getString(config_key, "");
+            
+            if (sql.empty())
             {
-                LOG_WARNING(log, "Resource '{}' is missing 'sql' configuration", resource_name);
+                LOG_WARNING(log, "Resource '{}' has empty SQL configuration", resource_name);
                 continue;
             }
 
-            String sql = config.getString(config_key + ".sql");
-            
             if (auto ast = parseEntityFromConfig(WorkloadEntityType::Resource, resource_name, sql))
                 new_entities.emplace_back(resource_name, ast);
         }
@@ -99,14 +89,14 @@ void WorkloadEntityConfigStorage::refreshEntities(const Poco::Util::AbstractConf
         for (const auto & workload_name : workload_names)
         {
             String config_key = "predefined_workloads." + workload_name;
-            if (!config.has(config_key + ".sql"))
+            String sql = config.getString(config_key, "");
+            
+            if (sql.empty())
             {
-                LOG_WARNING(log, "Workload '{}' is missing 'sql' configuration", workload_name);
+                LOG_WARNING(log, "Workload '{}' has empty SQL configuration", workload_name);
                 continue;
             }
 
-            String sql = config.getString(config_key + ".sql");
-            
             if (auto ast = parseEntityFromConfig(WorkloadEntityType::Workload, workload_name, sql))
                 new_entities.emplace_back(workload_name, ast);
         }

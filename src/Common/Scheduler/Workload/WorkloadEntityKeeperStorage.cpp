@@ -92,13 +92,13 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
     return zookeeper;
 }
 
-void WorkloadEntityKeeperStorage::loadEntities()
+void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
     /// loadEntities() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
     
     // Load config entities first
-    config_storage->loadEntities();
+    config_storage->loadEntities(config);
     
     try
     {
@@ -110,23 +110,6 @@ void WorkloadEntityKeeperStorage::loadEntities()
         tryLogCurrentException(log, "Failed to load workload entities");
     }
     startWatchingThread();
-}
-
-void WorkloadEntityKeeperStorage::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    // Update config storage
-    config_storage->updateConfiguration(config);
-    
-    // Refresh entities from ZooKeeper to merge with updated config entities
-    try
-    {
-        auto lock = getLock();
-        refreshEntities(getZooKeeper());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to refresh workload entities after config update");
-    }
 }
 
 
@@ -297,30 +280,11 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     }
 
     // Then parse and add ZooKeeper entities, but skip those that exist in config
-    ASTs queries;
-    ParserCreateWorkloadEntity parser;
-    const char * begin = data.data(); /// begin of current query
-    const char * pos = begin; /// parser moves pos from begin to the end of current query
-    const char * end = begin + data.size();
-    while (pos < end)
-    {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
-        while (isWhitespaceASCII(*pos) || *pos == ';')
-            ++pos;
-    }
+    auto keeper_entities = parseEntitiesFromString(data, log);
 
-    /// Read and parse all SQL entities from data we just read from ZooKeeper
-    for (const auto & query : queries)
+    /// Add keeper entities that don't conflict with config entities
+    for (const auto & [entity_name, query] : keeper_entities)
     {
-        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
-        String entity_name;
-        if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
-            entity_name = create_workload_query->getWorkloadName();
-        else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
-            entity_name = create_resource_query->getResourceName();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
-
         // Skip if this entity exists in config (config takes precedence)
         if (!config_entity_names.contains(entity_name))
             new_entities.emplace_back(entity_name, query);

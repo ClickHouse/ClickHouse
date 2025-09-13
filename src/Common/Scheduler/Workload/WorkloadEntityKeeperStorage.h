@@ -24,10 +24,8 @@ public:
     bool isReplicated() const override { return true; }
     String getReplicationID() const override { return zookeeper_path; }
 
-    void loadEntities() override;
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
     void stopWatching() override;
-
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
     OperationResult storeEntityImpl(

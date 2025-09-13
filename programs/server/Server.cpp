@@ -2231,19 +2231,6 @@ try
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
-            /// Update workload entities from configuration.
-            if (!initial_loading)
-            {
-                try
-                {
-                    global_context->getWorkloadEntityStorage().updateConfiguration(*config);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to update workload entities from configuration");
-                }
-            }
-
             /// Must be the last.
             latest_config = config;
         });
@@ -2625,7 +2612,7 @@ try
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadEntities();
+        global_context->getWorkloadEntityStorage().loadEntities(*config);
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

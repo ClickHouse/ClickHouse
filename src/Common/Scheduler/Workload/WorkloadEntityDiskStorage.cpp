@@ -120,24 +120,14 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 }
 
 
-void WorkloadEntityDiskStorage::loadEntities()
+void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
     if (!entities_loaded)
     {
         // Load config entities first
-        config_storage->loadEntities();
+        config_storage->loadEntities(config);
         loadEntitiesImpl();
     }
-}
-
-void WorkloadEntityDiskStorage::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    // Update config storage first
-    config_storage->updateConfiguration(config);
-    
-    // If entities are already loaded, refresh the merged view
-    if (entities_loaded)
-        loadEntitiesImpl();
 }
 
 

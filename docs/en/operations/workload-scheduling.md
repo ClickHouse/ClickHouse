@@ -349,25 +349,17 @@ In addition to SQL-based definitions, workloads and resources can be predefined 
 ```xml
 <clickhouse>
     <predefined_workloads>
-        <all>
-            <sql>WORKLOAD all SETTINGS max_io_requests = 1000 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 3355443200 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write</sql>
-        </all>
-        <production>
-            <sql>WORKLOAD production IN all SETTINGS weight = 3</sql>
-        </production>
+        <all>WORKLOAD all SETTINGS max_io_requests = 1000 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 3355443200 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write</all>
+        <production>WORKLOAD production IN all SETTINGS weight = 3</production>
     </predefined_workloads>
     <predefined_resources>
-        <s3disk_read>
-            <sql>RESOURCE s3disk_read (READ DISK s3)</sql>
-        </s3disk_read>
-        <s3disk_write>
-            <sql>RESOURCE s3disk_write (WRITE DISK s3)</sql>
-        </s3disk_write>
+        <s3disk_read>RESOURCE s3disk_read (READ DISK s3)</s3disk_read>
+        <s3disk_write>RESOURCE s3disk_write (WRITE DISK s3)</s3disk_write>
     </predefined_resources>
 </clickhouse>
 ```
 
-The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. Each workload or resource is defined in its own section with the exact name matching the entity name in the SQL statement.
+The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
 
 ### Usage recommendations
 
