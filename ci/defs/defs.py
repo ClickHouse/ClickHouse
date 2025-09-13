@@ -15,8 +15,8 @@ S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER_AMD = ["self-hosted", "builder"]
-    BUILDER_ARM = ["self-hosted", "builder-aarch64"]
+    BUILDER_AMD = ["self-hosted", "amd-medium-cpu"]
+    BUILDER_ARM = ["self-hosted", "arm-medium-cpu"]
     FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
