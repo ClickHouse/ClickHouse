@@ -38,6 +38,7 @@ common_ft_job_config = Job.Config(
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/docker/stateless-test",
         ],
     ),
