@@ -27,6 +27,25 @@ ORDER BY
     user_id ASC,
     c ASC;
 
+SELECT '-- table INNER JOIN subquery';
+SELECT
+    name,
+    c
+FROM
+users
+INNER JOIN
+(
+    SELECT
+        user_id,
+        count() AS c
+    FROM messages
+    GROUP BY user_id
+) AS messages
+ON messages.user_id = users.id
+ORDER BY
+    user_id ASC,
+    c ASC;
+
 SELECT '-- subquery LEFT JOIN table';
 SELECT
     name,
@@ -44,6 +63,25 @@ ORDER BY
     user_id ASC,
     c ASC;
 
+SELECT '-- table LEFT JOIN subquery';
+SELECT
+    name,
+    c
+FROM
+users
+LEFT JOIN
+(
+    SELECT
+        user_id,
+        count() AS c
+    FROM messages
+    GROUP BY user_id
+) AS messages
+ON messages.user_id = users.id
+ORDER BY
+    user_id ASC,
+    c ASC;
+
 SELECT '-- subquery RIGHT JOIN table';
 SELECT
     name,
@@ -57,6 +95,25 @@ FROM
     GROUP BY user_id
 ) AS messages
 RIGHT JOIN users ON messages.user_id = users.id
+ORDER BY
+    user_id ASC,
+    c ASC;
+
+SELECT '-- table RIGHT JOIN subquery';
+SELECT
+    name,
+    c
+FROM
+users
+RIGHT JOIN
+(
+    SELECT
+        user_id,
+        count() AS c
+    FROM messages
+    GROUP BY user_id
+) AS messages
+ON messages.user_id = users.id
 ORDER BY
     user_id ASC,
     c ASC;
