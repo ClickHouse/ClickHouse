@@ -3607,7 +3607,7 @@ def test_write_column_order(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_column_order")
-    result_file = f"{table_name}_data"
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
     schema = pa.schema([("c1", pa.int32(), False), ("c0", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(

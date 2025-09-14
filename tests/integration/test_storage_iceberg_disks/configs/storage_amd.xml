@@ -3,7 +3,7 @@
         <disks>
             <disk_local_common>
                 <type>local</type>
-                <path>/iceberg_data/default/</path>
+                <path>/var/lib/clickhouse/user_files/iceberg_data/default/</path>
             </disk_local_common>
             <disk_s3_common>
                 <type>s3</type>

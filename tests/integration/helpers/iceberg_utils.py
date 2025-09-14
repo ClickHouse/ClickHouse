@@ -409,10 +409,11 @@ def create_initial_data_file(
 def default_upload_directory(
     started_cluster, storage_type, local_path, remote_path, **kwargs
 ):
-    if local_path != "":
-        local_path = "/var/lib/clickhouse/user_files" + local_path
-    if remote_path != "":
-        remote_path = "/var/lib/clickhouse/user_files" + remote_path
+    prefix = "/var/lib/clickhouse/user_files"
+    if local_path != "" and local_path[:len(prefix)] != prefix:
+        local_path = prefix + local_path
+    if remote_path != "" and remote_path[:len(prefix)] != prefix:
+        remote_path = prefix + remote_path
 
     if storage_type == "local":
         return started_cluster.default_local_uploader.upload_directory(
@@ -449,8 +450,8 @@ def execute_spark_query_general(
     default_upload_directory(
         started_cluster,
         storage_type,
-        f"/user_files/iceberg_data/default/{table_name}/",
-        f"/user_files/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
     )
     return
 
