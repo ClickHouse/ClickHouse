@@ -227,26 +227,9 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     FunctionDocumentation::Description description_generateSnowflakeID = R"(
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond.
-For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
-In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
-
 Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
-:::note
-The generated Snowflake IDs are based on the UNIX epoch 1970-01-01.
-While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
-:::
-
-```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|0|                         timestamp                           |
-├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                   |     machine_id    |    machine_seq_num    |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
+See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
     )";
     FunctionDocumentation::Syntax syntax_generateSnowflakeID = "generateSnowflakeID([expr, [machine_id]])";
     FunctionDocumentation::Arguments arguments_generateSnowflakeID = {

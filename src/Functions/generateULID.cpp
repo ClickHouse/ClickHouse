@@ -80,7 +80,7 @@ Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](ht
     )";
     FunctionDocumentation::Syntax syntax_generateULID = "generateULID([x])";
     FunctionDocumentation::Arguments arguments_generateULID = {
-        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing common subexpression elimination if the function is called multiple times in one query.", {"Any"}}
+        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_generateULID = {"Returns a ULID.", {"FixedString(26)"}};
     FunctionDocumentation::Examples examples_generateULID = {

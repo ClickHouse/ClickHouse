@@ -136,25 +136,11 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
     FunctionDocumentation::Description description_dateTimeToUUIDv7 = R"(
 Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
 
-The generated UUID casts the 32 bit DateTime value to milliseconds and stores in the 48 bit unix_ts_ms, followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
-For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
-In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency gaurantees.
 
-Function `dateTimeToUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
-
-```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
+:::note
+As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
+:::
     )";
     FunctionDocumentation::Syntax syntax_dateTimeToUUIDv7 = "dateTimeToUUIDv7(value)";
     FunctionDocumentation::Arguments arguments_dateTimeToUUIDv7 = {

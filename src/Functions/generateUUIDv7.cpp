@@ -113,55 +113,39 @@ REGISTER_FUNCTION(GenerateUUIDv7)
     FunctionDocumentation::Description description_generateUUIDv7 = R"(
 Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
-The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
-For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
-In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency gaurantees.
 
-Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
-
-```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
+:::note
+As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
+:::
     )";
     FunctionDocumentation::Syntax syntax_generateUUIDv7 = "generateUUIDv7([expr])";
     FunctionDocumentation::Arguments arguments_generateUUIDv7 = {
-        {"expr", "Optional. An arbitrary expression used to bypass common subexpression elimination if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples_generateUUIDv7 = {
     {
         "Usage example",
         R"(
-CREATE TABLE tab (uuid UUID) ENGINE = Memory;
-
-INSERT INTO tab SELECT generateUUIDv7();
-
-SELECT * FROM tab;
+SELECT generateUUIDv7(number) FROM numbers(3);
         )",
         R"(
-┌─────────────────────────────────uuid─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b │
+┌─generateUUIDv7(number)───────────────┐
+│ 019947fb-5766-7ed0-b021-d906f8f7cebb │
+│ 019947fb-5766-7ed0-b021-d9072d0d1e07 │
+│ 019947fb-5766-7ed0-b021-d908dca2cf63 │
 └──────────────────────────────────────┘
         )"
     },
     {
-        "multiple UUIDs generated per row",
+        "Common subexpression elimination",
         R"(
-SELECT generateUUIDv7(1), generateUUIDv7(2);
+SELECT generateUUIDv7(1), generateUUIDv7(1);
         )",
         R"(
-┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(2)────────────────────┐
-│ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
+┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(1)────────────────────┐
+│ 019947ff-0f87-7d88-ace0-8b5b3a66e0c1 │ 019947ff-0f87-7d88-ace0-8b5b3a66e0c1 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
         )"
     }

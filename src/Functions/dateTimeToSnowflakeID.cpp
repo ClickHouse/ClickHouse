@@ -161,7 +161,11 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
     factory.registerFunction<FunctionDateTimeToSnowflakeID>(documentation_dateTimeToSnowflakeID);
 
     /// dateTime64ToSnowflakeID documentation
-    FunctionDocumentation::Description description_dateTime64ToSnowflakeID = R"(Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
+    FunctionDocumentation::Description description_dateTime64ToSnowflakeID = R"(
+Converts a [`DateTime64`](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
+    )";
     FunctionDocumentation::Syntax syntax_dateTime64ToSnowflakeID = "dateTime64ToSnowflakeID(value[, epoch])";
     FunctionDocumentation::Arguments arguments_dateTime64ToSnowflakeID = {
         {"value", "Date with time.", {"DateTime", "DateTime64"}},
