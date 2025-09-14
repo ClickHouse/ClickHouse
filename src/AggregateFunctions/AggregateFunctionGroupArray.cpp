@@ -845,7 +845,53 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
+    
+    FunctionDocumentation::Description description = R"(
+Aggregates arrays into a larger array of those arrays.
+Combines the [`groupArray`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray) function with the [`-Array`](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-array) combinator.
+    )";
+    FunctionDocumentation::Syntax syntax = "groupArrayArray(array_column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"array_column", "Column containing arrays to be aggregated.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a flattened array containing all elements from the input arrays.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Website visits analysis",
+        R"(
+CREATE TABLE website_visits (
+    user_id UInt32,
+    session_id UInt32,
+    page_visits Array(String)
+) ENGINE = Memory;
+
+INSERT INTO website_visits VALUES
+(101, 1, ['homepage', 'products', 'checkout']),
+(101, 2, ['search', 'product_details', 'contact']),
+(102, 1, ['homepage', 'about_us']),
+(101, 3, ['blog', 'homepage']),
+(102, 2, ['products', 'product_details', 'add_to_cart', 'checkout']);
+
+SELECT
+    user_id,
+    groupArrayArray(page_visits) AS user_session_page_sequences
+FROM website_visits
+GROUP BY user_id;
+        )",
+        R"(
+   ┌─user_id─┬─user_session_page_sequences───────────────────────────────────────────────────────────────┐
+1. │     101 │ ['homepage','products','checkout','search','product_details','contact','blog','homepage'] │
+2. │     102 │ ['homepage','about_us','products','product_details','add_to_cart','checkout']             │
+   └─────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("groupArrayArray", { createAggregateFunctionGroupArray<false>, properties }, AggregateFunctionFactory::Case::Sensitive, documentation);
+    factory.registerAlias("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }

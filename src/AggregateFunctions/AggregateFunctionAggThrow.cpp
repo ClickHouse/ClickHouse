@@ -110,6 +110,31 @@ public:
 
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+This function can be used for the purpose of testing exception safety.
+It will throw an exception on creation with the specified probability.
+    )";
+    FunctionDocumentation::Syntax syntax = "aggThrow(throw_prob)";
+    FunctionDocumentation::Arguments arguments = {
+        {"throw_prob", "Probability to throw on creation.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an exception: `Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully.`", {}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Testing exception handling",
+        R"(
+SELECT number % 2 AS even, aggThrow(number) FROM numbers(10) GROUP BY even;
+        )",
+        R"(
+Received exception:
+Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully: While executing AggregatingTransform. (AGGREGATE_FUNCTION_THROW)
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
     factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         Float64 throw_probability = 1.0;
@@ -119,7 +144,7 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
 
         return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
-    });
+    }, documentation);
 }
 
 }

@@ -54,6 +54,7 @@ struct FunctionDocumentation
                                          /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
     using Arguments = std::vector<Argument>;
+	using Parameters = std::vector<Argument>;
 
     struct ReturnedValue
     {
@@ -134,6 +135,7 @@ struct FunctionDocumentation
     Syntax syntax {};                             /// E.g. "position(haystack, needle)"
     Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}},
                                                   ///       {"needle", "Substring to be searched.", {"String"}}}
+    Parameters parameters {};
     ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
@@ -141,6 +143,7 @@ struct FunctionDocumentation
 
     String syntaxAsString() const;
     String argumentsAsString() const;
+	String parametersAsString() const;
     String returnedValueAsString() const;
     String examplesAsString() const;
     String introducedInAsString() const;

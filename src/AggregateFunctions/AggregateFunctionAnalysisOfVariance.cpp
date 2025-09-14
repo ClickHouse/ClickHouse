@@ -117,10 +117,41 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .is_order_dependent = false };
-    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Provides a statistical test for one-way analysis of variance (ANOVA test).
+It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not.
 
-    /// This is widely used term
+:::note
+Groups are enumerated starting from 0 and there should be at least two groups to perform a test. There should be at least one group with the number of observations greater than one.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "analysisOfVariance(val, group_no)";
+    FunctionDocumentation::Arguments arguments = {
+        {"val", "Value for the test.", {"Float*", "(U)Int*"}},
+        {"group_no", "Group number that val belongs to. Groups are enumerated starting from 0 and there should be at least two groups to perform a test. There should be at least one group with the number of observations greater than one.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with the F-statistic and p-value.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
+        )",
+        R"(
+┌─analysisOfVariance(number, modulo(number, 2))─┐
+│ (0,1)                                         │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    AggregateFunctionProperties properties = { .is_order_dependent = false };
+    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive, documentation);
+
+    /// This is a widely used term
     factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::Case::Insensitive);
 }
 
