@@ -32,7 +32,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
-    snapshot_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    snapshot_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
     snapshot_timestamp = datetime.now(timezone.utc)
 
     time.sleep(0.1)
