@@ -286,7 +286,7 @@ As this decreases performance, it is not recommended to use non-String/FixedStri
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_injective = R"(
 Like [`concat`](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective,
@@ -315,7 +315,7 @@ Can be used for optimization of `GROUP BY`.
         )"
     }
     };
-    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, returned_value_injective, examples_injective, introduced_in, category};
+    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
 
     factory.registerFunction<ConcatOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>(documentation_injective);

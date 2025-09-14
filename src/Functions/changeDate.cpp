@@ -356,7 +356,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {

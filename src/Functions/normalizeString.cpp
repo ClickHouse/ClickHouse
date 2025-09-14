@@ -198,7 +198,7 @@ length(nfc_normalized);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
+    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, {}, returned_value_nfc, examples_nfc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfd = R"(
 Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).

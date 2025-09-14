@@ -117,7 +117,7 @@ REGISTER_FUNCTION(GenerateUUIDv7)
     FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 }
 }

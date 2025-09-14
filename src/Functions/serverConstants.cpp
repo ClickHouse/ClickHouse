@@ -171,7 +171,7 @@ SELECT buildId()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBuildId>(documentation);
 }
@@ -203,7 +203,7 @@ SELECT hostName()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHostName>(documentation);
     factory.registerAlias("hostname", "hostName");
@@ -263,7 +263,7 @@ SELECT tcpPort()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTCPPort>(documentation);
 }
@@ -294,7 +294,7 @@ SELECT timezone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
@@ -323,7 +323,7 @@ SELECT serverTimeZone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
@@ -354,7 +354,7 @@ SELECT uptime() AS Uptime
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionUptime>(documentation);
 }
@@ -384,7 +384,7 @@ SELECT version()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVersion>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -412,7 +412,7 @@ SELECT revision()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRevision>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -498,7 +498,7 @@ SELECT displayName();
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDisplayName>(documentation);
 }

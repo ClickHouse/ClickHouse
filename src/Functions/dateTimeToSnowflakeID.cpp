@@ -143,7 +143,7 @@ REGISTER_FUNCTION(DateTimeToSnowflakeID)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-        factory.registerFunction<FunctionDateTimeToSnowflakeID>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+        factory.registerFunction<FunctionDateTimeToSnowflakeID>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
     }
 
     {
