@@ -726,6 +726,8 @@ def test_streaming_to_many_views(started_cluster, mode):
         create_dst_table_first=False
     )
 
+    log_line_offset = node.count_log_lines()
+
     generate_files(file_prefix = "b")
     # there is no gurantee what is inserted to other MV because the insert is failed
     check([broken_dst_table], 0, 0)
@@ -736,7 +738,7 @@ def test_streaming_to_many_views(started_cluster, mode):
         node.wait_for_log_line(
             log_message,
             timeout=120,
-            look_behind_lines=200000,
+            look_behind_lines=f"+{log_line_offset}",
         )
 
         assert node.contains_in_log(
