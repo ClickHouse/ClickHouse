@@ -366,9 +366,9 @@ For cloud environments, a typical setup might include:
 1. Define root workload and network IO resources in configuration to set infrastructure limits
 2. Set `throw_on_unknown_workload` to enforce these limits
 3. Create a `CREATE WORKLOAD default IN all` to automatically apply limits to all queries (since the default value for `workload` query setting is 'default')
-4. Allow customers to create additional workloads within the configured hierarchy
+4. Allow users to create additional workloads within the configured hierarchy
 
-This ensures that all background activities and queries respect the infrastructure limitations while still allowing flexibility for customer-specific scheduling policies.
+This ensures that all background activities and queries respect the infrastructure limitations while still allowing flexibility for user-specific scheduling policies.
 
 ## Strict resource access {#strict_resource_access}
 
