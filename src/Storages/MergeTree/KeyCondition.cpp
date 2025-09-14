@@ -3552,9 +3552,9 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
 
     auto print_functions_chain_end = [&](const MonotonicFunctionsChain & chain)
     {
-        for (auto it = chain.begin(); it != chain.end(); ++it)
+        for (const auto & f : chain)
         {
-            if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
+            if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(f.get()))
             {
                 if (func->getKind() == FunctionWithOptionalConstArg::Kind::RIGHT_CONST)
                     buf << ", " << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]);
