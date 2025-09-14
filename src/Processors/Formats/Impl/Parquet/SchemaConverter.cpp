@@ -1097,6 +1097,8 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = DataTypeFactory::instance().get("Bool");
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 1;
+            converter->input_signed = false;
+            converter->field_signed = false;
             out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;

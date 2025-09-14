@@ -1096,6 +1096,7 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     UInt64 val = 0;
     switch (input_size)
     {
+        case 1: val = unalignedLoad<UInt8>(data.data()); break;
         case 4: val = unalignedLoad<UInt32>(data.data()); break;
         case 8: val = unalignedLoad<UInt64>(data.data()); break;
         default: chassert(false);
