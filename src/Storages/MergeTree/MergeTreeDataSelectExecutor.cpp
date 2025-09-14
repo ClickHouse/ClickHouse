@@ -1682,7 +1682,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         if (result_range.begin < result_range.end)
         {
-            res.emplace_back(std::move(result_range));
+            res.emplace_back(result_range);
 
             if (exact_ranges)
             {
