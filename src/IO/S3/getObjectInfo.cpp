@@ -91,11 +91,29 @@ ObjectInfo getObjectInfo(
     }
     if (throw_on_error)
     {
-        throw S3Exception(
-            error.GetErrorType(),
-            "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(),
-            static_cast<size_t>(error.GetResponseCode()));
+        auto response_code = static_cast<size_t>(error.GetResponseCode());
+        auto error_type = error.GetErrorType();
+        auto error_message = error.GetMessage();
+
+        if (error_type == Aws::S3::S3Errors::ACCESS_DENIED)
+        {
+            throw S3Exception(
+                error_type,
+                "Access denied to object info: {}. HTTP response code: {}. Error type: {}. "
+                "Please make sure that the provided AWS credentials are correct and have sufficient permissions.",
+                error_message,
+                response_code,
+                error_type);
+        }
+        else
+        {
+            throw S3Exception(
+                error_type,
+                "Failed to get object info: {}. HTTP response code: {}. Error type: {}.",
+                error_message,
+                response_code,
+                error_type);
+        }
     }
     return {};
 }
