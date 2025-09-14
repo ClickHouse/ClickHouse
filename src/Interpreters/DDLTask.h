@@ -29,6 +29,8 @@ namespace ErrorCodes
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
 
@@ -136,7 +138,7 @@ struct DDLTaskBase
     virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
     virtual Coordination::RequestPtr getOpToUpdateLogPointer() { return nullptr; }
 
-    virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
+    virtual void createSyncedNodeIfNeed(const ZooKeeperWithFaultInjectionPtr & /*zookeeper*/) {}
 
     String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
     String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
@@ -151,7 +153,7 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
+    bool findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::optional<std::string> & config_host_name);
 
     void setClusterInfo(ContextPtr context, LoggerPtr log);
 
@@ -177,7 +179,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     void parseQueryFromEntry(ContextPtr context) override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
-    void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
+    void createSyncedNodeIfNeed(const ZooKeeperWithFaultInjectionPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };

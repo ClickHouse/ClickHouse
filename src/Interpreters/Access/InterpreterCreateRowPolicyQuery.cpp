@@ -60,7 +60,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }

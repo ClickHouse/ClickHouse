@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Interpreters/DDLWorker.h>
+#include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <future>
 
 namespace DB
 {
-class Context;
-
 
 /** System table "distributed_ddl_queue" with list of queries that are currently in the DDL worker queue.
   */

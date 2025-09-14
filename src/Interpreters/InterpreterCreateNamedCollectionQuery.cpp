@@ -22,7 +22,7 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
 
     if (!query.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(current_context);
         return executeDDLQueryOnCluster(updated_query, current_context, params);
     }
 
