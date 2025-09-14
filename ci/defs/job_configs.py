@@ -774,7 +774,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/compatibility_check.py",
-                "./ci/docker/compatibility",
             ],
         ),
     ).parametrize(
