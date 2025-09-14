@@ -197,7 +197,7 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUTCTimestamp = {23, 8};
     FunctionDocumentation::Category category_toUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
+    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, argument_toUTCTimestamp, {}, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
 
     factory.registerFunction<ToUTCTimestampFunction>(documentation_toUTCTimestamp);
     factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);

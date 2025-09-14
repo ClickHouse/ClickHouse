@@ -110,7 +110,7 @@ ROLLBACK;
     };
     FunctionDocumentation::IntroducedIn introduced_in_transactionID = {22, 6};
     FunctionDocumentation::Category category_transactionID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, arguments_transactionID, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
+    FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, argument_transactionID, {}, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
 
     factory.registerFunction<FunctionTransactionID>(documentation_transactionID);
     factory.registerFunction<FunctionTransactionLatestSnapshot>();

@@ -50,7 +50,7 @@ Returns:
         {"Positive offset", "SELECT leftUTF8('Привет', 4)", "Прив"},
         {"Negative offset", "SELECT leftUTF8('Привет', -4)", "Пр"}
     };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, returned_value_utf8, examples_utf8, introduced_in, category};
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, argument_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionLeftRight<false, SubstringDirection::Left>>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionLeftRight<true, SubstringDirection::Left>>(documentation_utf8, FunctionFactory::Case::Sensitive);
