@@ -1052,7 +1052,7 @@ def test_config_based_workloads_and_resources():
     
     # Create SQL entities with different names
     node.query("CREATE RESOURCE sql_io_read (READ DISK s3_no_resource)")
-    node.query("CREATE WORKLOAD sql_all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
+    node.query("CREATE WORKLOAD sql_all IN config_all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
     
     # Verify both config and SQL entities exist
     all_resources = node.query("SELECT name FROM system.resources ORDER BY name")
