@@ -54,7 +54,7 @@ struct FunctionDocumentation
                                          /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
     using Arguments = std::vector<Argument>;
-	using Parameters = std::vector<Argument>;
+    using Parameters = std::vector<Argument>;
 
     struct ReturnedValue
     {
@@ -143,7 +143,7 @@ struct FunctionDocumentation
 
     String syntaxAsString() const;
     String argumentsAsString() const;
-	String parametersAsString() const;
+    String parametersAsString() const;
     String returnedValueAsString() const;
     String examplesAsString() const;
     String introducedInAsString() const;

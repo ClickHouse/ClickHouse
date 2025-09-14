@@ -168,7 +168,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a Float64 type. 
+Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a Float64 type.
 If the suffix State is added, it returns a NumericIndexedVector object.
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -226,7 +226,7 @@ SELECT groupNumericIndexedVectorStateIf('BSI', 32, 0)(UserID, PlayTime, day = '2
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, createAggregateFunctionNumericIndexedVector, documentation);
 }
 

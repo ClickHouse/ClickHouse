@@ -570,7 +570,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category, parameters};
 
     factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::Case::Insensitive, documentation);
-    
+
     FunctionDocumentation::Description sum_description = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
 The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).

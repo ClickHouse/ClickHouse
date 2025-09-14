@@ -383,7 +383,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string & name, 
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    
+
     FunctionDocumentation::Description min_description = R"(
 Calculates the `arg` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` is returned is not deterministic.
@@ -455,7 +455,7 @@ SELECT argMin(a, tuple(b)) FROM test;
     FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, min_returned_value, min_examples, min_introduced_in, min_category};
 
     factory.registerFunction("argMin", {createAggregateFunctionArgMinMax<true>, properties}, AggregateFunctionFactory::Case::Sensitive, min_documentation);
-    
+
     FunctionDocumentation::Description description = R"(
 Calculates the `arg` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.

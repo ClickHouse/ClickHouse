@@ -845,7 +845,7 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
-    
+
     FunctionDocumentation::Description description = R"(
 Aggregates arrays into a larger array of those arrays.
 Combines the [`groupArray`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray) function with the [`-Array`](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-array) combinator.
@@ -879,10 +879,10 @@ FROM website_visits
 GROUP BY user_id;
         )",
         R"(
-   ┌─user_id─┬─user_session_page_sequences───────────────────────────────────────────────────────────────┐
-1. │     101 │ ['homepage','products','checkout','search','product_details','contact','blog','homepage'] │
-2. │     102 │ ['homepage','about_us','products','product_details','add_to_cart','checkout']             │
-   └─────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+┌─user_id─┬─user_session_page_sequences───────────────────────────────────────────────────────────────┐
+│     101 │ ['homepage','products','checkout','search','product_details','contact','blog','homepage'] │
+│     102 │ ['homepage','about_us','products','product_details','add_to_cart','checkout']             │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

@@ -195,13 +195,13 @@ INSERT INTO error_logs VALUES
     ('2024-01-15 10:21:00', '404', 'Firefox/121.0', '192.168.1.5'),
     ('2024-01-15 10:22:00', '502', 'Chrome/120.0', '192.168.1.6'),
     ('2024-01-15 10:23:00', '404', 'Chrome/120.0', '192.168.1.1');
-        
+
 -- Get the most commonly occurring error code per hour (fast approximation)
-SELECT 
+SELECT
     toStartOfHour(timestamp) as hour,
     anyHeavy(error_code) as dominant_error,
     count() as total_errors
-FROM error_logs 
+FROM error_logs
 GROUP BY hour
 ORDER BY hour;
         )",
