@@ -41,7 +41,6 @@ private:
     String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
     String dir_path;
-    std::atomic<bool> entities_loaded = false;
     
     /// Config-based entities storage
     std::shared_ptr<WorkloadEntityConfigStorage> config_storage;

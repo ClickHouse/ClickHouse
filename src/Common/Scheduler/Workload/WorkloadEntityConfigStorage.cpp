@@ -18,34 +18,6 @@ WorkloadEntityConfigStorage::WorkloadEntityConfigStorage(const ContextPtr & glob
 
 void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    refreshEntities(config);
-}
-
-WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::storeEntityImpl(
-    const ContextPtr &,
-    WorkloadEntityType,
-    const String &,
-    ASTPtr,
-    bool,
-    bool,
-    const Settings &)
-{
-    // Config storage is read-only - entities come from config, not SQL. This function should not be called
-    return OperationResult::Failed;
-}
-
-WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::removeEntityImpl(
-    const ContextPtr &,
-    WorkloadEntityType,
-    const String &,
-    bool)
-{
-    // Config storage is read-only - entities come from config, not SQL. This function should not be called
-    return OperationResult::Failed;
-}
-
-void WorkloadEntityConfigStorage::refreshEntities(const Poco::Util::AbstractConfiguration & config)
-{
     LOG_DEBUG(log, "Refreshing workload entities from configuration");
 
     std::vector<std::pair<String, ASTPtr>> new_entities;
@@ -69,6 +41,29 @@ void WorkloadEntityConfigStorage::refreshEntities(const Poco::Util::AbstractConf
     setAllEntities(new_entities);
 
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
+}
+
+WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::storeEntityImpl(
+    const ContextPtr &,
+    WorkloadEntityType,
+    const String &,
+    ASTPtr,
+    bool,
+    bool,
+    const Settings &)
+{
+    // Config storage is read-only - entities come from config, not SQL. This function should not be called
+    return OperationResult::Failed;
+}
+
+WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::removeEntityImpl(
+    const ContextPtr &,
+    WorkloadEntityType,
+    const String &,
+    bool)
+{
+    // Config storage is read-only - entities come from config, not SQL. This function should not be called
+    return OperationResult::Failed;
 }
 
 }

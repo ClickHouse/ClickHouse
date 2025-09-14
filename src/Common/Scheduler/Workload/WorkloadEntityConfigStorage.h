@@ -34,8 +34,7 @@ private:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    /// Refresh entities from current config  
-    void refreshEntities(const Poco::Util::AbstractConfiguration & config);
+
 };
 
 }

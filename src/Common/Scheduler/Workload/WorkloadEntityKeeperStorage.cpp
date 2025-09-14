@@ -94,8 +94,8 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
 
 void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    /// loadEntities() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
-    /// However the watching thread must be started anyway in case the connection will be established later.
+    /// loadEntities() may be called multiple times during config reloads, so we need to be careful not to stop on errors.
+    /// The watching thread must be started only once and will be reused for subsequent calls.
     
     // Load config entities first
     config_storage->loadEntities(config);

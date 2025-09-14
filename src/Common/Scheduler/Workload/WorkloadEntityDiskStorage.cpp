@@ -125,11 +125,8 @@ void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfigura
     // Always load config entities (they may have changed)
     config_storage->loadEntities(config);
     
-    if (!entities_loaded)
-    {
-        loadEntitiesImpl();
-        entities_loaded = true;
-    }
+    // Always load disk entities and merge with config entities
+    loadEntitiesImpl();
 }
 
 
