@@ -1006,25 +1006,15 @@ def test_config_based_workloads_and_resources():
     # First, ensure we start clean
     node.query("system reload config")
     
-    # Create a test configuration with predefined workloads and resources
+    # Create a test configuration with resources and workloads
     workloads_config = """
     <clickhouse>
-        <predefined_resources>
-            <config_io_read>
-                <sql>RESOURCE config_io_read (READ DISK s3_no_resource)</sql>
-            </config_io_read>
-            <config_io_write>
-                <sql>RESOURCE config_io_write (WRITE DISK s3_no_resource)</sql>
-            </config_io_write>
-        </predefined_resources>
-        <predefined_workloads>
-            <config_all>
-                <sql>WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read, max_bytes_inflight = 2000000 FOR config_io_write</sql>
-            </config_all>
-            <config_production>
-                <sql>WORKLOAD config_production IN config_all SETTINGS priority = 1, weight = 3</sql>
-            </config_production>
-        </predefined_workloads>
+        <resources_and_workloads>
+            RESOURCE config_io_read (READ DISK s3_no_resource);
+            RESOURCE config_io_write (WRITE DISK s3_no_resource);
+            WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read, max_bytes_inflight = 2000000 FOR config_io_write;
+            WORKLOAD config_production IN config_all SETTINGS priority = 1, weight = 3
+        </resources_and_workloads>
     </clickhouse>
     """
     
@@ -1095,16 +1085,10 @@ def test_config_based_workloads_and_resources():
     # Update config to remove some entities
     updated_config = """
     <clickhouse>
-        <predefined_resources>
-            <config_io_read>
-                <sql>RESOURCE config_io_read (READ DISK s3_no_resource)</sql>
-            </config_io_read>
-        </predefined_resources>
-        <predefined_workloads>
-            <config_all>
-                <sql>WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read</sql>
-            </config_all>
-        </predefined_workloads>
+        <resources_and_workloads>
+            RESOURCE config_io_read (READ DISK s3_no_resource);
+            WORKLOAD config_all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read
+        </resources_and_workloads>
     </clickhouse>
     """
     

@@ -36,9 +36,6 @@ private:
 
     /// Refresh entities from current config  
     void refreshEntities(const Poco::Util::AbstractConfiguration & config);
-
-    /// Parse and validate a single entity from config
-    ASTPtr parseEntityFromConfig(WorkloadEntityType entity_type, const String & entity_name, const String & sql);
 };
 
 }

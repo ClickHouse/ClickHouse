@@ -122,11 +122,13 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 
 void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
+    // Always load config entities (they may have changed)
+    config_storage->loadEntities(config);
+    
     if (!entities_loaded)
     {
-        // Load config entities first
-        config_storage->loadEntities(config);
         loadEntitiesImpl();
+        entities_loaded = true;
     }
 }
 
@@ -197,7 +199,6 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
     }
 
     setAllEntities(entities_name_and_queries);
-    entities_loaded = true;
 
     LOG_DEBUG(log, "Workload entities loaded");
 }
