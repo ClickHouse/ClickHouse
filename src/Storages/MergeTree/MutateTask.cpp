@@ -1002,11 +1002,8 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    if (!source_part->getSerializationInfos().empty()
-        && new_part->getSerializationInfos().empty())
-    {
+    if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
-    }
 
     return rename_vector;
 }
@@ -1048,7 +1045,7 @@ void finalizeMutatedPart(
     }
 
     const auto & serialization_infos = new_data_part->getSerializationInfos();
-    if (!serialization_infos.empty() || serialization_infos.getVersion() > DEFAULT_SERIALIZATION_INFO_VERSION)
+    if (serialization_infos.needsPersistence())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);

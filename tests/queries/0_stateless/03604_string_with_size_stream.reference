@@ -15,16 +15,22 @@ insert into test values ('hello world');
 -- Verify that string type is serialized with a physical .size stream
 select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
 s	['s.size','s']	['size']	['UInt64']
+-- Test empty string comparison and .size subcolumn optimization
 set enable_analyzer = 1;
 set optimize_empty_string_comparisons = 1;
 set optimize_functions_to_subcolumns = 0;
-select replaceRegexpAll(explain, '__table1\.|_UInt8', '') from (explain actions=1 select count() from test where s != '') where explain like '%Prewhere filter%' or explain like '%Filter column%';
-      Filter column: notEmpty(s) (removed)
-select count() from test where s != '';
+drop table if exists t_column_names;
+create table t_column_names (s String) engine Memory;
+insert into t_column_names values ('foo');
+explain query tree dump_tree = 0, dump_ast = 1 select s != '' from t_column_names;
+SELECT notEmpty(__table1.s) AS `notEquals(s, \'\')`
+FROM default.t_column_names AS __table1
+select s != '' from t_column_names;
 1
 set optimize_functions_to_subcolumns = 1;
-select replaceRegexpAll(explain, '__table1\.|_UInt8', '') from (explain actions=1 select count() from test where s != '') where explain like '%Prewhere filter%' or explain like '%Filter column%';
-      Filter column: notEquals(s.size, 0) (removed)
-select count() from test where s != '';
+explain query tree dump_tree = 0, dump_ast = 1 select s != '' from t_column_names;
+SELECT __table1.`s.size` != 0 AS `notEquals(s, \'\')`
+FROM default.t_column_names AS __table1
+select s != '' from t_column_names;
 1
-drop table test;
+drop table t_column_names;

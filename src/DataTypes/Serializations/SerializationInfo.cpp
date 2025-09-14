@@ -286,6 +286,11 @@ size_t SerializationInfoByName::getVersion() const
     return DEFAULT_SERIALIZATION_INFO_VERSION;
 }
 
+bool SerializationInfoByName::needsPersistence() const
+{
+    return !empty() || getVersion() > DEFAULT_SERIALIZATION_INFO_VERSION;
+}
+
 void SerializationInfoByName::fallbackSettingsToVersion(size_t version)
 {
     if (version < SERIALIZATION_STRING_WITH_SIZE_STREAM)

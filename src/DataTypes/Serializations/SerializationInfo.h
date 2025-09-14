@@ -128,6 +128,8 @@ public:
 
     size_t getVersion() const;
 
+    bool needsPersistence() const;
+
     void fallbackSettingsToVersion(size_t version);
 
     static SerializationInfoByName readJSON(
