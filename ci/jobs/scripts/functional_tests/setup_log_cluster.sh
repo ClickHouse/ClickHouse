@@ -73,6 +73,8 @@ function check_logs_credentials
 
 function setup_logs_replication
 (
+    check_logs_credentials
+
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
