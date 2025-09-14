@@ -208,6 +208,21 @@ public:
                     result = fmt::format("exists({})", table_alias);
                     break;
                 }
+                else if (function_node.getFunctionName() == "__getScalar")
+                {
+                    const auto & arguments = function_node.getArguments().getNodes();
+                    chassert(arguments.size() == 1);
+
+                    const auto & argument = arguments.front();
+                    chassert(argument != nullptr);
+
+                    auto * argument_node = argument->as<ConstantNode>();
+                    chassert(argument_node != nullptr);
+                    chassert(isString(argument_node->getResultType()));
+
+                    result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
+                    break;
+                }
 
                 if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
                 {
