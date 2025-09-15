@@ -16,7 +16,7 @@ CREATE TABLE t_skip_index_insert
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 SET enable_analyzer = 1;
---SET skip_materialize_skip_indexes_on_insert='idx_a';
+SET exclude_materialize_skip_indexes_on_insert='idx_a';
 
 SYSTEM STOP MERGES t_skip_index_insert;
 
@@ -56,7 +56,7 @@ WHERE current_database = currentDatabase()
 
 TRUNCATE TABLE t_skip_index_insert;
 
---SET skip_materialize_skip_indexes_on_insert='idx_a,idx_b';
+SET exclude_materialize_skip_indexes_on_insert='idx_a,idx_b';
 
 SYSTEM STOP MERGES t_skip_index_insert;
 

@@ -40,6 +40,9 @@
 
 #include <fmt/ranges.h>
 
+#include <Common/logger_useful.h>
+auto glogger = getLogger("GEORGES LOGGER");
+
 namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
@@ -65,6 +68,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool materialize_skip_indexes_on_insert;
+    extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
@@ -697,6 +701,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     MergeTreeIndices indices;
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+
+    const auto & exclude_skip_indexes = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
+    LOG_DEBUG(glogger, "indexes to exclude: {}", exclude_skip_indexes);
+    if (exclude_skip_indexes != "")
+    {
+        LOG_DEBUG(glogger, "EXCLUDING MATERIALIZED SKIP INDEXES");
+    }
 
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
