@@ -311,9 +311,10 @@ MutationsInterpreter::Source::Source(
 {
 }
 
-StorageSnapshotPtr MutationsInterpreter::Source::getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const
+StorageSnapshotPtr
+MutationsInterpreter::Source::getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data)
 {
-    if (const auto * merge_tree = getMergeTreeData())
+    if (auto * merge_tree = getMergeTreeData())
     {
         return with_data
             ? merge_tree->getStorageSnapshot(snapshot_, context_)
@@ -334,12 +335,12 @@ StoragePtr MutationsInterpreter::Source::getStorage() const
     return storage;
 }
 
-const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
+MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
 {
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return dynamic_cast<MergeTreeData *>(storage.get());
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -499,7 +500,7 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
 }
 
 static void validateUpdateColumns(
-    const MutationsInterpreter::Source & source,
+    MutationsInterpreter::Source & source,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
     const std::unordered_map<String, Names> & column_to_affected_materialized,
@@ -1344,7 +1345,7 @@ void MutationsInterpreter::Source::read(
     QueryPlan & plan,
     const StorageMetadataPtr & snapshot_,
     const ContextPtr & context_,
-    const Settings & mutation_settings) const
+    const Settings & mutation_settings)
 {
     auto required_columns = first_stage.expressions_chain.steps.front()->getRequiredColumns().getNames();
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);

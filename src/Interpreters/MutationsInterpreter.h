@@ -127,10 +127,10 @@ public:
     /// Additionally we propagate some storage properties.
     struct Source
     {
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data);
 
         StoragePtr getStorage() const;
-        const MergeTreeData * getMergeTreeData() const;
+        MergeTreeData * getMergeTreeData() const;
         AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
         MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
         bool isMutatingDataPart() const;
@@ -147,7 +147,7 @@ public:
             QueryPlan & plan,
             const StorageMetadataPtr & snapshot_,
             const ContextPtr & context_,
-            const Settings & mutation_settings) const;
+            const Settings & mutation_settings);
 
         explicit Source(StoragePtr storage_);
         Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
