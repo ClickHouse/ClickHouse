@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Poco/LRUCache.h>
 
 #include <boost/algorithm/hex.hpp>
 #include <Poco/SHA1Engine.h>
@@ -105,12 +106,27 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
+    static Poco::LRUCache<std::string, Digest> bcrypt_cache;
+
+    std::string bcrypt_hash_str{password_bcrypt.data(), password_bcrypt.data() + password_bcrypt.size()};
+
+    auto password_digest = encodeSHA256(password);
+    auto cached_digest = bcrypt_cache.get(bcrypt_hash_str);
+
+    if (cached_digest && *cached_digest == password_digest)
+        return true;
+
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
     /// and it could not be decoded by the library
     if (ret == -1)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
-    return (ret == 0);
+
+    bool success = ret == 0;
+    if (success)
+        bcrypt_cache.add(bcrypt_hash_str, password_digest);
+
+    return success;
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
