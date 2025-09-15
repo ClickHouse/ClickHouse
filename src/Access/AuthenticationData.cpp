@@ -113,11 +113,11 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
     static auto bcrypt_cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
 
     auto password_digest = encodeSHA256(password);
+    auto cache_key = fmt::format(
+        "{}:{}",
+        std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
+        std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
 
-    std::string bcrypt_hash_str{password_bcrypt.data(), password_bcrypt.data() + password_bcrypt.size()};
-    std::string password_digest_str{password_digest.data(), password_digest.data() + password_digest.size()};
-
-    auto cache_key = password_digest_str + ":" + bcrypt_hash_str;
     auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
         {
             int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
