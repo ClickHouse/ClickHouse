@@ -2071,8 +2071,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             "AZURE_STORAGE_CONTAINER_NAME" : "{cluster.azure_container_name}",
             "AZURE_STORAGE_USE_EMULATOR": "true"
         }
-        # path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
-        path = f"https://devstoreaccount1.blob.core.windows.net/{cluster.azure_container_name}/{table_name}"
+        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
         write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
 
