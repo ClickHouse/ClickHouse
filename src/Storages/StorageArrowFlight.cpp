@@ -59,24 +59,9 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
     }
     else
     {
-        if (args.size() < 2 || args.size() > 4)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ArrowFlight requires 2-4 parameters: "
-                            "ArrowFlight('host:port', 'dataset', ['user', 'password' | NOAUTH]).");
-
-        configuration.use_basic_authentication = true;
-        if (args.size() == 2)
-        {
-            configuration.use_basic_authentication = false;
-        }
-        else if (const auto * identifier = args[2]->as<ASTIdentifier>(); (identifier && boost::iequals(identifier->name(), "NOAUTH")))
-        {
-            configuration.use_basic_authentication = false;
-            if (args.size() != 3)
-            {
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ArrowFlight requires 3 parameters: "
-                                "ArrowFlight('host:port', 'dataset', NOAUTH).");
-            }
-        }
+        if (!(args.size() == 2 || args.size() == 4))
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ArrowFlight requires 2 or 4 parameters: "
+                            "ArrowFlight('host:port', 'dataset' [, 'user', 'password']).");
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
@@ -87,13 +72,9 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
 
         configuration.dataset_name = checkAndGetLiteralArgument<String>(args[1], "dataset_name");
 
+        configuration.use_basic_authentication = (args.size() == 4);
         if (configuration.use_basic_authentication)
         {
-            if (args.size() != 4)
-            {
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ArrowFlight requires 4 parameters: "
-                                "ArrowFlight('host:port', 'dataset', 'username', 'password').");
-            }
             configuration.username = checkAndGetLiteralArgument<String>(args[2], "username");
             configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
         }

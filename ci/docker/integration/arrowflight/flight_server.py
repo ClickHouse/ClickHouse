@@ -103,21 +103,14 @@ if __name__ == "__main__":
     parser.add_argument("--port", help="Port to serve.", type=int, required=True)
     parser.add_argument("--username", help="Specifies username.", type=str, default="")
     parser.add_argument("--password", help="Specifies password.", type=str, default="")
-    parser.add_argument(
-        "--no-auth",
-        help="Disables authentication.",
-        dest="use_basic_authentication",
-        action="store_false",
-    )
-    parser.set_defaults(use_basic_authentication=True)
     args = parser.parse_args()
-    if args.use_basic_authentication != (args.username != ""):
-        parser.error("Either --username or --no-auth should be used")
 
     location = f"grpc+tcp://0.0.0.0:{args.port}"
     auth_handler = None
     middleware = None
-    if args.use_basic_authentication:
+    use_basic_authentication = args.username != ""
+
+    if use_basic_authentication:
         auth_handler = NoOpAuthHandler()
         middleware = {
             "basic": BasicAuthServerMiddlewareFactory({args.username: args.password})

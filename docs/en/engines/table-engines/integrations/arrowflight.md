@@ -15,10 +15,7 @@ This integration allows ClickHouse to fetch data from external Flight-enabled se
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
-    ENGINE = ArrowFlight('host:port', 'dataset_name' [, NOAUTH]);
-
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
-    ENGINE = ArrowFlight('host:port', 'dataset_name', 'username', 'password');
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
 ```
 
 **Engine Parameters**
@@ -27,7 +24,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 * `dataset_name` — Identifier of the dataset on the Flight server.
 * `username` - Username to use with basic HTTP style authentication.
 * `password` - Password to use with basic HTTP style authentication.
-* NOAUTH - Specifies that authentication is not used. That will work only if the Arrow Flight server allows it.
+If `username` and `password` are not specified, it means that authentication is not used
+(that will work only if the Arrow Flight server allows it).
 
 ## Usage Example {#usage-example}
 
@@ -39,7 +37,7 @@ CREATE TABLE remote_flight_data
     id UInt32,
     name String,
     value Float64
-) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset', NOAUTH);
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
 ```
 
 Query the remote data as if it were a local table:
