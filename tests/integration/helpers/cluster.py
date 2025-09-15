@@ -2911,8 +2911,6 @@ class ClickHouseCluster:
 
     def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
         ip = self.get_instance_ip(host)
-        print("ip:", ip)
-        print("port:", port)
         minio_client = Minio(
             f"{ip}:{port}",
             access_key=minio_access_key,
@@ -2944,14 +2942,6 @@ class ClickHouseCluster:
         os.environ["SSL_CERT_FILE"] = p.join(
             self.base_dir, self.minio_dir, "certs", "public.crt"
         )
-
-        logging.info(f"minio_ip: {self.minio_ip}")
-        logging.info(f"minio_redirect_ip: {self.minio_redirect_ip}")
-        logging.info(f"minio_port: {self.minio_port}")
-        logging.info(f"Access key: {minio_access_key}")
-        logging.info(f"Secret key: {minio_secret_key}")
-        logging.info(f"Secure: {secure}")
-
         minio_client = Minio(
             f"{self.minio_ip}:{self.minio_port}",
             access_key=minio_access_key,
@@ -3526,10 +3516,6 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_hive_cmd + common_opts)
                 self.up_called = True
                 time.sleep(30)
-
-            logging.info(f"Minio dir: {self.minio_dir}")
-            logging.info(f"With minio: {self.with_minio}")
-            logging.info(f"self.base_minio_cmd: {self.base_minio_cmd}")
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
