@@ -1649,7 +1649,7 @@ Possible values:
 
 - `NONE` — no compression.
 - `LZ4` — use the LZ4 codec.
-- `LZ5HC` — use the LZ4HC codec.
+- `LZ4HC` — use the LZ4HC codec.
 - `ZSTD` — use the ZSTD codec.
 
 **See Also**
