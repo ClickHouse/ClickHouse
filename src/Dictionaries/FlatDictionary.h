@@ -32,7 +32,7 @@ public:
     };
 
     FlatDictionary(
-        ContextPtr global_context,
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
