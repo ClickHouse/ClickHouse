@@ -97,6 +97,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
             result += "`](/sql-reference/data-types/geo#multipolygon)";
+        else if (type == "numericIndexedVector")
+            result += "`](/sql-reference/functions/#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
             result += "`](/sql-reference/data-types/special-data-types/expression)";
         else if (type == "Set")
