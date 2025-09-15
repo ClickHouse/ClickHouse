@@ -236,7 +236,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-            granule.postings.emplace(token, PostingsIteratorPair(postings.getEmbeddedPostings()));
+            granule.postings.emplace(token, &postings.getEmbeddedPostings());
             continue;
         }
 
@@ -251,7 +251,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         auto read_postings = PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
 
         auto & postings_holder = granule.postings_holders.emplace_back(std::move(read_postings));
-        granule.postings.emplace(token, PostingsIteratorPair(postings_holder));
+        granule.postings.emplace(token, &postings_holder);
     }
 
     granule.need_read_postings = false;
@@ -265,7 +265,9 @@ void applyPostingsAny(
     size_t granule_offset,
     size_t num_rows)
 {
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    PostingList unionPosting;
+    PostingList rangePosting;
+    rangePosting.addRange(granule_offset, granule_offset + num_rows);
 
     for (const auto & token : search_tokens)
     {
@@ -273,19 +275,24 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        auto & [postings_it, postings_end] = it->second;
-        for (; postings_it != postings_end; ++postings_it)
-        {
-            size_t row = *postings_it;
-            if (row < granule_offset)
-                continue;
+        const PostingList &posting = *it->second;
 
-            size_t relative_row_number = row - granule_offset;
-            if (relative_row_number >= num_rows)
-                break;
+        unionPosting |= (posting & rangePosting);
+    }
 
-            column_data[column_offset + relative_row_number] = 1;
-        }
+    const size_t cardinality = unionPosting.cardinality();
+    if (cardinality == 0)
+        return;
+
+    std::vector<UInt32> indices(cardinality);
+    unionPosting.toUint32Array(indices.data());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (size_t i = 0; i < cardinality; ++i)
+    {
+        size_t relative_row_number = indices[i] - granule_offset;
+        chassert(relative_row_number < num_rows);
+        column_data[column_offset + relative_row_number] = 1;
     }
 }
 
@@ -301,7 +308,7 @@ void applyPostingsAll(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
     /// PostingsIteratorPair is 96 bytes, so avoid copying.
-    std::vector<PostingsIteratorPair *> token_iterators;
+    std::vector<const PostingList *> token_postings;
 
     for (const auto & token : search_tokens)
     {
@@ -309,31 +316,34 @@ void applyPostingsAll(
         if (it == postings_map.end())
             return;
 
-        token_iterators.push_back(&it->second);
+        token_postings.push_back(it->second);
     }
 
-    PaddedPODArray<UInt16> counters(num_rows, 0);
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    PostingList intersectionPosting;
+    intersectionPosting.addRange(granule_offset, granule_offset + num_rows);
 
-    for (auto & iters : token_iterators)
+    for (const PostingList * posting : token_postings)
     {
-        for (; iters->it != iters->end; ++iters->it)
-        {
-            size_t row = *iters->it;
-            if (row < granule_offset)
-                continue;
+        intersectionPosting &= (*posting);
 
-            size_t relative_row_number = row - granule_offset;
-            if (relative_row_number >= num_rows)
-                break;
-
-            ++counters[relative_row_number];
-        }
+        if (intersectionPosting.cardinality() == 0)
+            return;
     }
 
-    size_t total_tokens = token_iterators.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
+    const size_t cardinality = intersectionPosting.cardinality();
+    if (cardinality == 0)
+        return;
+
+    std::vector<UInt32> indices(cardinality);
+    intersectionPosting.toUint32Array(indices.data());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (size_t i = 0; i < cardinality; ++i)
+    {
+        size_t relative_row_number = indices[i] - granule_offset;
+        chassert(relative_row_number < num_rows);
+        column_data[column_offset + relative_row_number] = 1;
+    }
 }
 
 void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const

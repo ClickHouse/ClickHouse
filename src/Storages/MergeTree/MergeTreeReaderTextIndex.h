@@ -7,15 +7,7 @@
 namespace DB
 {
 
-struct PostingsIteratorPair
-{
-    explicit PostingsIteratorPair(const PostingList & postings) : it(postings.begin()), end(postings.end()) {}
-
-    PostingList::const_iterator it;
-    PostingList::const_iterator end;
-};
-
-using PostingsMap = absl::flat_hash_map<StringRef, PostingsIteratorPair>;
+using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
