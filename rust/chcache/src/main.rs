@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::counters::CacheStatsTracker;
 use crate::disks::clickhouse::ClickHouseDisk;
 use crate::disks::local::LocalDisk;
+use crate::disks::s3::S3Disk;
 use crate::traits::compiler::CompilerMeta;
 use crate::traits::disk::Disk;
 
@@ -97,8 +98,9 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         return Ok(());
     }
 
-    let local_disk = LocalDisk::from_config(config);
-    let clickhouse_disk: ClickHouseDisk = ClickHouseDisk::from_config(config);
+    let local_disk = LocalDisk::from_config(config).await;
+    let clickhouse_disk: ClickHouseDisk = ClickHouseDisk::from_config(config).await;
+    let s3_disk: S3Disk = S3Disk::from_config(config).await;
 
     let total_hash = compiler.cache_key();
     let compiler_version = compiler.version();
@@ -151,6 +153,11 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
 
     if config.use_local_store && !did_load_from_local_cache {
         local_disk
+            .write(&total_hash, &compiled_bytes)
+            .await
+            .unwrap();
+
+        s3_disk
             .write(&total_hash, &compiled_bytes)
             .await
             .unwrap();
