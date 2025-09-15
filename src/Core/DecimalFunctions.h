@@ -124,7 +124,7 @@ inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
   *
   * For DateTime64 types, the fractional part is always added as positive, regardless of the
   * sign of the whole part. This correctly handles pre-epoch dates where whole < 0.
-  * 
+  *
   * Sign of `whole` controls sign of result: negative whole => negative result, positive whole => positive result.
   * Sign of `fractional` is expected to be positive, otherwise result is undefined.
   * If `scale` is to big (scale > max_precision<DecimalType::NativeType>), result is undefined.
@@ -138,7 +138,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     DecimalType & result)
 {
     using T = typename DecimalType::NativeType;
-    
+
     // For DateTime64, fractional part should always be added as positive
     // regardless of the sign of the whole part
     T value;
