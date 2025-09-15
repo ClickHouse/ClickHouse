@@ -40,13 +40,13 @@ def test_table_function_with_auth():
         ]
     )
 
-    assert "No credentials supplied" in node.query(
+    assert "No credentials supplied" in node.query_and_get_error(
         f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC')"
     )
-    assert "Unknown user" in node.query(
-        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'default')"
+    assert "Unknown user" in node.query_and_get_error(
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'default', '')"
     )
-    assert "Wrong password" in node.query(
+    assert "Wrong password" in node.query_and_get_error(
         f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'test_user', 'qwe123')"
     )
 
