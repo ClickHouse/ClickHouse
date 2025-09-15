@@ -134,8 +134,7 @@ ColumnsDescription TableFunctionObjectStorage<
         configuration->update(
             object_storage,
             context,
-            /* if_not_updated_before */true,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ true);
 
         std::string sample_path;
         ColumnsDescription columns;

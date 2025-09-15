@@ -578,10 +578,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
-        if (storage->updateExternalDynamicMetadataIfExists(context))
-        {
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
-        }
+        storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 

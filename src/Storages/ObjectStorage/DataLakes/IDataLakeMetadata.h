@@ -79,6 +79,8 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const { }
 
+    virtual bool supportsSchemaEvolution() const { return false; }
+
     virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
