@@ -25,6 +25,7 @@
 #include <Common/Exception.h>
 
 #include <Databases/DataLake/Common.h>
+#include <Disks/DiskType.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -511,7 +512,6 @@ void IcebergMetadata::createInitial(
     const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
-
     std::vector<String> metadata_files;
     try
     {
