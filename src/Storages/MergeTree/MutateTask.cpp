@@ -1862,8 +1862,8 @@ private:
         TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
         /// NOTE do not pass context for writing to system.transactions_info_log,
         /// because part may have temporary name (with temporary block numbers). Will write it later.
-        ctx->new_data_part->version.setCreationTID(tid, nullptr);
-        ctx->new_data_part->storeVersionMetadata();
+        ctx->new_data_part->version->setCreationTID(tid, nullptr);
+        ctx->new_data_part->version->storeMetadata(false);
 
         auto settings = ctx->source_part->storage.getSettings();
 
