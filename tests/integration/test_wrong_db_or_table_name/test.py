@@ -185,3 +185,12 @@ def test_wrong_database_name_hint(start):
         "test_db_hidden"
         not in error_message
     )
+
+    node.query(
+        """
+        DROP DATABASE IF EXISTS test_db_visible;
+        DROP DATABASE IF EXISTS test_db_hidden;
+
+        DROP USER IF EXISTS restricted_user;
+        """
+    )
