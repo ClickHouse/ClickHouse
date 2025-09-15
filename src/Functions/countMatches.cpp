@@ -76,7 +76,7 @@ Like [`countMatches`](#countMatches) but performs case-insensitive matching.
     };
     FunctionDocumentation::IntroducedIn introduced_in_case_insensitive = {21, 1};
     FunctionDocumentation::Category category_case_insensitive = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_case_insensitive = {description_case_insensitive, syntax_case_insensitive, arguments_case_insensitive, returned_value_case_insensitive, examples_case_insensitive, introduced_in_case_insensitive, category_case_insensitive};
+    FunctionDocumentation documentation_case_insensitive = {description_case_insensitive, syntax_case_insensitive, arguments_case_insensitive, {}, returned_value_case_insensitive, examples_case_insensitive, introduced_in_case_insensitive, category_case_insensitive};
 
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>(documentation_case_sensitive);
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>(documentation_case_insensitive);

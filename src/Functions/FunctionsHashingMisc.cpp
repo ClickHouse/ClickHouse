@@ -555,7 +555,7 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Examples xxh3_example = {{"Usage example", "SELECT xxh3('ClickHouse')", "18009318874338624809"}};
     FunctionDocumentation::IntroducedIn xxh3_introduced_in = {22, 12};
     FunctionDocumentation::Category xxh3_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
+    FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, {}, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
     factory.registerFunction<FunctionXXH3>(xxh3_documentation);
 
     FunctionDocumentation::Description wyHash64_description = "Computes a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.";
@@ -565,7 +565,7 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Examples wyHash64_example = {{"Usage example", "SELECT wyHash64('ClickHouse') AS Hash;", "12336419557878201794"}};
     FunctionDocumentation::IntroducedIn wyHash64_introduced_in = {22, 7};
     FunctionDocumentation::Category wyHash64_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation wyHash64_documentation = {wyHash64_description, wyHash64_syntax, wyHash64_argument, wyHash64_returned_value, wyHash64_example, wyHash64_introduced_in, wyHash64_category};
+    FunctionDocumentation wyHash64_documentation = {wyHash64_description, wyHash64_syntax, wyHash64_argument, {}, wyHash64_returned_value, wyHash64_example, wyHash64_introduced_in, wyHash64_category};
     factory.registerFunction<FunctionWyHash64>(wyHash64_documentation);
 
 #if USE_SSL

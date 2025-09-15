@@ -575,7 +575,7 @@ SELECT HEX(SHA512('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA512 = {1, 1};
     FunctionDocumentation::Category category_SHA512 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA512 = {description_SHA512, syntax_SHA512, arguments_SHA512, {}, returned_value_SHA512category_SHA512};
+    FunctionDocumentation documentation_SHA512 = {description_SHA512, syntax_SHA512, arguments_SHA512, {}, returned_value_SHA512, example_SHA512, introduced_in_SHA512, category_SHA512};
 
     factory.registerFunction<FunctionSHA512>(documentation_SHA512);
 
@@ -606,7 +606,7 @@ SELECT HEX(SHA512_256('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA512_256 = {1, 1};
     FunctionDocumentation::Category category_SHA512_256 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA512_256 = {description_SHA512_256, syntax_SHA512_256, arguments_SHA512_256, {}, returned_value_SHA512_256category_SHA512_256};
+    FunctionDocumentation documentation_SHA512_256 = {description_SHA512_256, syntax_SHA512_256, arguments_SHA512_256, {}, returned_value_SHA512_256, example_SHA512_256, introduced_in_SHA512_256, category_SHA512_256};
 
     factory.registerFunction<FunctionSHA512_256>(documentation_SHA512_256);
 
@@ -645,7 +645,7 @@ SELECT hex(BLAKE3('ABC'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_BLAKE3 = {22, 10};
     FunctionDocumentation::Category category_BLAKE3 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, {}, returned_value_BLAKE3category_BLAKE3};
+    FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, {}, returned_value_BLAKE3, example_BLAKE3, introduced_in_BLAKE3, category_BLAKE3};
 
     factory.registerFunction<FunctionBLAKE3>(documentation_BLAKE3);
 #    endif
@@ -679,7 +679,7 @@ SELECT hex(keccak256('hello'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_keccak256 = {25, 4};
     FunctionDocumentation::Category category_keccak256 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, {}, returned_value_keccak256category_keccak256};
+    FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, {}, returned_value_keccak256, example_keccak256, introduced_in_keccak256, category_keccak256};
 
     factory.registerFunction<FunctionKeccak256>(documentation_keccak256);
 #    endif

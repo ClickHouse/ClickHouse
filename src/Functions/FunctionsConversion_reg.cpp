@@ -90,15 +90,7 @@ from_date32:     1509840000
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_unix_timestamp = {1, 1};
     FunctionDocumentation::Category category_to_unix_timestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_unix_timestamp = {
-        description_to_unix_timestamp,
-        syntax_to_unix_timestamp,
-        arguments_to_unix_timestamp,
-        returned_value_to_unix_timestamp,
-        examples_to_unix_timestamp,
-        introduced_in_to_unix_timestamp,
-        category_to_unix_timestamp
-    };
+    FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, {}, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
     factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
 
     factory.registerFunction<detail::FunctionToUInt8OrZero>();

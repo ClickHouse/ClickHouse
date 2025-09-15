@@ -1205,7 +1205,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutipv6 = {1, 1};
     FunctionDocumentation::Category category_cutipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, {}, returned_value_cutipv6category_cutipv6};
+    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, {}, returned_value_cutipv6, examples_cutipv6, introduced_in_cutipv6, category_cutipv6};
 
     factory.registerFunction<FunctionCutIPv6>(documentation_cutipv6);
 
@@ -1466,7 +1466,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumordefault  = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
+    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, {}, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv4stringtonumordefault);
 
@@ -1497,7 +1497,7 @@ IPv4StringToNumOrNull('invalid') AS invalid;
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
+    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, {}, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv4stringtonumornull);
 
@@ -1580,7 +1580,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6numtostring = {1, 1};
     FunctionDocumentation::Category category_ipv6numtostring = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
+    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, {}, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
 
     factory.registerFunction<FunctionIPv6NumToString>(documentation_ipv6numtostring);
 
@@ -1615,7 +1615,7 @@ SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '1
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonum = {1, 1};
     FunctionDocumentation::Category category_ipv6stringtonum = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
+    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, {}, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv6stringtonum);
 
@@ -1643,7 +1643,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumordefault = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
+    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, {}, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv6stringtonumordefault);
 
@@ -1675,7 +1675,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
+    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, {}, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv6stringtonumornull);
 

@@ -795,7 +795,7 @@ Since one record can be assigned to multiple hop windows, the function only retu
     FunctionDocumentation::Examples examples_hop_start = {{"Hopping window start", "SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-03 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_hop_start = {22, 1};
     FunctionDocumentation::Category category_hop_start = FunctionDocumentation::Category::TimeWindow;
-    FunctionDocumentation documentation_hop_start = {description_hop_start, syntax_hop_start, argument_hop_start, {}, returned_value_hop_start, examples_hop_start, introduced_in_hop_start, category_hop_start};
+    FunctionDocumentation documentation_hop_start = {description_hop_start, syntax_hop_start, arguments_hop_start, {}, returned_value_hop_start, examples_hop_start, introduced_in_hop_start, category_hop_start};
 
     FunctionDocumentation::Description description_hop_end = R"(
 Returns the exclusive upper bound of the corresponding hopping window.
@@ -813,7 +813,7 @@ Since one record can be assigned to multiple hop windows, the function only retu
     FunctionDocumentation::Examples examples_hop_end = {{"Hopping window end", "SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-05 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_hop_end = {22, 1};
     FunctionDocumentation::Category category_hop_end = FunctionDocumentation::Category::TimeWindow;
-    FunctionDocumentation documentation_hop_end = {description_hop_end, syntax_hop_end, argument_hop_end, {}, returned_value_hop_end, examples_hop_end, introduced_in_hop_end, category_hop_end};
+    FunctionDocumentation documentation_hop_end = {description_hop_end, syntax_hop_end, arguments_hop_end, {}, returned_value_hop_end, examples_hop_end, introduced_in_hop_end, category_hop_end};
 
     factory.registerFunction<FunctionTumble>(documentation_tumble);
     factory.registerFunction<FunctionTumbleStart>(documentation_tumble_start);

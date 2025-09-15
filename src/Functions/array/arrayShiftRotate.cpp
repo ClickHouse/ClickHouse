@@ -372,7 +372,7 @@ If the number of elements is negative, the array is shifted to the left.
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
     FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
+    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, {}, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
 
     factory.registerFunction<FunctionArrayShiftRight>(documentation_shiftright);
 }

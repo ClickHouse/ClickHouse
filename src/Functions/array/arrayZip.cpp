@@ -189,7 +189,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a', 1),(NULL, 2),(NULL, 3)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_unaligned = {20, 1};
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
+    FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
     factory.registerFunction<FunctionArrayZip<true>>(documentation_unaligned);
 }

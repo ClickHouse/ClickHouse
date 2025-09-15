@@ -677,7 +677,7 @@ Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Wink
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro = {24, 1};
-    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, argument_jaro, {}, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
+    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, {}, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
 
     FunctionDocumentation::Description description_jaro_winkler = R"(
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
@@ -700,7 +700,7 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro_winkler = {24, 1};
-    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, argument_jaro_winkler, {}, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
+    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, {}, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
 
     factory.registerFunction<FunctionByteHammingDistance>(documentation_hamming);
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
