@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <base/types.h>
@@ -42,6 +43,9 @@ public:
     std::vector<GroupId> inputs;
 
     std::unordered_set<String> applied_rules;   /// TODO: implement more efficiently
+
+    std::optional<ExpressionStatistics> statistics;
+    std::optional<ExpressionCost> cost;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

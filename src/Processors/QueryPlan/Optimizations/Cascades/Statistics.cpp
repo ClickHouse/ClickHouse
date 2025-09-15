@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <IO/Operators.h>
 #include <boost/algorithm/string/split.hpp>
 #include <optional>
 #include <unordered_map>
@@ -7,6 +8,32 @@
 
 namespace DB
 {
+
+void ExpressionStatistics::dump(WriteBuffer & out) const
+{
+    out << "estimated_rows: " << estimated_row_count
+        << " min_rows: " << min_row_count
+        << " max_rows: " << max_row_count
+        << "\n";
+    for (const auto & column : column_statistics)
+        out << "`" << column.first << "` NDV : " << column.second.number_of_distinct_values << "\n";
+}
+
+String ExpressionStatistics::dump() const
+{
+    WriteBufferFromOwnString out;
+    dump(out);
+    return out.str();
+}
+
+/// TODO: this is a temporary hack until table names are properly handled
+String getUnqualifiedColumnName(const String & full_column_name)
+{
+    std::vector<String> identifiers;
+    boost::split(identifiers, full_column_name, [](char c) { return c == '.'; });
+    return identifiers.back();
+}
+
 
 /// FIXME: This is a stub just for testing
 class TPCH100StatisticsStub : public IOptimizerStatistics
@@ -79,10 +106,7 @@ public:
 
     std::optional<UInt64> getNumberOfDistinctValues(const String & full_column_name) const override
     {
-        std::vector<String> identifiers;
-        boost::split(identifiers, full_column_name, [](char c) { return c == '.'; });
-        const auto & column_name = identifiers.back();
-
+        auto column_name = getUnqualifiedColumnName(full_column_name);
         auto column_stats_it = column_statistics.find(column_name);
         if (column_stats_it != column_statistics.end())
         {

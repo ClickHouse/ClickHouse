@@ -23,7 +23,8 @@ void Group::dump(WriteBuffer & out, String indent) const
     if (best_implementation.expression)
     {
         out << indent << "Best:\n"
-            << indent << indent << "Rows: " << best_implementation.cost.number_of_rows
+            << indent << indent
+            // << "Rows: " << best_implementation.cost.number_of_rows
             << " Cost: " << best_implementation.cost.subtree_cost << "\n"
             << indent << indent;
         best_implementation.expression->dump(out);
