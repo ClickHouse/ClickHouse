@@ -28,6 +28,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -483,7 +484,10 @@ void ClusterDiscovery::initialUpdate()
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
 
-        auto watch_callback = std::make_shared<Coordination::WatchCallback>([path](auto) { path->need_update = true; });
+        auto watch_callback = zk->createWatchFromRawCallback(fmt::format("ClusterDiscovery({})", path->zk_path), [&] -> Coordination::WatchCallback
+        {
+            return [path](auto) { path->need_update = true; };
+        });
         zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 
