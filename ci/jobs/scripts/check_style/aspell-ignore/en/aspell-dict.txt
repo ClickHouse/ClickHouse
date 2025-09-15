@@ -1390,6 +1390,7 @@ Jemalloc
 jeprof
 Jepsen
 JetBrains
+JetStream
 Jitter
 joda
 Joda
