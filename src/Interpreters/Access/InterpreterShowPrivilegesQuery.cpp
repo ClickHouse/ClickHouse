@@ -14,10 +14,7 @@ InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & qu
 
 BlockIO InterpreterShowPrivilegesQuery::execute()
 {
-    auto query_context = Context::createCopy(context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-    return executeQuery("SELECT * FROM system.privileges", std::move(query_context), QueryFlags{ .internal = true }).second;
+    return executeQuery("SELECT * FROM system.privileges", context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory)
