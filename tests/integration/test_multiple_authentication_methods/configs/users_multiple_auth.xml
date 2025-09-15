@@ -1,0 +1,123 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <users>
+        <!-- User with multiple plaintext passwords -->
+        <multi_plaintext>
+            <password>
+                <pass1>pass1</pass1>
+                <pass2>pass2</pass2>
+                <pass3>pass3</pass3>
+            </password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_plaintext>
+
+        <!-- User with multiple SHA256 passwords -->
+        <multi_sha256>
+            <password_sha256_hex>
+                <!-- Hash of "password1": ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f -->
+                <hash1>ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f</hash1>
+                <!-- Hash of "password2": 6cf615d5bcaac778352a8f1f3360d23f02f34ec182e259897fd6ce485d7870d4 -->
+                <hash2>6cf615d5bcaac778352a8f1f3360d23f02f34ec182e259897fd6ce485d7870d4</hash2>
+            </password_sha256_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_sha256>
+
+        <!-- User with mixed authentication methods (plaintext + SHA256) -->
+        <mixed_auth>
+            <password>plain_pass</password>
+            <password_sha256_hex>
+                <!-- Hash of "sha_pass": 8d23cf6c86e834a7aa6eded54c26ce2bb2e74903538c61bdd5d2197997ab2f72 -->
+                <hash1>8d23cf6c86e834a7aa6eded54c26ce2bb2e74903538c61bdd5d2197997ab2f72</hash1>
+            </password_sha256_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </mixed_auth>
+
+        <!-- User with single password for backward compatibility testing -->
+        <single_password>
+            <password>single_pass</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </single_password>
+
+        <!-- User with multiple double SHA1 passwords -->
+        <multi_double_sha1>
+            <password_double_sha1_hex>
+                <!-- These are example hashes - in real usage they should be proper double SHA1 -->
+                <hash1>e9d94f22c21e57a5f44c5b4cc3b4a5b6c5b4c5b4c5b4c5b4c5b4c5b4c5b4c5b4</hash1>
+                <hash2>f1e2d3c4b5a69788776655443322110099887766554433221100998877665544</hash2>
+            </password_double_sha1_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_double_sha1>
+
+        <!-- User with multiple LDAP servers (if LDAP is available) -->
+        <!--
+        <multi_ldap>
+            <ldap>
+                <server>
+                    <server1>ldap_server_1</server1>
+                    <server2>ldap_server_2</server2>
+                </server>
+            </ldap>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_ldap>
+        -->
+
+        <!-- User with multiple Kerberos realms (if Kerberos is available) -->
+        <!--
+        <multi_kerberos>
+            <kerberos>
+                <realm>
+                    <realm1>EXAMPLE.COM</realm1>
+                    <realm2>TEST.ORG</realm2>
+                </realm>
+            </kerberos>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_kerberos>
+        -->
+
+        <!-- User with multiple HTTP authentication servers (if HTTP auth is available) -->
+        <!--
+        <multi_http_auth>
+            <http_authentication>
+                <server>
+                    <server1>http_auth_server_1</server1>
+                    <server2>http_auth_server_2</server2>
+                </server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_http_auth>
+        -->
+    </users>
+</clickhouse>
