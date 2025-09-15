@@ -104,6 +104,25 @@ namespace
         }
     }
 
+    std::vector<String> getConfigValues(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & key)
+    {
+        std::vector<String> values;
+        if (!config.has(key))
+            return values;
+        Poco::Util::AbstractConfiguration::Keys sub_keys;
+        config.keys(key, sub_keys);
+        if (sub_keys.empty())
+            values.push_back(config.getString(key));
+        else
+        {
+            for (const auto & sub_key : sub_keys)
+                values.push_back(config.getString(key + "." + sub_key));
+        }
+        return values;
+    }
+
     UserPtr parseUser(
         const Poco::Util::AbstractConfiguration & config,
         String user_name,
@@ -194,7 +213,7 @@ namespace
         if (has_password_double_sha1_hex)
         {
             const auto double_sha1_passwords = getConfigValues(config, password_double_sha1_hex_config);
-            for (const String & pw : double_sha1_passwords) 
+            for (const String & pw : double_sha1_passwords)
             {
                 user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
                 user->authentication_methods.back().setPasswordHashHex(pw, validate);
@@ -900,23 +919,4 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
         ids.emplace(generateID(type, key));
     return ids;
 }
-
-std::vector<String> getConfigValues(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & key)
-    {
-        std::vector<String> values;
-        if (!config.has(key))
-            return values;
-        Poco::Util::AbstractConfiguration::Keys sub_keys;
-        config.keys(key, sub_keys);
-        if (sub_keys.empty())
-            values.push_back(config.getString(key));
-        else
-        {
-            for (const auto & sub_key : sub_keys)
-                values.push_back(config.getString(key + "." + sub_key));
-        }
-        return values;
-    }
 }

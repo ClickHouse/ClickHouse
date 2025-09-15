@@ -1,0 +1,25 @@
+=== Testing Multiple Plaintext Passwords ===
+Testing first password:
+auth_success_1
+SUCCESS
+Testing second password:
+auth_success_2
+SUCCESS
+Testing wrong password:
+EXPECTED_FAILURE
+=== Testing Multiple SHA256 Passwords ===
+Testing first SHA256 password:
+sha256_success_1
+SUCCESS
+Testing second SHA256 password:
+sha256_success_2
+SUCCESS
+Testing wrong SHA256 password:
+EXPECTED_FAILURE
+=== Testing Mixed Authentication Methods ===
+Testing mixed auth plaintext password:
+mixed_plain_success
+SUCCESS
+Testing mixed auth SHA256 password:
+mixed_sha_success
+SUCCESS
