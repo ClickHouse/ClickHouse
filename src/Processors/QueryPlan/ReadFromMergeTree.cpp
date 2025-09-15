@@ -48,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -906,13 +907,14 @@ Pipe ReadFromMergeTree::readByLayers(
                     pipe.numOutputPorts(),
                     sort_description,
                     block_size.max_block_size_rows,
-                    /*max_block_size_bytes=*/0,
+                    /*max_block_size_bytes=*/ 0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
+                    /*apply_virtual_row_conversions=*/ false);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -1338,10 +1340,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     block_size.max_block_size_rows,
                     /*max_block_size_bytes=*/0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));
@@ -3036,6 +3039,11 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
+{
+    return data.getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, getContext());
 }
 
 }
