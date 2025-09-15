@@ -132,7 +132,7 @@ public:
         }
         else
         {
-            auto & lhs = asTwoLevel();
+            auto & lhs = asTwoLevelChecked();
 
             if (other.isSingleLevel())
                 return lhs.merge(other.asSingleLevel());
@@ -244,12 +244,13 @@ private:
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 
-    TwoLevelSet & asTwoLevel()
+    TwoLevelSet & asTwoLevelChecked()
     {
         doDeepCopyIfNeeded();
         return *two_level_set;
     }
 
+    TwoLevelSet & asTwoLevel() { return *two_level_set; }
     const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
 
     /// Needed when a row can participate in more than one merge, e.g., ROLLUP/CUBE
