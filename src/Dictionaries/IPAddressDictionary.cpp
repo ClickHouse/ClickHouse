@@ -411,13 +411,12 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    auto [query_scope, query_context] = createLoadQueryScope(context);
-    BlockIO io = source_ptr->loadAll(std::move(query_context));
-
     std::vector<IPRecord> ip_records;
     bool has_ipv6 = false;
-    try
     {
+        auto [query_scope, query_context] = createLoadQueryScope(context);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
+
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
         Block block;
@@ -449,11 +448,6 @@ void IPAddressDictionary::loadData()
                 ip_records.emplace_back(addr, prefix, row_number);
             }
         }
-        io.onFinish();
-    }
-    catch (...)
-    {
-        io.onException();
     }
 
     if (access_to_key_from_attributes)

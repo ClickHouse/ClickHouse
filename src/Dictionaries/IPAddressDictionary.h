@@ -61,7 +61,7 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration);
+        return std::make_shared<IPAddressDictionary>(context, getDictionaryID(), dict_struct, source_ptr->clone(), configuration);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }

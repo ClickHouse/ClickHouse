@@ -294,16 +294,12 @@ void IPolygonDictionary::loadData()
 {
     auto [query_scope, query_context] = createLoadQueryScope(context);
     BlockIO io = source_ptr->loadAll(std::move(query_context));
-    try
-    {
-        loadDataImpl(io.pipeline);
-        io.onFinish();
-    }
-    catch (...)
-    {
-        io.onException();
-        throw;
-    }
+
+    DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+    io.pipeline.setConcurrencyControl(false);
+    Block block;
+    for (auto guard = io.guard(); executor.pull(block);)
+        blockToAttributes(block);
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
@@ -337,15 +333,6 @@ void IPolygonDictionary::loadData()
     }
 
     polygon_index_to_attribute_value_index = std::move(correct_ids);
-}
-
-void IPolygonDictionary::loadDataImpl(QueryPipeline & pipeline)
-{
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-    while (executor.pull(block))
-        blockToAttributes(block);
 }
 
 void IPolygonDictionary::calculateBytesAllocated()

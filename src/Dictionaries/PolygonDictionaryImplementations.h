@@ -2,6 +2,7 @@
 
 #include <Dictionaries/PolygonDictionary.h>
 #include <Dictionaries/PolygonDictionaryUtils.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <vector>
 
@@ -28,6 +29,8 @@ public:
 
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
+
+    ContextPtr context;
 };
 
 /** A polygon dictionary which generates a recursive grid in order to efficiently cut the number
@@ -62,6 +65,8 @@ private:
 
     const size_t min_intersections;
     const size_t max_depth;
+
+    ContextPtr context;
 };
 
 /** Uses single SlabsPolygonIndex for all queries. */
@@ -90,6 +95,8 @@ private:
 
     const size_t min_intersections;
     const size_t max_depth;
+
+    ContextPtr context;
 };
 
 }

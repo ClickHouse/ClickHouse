@@ -544,7 +544,7 @@ template <DictionaryKeyType dictionary_key_type>
 Block mergeBlockWithPipe(
     size_t key_columns_size,
     const Block & block_to_update,
-    QueryPipeline pipeline)
+    BlockIO io)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -594,10 +594,10 @@ Block mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(pipeline);
+    PullingPipelineExecutor executor(io.pipeline);
     Block block;
 
-    while (executor.pull(block))
+    for (auto guard = io.guard(); executor.pull(block);)
     {
         convertToFullIfSparse(block);
         block.checkNumberOfRows();

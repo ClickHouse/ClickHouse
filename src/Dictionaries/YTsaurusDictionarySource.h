@@ -32,18 +32,18 @@ public:
 
     ~YTsarususDictionarySource() override;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll(ContextMutablePtr) override;
 
-    QueryPipeline loadUpdatedAll() override
+    BlockIO loadUpdatedAll(ContextMutablePtr) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YTsarususDictionarySource");
     }
 
     bool supportsSelectiveLoad() const override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override { return true; }
 

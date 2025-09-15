@@ -142,7 +142,6 @@ private:
     void setup();
     void blockToAttributes(const Block & block);
     void loadData();
-    void loadDataImpl(QueryPipeline & pipeline);
 
     void calculateBytesAllocated();
 

@@ -652,7 +652,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
             io.pipeline.setConcurrencyControl(false);
             Block block;
-            while (executor.pull(block))
+            for (auto guard = io.guard(); executor.pull(block);)
             {
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
@@ -709,7 +709,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
 
             ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
-            io.onFinish();
         }
         catch (...)
         {
@@ -718,8 +717,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             ++error_count;
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-
-            io.onException();
 
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +

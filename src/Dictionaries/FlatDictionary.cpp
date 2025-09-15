@@ -455,15 +455,15 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
 void FlatDictionary::updateData(ContextMutablePtr query_context)
 {
+    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
-
-        while (executor.pull(block))
+        for (auto guard = io.guard(); executor.pull(block);)
         {
             if (!block.rows())
                 continue;
@@ -484,11 +484,10 @@ void FlatDictionary::updateData(ContextMutablePtr query_context)
     }
     else
     {
-        auto pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipeline)));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)
@@ -501,16 +500,13 @@ void FlatDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         BlockIO io = source_ptr->loadAll(std::move(query_context));
-        try
-        {
-            loadDataImpl(io.pipeline);
-            io.onFinish();
-        }
-        catch (...)
-        {
-            io.onException();
-            throw;
-        }
+
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+
+        Block block;
+        for (auto guard = io.guard(); executor.pull(block);)
+            blockToAttributes(block);
     }
     else
         updateData(std::move(query_context));
@@ -523,16 +519,6 @@ void FlatDictionary::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
-}
-
-void FlatDictionary::loadDataImpl(QueryPipeline & pipeline)
-{
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-
-    Block block;
-    while (executor.pull(block))
-        blockToAttributes(block);
 }
 
 void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()

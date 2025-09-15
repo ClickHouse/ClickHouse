@@ -105,6 +105,7 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         auto result = std::make_shared<RangeHashedDictionary>(
+            context,
             getDictionaryID(),
             dict_struct,
             source_ptr->clone(),
@@ -236,7 +237,6 @@ private:
     void createAttributes();
 
     void loadData();
-    void loadDataImpl(QueryPipeline & pipeline);
 
     void calculateBytesAllocated();
 
@@ -555,15 +555,13 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (!source_ptr->hasUpdateField())
     {
         BlockIO io = source_ptr->loadAll(std::move(query_context));
-        try
+
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+        Block block;
+        for (auto guard = io.guard(); executor.pull(block);)
         {
-            loadDataImpl(io.pipeline);
-            io.onFinish();
-        }
-        catch (...)
-        {
-            io.onException();
-            throw;
+            blockToAttributes(block);
         }
     }
     else
@@ -586,19 +584,6 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::loadDataImpl(QueryPipeline & pipeline)
-{
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-
-    while (executor.pull(block))
-    {
-        blockToAttributes(block);
-    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -719,15 +704,16 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr query_context)
 {
+    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
-        while (executor.pull(block))
+        for (auto guard = io.guard(); executor.pull(block);)
         {
             if (!block.rows())
                 continue;
@@ -750,13 +736,11 @@ void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr qu
     {
         static constexpr size_t range_columns_size = 2;
 
-        auto pipe = source_ptr->loadUpdatedAll(std::move(query_context));
-
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
-            std::move(pipe)));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)

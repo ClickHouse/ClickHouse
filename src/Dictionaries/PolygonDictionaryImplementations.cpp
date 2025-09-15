@@ -31,13 +31,15 @@ PolygonDictionarySimple::PolygonDictionarySimple(
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         Configuration configuration_)
-    : IPolygonDictionary(std::move(context_), dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_)
+    : IPolygonDictionary(context_, dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_)
+    , context(context_)
 {
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionarySimple::clone() const
 {
     return std::make_shared<PolygonDictionarySimple>(
+            context,
             this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
@@ -69,10 +71,11 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
         Configuration configuration_,
         int min_intersections_,
         int max_depth_)
-        : IPolygonDictionary(std::move(context_), dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_),
+        : IPolygonDictionary(context_, dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_),
           grid(min_intersections_, max_depth_, polygons),
           min_intersections(min_intersections_),
-          max_depth(max_depth_)
+          max_depth(max_depth_),
+          context(context_)
 {
     buckets.reserve(polygons.size());
     for (const auto & polygon : polygons)
@@ -86,6 +89,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexEach>(
+            context,
             this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
@@ -127,16 +131,18 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
     Configuration configuration_,
     size_t min_intersections_,
     size_t max_depth_)
-    : IPolygonDictionary(std::move(context_), dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_),
+    : IPolygonDictionary(context_, dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_),
       index(min_intersections_, max_depth_, polygons),
       min_intersections(min_intersections_),
-      max_depth(max_depth_)
+      max_depth(max_depth_),
+      context(context_)
 {
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexCell>(
+            context,
             this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),

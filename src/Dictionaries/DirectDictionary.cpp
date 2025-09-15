@@ -90,58 +90,51 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     auto [query_scope, query_context] = createLoadQueryScope(context);
     BlockIO io = loadKeys(query_context, requested_keys, key_columns);
+
     QueryPipeline pipeline(getSourcePipe(std::move(io.pipeline), key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
-    try
+    Stopwatch watch;
+    Block block;
+    size_t block_num = 0;
+    size_t rows_num = 0;
+    for (auto guard = io.guard(); executor.pull(block);)
     {
-        Stopwatch watch;
-        Block block;
-        size_t block_num = 0;
-        size_t rows_num = 0;
-        while (executor.pull(block))
+        if (block.empty())
+            continue;
+
+        ++block_num;
+        rows_num += block.rows();
+        convertToFullIfSparse(block);
+
+        /// Split into keys columns and attribute columns
+        for (size_t i = 0; i < dictionary_keys_size; ++i)
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
+            block_key_columns, arena_holder.getComplexKeyArena());
+        auto block_keys = block_keys_extractor.extractAllKeys();
+
+        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
         {
-            if (block.empty())
+            if (!request.shouldFillResultColumnWithIndex(attribute_index))
                 continue;
 
-            ++block_num;
-            rows_num += block.rows();
-            convertToFullIfSparse(block);
-
-            /// Split into keys columns and attribute columns
-            for (size_t i = 0; i < dictionary_keys_size; ++i)
-                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
-                block_key_columns, arena_holder.getComplexKeyArena());
-            auto block_keys = block_keys_extractor.extractAllKeys();
-
-            for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
-            {
-                if (!request.shouldFillResultColumnWithIndex(attribute_index))
-                    continue;
-
-                const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
-                fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
-            }
-
-            for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
-            {
-                auto block_key = block_keys[block_key_index];
-                key_to_fetched_index[block_key] = fetched_key_index;
-                ++fetched_key_index;
-            }
-
-            block_key_columns.clear();
+            const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
+            fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
         }
-        LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
-            block_num, rows_num, watch.elapsedMilliseconds());
-        io.onFinish();
+
+        for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
+        {
+            auto block_key = block_keys[block_key_index];
+            key_to_fetched_index[block_key] = fetched_key_index;
+            ++fetched_key_index;
+        }
+
+        block_key_columns.clear();
     }
-    catch (...)
-    {
-        io.onException();
-    }
+    LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
+        block_num, rows_num, watch.elapsedMilliseconds());
 
     Field value_to_insert;
 
@@ -265,53 +258,44 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     auto [query_scope, query_context] = createLoadQueryScope(context);
     BlockIO io = loadKeys(query_context, requested_keys, key_columns);
+
     QueryPipeline pipeline(getSourcePipe(std::move(io.pipeline), key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
-    try
+    size_t keys_found = 0;
+    Block block;
+    for (auto guard = io.guard(); executor.pull(block);)
     {
-        size_t keys_found = 0;
-        Block block;
-        while (executor.pull(block))
+        /// Split into keys columns and attribute columns
+        for (size_t i = 0; i < dictionary_keys_size; ++i)
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
+        size_t block_keys_size = block_keys_extractor.getKeysSize();
+
+        for (size_t i = 0; i < block_keys_size; ++i)
         {
-            /// Split into keys columns and attribute columns
-            for (size_t i = 0; i < dictionary_keys_size; ++i)
-                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+            auto block_key = block_keys_extractor.extractCurrentKey();
 
-            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-            size_t block_keys_size = block_keys_extractor.getKeysSize();
+            const auto * it = requested_key_to_index.find(block_key);
+            assert(it);
 
-            for (size_t i = 0; i < block_keys_size; ++i)
+            auto & result_data_found_indexes = it->getMapped();
+            for (size_t result_data_found_index : result_data_found_indexes)
             {
-                auto block_key = block_keys_extractor.extractCurrentKey();
-
-                const auto * it = requested_key_to_index.find(block_key);
-                assert(it);
-
-                auto & result_data_found_indexes = it->getMapped();
-                for (size_t result_data_found_index : result_data_found_indexes)
-                {
-                    /// block_keys_size cannot be used, due to duplicates.
-                    keys_found += !result_data[result_data_found_index];
-                    result_data[result_data_found_index] = true;
-                }
-
-                block_keys_extractor.rollbackCurrentKey();
+                /// block_keys_size cannot be used, due to duplicates.
+                keys_found += !result_data[result_data_found_index];
+                result_data[result_data_found_index] = true;
             }
 
-            block_key_columns.clear();
+            block_keys_extractor.rollbackCurrentKey();
         }
 
-        query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
+        block_key_columns.clear();
+    }
 
-        io.onFinish();
-    }
-    catch (...)
-    {
-        io.onException();
-        throw;
-    }
+    query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }

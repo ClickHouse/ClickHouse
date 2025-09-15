@@ -153,7 +153,6 @@ private:
     void updateData(ContextMutablePtr query_context);
 
     void loadData();
-    void loadDataImpl(QueryPipeline & pipeline);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 

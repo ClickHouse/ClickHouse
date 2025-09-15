@@ -103,6 +103,7 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
+                context,
                 getDictionaryID(),
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
