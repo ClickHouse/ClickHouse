@@ -528,11 +528,132 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("topK", createAggregateFunctionTopK<false, false>, properties);
-    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true, false>, properties);
+    /// topK documentation
+    FunctionDocumentation::Description description_topK = R"(
+Returns an array of the approximately most frequent values in the specified column.
+The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+
+Implements the [Filtered Space-Saving](https://doi.org/10.1016/j.ins.2010.08.024) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://doi.org/10.1016/j.ins.2015.09.003).
+
+This function does not provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
+
+:::tip
+It is recommended to use `N < 10` as performance is reduced with large `N` values. The maximum value of N is 65536.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_topK = R"(
+topK(N)(column)
+topK(N, load_factor)(column)
+topK(N, load_factor, 'counts')(column)
+    )";
+    FunctionDocumentation::Parameters parameters_topK = {
+        {"N", "Optional. The number of elements to return. Default value: 10.", {"UInt64"}},
+        {"load_factor", "Optional. Defines how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
+        {"counts", "Optional. Defines whether result should contain approximate count and error value.", {"Bool"}}
+    };
+    FunctionDocumentation::Arguments arguments_topK = {
+        {"column", "The value to calculate frequency.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_topK = {"Returns an array of the approximately most frequent values in the specified column, sorted in descending order of approximate frequency", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_topK = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE default.user_activities (
+    user_id Int32,
+    activity String,
+    timestamp DateTime
+) ENGINE = Memory;
+
+INSERT INTO default.user_activities VALUES 
+(1, 'login', '2025-01-01 10:00:00'),
+(2, 'login', '2025-01-01 10:15:00'),
+(3, 'search', '2025-01-01 10:30:00'),
+(1, 'purchase', '2025-01-01 11:00:00'),
+(4, 'login', '2025-01-01 11:15:00'),
+(2, 'search', '2025-01-01 11:30:00'),
+(3, 'login', '2025-01-01 12:00:00'),
+(5, 'search', '2025-01-01 12:15:00'),
+(1, 'search', '2025-01-01 12:30:00'),
+(6, 'login', '2025-01-01 13:00:00'),
+(2, 'purchase', '2025-01-01 13:15:00'),
+(4, 'search', '2025-01-01 13:30:00'),
+(7, 'login', '2025-01-01 14:00:00'),
+(3, 'purchase', '2025-01-01 14:15:00'),
+(5, 'login', '2025-01-01 14:30:00');
+
+-- Get top 3 most frequent activities
+SELECT topK(3)(activity) as top_3_activities
+FROM default.user_activities;
+        )",
+        R"(
+┌─top_3_activities──────────────────┐
+│ ['login','search','purchase']     │
+└───────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_topK = {1, 1};
+    FunctionDocumentation::Category category_topK = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_topK = {description_topK, syntax_topK, arguments_topK, parameters_topK, returned_value_topK, examples_topK, introduced_in_topK, category_topK};
+
+    factory.registerFunction("topK", createAggregateFunctionTopK<false, false>, properties, documentation_topK);
+
+    /// topKWeighted documentation
+    FunctionDocumentation::Description description_topKWeighted = R"(
+Returns an array of the approximately most frequent values in the specified column.
+The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+Additionally, the weight of the value is taken into account.
+    )";
+    FunctionDocumentation::Syntax syntax_topKWeighted = R"(
+topKWeighted(N)(column, weight)
+topKWeighted(N, load_factor)(column, weight)
+topKWeighted(N, load_factor, 'counts')(column, weight)
+    )";
+    FunctionDocumentation::Parameters parameters_topKWeighted = {
+        {"N", "Optional. The number of elements to return. Default value: 10.", {"UInt64"}},
+        {"load_factor", "Optional. Defines how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
+        {"counts", "Optional. Defines whether result should contain approximate count and error value.", {"Bool"}}
+    };
+    FunctionDocumentation::Arguments arguments_topKWeighted = {
+        {"column", "The value.", {"Any"}},
+        {"weight", "The weight. Every value is accounted weight times for frequency calculation.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_topKWeighted = {"Returns an array of the values with maximum approximate sum of weights.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_topKWeighted = {
+    {
+        "Usage example",
+        R"(
+SELECT topKWeighted(2)(k, w) FROM
+VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
+        )",
+        R"(
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
+        )"
+    },
+    {
+        "Usage example 2",
+        R"(
+SELECT topKWeighted(2, 10, 'counts')(k, w)
+FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
+         )",
+        R"(
+┌─topKWeighted(2, 10, 'counts')(k, w)─┐
+│ [('z',10,0),('x',5,0)]              │
+└─────────────────────────────────────┘
+         )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_topKWeighted = {1, 1};
+    FunctionDocumentation::Category category_topKWeighted = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_topKWeighted = {description_topKWeighted, syntax_topKWeighted, arguments_topKWeighted, parameters_topKWeighted, returned_value_topKWeighted, examples_topKWeighted, introduced_in_topKWeighted, category_topKWeighted};
+
+
+    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true, false>, properties, documentation_topKWeighted);
 
     /// approx_top_k documentation
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_approx_top_k = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
 The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
@@ -540,19 +661,19 @@ This function does not provide a guaranteed result. In certain situations, error
 
 We recommend using the N < 10 value; performance is reduced with large N values. Maximum value of N = 65536.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_approx_top_k = R"(
 approx_top_k(N)(column)
 approx_top_k(N, reserved)(column)
     )";
-    FunctionDocumentation::Parameters parameters = {
+    FunctionDocumentation::Parameters parameters_approx_top_k = {
         {"N", "Optional. The number of elements to return. Default value: 10.", {"UInt64"}},
         {"reserved", "Optional. Defines how many cells reserved for values. If uniq(column) > reserved, result of topK function will be approximate. Default value: N * 3.", {"UInt64"}}
     };
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Arguments arguments_approx_top_k = {
         {"column", "The value to calculate frequency.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with the most frequent values and their approximate counts and errors.", {"Array(Tuple(T, UInt64, UInt64))"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_approx_top_k = {"Returns an array of tuples with the most frequent values and their approximate counts and errors.", {"Array(Tuple(T, UInt64, UInt64))"}};
+    FunctionDocumentation::Examples examples_approx_top_k = {
     {
         "Finding top 2 most frequent values",
         R"(
@@ -565,11 +686,11 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
 └────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category, parameters};
+    FunctionDocumentation::IntroducedIn introduced_in_approx_top_k = {1, 1};
+    FunctionDocumentation::Category category_approx_top_k = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_approx_top_k = {description_approx_top_k, syntax_approx_top_k, arguments_approx_top_k, parameters_approx_top_k, returned_value_approx_top_k, examples_approx_top_k, introduced_in_approx_top_k, category_approx_top_k};
 
-    factory.registerFunction("approx_top_k", createAggregateFunctionTopK<false, true>, properties, documentation, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("approx_top_k", createAggregateFunctionTopK<false, true>, properties, documentation_approx_top_k, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description sum_description = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
@@ -612,8 +733,8 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
             )"}
     };
     FunctionDocumentation::IntroducedIn sum_introduced_in = {1, 1};
-    FunctionDocumentation::Category sum_category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation sum_documentation = {sum_description, sum_syntax, sum_arguments, {}, sum_returned_value, sum_examples, sum_introduced_in, sum_category, sum_parameters};
+    FunctionDocumentation::Category sum_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation sum_documentation = {sum_description, sum_syntax, sum_arguments, sum_parameters, sum_returned_value, sum_examples, sum_introduced_in, sum_category};
 
     factory.registerFunction("approx_top_sum", createAggregateFunctionTopK<true, true>, properties, sum_documentation, AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);

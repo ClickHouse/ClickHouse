@@ -841,21 +841,78 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
+
+    FunctionDocumentation::Description description_groupArray = R"(
+Creates an array of argument values. Values can be added to the array in any (indeterminate) order.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any (x)]`.
+
+In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.    
+    )";
+    FunctionDocumentation::Syntax syntax_groupArray = R"(
+groupArray(x)
+groupArray(max_size)(x)
+    )";
+    FunctionDocumentation::Arguments arguments_groupArray = {
+        {"x", "Column containing arrays to be aggregated.", {"Array"}}
+    };
+    FunctionDocumentation::Parameters parameters_groupArray = {
+        {"max_size", "Limits the size of the resulting array to `max_size` elements.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArray = {"Returns an array of argument values from the rows within each group.", {"Array"}};
+    FunctionDocumentation::Examples examples_groupArray = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE default.ck (
+    id Int32,
+    name Nullable(String)
+) ENGINE = Memory;
+
+INSERT INTO default.ck VALUES 
+(1, 'zhangsan'),
+(1, NULL),
+(1, 'lisi'),
+(2, 'wangwu');
+
+SELECT * FROM default.ck;
+
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+        )",
+        R"(
+┌─id─┬─name─────┐
+│  1 │ zhangsan │
+│  1 │ ᴺᵁᴸᴸ     │
+│  1 │ lisi     │
+│  2 │ wangwu   │
+└────┴──────────┘
+┌─id─┬─groupArray(10)(name)─┐
+│  1 │ ['zhangsan','lisi']  │
+│  2 │ ['wangwu']           │
+└────┴──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArray = {1, 1};
+    FunctionDocumentation::Category category_groupArray = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArray = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArray};
+
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", createAggregateFunctionGroupArray<false>, properties);
+    factory.registerFunction("groupArray", createAggregateFunctionGroupArray<false>, properties, documentation_groupArray);
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
 
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_groupArrayArray = R"(
 Aggregates arrays into a larger array of those arrays.
 Combines the [`groupArray`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray) function with the [`-Array`](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-array) combinator.
     )";
-    FunctionDocumentation::Syntax syntax = "groupArrayArray(array_column)";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_groupArrayArray = "groupArrayArray(array_column)";
+    FunctionDocumentation::Arguments arguments_groupArrayArray = {
         {"array_column", "Column containing arrays to be aggregated.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a flattened array containing all elements from the input arrays.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_groupArrayArray = {"Returns a flattened array containing all elements from the input arrays.", {"Array"}};
+    FunctionDocumentation::Examples examples_groupArrayArray = {
     {
         "Website visits analysis",
         R"(
@@ -886,14 +943,139 @@ GROUP BY user_id;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_groupArrayArray = {1, 1};
+    FunctionDocumentation::Category category_groupArrayArray = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArrayArray = {description_groupArrayArray, syntax_groupArrayArray, arguments_groupArrayArray, {}, returned_value_groupArrayArray, examples_groupArrayArray, introduced_in_groupArrayArray, category_groupArrayArray};
 
-    factory.registerFunction("groupArrayArray", createAggregateFunctionGroupArray<false>, properties, documentation, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("groupArrayArray", createAggregateFunctionGroupArray<false>, properties, documentation_groupArrayArray, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("groupArraySample", createAggregateFunctionGroupArraySample, properties);
-    factory.registerFunction("groupArrayLast", createAggregateFunctionGroupArray<true>, properties);
+
+    /// groupArraySample
+    FunctionDocumentation::Description description_groupArraySample = R"(
+Creates an array of sample argument values.
+The size of the resulting array is limited to `max_size` elements.
+Argument values are selected and added to the array randomly.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArraySample = R"(
+groupArraySample(max_size[, seed])(x)
+    )";
+    FunctionDocumentation::Arguments arguments_groupArraySample = {
+        {"array_column", "Column containing arrays to be aggregated.", {"Array"}}
+    };
+    FunctionDocumentation::Parameters parameters_groupArraySample = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
+        "Array of randomly selected x arguments.", 
+        {"Array(T)"}
+    };
+    FunctionDocumentation::Examples examples_groupArraySample = {
+    {
+         "Usage example",
+         R"(
+CREATE TABLE default.colors (
+    id Int32,
+    color String
+) ENGINE = Memory;
+
+INSERT INTO default.colors VALUES 
+(1, 'red'),
+(2, 'blue'),
+(3, 'green'),
+(4, 'white'),
+(5, 'orange');
+
+SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+         )",
+         R"(
+┌─newcolors──────────────────┐
+│ ['white','blue','green']   │
+└────────────────────────────┘
+         )"
+    },
+    {
+         "Example using a seed",
+         R"(
+-- Query with column name and different seed
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+        )",
+        R"(
+┌─newcolors──────────────────┐
+│ ['red','orange','green']   │
+└────────────────────────────┘
+        )"
+    },
+    {
+         "Using an expression as an argument",
+         R"(
+-- Query with expression as argument
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+        )",
+        R"(
+┌─newcolors───────────────────────────────────┐
+│ ['light-blue','light-orange','light-green'] │
+└─────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArraySample = {20, 3};
+    FunctionDocumentation::Category category_groupArraySample = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArraySample = {description_groupArraySample, syntax_groupArrayArray, arguments_groupArrayArray, parameters_groupArraySample, returned_value_groupArraySample, examples_groupArraySample, introduced_in_groupArraySample, category_groupArraySample};
+
+factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
+
+    /// groupArrayLast
+    FunctionDocumentation::Description description_groupArrayLast = R"(
+Creates an array of the last argument values.
+For example, `groupArrayLast(1)(x)` is equivalent to `[anyLast(x)]`.
+In some cases, you can still rely on the order of execution.
+This applies to cases when SELECT comes from a subquery that uses ORDER BY if the subquery result is small enough.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArrayLast = R"(
+groupArrayLast(max_size)(x)
+    )";
+    FunctionDocumentation::Arguments arguments_groupArrayLast = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters_groupArrayLast = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArrayLast = {
+        "Returns an array of the last argument values.",
+        {"Array(T)"}
+    };
+    FunctionDocumentation::Examples examples_groupArrayLast = {
+    {
+        "Usage example",
+        R"(
+SELECT groupArrayLast(2)(number+1) numbers FROM numbers(10);
+        )",
+        R"(
+┌─numbers─┐
+│ [9,10]  │
+└─────────┘
+        )"
+    },
+    {
+        "Comparison with groupArray",
+        R"(
+-- Compare with groupArray (first values)  
+SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
+        R"(
+┌─numbers─┐
+│ [1,2]   │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArrayLast = {23, 1};
+    FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArrayLast = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArrayLast};
+    
+    factory.registerFunction("groupArrayLast", createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast);
 }
 
 }

@@ -145,7 +145,7 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     AggregateFunctionProperties properties = { .is_order_dependent = false };
