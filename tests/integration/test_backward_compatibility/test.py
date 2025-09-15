@@ -13,7 +13,7 @@ node1 = cluster.add_instance(
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/wide_parts_only.xml", "configs/no_compress_marks.xml"],
+    main_configs=["configs/wide_parts_only.xml", "configs/no_compress_marks.xml", "configs/no_serialize_string_with_size_stream.xml"],
     with_zookeeper=True,
     use_old_analyzer=True,
 )

@@ -49,10 +49,13 @@ public:
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnFixedSizeHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
-        serialization->enumerateAllStreams([&](const ISerialization::SubstreamPath & substream_path)
-        {
-            col_res_strings.insert(substream_path.toString());
-        });
+
+        ISerialization::EnumerateStreamsSettings settings;
+        settings.enumerate_virtual_streams = true;
+        serialization->enumerateStreams(
+            settings,
+            [&](const ISerialization::SubstreamPath & substream_path) { col_res_strings.insert(substream_path.toString()); },
+            ISerialization::SubstreamData(serialization));
         col_res_offsets.push_back(col_res_strings.size());
         return ColumnConst::create(std::move(col_res), input_rows_count);
     }
