@@ -26,6 +26,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -774,6 +775,8 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+
     setThreadName("ZooKeeperSend");
 
     scope_guard os_thread_nice_value_guard;
@@ -863,6 +866,8 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+
     setThreadName("ZooKeeperRecv");
 
     scope_guard os_thread_nice_value_guard;
@@ -1855,6 +1860,8 @@ std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
         return;

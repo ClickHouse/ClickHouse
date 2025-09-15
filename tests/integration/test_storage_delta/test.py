@@ -3430,12 +3430,9 @@ deltaLake(
         '{minio_access_key}',
         '{minio_secret_key}')
     """
-    assert (
-        "Column mapping ID mode not supported"
-        in node.query_and_get_error(
-            f"SELECT * FROM {delta_function} ORDER BY all"
-        ).strip()
-    )
+    assert "1\t('Alice','Smith')\n2\t('Bob','Johnson')" ==  node.query(
+        f"SELECT * FROM {delta_function} ORDER BY all"
+    ).strip()
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])

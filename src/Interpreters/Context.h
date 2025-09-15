@@ -690,7 +690,9 @@ public:
         SERVER_BUILT_IN_DEBUG_MODE,
         SERVER_BUILT_WITH_COVERAGE,
         SERVER_BUILT_WITH_SANITIZERS,
+        SERVER_CPU_OVERLOAD,
         SERVER_LOGGING_LEVEL_TEST,
+        SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
@@ -1280,6 +1282,9 @@ public:
     void clearIcebergMetadataFilesCache() const;
 #endif
 
+    void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
+    const std::unordered_set<String> & getAllowedDisksForTableEngines() const { return allowed_disks; }
+
     void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
@@ -1659,6 +1664,7 @@ private:
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
+    std::unordered_set<String> allowed_disks;
     /// Throttling
 public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
