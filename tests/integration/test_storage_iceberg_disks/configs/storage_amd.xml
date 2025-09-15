@@ -3,11 +3,11 @@
         <disks>
             <disk_local_common>
                 <type>local</type>
-                <path>/iceberg_data/default/</path>
+                <path>/var/lib/clickhouse/user_files/iceberg_data/default/</path>
             </disk_local_common>
             <disk_s3_common>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/iceberg_data/default/</endpoint>
+                <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/iceberg_data/default/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_common>

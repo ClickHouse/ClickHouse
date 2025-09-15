@@ -39,9 +39,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Join us for the [ClickHouse **25.8** Community Call](https://clickhouse.com/company/events/v25-8-community-release-call) happening on August 28.
+Join us for the [ClickHouse **25.9** Community Call](https://clickhouse.com/company/events/v25-9-community-release-call) happening on September 25.
 
-ClickHouse **Release 25.7** is published! This release included [Lightweight Updates](https://clickhouse.com/docs/sql-reference/statements/update), Iceberg INSERT support, AI for clickhouse-client and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#257).
+ClickHouse **Release 25.8** is published! This release included a new Parquet reader, better Azure storage integration and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.8/), [Video](https://www.youtube.com/watch?v=HB_-vji9RB0), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#258).
 
 ## Upcoming Events
 
