@@ -1224,7 +1224,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
     auto places_deleter = [&allocator, &places_size](auto * ptr)
     {
-        if (likely(ptr))
+        if (ptr) [[likely]]
             allocator.deallocate(ptr, places_size);
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
