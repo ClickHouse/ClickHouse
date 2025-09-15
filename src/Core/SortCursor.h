@@ -758,7 +758,8 @@ public:
             removeTop();
         }
 #ifndef NDEBUG
-        LOG_TRACE(getLogger("LoserTreeSortingQueue"), "{} After update tree:\n{}", fmt::ptr(this), dumpLoserTree());
+
+        LOG_ERROR(getLogger("LoserTreeSortingQueue"), "{} After update tree:\n{}", fmt::ptr(this), dumpLoserTree());
 #endif
     }
 
@@ -834,24 +835,13 @@ private:
         int t = (winner + this->size()) >> 1;
         while (t > 0)
         {
-            if (loser_tree[t] == -1) [[unlikely]]
-            {
-                loser_tree[t] = winner;
-                winner = -1;
-                break;
-            }
-            else
-            {
-                int & loser = loser_tree[t];
-                if (!isWinner(winner, loser))
-                    std::swap(loser, winner);
-            }
-
-            t = t >> 1;
+            int loser = loser_tree[t];
+            bool is_winner = loser != -1 && isWinner(winner, loser);
+            loser_tree[t] = is_winner ? loser : winner;
+            winner = is_winner ? winner : loser;
+            t = winner == -1 ? 0 : t >> 1;
         }
-
-        if (winner != -1)
-            loser_tree[0] = winner;
+        loser_tree[0] = winner == -1 ? loser_tree[0] : winner;
     }
 
     bool ALWAYS_INLINE isWinner(Int32 a, Int32 b)
