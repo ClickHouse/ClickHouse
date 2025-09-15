@@ -155,7 +155,6 @@ protected:
     LoggerPtr log;
 
     /// Id of the processor.
-    std::optional<std::string> processing_id;
     std::string processor_info;
     bool set_processing = false;
 

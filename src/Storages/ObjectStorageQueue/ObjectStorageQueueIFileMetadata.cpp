@@ -435,7 +435,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
     file_status->onProcessed();
 
-    processing_id.reset();
+    set_processing = false;
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
@@ -445,7 +445,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
     file_status->onFailed(exception_message);
 
-    processing_id.reset();
+    set_processing = false;
 
     LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }

@@ -37,8 +37,8 @@ ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
 ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-    processing_id = node_metadata.processing_id = getRandomASCIIString(10);
-    processor_info = getProcessorInfo(processing_id.value());
+    node_metadata.processing_id = getRandomASCIIString(10);
+    processor_info = getProcessorInfo(node_metadata.processing_id);
 
     SetProcessingResponseIndexes result;
 
