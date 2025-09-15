@@ -422,7 +422,7 @@ protected:
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index++]->insertDefault();
+                                    res_columns[res_index]->insertDefault();
                                 }
                                 ++res_index;
                             }
