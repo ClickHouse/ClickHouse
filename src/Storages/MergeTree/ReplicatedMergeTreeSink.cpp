@@ -1,25 +1,26 @@
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/PartLog.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
-#include <Storages/MergeTree/InsertBlockInfo.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <fmt/core.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
-#include <Core/Block.h>
-#include <IO/Operators.h>
-#include <fmt/core.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 
 namespace ProfileEvents
@@ -589,7 +590,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->info.mutation = 0;
-    part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+    part->version->setCreationTID(Tx::PrehistoricTID, nullptr);
 
     try
     {
