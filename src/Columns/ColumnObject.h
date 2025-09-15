@@ -279,6 +279,9 @@ public:
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
+    /// Validate that all dynamic paths have correct sizes.
+    void validateDynamicPathsSizes() const;
+
 private:
     class SortedPathsIterator;
 

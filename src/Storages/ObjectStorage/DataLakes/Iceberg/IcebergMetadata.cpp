@@ -895,7 +895,7 @@ void IcebergMetadata::addDeleteTransformers(
             /// Construct right argument of 'not in' expression, it is the column set.
             const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
             /// Construct left argument of 'not in' expression
-            std::vector<const ActionsDAG::Node *> left_columns;
+            ActionsDAG::NodeRawConstPtrs left_columns;
             std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
             for (const auto & output : dag.getOutputs())
                 outputs.emplace(output->result_name, output);

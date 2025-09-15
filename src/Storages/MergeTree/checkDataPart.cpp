@@ -167,7 +167,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -182,7 +182,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
     auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
@@ -202,7 +202,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         try
         {
-            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
             SerializationInfo::Settings settings{ratio_of_defaults, false};
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
         }
@@ -223,7 +223,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -272,7 +272,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
-        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt);
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
