@@ -721,19 +721,20 @@ public:
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
-    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/)
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
     }
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    virtual StorageSnapshotPtr
+    getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context)
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     /// Creates a storage snapshot but without holding a data specific to storage.
-    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }

@@ -28,11 +28,11 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
 
 private:
     StoragePtr parent_storage;
-    const MergeTreeData & merge_tree;
+    MergeTreeData & merge_tree;
     StorageMetadataPtr parent_metadata;
     ProjectionDescriptionRawPtr projection;
 };

@@ -12,7 +12,7 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
     : IStorage(storage_id_)
     , parent_storage(std::move(parent_storage_))
-    , merge_tree(dynamic_cast<const MergeTreeData &>(*parent_storage))
+    , merge_tree(dynamic_cast<MergeTreeData &>(*parent_storage))
     , parent_metadata(std::move(parent_metadata_))
     , projection(projection_)
 {
@@ -70,7 +70,7 @@ void StorageFromMergeTreeProjection::read(
 }
 
 StorageSnapshotPtr
-StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
     auto parent_storage_snapshot = merge_tree.getStorageSnapshot(metadata_snapshot, query_context);
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);

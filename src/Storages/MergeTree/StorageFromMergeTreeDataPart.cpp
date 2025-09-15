@@ -47,7 +47,7 @@ void StorageFromMergeTreeDataPart::read(
 }
 
 StorageSnapshotPtr
-StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     if (!hasDynamicSubcolumnsDeprecated(storage_columns))

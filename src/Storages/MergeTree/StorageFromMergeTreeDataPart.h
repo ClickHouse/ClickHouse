@@ -43,7 +43,7 @@ public:
 
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) override;
 
     void read(
         QueryPlan & query_plan,

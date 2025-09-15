@@ -48,7 +48,7 @@ public:
         size_t rows_approx = 0;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
 
     const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
