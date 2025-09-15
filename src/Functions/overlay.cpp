@@ -747,7 +747,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         )"
     }
     };
-    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, introduced_in, category};
+    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, introduced_in, category};
 
     factory.registerFunction<FunctionOverlay<true>>(overlayutf8_documentation, FunctionFactory::Case::Sensitive);
 }

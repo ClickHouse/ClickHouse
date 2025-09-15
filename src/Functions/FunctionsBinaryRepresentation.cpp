@@ -763,7 +763,7 @@ The function uses uppercase letters `A-F` and not using any prefixes (like `0x`)
     };
     FunctionDocumentation::IntroducedIn hex_introduced_in = {1, 1};
     FunctionDocumentation::Category hex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_arguments, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
+    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_arguments, {}, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
 
     FunctionDocumentation::Description unhex_description = R"(
 Performs the opposite operation of [`hex`](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts
@@ -808,7 +808,7 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
     };
     FunctionDocumentation::IntroducedIn unhex_introduced_in = {1, 1};
     FunctionDocumentation::Category unhex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_arguments, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
+    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_arguments, {}, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
 
     FunctionDocumentation::Description bin_description = R"(
 Returns a string containing the argument's binary representation according
@@ -868,7 +868,7 @@ to the following logic for different types:
     };
     FunctionDocumentation::IntroducedIn bin_introduced_in = {21, 8};
     FunctionDocumentation::Category bin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_arguments, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
+    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_arguments, {}, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
 
     FunctionDocumentation::Description unbin_description = R"(
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to bin.
@@ -908,7 +908,7 @@ the result is undefined (no exception is thrown).
     };
     FunctionDocumentation::IntroducedIn unbin_introduced_in = {21, 8};
     FunctionDocumentation::Category unbin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_arguments, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
+    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_arguments, {}, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
 
     factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(hex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);
