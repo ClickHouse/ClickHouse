@@ -16,9 +16,10 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <filesystem>
+#include <Interpreters/Cache/SplitFileCachePriority.h>
 
 
 namespace DB
@@ -71,8 +72,10 @@ public:
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
     using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = FileCacheOriginInfo::UserID;
+    using Type = FileSegmentKeyType;
+    using CachePriorityCreatorFunction = SplitFileCachePriority::CachePriorityCreatorFunction;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -87,13 +90,15 @@ public:
 
     const String & getBasePath() const;
 
-    static const UserInfo & getCommonUser();
+    static const FileCacheOriginInfo & getCommonOrigin();
 
-    static const UserInfo & getInternalUser();
+    static const OriginInfo & getInternalOrigin();
 
-    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const UserInfo & user) const;
+    OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path& filename) const;
 
-    String getKeyPath(const Key & key, const UserInfo & user) const;
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
+
+    String getKeyPath(const Key & key, const OriginInfo & origin) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -113,7 +118,7 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user,
+        const OriginInfo & origin,
         std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
@@ -137,14 +142,14 @@ public:
         size_t offset,
         size_t size,
         const CreateFileSegmentSettings & settings,
-        const UserInfo & user);
+        const OriginInfo & origin);
 
     FileSegmentsHolderPtr trySet(
         const Key & key,
         size_t offset,
         size_t size,
         const CreateFileSegmentSettings & settings,
-        const UserInfo & user);
+        const OriginInfo & origin);
 
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
     void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
@@ -181,7 +186,7 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user,
+        const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
@@ -227,6 +232,9 @@ private:
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
+
+    const bool use_split_cache;
+    const double split_cache_ratio;
 
     LoggerPtr log;
 

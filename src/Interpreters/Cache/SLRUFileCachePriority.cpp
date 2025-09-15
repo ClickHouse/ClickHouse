@@ -122,7 +122,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const UserInfo &,
+    const OriginInfo &,
     const CachePriorityGuard::Lock & lock,
     bool is_startup)
 {
@@ -172,14 +172,14 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
-    const UserID & user_id,
+    const OriginInfo & origin,
     const CachePriorityGuard::Lock & lock)
 {
     /// If `reservee` is nullptr, then it is the first space reservation attempt
     /// for a corresponding file segment, so it will be directly put into probationary queue.
     if (!reservee)
     {
-        return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, origin, lock);
     }
 
     auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
@@ -191,7 +191,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     if (!slru_iterator->is_protected)
     {
         chassert(slru_iterator->lru_iterator.cache_priority == &probationary_queue);
-        success = probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, user_id, lock);
+        success = probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, origin, lock);
     }
     else
     {
@@ -199,7 +199,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         /// Entry is in protected queue.
         /// Check if we have enough space in protected queue to fit a new size of entry.
         /// `size` is the increment to the current entry.size we want to increase.
-        success = collectCandidatesForEvictionInProtected(size, elements, stat, res, reservee, user_id, lock);
+        success = collectCandidatesForEvictionInProtected(size, elements, stat, res, reservee, origin, lock);
     }
 
     /// We eviction_candidates (res) set is non-empty and
@@ -225,7 +225,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
-    const UserID & user_id,
+    const OriginInfo & origin,
     const CachePriorityGuard::Lock & lock)
 {
     if (protected_queue.canFit(size, elements, lock))
@@ -238,7 +238,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     auto downgrade_candidates = std::make_shared<EvictionCandidates>();
     FileCacheReserveStat downgrade_stat;
-    if (!protected_queue.collectCandidatesForEviction(size, elements, downgrade_stat, *downgrade_candidates, reservee, user_id, lock))
+    if (!protected_queue.collectCandidatesForEviction(size, elements, downgrade_stat, *downgrade_candidates, reservee, origin, lock))
     {
         return false;
     }
@@ -252,7 +252,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     if (!probationary_queue.collectCandidatesForEviction(
             downgrade_stat.total_stat.releasable_size, downgrade_stat.total_stat.releasable_count,
-            stat, res, reservee, user_id, lock))
+            stat, res, reservee, origin, lock))
     {
         return false;
     }
@@ -422,7 +422,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// queue to probationary queue.
         ///
         if (!collectCandidatesForEvictionInProtected(
-                entry->size, /* elements */1, stat, eviction_candidates, nullptr, FileCache::getInternalUser().user_id, lock))
+                entry->size, /* elements */1, stat, eviction_candidates, nullptr, FileCache::getInternalOrigin(), lock))
         {
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
@@ -492,8 +492,8 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
 
 IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CachePriorityGuard::Lock & lock)
 {
-    auto res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(probationary_queue.dump(lock));
-    auto part_res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(protected_queue.dump(lock));
+    auto res = probationary_queue.dump(lock);
+    auto part_res = protected_queue.dump(lock);
     res->merge(*part_res);
     return res;
 }

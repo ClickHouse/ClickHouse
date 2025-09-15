@@ -50,7 +50,7 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const UserInfo & user,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &,
         bool best_effort = false) override;
 
@@ -60,7 +60,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
-        const UserID & user_id,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &) override;
 
     CollectStatus collectCandidatesForEviction(
@@ -73,12 +73,6 @@ public:
 
     void shuffle(const CachePriorityGuard::Lock &) override;
 
-    struct LRUPriorityDump : public IPriorityDump
-    {
-        std::vector<FileSegmentInfo> infos;
-        explicit LRUPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
-        void merge(const LRUPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
-    };
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
     void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT

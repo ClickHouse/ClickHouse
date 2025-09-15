@@ -64,7 +64,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 
             const auto path = cache->getFileSegmentPath(
                 file_segment.key, file_segment.offset, file_segment.kind,
-                FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                file_segment.origin);
             res_columns[i++]->insert(path);
             res_columns[i++]->insert(file_segment.key.toString());
             res_columns[i++]->insert(file_segment.range_left);
@@ -77,7 +77,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(file_segment.downloaded_size);
             res_columns[i++]->insert(toString(file_segment.kind));
             res_columns[i++]->insert(file_segment.is_unbound);
-            res_columns[i++]->insert(file_segment.user_id);
+            res_columns[i++]->insert(file_segment.origin.user_id);
 
             std::error_code ec;
             auto size = fs::file_size(path, ec);
@@ -85,7 +85,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
                 res_columns[i++]->insert(size);
             else
                 res_columns[i++]->insertDefault();
-        }, FileCache::getCommonUser().user_id);
+        }, FileCache::getCommonOrigin().user_id);
     }
 }
 

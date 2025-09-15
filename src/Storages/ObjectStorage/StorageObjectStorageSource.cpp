@@ -739,7 +739,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 object_info.getPath(),
                 cache_key,
                 cache,
-                FileCache::getCommonUser(),
+                FileCache::getCommonOrigin(),
                 read_buffer_creator,
                 use_async_buffer ? nested_buffer_read_settings : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),

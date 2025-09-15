@@ -67,7 +67,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     auto & first_reader = range_readers.front();
     auto read_result = first_reader.startReadingChain(max_rows, ranges);
 
-    LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
+    // LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
     if (read_result.num_rows != 0)
     {
