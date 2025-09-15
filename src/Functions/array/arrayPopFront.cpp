@@ -22,7 +22,7 @@ REGISTER_FUNCTION(ArrayPopFront)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPopFront([1, 2, 3]) AS res;", "[2, 3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayPopFront>(documentation);
 }

@@ -342,7 +342,7 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(documentation);
 

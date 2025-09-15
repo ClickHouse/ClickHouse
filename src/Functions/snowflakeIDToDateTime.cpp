@@ -190,7 +190,7 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-        factory.registerFunction<FunctionSnowflakeIDToDateTime>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+        factory.registerFunction<FunctionSnowflakeIDToDateTime>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
     }
 
     {
@@ -206,7 +206,7 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-        factory.registerFunction<FunctionSnowflakeIDToDateTime64>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+        factory.registerFunction<FunctionSnowflakeIDToDateTime64>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
     }
 }
 

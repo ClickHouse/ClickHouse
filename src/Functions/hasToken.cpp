@@ -48,7 +48,7 @@ A token is defined as the longest possible sub-sequence of consecutive character
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_or_null = R"(
 Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
