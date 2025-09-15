@@ -354,7 +354,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "www.straßen-in-europa"
     }
     };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, argument_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
     factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8

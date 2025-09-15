@@ -52,7 +52,7 @@ The behavior of this function depends on the ClickHouse version:
     };
     FunctionDocumentation::IntroducedIn introduced_in_case_sensitive = {21, 1};
     FunctionDocumentation::Category category_case_sensitive = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_case_sensitive = {description_case_sensitive, syntax_case_sensitive, argument_case_sensitive, {}, returned_value_case_sensitive, examples_case_sensitive, introduced_in_case_sensitive, category_case_sensitive};
+    FunctionDocumentation documentation_case_sensitive = {description_case_sensitive, syntax_case_sensitive, arguments_case_sensitive, {}, returned_value_case_sensitive, examples_case_sensitive, introduced_in_case_sensitive, category_case_sensitive};
 
     FunctionDocumentation::Description description_case_insensitive = R"(
 Like [`countMatches`](#countMatches) but performs case-insensitive matching.

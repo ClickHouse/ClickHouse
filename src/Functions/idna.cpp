@@ -211,7 +211,7 @@ Note that repeated application of [`idnaEncode()`](#idnaEncode) and [`idnaDecode
         )"
     }
     };
-    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, argument_decode, {}, returned_value_decode, examples_decode, introduced_in, category};
+    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, {}, returned_value_decode, examples_decode, introduced_in, category};
 
     factory.registerFunction<FunctionIdnaEncode>(documentation_encode);
     factory.registerFunction<FunctionTryIdnaEncode>(documentation_try_encode);

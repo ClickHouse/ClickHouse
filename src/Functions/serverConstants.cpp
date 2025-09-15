@@ -233,7 +233,7 @@ SELECT serverUUID();
     };
     FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
     FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, argument_serverUUID, {}, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
+    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, {}, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
 
     factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
 }
@@ -440,7 +440,7 @@ SELECT zookeeperSessionUptime();
     };
     FunctionDocumentation::IntroducedIn introduced_in_zookeeperSessionUptime = {21, 11};
     FunctionDocumentation::Category category_zookeeperSessionUptime = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, argument_zookeeperSessionUptime, {}, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
+    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, {}, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
 
     factory.registerFunction<FunctionZooKeeperSessionUptime>(documentation_zookeeperSessionUptime);
 }
@@ -469,7 +469,7 @@ SELECT getOSKernelVersion();
     };
     FunctionDocumentation::IntroducedIn introduced_in_getOSKernelVersion = {21, 11};
     FunctionDocumentation::Category category_getOSKernelVersion = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, argument_getOSKernelVersion, {}, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
+    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, {}, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
 
     factory.registerFunction<FunctionGetOSKernelVersion>(documentation_getOSKernelVersion);
 }
