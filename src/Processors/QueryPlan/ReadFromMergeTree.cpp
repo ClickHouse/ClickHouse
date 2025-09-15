@@ -1733,6 +1733,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+
+
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag,
@@ -1816,6 +1818,7 @@ static void buildIndexes(
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
 
+    Names all_skip_index_column_names;
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
@@ -1856,9 +1859,16 @@ static void buildIndexes(
         }
 
         if (!condition->alwaysUnknownOrTrue())
+	{
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+	}
     }
+    {
 
+        KeyCondition template_rpn{filter_dag, context, all_skip_index_column_names, primary_key.expression};
+	LOG_TRACE(getLogger(""), "template kc is {}", template_rpn.toString());
+	template_rpn.transformToDisjuncts();
+    }
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());

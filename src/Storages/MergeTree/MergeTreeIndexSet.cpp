@@ -508,6 +508,10 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
     return res;
 }
 
+void MergeTreeIndexConditionSet::transformToDisjuncts()
+{
+    return condition.transformToDisjuncts();
+}
 
 static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, ActionsDAG * result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
 {

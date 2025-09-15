@@ -295,6 +295,11 @@ public:
         bool date_time_overflow_behavior_ignore_,
         bool relaxed_);
 
+    /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE 
+    void transformToDisjuncts();
+
+    std::pair<bool, bool> checkIfOnlyCunjunctsOrOnlyDisjuncts() const;
+
 private:
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo

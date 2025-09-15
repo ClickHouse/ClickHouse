@@ -206,6 +206,11 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
+    virtual void transformToDisjuncts()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support transform to disjuncts");
+    }
+
     template <typename RPNElement>
     bool rpnEvaluatesAlwaysUnknownOrTrue(
         const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const

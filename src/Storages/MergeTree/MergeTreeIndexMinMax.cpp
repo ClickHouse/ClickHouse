@@ -197,6 +197,11 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
 }
 
+void MergeTreeIndexConditionMinMax::transformToDisjuncts()
+{
+    condition.transformToDisjuncts();
+}
+
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {

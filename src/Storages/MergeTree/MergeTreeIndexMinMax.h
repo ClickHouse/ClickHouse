@@ -59,6 +59,8 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
+    void transformToDisjuncts() override;
+
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;

@@ -95,6 +95,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
 }
 
 namespace MergeTreeSetting
@@ -837,6 +838,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 };
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
+		std::vector<MarkRanges> skip_index_selected_ranges;
+		Names all_skip_index_column_names;
+
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -865,6 +869,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
+		    if (settings[Setting::use_skip_indexes_on_disjuncts])
+		    {
+			    index_and_condition.condition->transformToDisjuncts();
+			    skip_index_selected_ranges.emplace_back(
+                            filterMarksUsingIndex(
+                            index_and_condition.index,
+                            index_and_condition.condition,
+                            ranges.data_part,
+                            ranges.ranges,
+                            ranges.read_hints,
+                            reader_settings,
+                            mark_cache.get(),
+                            uncompressed_cache.get(),
+                            vector_similarity_index_cache.get(),
+                            log).first);
+			    LOG_TRACE(getLogger(""),"Skip index selected {} ranges out of {}", skip_index_selected_ranges.back().size(), ranges.ranges.size());
+			    LOG_TRACE(getLogger(""),"Input  range {}{} selected {}{}", ranges.ranges.front().begin, ranges.ranges.back().end, skip_index_selected_ranges.back().front().begin, skip_index_selected_ranges.back().back().end);
+		    }
+		    else
+		    {
                     /// Vector similarity indexes are not applicable on data reads.
                     if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                     {
@@ -884,6 +908,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+		    }
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }

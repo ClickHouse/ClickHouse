@@ -45,6 +45,7 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -3213,6 +3214,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const ColumnIndexToBloomFilter & column_index_to_column_bf) const
 {
     std::vector<BoolMask> rpn_stack;
+    LOG_TRACE(getLogger(""), "Landed in KeyCondition {}", toString());
 
     auto curve_type = [&](size_t key_column_pos)
     {
@@ -4101,6 +4103,38 @@ std::unordered_set<size_t> KeyCondition::getUsedColumns() const
         }
     }
     return res;
+}
+
+void KeyCondition::transformToDisjuncts()
+{
+    std::stringstream ss;
+    for (const RPNElement & element : rpn)
+    {
+	    ss << element.function << "-";
+    }
+    LOG_TRACE(getLogger(""),"Before disjunct : {}", ss.str());
+    for (RPNElement & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_AND)
+            element.function = RPNElement::FUNCTION_OR;
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            element.function = RPNElement::ALWAYS_FALSE;
+    }
+}
+
+std::pair<bool, bool> KeyCondition::checkIfOnlyCunjunctsOrOnlyDisjuncts() const
+{
+    bool only_conjuncts = true, only_disjuncts = true;
+    for (const RPNElement & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_AND)
+            only_disjuncts = false;
+        else if (element.function == RPNElement::FUNCTION_OR)
+            only_conjuncts = false;
+    }
+    if (only_conjuncts && only_disjuncts)
+        only_disjuncts = false;
+    return std::make_pair<>(only_conjuncts, only_disjuncts);
 }
 
 }
