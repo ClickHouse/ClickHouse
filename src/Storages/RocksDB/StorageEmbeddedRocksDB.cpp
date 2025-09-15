@@ -213,7 +213,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     setSettings(std::move(settings_));
 
     if (rocksdb_dir.empty())
-        rocksdb_dir = getContext()->getUserFilesPath() + relative_data_path_;
+        rocksdb_dir = fs::path{getContext()->getUserFilesPath()} / relative_data_path_;
 
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
     fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
