@@ -2390,7 +2390,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
-            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+            part->version->setCreationTID(Tx::PrehistoricTID, nullptr);
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);

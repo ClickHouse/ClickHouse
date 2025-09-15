@@ -862,7 +862,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             else if (txn && !from_another_mutation)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->version.removal_tid_lock.load();
+                TIDHash part_locked = data_part->version->getRemovalTIDLock();
                 if (part_locked && part_locked != mutation_entry.tid.getHash())
                 {
                     result.latest_failed_part = data_part->name;
@@ -1354,7 +1354,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
-            if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            if (!part->version->isVisible(first_mutation_tid.start_csn, first_mutation_tid))
                 continue;
 
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
@@ -2276,8 +2276,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
         TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        loaded_parts[i]->version.setCreationTID(tid, nullptr);
-        loaded_parts[i]->storeVersionMetadata();
+        loaded_parts[i]->version->setCreationTID(tid, nullptr);
+        loaded_parts[i]->version->storeMetadata(/*force=*/false);
 
         String old_name = renamed_parts.old_and_new_names[i].old_name;
         /// It's important to create it outside of lock scope because
