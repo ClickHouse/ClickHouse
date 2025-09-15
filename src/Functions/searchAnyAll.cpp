@@ -365,7 +365,7 @@ SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\
     };
     FunctionDocumentation::IntroducedIn introduced_in_searchAll = {25, 7};
     FunctionDocumentation::Category category_searchAll = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, {}, arguments_searchAll, {}, returned_value_searchAllcategory_searchAll};
+    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, arguments_searchAll, {}, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
 
     factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation_searchAll);
 }
