@@ -212,6 +212,9 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
 
+    if (rocksdb_dir.empty())
+        rocksdb_dir = getContext()->getUserFilesPath() + relative_data_path_;
+
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
     fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
     if (fs::path(rocksdb_dir).is_relative())
@@ -222,10 +225,6 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
 
-    if (rocksdb_dir.empty())
-    {
-        rocksdb_dir = context_->getPath() + relative_data_path_;
-    }
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
         fs::create_directories(rocksdb_dir);
