@@ -29,7 +29,7 @@ public:
     /// Action to execute after metadata transaction successfully committed.
     /// Useful when it's impossible to revert operation
     /// like removal of blobs. Such implementation can lead to garbage.
-    virtual void finalize() = 0;
+    virtual void finalize(StoredObjects & to_remove) = 0;
     virtual ~IDiskObjectStorageOperation() = default;
 
     virtual std::string getInfoForLog() const = 0;

@@ -23,6 +23,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace DB
 {
@@ -39,6 +40,9 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
+    extern const SettingsString promql_database;
+    extern const SettingsString promql_table;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -200,8 +204,9 @@ void LocalConnection::sendQuery(
         if (dialect == Dialect::kusto)
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
-            parser
-                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::promql)
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 

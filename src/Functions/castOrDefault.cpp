@@ -385,10 +385,81 @@ If the default value is not provided in the second argument, it is assumed to be
 
     factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); });
+    FunctionDocumentation::Description toIPv4OrDefault_description = R"(
+Converts a string or a UInt32 form of an IPv4 address to [`IPv4`](../data-types/ipv4.md) type.
+If the IPv4 address has an invalid format, it returns `0.0.0.0` (0 IPv4), or the provided IPv4 default.
+    )";
+    FunctionDocumentation::Syntax toIPv4OrDefault_syntax = "toIPv4OrDefault(string[, default])";
+    FunctionDocumentation::Arguments toIPv4OrDefault_arguments = {
+        {"string", "IP address string to convert.", {"String"}},
+        {"default", "Optional. The value to return if string is an invalid IPv4 address.", {"IPv4"}}
+    };
+    FunctionDocumentation::ReturnedValue toIPv4OrDefault_returned_value = {"Returns a string converted to the current IPv4 address, or the default value if conversion fails.", {"IPv4"}};
+    FunctionDocumentation::Examples toIPv4OrDefault_examples = {
+    {
+        "Valid and invalid IPv4 strings",
+        R"(
+WITH
+    '192.168.1.1' AS valid_IPv4_string,
+    '999.999.999.999' AS invalid_IPv4_string,
+    'not_an_ip' AS malformed_string
+SELECT
+    toIPv4OrDefault(valid_IPv4_string) AS valid,
+    toIPv4OrDefault(invalid_IPv4_string) AS default_value,
+    toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
+        )",
+        R"(
+┌─valid─────────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
+└───────────────┴───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toIPv4OrDefault_introduced_in = {22, 3};
+    FunctionDocumentation::Category toIPv4OrDefault_category = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation toIPv4OrDefault_documentation = {toIPv4OrDefault_description, toIPv4OrDefault_syntax, toIPv4OrDefault_arguments, toIPv4OrDefault_returned_value, toIPv4OrDefault_examples, toIPv4OrDefault_introduced_in, toIPv4OrDefault_category};
+
     factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); });
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); },
+        toIPv4OrDefault_documentation);
+
+    FunctionDocumentation::Description toIPv6OrDefault_description = R"(
+Converts a string or a UInt128 form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
+If the IPv6 address has an invalid format, it returns `::` (0 IPv6) or the provided IPv6 default.
+    )";
+    FunctionDocumentation::Syntax toIPv6OrDefault_syntax = "toIPv6OrDefault(string[, default])";
+    FunctionDocumentation::Arguments toIPv6OrDefault_arguments = {
+        {"string", "IP address string to convert."},
+        {"default", "Optional. The value to return if string has an invalid format."}
+    };
+    FunctionDocumentation::ReturnedValue toIPv6OrDefault_returned_value = {"Returns the IPv6 address, otherwise `::` or the provided optional default if argument `string` has an invalid format.", {"IPv6"}};
+    FunctionDocumentation::Examples toIPv6OrDefault_examples = {
+    {
+        "Valid and invalid IPv6 strings",
+        R"(
+WITH
+    '2001:0db8:85a3:0000:0000:8a2e:0370:7334' AS valid_IPv6_string,
+    '2001:0db8:85a3::8a2e:370g:7334' AS invalid_IPv6_string,
+    'not_an_ipv6' AS malformed_string
+SELECT
+    toIPv6OrDefault(valid_IPv6_string) AS valid,
+    toIPv6OrDefault(invalid_IPv6_string) AS default_value,
+    toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
+        )",
+        R"(
+┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
+└────────────────────────────────────────┴───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toIPv6OrDefault_introduced_in = {22, 3};
+    FunctionDocumentation::Category toIPv6OrDefault_category = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation toIPv6OrDefault_documentation = {toIPv6OrDefault_description, toIPv6OrDefault_syntax, toIPv6OrDefault_arguments, toIPv6OrDefault_returned_value, toIPv6OrDefault_examples, toIPv6OrDefault_introduced_in, toIPv6OrDefault_category};
+
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); });
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },
+        toIPv6OrDefault_documentation);
 }
 
 }

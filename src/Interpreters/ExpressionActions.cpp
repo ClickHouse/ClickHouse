@@ -75,7 +75,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    std::unordered_map<const Node *, Node *> copy_map;
+    std::unordered_map<const Node *, const Node *> copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)

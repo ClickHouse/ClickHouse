@@ -103,3 +103,11 @@ You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
 If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+
+- `_table` — Contains the name of the table from which data was read. Type: [String](../../sql-reference/data-types/string.md).
+
+    Regardless of the table engine being used, each table includes a universal virtual column named `_table`.
+
+    When querying a table with the merge table engine, you can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
+
+    When using queries formatted like `SELECT ... FROM (... UNION ALL ...)`, we can determine which actual table the returned rows originate from by specifying the `_table` column.

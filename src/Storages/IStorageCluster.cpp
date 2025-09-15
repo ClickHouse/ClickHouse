@@ -42,6 +42,11 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
+namespace ErrorCodes
+{
+    extern const int ALL_CONNECTION_TRIES_FAILED;
+}
+
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
@@ -93,7 +98,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
+    void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,14 +110,10 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
-
-    createExtension(predicate, max_replicas_to_use);
+    createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
@@ -121,7 +122,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
         predicate,
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
-        number_of_replicas);
+        cluster);
 }
 
 /// The code executes on initiator
@@ -200,7 +201,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr, max_replicas_to_use);
+    createExtension(nullptr);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -243,10 +244,10 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipes.emplace_back(std::move(pipe));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
+    if (pipes.empty())
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
 
+    auto pipe = Pipe::unitePipes(std::move(pipes));
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 

@@ -64,9 +64,11 @@ static struct InitFiu
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
+    ONCE(object_storage_queue_fail_commit_once) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
+    REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
@@ -85,6 +87,7 @@ static struct InitFiu
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -105,10 +108,15 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
-    ONCE(smt_commit_exception_before_op)
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    ONCE(iceberg_writes_cleanup) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_delay_update_coordination_state_running)
 
 
 namespace FailPoints

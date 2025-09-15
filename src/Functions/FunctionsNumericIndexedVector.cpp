@@ -11,7 +11,7 @@ REGISTER_FUNCTION(NumericIndexedVector)
     factory.registerFunction<FunctionNumericIndexedVectorBuild>(FunctionDocumentation{
         .description
         = R"(Creates a NumericIndexedVector from a map. The map’s keys represent the vector's index and map's value represents the vector's value.)",
-        .syntax = "SELECT numericIndexedVectorBuild(map)",
+        .syntax = "numericIndexedVectorBuild(map)",
         .arguments = {{"map", "A mapping from index to value."}},
         .returned_value = {"NumericIndexedVector object."},
         .examples
