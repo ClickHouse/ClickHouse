@@ -547,11 +547,15 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 
         ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
+        auto & [posting_list, bulk_context] = it->getMapped();
 
         if (inserted)
-            it->getMapped() = &posting_lists.emplace_back();
+        {
+            posting_list = &posting_lists.emplace_back();
+            bulk_context = roaring::BulkContext();
+        }
 
-        it->getMapped()->add(current_row);
+        posting_list->addBulk(bulk_context, current_row);
     }
 
     ++current_row;
@@ -567,7 +571,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, mapped);
+        sorted_values.emplace_back(key, mapped.first);
         bloom_filter.add(key.data, key.size);
     });
 

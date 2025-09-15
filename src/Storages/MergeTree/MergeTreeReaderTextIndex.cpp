@@ -260,14 +260,15 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
 void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
     const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
 {
-    PostingList unionPosting;
-    PostingList rangePosting;
-    rangePosting.addRange(granule_offset, granule_offset + num_rows);
+    PostingList union_posting;
+    PostingList range_posting;
+    range_posting.addRange(granule_offset, granule_offset + num_rows);
 
     for (const auto & token : search_tokens)
     {
@@ -275,17 +276,16 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        const PostingList &posting = *it->second;
-
-        unionPosting |= (posting & rangePosting);
+        const PostingList & posting = *it->second;
+        union_posting |= (posting & range_posting);
     }
 
-    const size_t cardinality = unionPosting.cardinality();
+    const size_t cardinality = union_posting.cardinality();
     if (cardinality == 0)
         return;
 
-    std::vector<UInt32> indices(cardinality);
-    unionPosting.toUint32Array(indices.data());
+    indices.resize(cardinality);
+    union_posting.toUint32Array(indices.data());
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     for (size_t i = 0; i < cardinality; ++i)
@@ -299,6 +299,7 @@ void applyPostingsAny(
 void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
     const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
@@ -319,23 +320,23 @@ void applyPostingsAll(
         token_postings.push_back(it->second);
     }
 
-    PostingList intersectionPosting;
-    intersectionPosting.addRange(granule_offset, granule_offset + num_rows);
+    PostingList intersection_posting;
+    intersection_posting.addRange(granule_offset, granule_offset + num_rows);
 
     for (const PostingList * posting : token_postings)
     {
-        intersectionPosting &= (*posting);
+        intersection_posting &= (*posting);
 
-        if (intersectionPosting.cardinality() == 0)
+        if (intersection_posting.cardinality() == 0)
             return;
     }
 
-    const size_t cardinality = intersectionPosting.cardinality();
+    const size_t cardinality = intersection_posting.cardinality();
     if (cardinality == 0)
         return;
 
-    std::vector<UInt32> indices(cardinality);
-    intersectionPosting.toUint32Array(indices.data());
+    indices.resize(cardinality);
+    intersection_posting.toUint32Array(indices.data());
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     for (size_t i = 0; i < cardinality; ++i)
@@ -346,7 +347,7 @@ void applyPostingsAll(
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
@@ -361,9 +362,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, c
         return;
 
     if (search_query->mode == TextSearchMode::Any || granule.postings.size() == 1)
-        applyPostingsAny(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
+        applyPostingsAny(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
     else if (search_query->mode == TextSearchMode::All)
-        applyPostingsAll(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
+        applyPostingsAll(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->mode);
 }

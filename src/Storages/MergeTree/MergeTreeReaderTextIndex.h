@@ -45,7 +45,7 @@ private:
     void createEmptyColumns(Columns & columns) const;
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
-    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const;
+    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
 
     MergeTreeIndexWithCondition index;
     MarkRanges all_index_ranges;
@@ -69,6 +69,7 @@ private:
 
     std::map<size_t, Granule> granules;
     absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
+    PaddedPODArray<UInt32> indices_buffer;
 };
 
 }

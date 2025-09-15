@@ -134,7 +134,7 @@ private:
 };
 
 using PostingListRawPtr = PostingList *;
-using TokenToPostingsMap = StringHashMap<PostingListRawPtr>;
+using TokenToPostingsMap = StringHashMap<std::pair<PostingListRawPtr, roaring::BulkContext>>;
 using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
