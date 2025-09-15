@@ -248,8 +248,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
 
-    processing_id = node_metadata.processing_id = getRandomASCIIString(10);
-    auto processor_info = getProcessorInfo(processing_id.value());
+    node_metadata.processing_id = getRandomASCIIString(10);
+    auto processor_info = getProcessorInfo(node_metadata.processing_id);
 
     const size_t max_num_tries = 100;
     Coordination::Error code;
