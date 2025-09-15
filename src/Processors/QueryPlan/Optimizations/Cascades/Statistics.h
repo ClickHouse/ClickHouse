@@ -18,7 +18,7 @@ struct ExpressionColumnStatistics
 
 struct ExpressionStatistics
 {
-    /// Number of row that we estimated using probabilities, historgrams, heurisitcs, etc.
+    /// Number of row that we estimated using probabilities, histograms, heurisitcs, etc.
     Float64 estimated_row_count;
     /// Proven minimum number of rows
     UInt64 min_row_count = 0;
