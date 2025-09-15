@@ -1,9 +1,11 @@
 #include <Storages/System/StorageSystemTransactions.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <DataTypes/DataTypesNumber.h>
+
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/TransactionLog.h>
 
 
 namespace DB

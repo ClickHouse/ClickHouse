@@ -1,10 +1,16 @@
+#include <memory>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/Exception.h>
+#include <Common/TransactionID.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/noexcept_scope.h>
 
+#include <base/sleep.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -15,6 +21,7 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SERIALIZATION_ERROR;
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -24,6 +31,45 @@ static void checkNotOrdinaryDatabase(const StoragePtr & storage)
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} belongs to database with Ordinary engine. "
                     "This engine is deprecated and is not supported in transactions.", storage->getStorageID().getNameForLogs());
+}
+
+namespace
+{
+void removeOldPartWithRetry(std::unique_ptr<VersionMetadata> & version, const TransactionInfoContext & transaction_context)
+{
+    static constexpr size_t MAX_RETRY = 10;
+    for (size_t i = 1; i <= MAX_RETRY; i++)
+    {
+        if (version->getInfo().isRemoved())
+            return;
+
+        try
+        {
+            version->lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+            version->storeRemovalTID(Tx::PrehistoricTID);
+            version->storeRemovalCSN(Tx::PrehistoricCSN);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (i < MAX_RETRY && (e.code == Coordination::Error::ZBADVERSION || Coordination::isHardwareError(e.code)))
+            {
+                version->loadAndVerifyMetadata(version->getLogger());
+                continue;
+            }
+
+            throw;
+        }
+        catch (const Exception & e)
+        {
+            if (i <= MAX_RETRY && e.code() == ErrorCodes::SERIALIZATION_ERROR)
+            {
+                version->loadAndVerifyMetadata(version->getLogger());
+                continue;
+            }
+            throw;
+        }
+    }
+}
 }
 
 MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id, std::list<CSN>::iterator snapshot_it_)
@@ -80,7 +126,11 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     {
         txn->addNewPart(storage, new_part);
         /// Now we know actual part name and can write it to system log table.
-        tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, txn->tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+        tryWriteEventToSystemLog(
+            new_part->version->getLogger(),
+            TransactionsInfoLogElement::ADD_PART,
+            txn->tid,
+            TransactionInfoContext{storage->getStorageID(), new_part->name});
     }
 }
 
@@ -93,14 +143,12 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         /// If server crash just after committing transactions
         /// we will find this TID in version metadata and will finally remove part.
         txn->removeOldPart(storage, part_to_remove, transaction_context);
+        return;
     }
-    else
+    static constexpr size_t MAX_RETRY = 9;
+    for (size_t i = 0; i <= MAX_RETRY; i++)
     {
-        /// Lock part for removal with special TID, so transactions will not try to remove it concurrently.
-        /// We lock it only in memory if part was not involved in any transactions.
-        part_to_remove->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
-        if (part_to_remove->wasInvolvedInTransaction())
-            part_to_remove->appendRemovalTIDToVersionMetadata();
+        removeOldPartWithRetry(part_to_remove->version, transaction_context);
     }
 }
 
@@ -108,7 +156,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
-    tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, transaction_context);
+    tryWriteEventToSystemLog(new_part->version->getLogger(), TransactionsInfoLogElement::ADD_PART, tid, transaction_context);
     transaction_context.covering_part = std::move(transaction_context.part_name);
     new_part->assertHasVersionMetadata(txn);
 
@@ -126,9 +174,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
-            covered->version.lockRemovalTID(tid, transaction_context);
-            if (covered->wasInvolvedInTransaction())
-                covered->appendRemovalTIDToVersionMetadata();
+            removeOldPartWithRetry(covered->version, transaction_context);
         }
     }
 }
@@ -150,14 +196,13 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         std::lock_guard lock{mutex};
         checkIsNotCancelled();
 
-        part_to_remove->version.lockRemovalTID(tid, context);
+        part_to_remove->version->lockRemovalTID(tid, context);
         NOEXCEPT_SCOPE({
             storages.insert(storage);
             removing_parts.push_back(part_to_remove);
         });
     }
-
-    part_to_remove->appendRemovalTIDToVersionMetadata();
+    part_to_remove->version->storeRemovalTID(tid);
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
@@ -176,6 +221,42 @@ bool MergeTreeTransaction::isReadOnly() const
         return is_read_only;
     chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
+}
+
+void MergeTreeTransaction::addRequestsOnCommit(const Coordination::Requests & requests)
+{
+    std::lock_guard lock{mutex};
+    requests_on_commit.insert(requests_on_commit.end(), requests.begin(), requests.end());
+}
+
+void MergeTreeTransaction::addRequestOnCommit(Coordination::RequestPtr request)
+{
+    std::lock_guard lock{mutex};
+    requests_on_commit.push_back(std::move(request));
+}
+
+Coordination::Requests MergeTreeTransaction::getRequestsOnCommit() const
+{
+    std::lock_guard lock{mutex};
+    return requests_on_commit;
+}
+
+void MergeTreeTransaction::addRequestsOnRollback(const Coordination::Requests & requests)
+{
+    std::lock_guard lock{mutex};
+    requests_on_rollback.insert(requests_on_rollback.end(), requests.begin(), requests.end());
+}
+
+void MergeTreeTransaction::addRequestOnRollback(Coordination::RequestPtr request)
+{
+    std::lock_guard lock{mutex};
+    requests_on_rollback.push_back(std::move(request));
+}
+
+Coordination::Requests MergeTreeTransaction::getRequestsOnRollback() const
+{
+    std::lock_guard lock{mutex};
+    return requests_on_rollback;
 }
 
 scope_guard MergeTreeTransaction::beforeCommit()
@@ -237,14 +318,12 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     for (const auto & part : created_parts)
     {
-        part->version.creation_csn.store(csn);
-        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::CREATION);
+        part->version->storeCreationCSN(csn);
     }
 
     for (const auto & part : removed_parts)
     {
-        part->version.removal_csn.store(csn);
-        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
+        part->version->storeRemovalCSN(csn);
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
@@ -286,9 +365,8 @@ bool MergeTreeTransaction::rollback() noexcept
     /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : parts_to_remove)
     {
-        part->version.creation_csn.store(Tx::RolledBackCSN);
         /// Write special RolledBackCSN, so we will be able to cleanup transaction log
-        part->appendCSNToVersionMetadata(VersionMetadata::CREATION);
+        part->version->storeCreationCSN(Tx::RolledBackCSN);
     }
 
     for (const auto & part : parts_to_remove)
@@ -300,15 +378,15 @@ bool MergeTreeTransaction::rollback() noexcept
     }
 
     for (const auto & part : parts_to_activate)
-        if (part->version.getCreationTID() != tid)
+        if (part->version->getCreationTID() != tid)
             const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
 
     for (const auto & part : parts_to_activate)
     {
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
-        part->appendRemovalTIDToVersionMetadata(/* clear */ true);
-        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+        part->version->storeRemovalTID(Tx::EmptyTID);
+        part->version->unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
     assert([&]()
@@ -371,9 +449,9 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version->getCreationTID(), part->version->getCreationCSN());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
-        chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
+        chassert(!part->version->getCreationCSN() || part->version->getCreationCSN() <= getSnapshot());
     }
 
     for (const auto & mutation : mutations)
