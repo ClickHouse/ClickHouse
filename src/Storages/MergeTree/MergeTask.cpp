@@ -1806,6 +1806,7 @@ public:
             partition_and_sorting_required_columns,
             merging_params,
             rows_sources_temporary_file_name,
+            filter_column_name,
             merge_block_size_rows,
             merge_block_size_bytes,
             blocks_are_granules_size,
