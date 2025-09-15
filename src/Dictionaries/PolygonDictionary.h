@@ -9,7 +9,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -163,7 +163,7 @@ private:
         ValueGetter && get_value,
         ValueSetter && set_value,
         IColumn::Filter & default_mask) const;
-    
+
     ContextPtr context;
 
     ColumnPtr key_attribute_column;

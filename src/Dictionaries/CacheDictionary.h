@@ -14,7 +14,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>

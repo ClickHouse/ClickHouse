@@ -2,12 +2,11 @@
 #include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
-#include "Common/tests/gtest_global_context.h"
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
 #include "Dictionaries/DictionarySourceHelpers.h"
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>

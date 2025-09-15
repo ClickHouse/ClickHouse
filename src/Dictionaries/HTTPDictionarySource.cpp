@@ -179,7 +179,7 @@ BlockIO HTTPDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_co
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
                    .create(credentials);
-    
+
     BlockIO io;
     io.pipeline = createWrappedBuffer(std::move(buf));
     return io;

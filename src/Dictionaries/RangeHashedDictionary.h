@@ -12,7 +12,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -282,7 +282,7 @@ private:
     const RangeHashedDictionaryConfiguration configuration;
 
     ContextPtr context;
-    
+
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;

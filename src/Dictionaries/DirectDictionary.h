@@ -7,7 +7,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

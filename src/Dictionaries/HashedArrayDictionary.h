@@ -8,7 +8,7 @@
 #include <Core/Block_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
