@@ -75,7 +75,6 @@ public:
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
 
-    virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &) const { }

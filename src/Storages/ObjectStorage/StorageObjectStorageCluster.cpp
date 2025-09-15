@@ -77,8 +77,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     configuration->update(
         object_storage,
         context_,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* if_not_updated_before */ false);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -115,18 +114,16 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false);
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-        configuration->update(
+    configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false);
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 

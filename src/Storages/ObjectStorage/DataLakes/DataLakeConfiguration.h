@@ -74,30 +74,15 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata) override
+    bool update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before, ) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return false;
 
-        BaseStorageConfiguration::update(
-            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
+        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
 
-        const bool changed = updateMetadataIfChanged(object_storage, local_context);
-        if (!changed)
-            return true;
-
-        if (check_consistent_with_previous_metadata && hasExternalDynamicMetadata() && updated_before)
-        {
-            throw Exception(
-                ErrorCodes::FORMAT_VERSION_TOO_OLD,
-                "Metadata is not consinsent with the one which was used to infer table schema. "
-                "Please, retry the query.");
-        }
+        updateMetadataIfChanged(object_storage, local_context);
         return true;
     }
 
@@ -173,15 +158,6 @@ public:
     {
         assertInitialized();
         return current_metadata->updateConfigurationAndGetTotalRows(local_context);
-    }
-
-    // This method should work even if metadata is not initialized
-    bool neverNeedUpdateOnReadWrite() const override
-    {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#endif
-        return false;
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override

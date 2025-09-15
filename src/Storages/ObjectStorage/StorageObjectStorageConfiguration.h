@@ -181,11 +181,7 @@ public:
     virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const noexcept { }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
+    virtual bool update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -206,8 +202,6 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
-
-    virtual bool neverNeedUpdateOnReadWrite() const { return false; }
 
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,

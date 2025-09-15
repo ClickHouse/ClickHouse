@@ -3,12 +3,13 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/ColumnSize.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -54,6 +55,9 @@ struct StorageInMemoryMetadata
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
+
+    /// ICEBERG table state. Supported for Iceberg tables.
+    Iceberg::IcebergTableStateSnapshot iceberg_table_state;
 
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.

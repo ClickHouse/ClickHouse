@@ -141,8 +141,7 @@ StorageObjectStorage::StorageObjectStorage(
             configuration->update(
                 object_storage,
                 context,
-                /* if_not_updated_before */is_table_function,
-                /* check_consistent_with_previous_metadata */true);
+                /* if_not_updated_before */ is_table_function);
             updated_configuration = true;
         }
     }
@@ -269,22 +268,22 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false);
+        /* if_not_updated_before */ false);
 
     return configuration->getExternalMetadata();
 }
 
-bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
+    StorageInMemoryMetadata metadata;
+
     bool updated = configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */false);
+        /* if_not_updated_before */ true);
 
     if (!configuration->hasExternalDynamicMetadata())
-        return false;
+        return;
 
     if (!updated)
     {
@@ -292,18 +291,15 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         configuration->update(
             object_storage,
             query_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */false);
+            /* if_not_updated_before */ false);
     }
 
     auto columns = configuration->tryGetTableStructureFromMetadata();
     if (!columns.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
 
-    StorageInMemoryMetadata metadata;
     metadata.setColumns(std::move(columns.value()));
     setInMemoryMetadata(metadata);
-    return true;
 }
 
 StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
@@ -319,8 +315,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false,
-        /* check_consistent_with_previous_metadata */ false);
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
@@ -329,8 +324,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false,
-        /* check_consistent_with_previous_metadata */ false);
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -346,13 +340,12 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
+    if (update_configuration_on_read_write)
     {
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ false);
     }
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
@@ -406,13 +399,12 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
+    if (update_configuration_on_read_write)
     {
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ false);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
