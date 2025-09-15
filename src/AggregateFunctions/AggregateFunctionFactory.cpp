@@ -347,15 +347,11 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
 {
-    String canonical_name = getAliasToOrName(name);
-    if (auto it = aggregate_functions.find(canonical_name); it != aggregate_functions.end())
-        return it->second.documentation;
+    auto it = aggregate_functions.find(name);
+    if (it == aggregate_functions.end())
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}", name);
 
-    String name_lowercase = Poco::toLower(canonical_name);
-    if (auto jt = case_insensitive_aggregate_functions.find(name_lowercase); jt != case_insensitive_aggregate_functions.end())
-        return jt->second.documentation;
-
-    return {};
+    return it->second.documentation;
 }
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
