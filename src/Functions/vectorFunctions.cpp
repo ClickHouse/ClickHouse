@@ -1571,7 +1571,7 @@ Calculates the sum of corresponding elements of two tuples of the same size.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {21, 11};
     FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tuplePlus = {description_tuplePlus, syntax_tuplePlus, arguments_tuplePlus, returned_value_tuplePlus, examples_tuplePlus, introduced_in_tuplePlus, category_tuplePlus};
+    FunctionDocumentation documentation_tuplePlus = {description_tuplePlus, syntax_tuplePlus, arguments_tuplePlus, {}, returned_value_tuplePluscategory_tuplePlus};
     factory.registerFunction<FunctionTuplePlus>(documentation_tuplePlus);
     factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::Case::Insensitive);
 

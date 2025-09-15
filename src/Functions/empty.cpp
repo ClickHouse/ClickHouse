@@ -233,8 +233,8 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
     }
     };
     FunctionDocumentation::Category category_string = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
-    FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
+    FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, {}, returned_value_stringcategory_string};
+    FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, {}, returned_value_stringcategory_string};
 
     factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_not_empty);
     factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);

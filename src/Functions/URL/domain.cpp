@@ -39,7 +39,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
     };
     FunctionDocumentation::IntroducedIn introduced_in_domain = {1, 1};
     FunctionDocumentation::Category category_domain = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_domain = {description_domain, syntax_domain, arguments_domain, returned_value_domain, examples_domain, introduced_in_domain, category_domain};
+    FunctionDocumentation documentation_domain = {description_domain, syntax_domain, arguments_domain, {}, returned_value_domaincategory_domain};
 
     factory.registerFunction<FunctionDomain>(documentation_domain);
 
