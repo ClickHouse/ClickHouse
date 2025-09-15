@@ -65,7 +65,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
     FunctionDocumentation::ReturnedValue normalizeQuery_returned_value = {"Returns the given sequence of characters with placeholders.", {"String"}};
     FunctionDocumentation::Examples normalizeQuery_examples = {
     {
-        "Basic usage",
+        "Usage example",
         R"(
 SELECT normalizeQuery('[1, 2, 3, x]') AS query
         )",
@@ -91,7 +91,7 @@ This helps better analyze complex query logs.
     FunctionDocumentation::ReturnedValue normalizeQueryKeepNames_returned_value = {"Returns the given sequence of characters with placeholders.", {"String"}};
     FunctionDocumentation::Examples normalizeQueryKeepNames_examples = {
     {
-        "Comparison with normalizeQuery",
+        "Usage example",
         R"(
 SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123')
         )",

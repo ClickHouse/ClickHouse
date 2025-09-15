@@ -150,7 +150,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!filter_step)
         return;
 
-    auto filter_step_description = filter_step->getStepDescription();
     const auto & context = source_step_with_filter->getContext();
     const auto & settings = context->getSettingsRef();
 
@@ -212,23 +211,25 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
+    QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        filter_node->step = std::make_unique<FilterStep>(
+        new_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
-        filter_node->step->setStepDescription(std::move(filter_step_description));
     }
     else
     {
         /// Have to keep this expression to change column names to column identifiers
-        filter_node->step = std::make_unique<ExpressionStep>(
+        new_step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr));
-        filter_node->step->setStepDescription(std::move(filter_step_description));
     }
+
+    new_step->setStepDescription(*filter_step);
+    filter_node->step = std::move(new_step);
 }
 
 }

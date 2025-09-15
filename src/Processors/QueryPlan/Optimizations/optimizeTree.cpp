@@ -48,6 +48,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
     Optimization::ExtraSettings extra_settings = {
+        optimization_settings.max_step_description_length,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
@@ -167,6 +168,7 @@ void optimizeTreeSecondPass(
     bool has_reading_from_mt = false;
 
     Optimization::ExtraSettings extra_settings = {
+        optimization_settings.max_step_description_length,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
@@ -242,7 +244,8 @@ void optimizeTreeSecondPass(
                         *frame.node,
                         nodes,
                         optimization_settings.optimize_use_implicit_projections,
-                        optimization_settings.is_parallel_replicas_initiator_with_projection_support);
+                        optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                        optimization_settings.max_step_description_length);
                     if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
                 }
@@ -267,7 +270,8 @@ void optimizeTreeSecondPass(
             if (auto applied_projection = optimizeUseNormalProjections(
                 stack,
                 nodes,
-                optimization_settings.is_parallel_replicas_initiator_with_projection_support))
+                optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                optimization_settings.max_step_description_length))
             {
                 applied_projection_names.insert(*applied_projection);
 
