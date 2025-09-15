@@ -61,7 +61,7 @@ namespace
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
         {
             if (factory.isAlias(name))
             {
