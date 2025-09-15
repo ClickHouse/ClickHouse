@@ -1,0 +1,36 @@
+=== Testing Multiple Plaintext Passwords ===
+Testing first password:
+SUCCESS
+Testing second password:
+SUCCESS
+Testing third password:
+SUCCESS
+Testing wrong password:
+EXPECTED_FAILURE
+=== Testing Multiple SHA256 Passwords ===
+Testing first SHA256 password:
+SUCCESS
+Testing second SHA256 password:
+SUCCESS
+Testing wrong SHA256 password:
+EXPECTED_FAILURE
+=== Testing Mixed Authentication Methods ===
+Testing mixed auth plaintext password:
+SUCCESS
+Testing mixed auth SHA256 password:
+SUCCESS
+=== Testing Backward Compatibility ===
+Testing single password user:
+SUCCESS
+=== Testing System Tables ===
+Users in system.users:
+mixed_auth_user
+multi_plaintext_user
+multi_sha256_user
+single_password_user
+=== Testing User Management ===
+Testing SQL-created user:
+SUCCESS
+=== Testing Configuration Validation ===
+4
+=== Multiple Authentication Methods Test Complete ===
