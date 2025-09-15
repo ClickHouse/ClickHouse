@@ -24,6 +24,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 
@@ -323,9 +324,34 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+
+static bool isTemporaryMetadataFile(const String & path)
+{
+    /// Temporary metadata files are created during commit operation.
+    /// They have .tmp suffix
+    LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Check if '{}' is temporary metadata file", path);
+    if (!path.ends_with(".metadata.json"))
+    {
+        LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Path '{}' doesn't end with .metadata.json", path);
+
+        return false;
+    }
+    String substring = path.substr(0, path.size() - strlen(".metadata.json"));
+    if (!Poco::UUID{}.tryParse(substring))
+    {
+        LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Substring '{}' is not a valid uuid", substring);
+        return false;
+    }
+    return true;
+}
+
+static std::optional<Iceberg::MetadataFileWithInfo> getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    if (isTemporaryMetadataFile(file_name))
+    {
+        return std::nullopt;
+    }
     String version_str;
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
@@ -336,7 +362,7 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
@@ -711,7 +737,11 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+        auto metadata_path_opt = getMetadataFileAndVersion(path);
+        if (!metadata_path_opt.has_value())
+            continue;
+
+        auto [version, metadata_file_path, compression_method] = metadata_path_opt.value();
         if (need_all_metadata_files_parsing)
         {
             auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
@@ -791,7 +821,13 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             auto prefix_storage_path = configuration_ptr->getPathForRead().path;
             if (!explicit_metadata_path.starts_with(prefix_storage_path))
                 explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            auto metadata_path_opt = getMetadataFileAndVersion(explicit_metadata_path);
+            if (!metadata_path_opt.has_value())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Temporary metadata file is not allowed as a root metadata for the table: {}",
+                    explicit_metadata_path);
+            return metadata_path_opt.value();
         }
         catch (const std::exception & ex)
         {
@@ -820,7 +856,14 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+        auto result_metadata_path = (std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file).string();
+        auto metadata_path_opt = getMetadataFileAndVersion(result_metadata_path);
+        if (!metadata_path_opt.has_value())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Temporary metadata file is not allowed as a root metadata for the table: {}",
+                result_metadata_path);
+        return metadata_path_opt.value();
     }
     else
     {

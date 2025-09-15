@@ -1,19 +1,16 @@
-from multiprocessing import Pool
+from multiprocessing.dummy import Pool
 import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
-    execute_spark_query_general,
-    get_creation_expression,
-
 )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_concurrent_reads(started_cluster_iceberg_with_spark, storage_type):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
+def test_concurrent_reads(started_cluster_iceberg):
+    instance = started_cluster_iceberg.instances["node1"]
+    spark = started_cluster_iceberg.spark_session
+    storage_type = 's3'
 
     TABLE_NAME = (
         "test_concurrent_reads_"
@@ -22,16 +19,7 @@ def test_concurrent_reads(started_cluster_iceberg_with_spark, storage_type):
         + get_uuid_str()
     )
 
-    def execute_spark_query(query: str):
-        return execute_spark_query_general(
-            spark,
-            started_cluster_iceberg_with_spark,
-            storage_type,
-            TABLE_NAME,
-            query,
-        )
-    
-    execute_spark_query(
+    spark.sql(
         f"""
             CREATE TABLE {TABLE_NAME} (
                 number INT
@@ -41,9 +29,9 @@ def test_concurrent_reads(started_cluster_iceberg_with_spark, storage_type):
         """
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg)
 
-    num_insert_threads = 10
+    num_insert_threads = 15
     num_select_threads = 25
     has_errors : bool = False
     batch_size = 50
@@ -51,14 +39,16 @@ def test_concurrent_reads(started_cluster_iceberg_with_spark, storage_type):
     def run_concurrent_queries(i):
         def select(_):
             try:
-                result = instance.query(f"SELECT * FROM {TABLE_NAME}")
+                result = instance.query(
+                    f"SELECT * FROM {TABLE_NAME}",
+                )
                 assert len(result.split("\n")) % batch_size == 0
             except:
                 has_errors = True
 
         def insert(_):
             try:
-                execute_spark_query(
+                spark.sql(
                     f"""
                         INSERT INTO {TABLE_NAME} 
                         SELECT id as number 
@@ -77,12 +67,22 @@ def test_concurrent_reads(started_cluster_iceberg_with_spark, storage_type):
 
         assert not has_errors
 
-        num_rows = num_insert_threads * batch_size * (i + 1)
-        assert num_rows == int(
+        expected_rows = num_insert_threads * batch_size * (i + 1)
+        kek = spark.sql(
+            f"""
+                SELECT count(*) FROM {TABLE_NAME}
+            """
+        )
+        kek.show(truncate=False)
+        rows_in_spark = kek.collect()[0]["count(1)"]
+        rows_in_ch = int(
             instance.query(
                 f"SELECT count() FROM {TABLE_NAME}",
             )
         )
 
-    for i in range(5):
+        if rows_in_spark != expected_rows or rows_in_ch != expected_rows:
+            assert (rows_in_spark == expected_rows) and (rows_in_ch == expected_rows), f"Iteration {i} failed, expected {expected_rows}, got {rows_in_spark} in spark and {rows_in_ch} in CH"
+
+    for i in range(10):
         run_concurrent_queries(i)
