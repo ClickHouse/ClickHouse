@@ -100,7 +100,7 @@ REGISTER_FUNCTION(Demangle)
 {
     FunctionDocumentation::Description description = R"(
 Converts a symbol to a C++ function name.
-The symbol is usually returned by function [`addressToSymbol`](../../sql-reference/functions/introspection.md#addresstosymbol).
+The symbol is usually returned by function [`addressToSymbol`](../../sql-reference/functions/introspection.md#addressToSymbol).
     )";
     FunctionDocumentation::Syntax syntax = "demangle(symbol)";
     FunctionDocumentation::Arguments arguments = {

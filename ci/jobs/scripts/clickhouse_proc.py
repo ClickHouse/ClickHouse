@@ -305,6 +305,25 @@ profiles:
             res = res and Shell.check(command, verbose=True)
         return res
 
+    def install_vector_search_config(self):
+        # Large values are set, ClickHouse will auto downsize
+        c1 = """
+<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
+<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
+<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
+<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
+</clickhouse>
+        """
+        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+
+        with open(f"{temp_dir}/config.xml", 'a') as config_file:
+            config_file.write(c1)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"

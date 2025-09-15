@@ -5570,16 +5570,16 @@ private:
                     }
                 }
 
-                MutableColumnPtr variant_column;
+                ColumnPtr variant_column;
                 /// If there were no NULLs, we can just clone the column.
+                /// We use cloneWithDefaultOnNull to make the dictionary not-nullable in the result column.
                 if (variant_size_hint == col_lc.size())
-                    variant_column = IColumn::mutate(column);
+                    variant_column = col_lc.cloneWithDefaultOnNull();
                 /// Otherwise we should filter column.
                 else
-                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
+                    variant_column = assert_cast<const ColumnLowCardinality &>(*column->filter(filter, variant_size_hint)).cloneWithDefaultOnNull();
 
-                assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
+                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
             }
             else
             {
