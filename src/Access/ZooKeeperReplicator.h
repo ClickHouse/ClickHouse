@@ -4,7 +4,6 @@
 #include <memory>
 #include <optional>
 #include <mutex>
-#include <unordered_map>
 
 #include <base/defines.h>
 #include <Common/ThreadPool_fwd.h>
