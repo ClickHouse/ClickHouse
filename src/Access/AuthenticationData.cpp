@@ -106,27 +106,30 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    static Poco::LRUCache<std::string, Digest> bcrypt_cache;
-
-    std::string bcrypt_hash_str{password_bcrypt.data(), password_bcrypt.data() + password_bcrypt.size()};
+    /// Bcrypt takes a long time to compute, so we cache the results.
+    /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
+    /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
+    using SimpleCacheBase = DB::CacheBase<std::string, bool>;
+    static auto bcrypt_cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
 
     auto password_digest = encodeSHA256(password);
-    auto cached_digest = bcrypt_cache.get(bcrypt_hash_str);
 
-    if (cached_digest && *cached_digest == password_digest)
-        return true;
+    std::string bcrypt_hash_str{password_bcrypt.data(), password_bcrypt.data() + password_bcrypt.size()};
+    std::string password_digest_str{password_digest.data(), password_digest.data() + password_digest.size()};
 
-    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-    /// and it could not be decoded by the library
-    if (ret == -1)
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+    auto cache_key = password_digest_str + ":" + bcrypt_hash_str;
+    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
+        {
+            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+            /// and it could not be decoded by the library
+            if (ret == -1)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
 
-    bool success = ret == 0;
-    if (success)
-        bcrypt_cache.add(bcrypt_hash_str, password_digest);
+            return std::make_shared<bool>(ret == 0);
+        });
 
-    return success;
+    return *result;
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
