@@ -590,7 +590,18 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     }
     if (!db)
     {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+        DatabaseNameHints hints(*this);
+        std::vector<String> names = hints.getHints(database_name);
+        if (names.empty())
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+        }
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_DATABASE,
+            "Database {} does not exist. Maybe you meant {}?",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(names[0]));
     }
 }
 
