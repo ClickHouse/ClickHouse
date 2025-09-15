@@ -1,6 +1,5 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationArrayOffsets.h>
-#include "boost/range/adaptor/map.hpp"
 
 namespace DB
 {
