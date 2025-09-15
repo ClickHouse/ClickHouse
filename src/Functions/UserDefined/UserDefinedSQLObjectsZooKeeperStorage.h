@@ -78,10 +78,6 @@ private:
     using UserDefinedSQLObjectTypeAndName = std::pair<UserDefinedSQLObjectType, String>;
     std::shared_ptr<ConcurrentBoundedQueue<UserDefinedSQLObjectTypeAndName>> watch_queue;
 
-    std::unordered_map<String, Coordination::WatchCallbackPtr> zookeeper_names_watch_map TSA_GUARDED_BY(zookeeper_watches_mutex);
-    std::unordered_map<UserDefinedSQLObjectType, Coordination::WatchCallbackPtr> zookeeper_types_watch_map TSA_GUARDED_BY(zookeeper_watches_mutex);
-    std::mutex zookeeper_watches_mutex;
-
     LoggerPtr log;
 };
 
