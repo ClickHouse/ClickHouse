@@ -55,6 +55,25 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
     }
 }
 
+void AggregateFunctionFactory::registerFunction(
+    const String & name,
+    AggregateFunctionCreator creator,
+    FunctionDocumentation doc,
+    Case case_sensitiveness)
+{
+    registerFunction(name, AggregateFunctionWithProperties(creator, {}, doc), case_sensitiveness);
+}
+
+void AggregateFunctionFactory::registerFunction(
+    const String & name,
+    AggregateFunctionCreator creator,
+    AggregateFunctionProperties properties,
+    FunctionDocumentation doc,
+    Case case_sensitiveness)
+{
+    registerFunction(name, AggregateFunctionWithProperties(creator, properties, doc), case_sensitiveness);
+}
+
 void AggregateFunctionFactory::registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls)
 {
     if (!aggregate_functions.contains(source_ignores_nulls))
@@ -325,6 +344,19 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     }
 }
 
+
+FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    if (auto it = aggregate_functions.find(canonical_name); it != aggregate_functions.end())
+        return it->second.documentation;
+
+    String name_lowercase = Poco::toLower(canonical_name);
+    if (auto jt = case_insensitive_aggregate_functions.find(name_lowercase); jt != case_insensitive_aggregate_functions.end())
+        return jt->second.documentation;
+
+    return {};
+}
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
 {
