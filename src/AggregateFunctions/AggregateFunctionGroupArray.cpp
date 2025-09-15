@@ -843,7 +843,7 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    factory.registerFunction("groupArray", createAggregateFunctionGroupArray<false>, properties);
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description = R"(
@@ -887,13 +887,13 @@ GROUP BY user_id;
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayArray", { createAggregateFunctionGroupArray<false>, properties }, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("groupArrayArray", createAggregateFunctionGroupArray<false>, properties, documentation, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
-    factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
+    factory.registerFunction("groupArraySample", createAggregateFunctionGroupArraySample, properties);
+    factory.registerFunction("groupArrayLast", createAggregateFunctionGroupArray<true>, properties);
 }
 
 }

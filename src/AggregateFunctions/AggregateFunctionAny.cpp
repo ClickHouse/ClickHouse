@@ -408,12 +408,12 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
-    factory.registerFunction("any", {createAggregateFunctionAny, default_properties}, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("any", createAggregateFunctionAny, default_properties, documentation, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
 
@@ -450,10 +450,10 @@ SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
     }
     };
     FunctionDocumentation::IntroducedIn anyLast_introduced_in = {1, 1};
-    FunctionDocumentation::Category anyLast_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category anyLast_category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation anyLast_documentation = {anyLast_description, anyLast_syntax, anyLast_arguments, {}, anyLast_returned_value, anyLast_examples, anyLast_introduced_in, anyLast_category};
 
-    factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties}, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("anyLast", createAggregateFunctionAnyLast, default_properties, anyLast_documentation, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::Case::Insensitive);
 }
 }

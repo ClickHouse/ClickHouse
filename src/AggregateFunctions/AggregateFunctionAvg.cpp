@@ -79,9 +79,9 @@ SELECT avg(t) FROM test;
         )"
     }
     };
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Categories categories = {"Aggregate Functions"};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, categories, introduced_in};
+    factory.registerFunction("avg", createAggregateFunctionAvg, documentation, AggregateFunctionFactory::Case::Insensitive);
 }
 }

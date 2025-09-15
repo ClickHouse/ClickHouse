@@ -132,21 +132,21 @@ Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception succe
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-    {
-        Float64 throw_probability = 1.0;
-        if (parameters.size() == 1)
-            throw_probability = parameters[0].safeGet<Float64>();
-        else if (parameters.size() > 1)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
+    factory.registerFunction("aggThrow",
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            Float64 throw_probability = 1.0;
+            if (parameters.size() == 1)
+                throw_probability = parameters[0].safeGet<Float64>();
+            else if (parameters.size() > 1)
+                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
 
-        return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
-    },
-    documentation
-    );
+            return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
+        },
+        documentation);
 }
 
 }

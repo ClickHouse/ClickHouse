@@ -145,11 +145,11 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     AggregateFunctionProperties properties = { .is_order_dependent = false };
-    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("analysisOfVariance", createAggregateFunctionAnalysisOfVariance, properties, documentation, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is a widely used term
     factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::Case::Insensitive);
