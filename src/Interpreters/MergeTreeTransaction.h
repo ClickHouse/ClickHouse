@@ -1,10 +1,10 @@
 #pragma once
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <boost/noncopyable.hpp>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
+#include <boost/noncopyable.hpp>
+#include <Common/Stopwatch.h>
 
 #include <list>
 #include <unordered_set>

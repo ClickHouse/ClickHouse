@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <base/sort.h>
 #include <Common/Exception.h>

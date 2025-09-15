@@ -1372,6 +1372,8 @@ protected:
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
     friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
+    friend class VersionMetadata; // for access to log
+    friend class VersionMetadataOnDisk; // for access to log
 
     bool require_part_metadata;
 
