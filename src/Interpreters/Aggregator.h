@@ -285,6 +285,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
+    friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
@@ -513,6 +514,21 @@ private:
     Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled) const;
+
+    template <typename Method>
+    Block convertOneBucketToBlockFixedHashMap(
+        AggregatedDataVariants & data_variants,
+        Method & method,
+        Arena * arena,
+        bool final,
+        Int32 bucket) const;
+
+    Block mergeAndConvertOneBucketToBlockFixedHashMap(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,

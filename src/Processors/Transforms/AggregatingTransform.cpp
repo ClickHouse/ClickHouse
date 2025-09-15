@@ -82,6 +82,61 @@ namespace
     };
 }
 
+class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap final : public ISource
+{
+public:
+    struct SharedData
+    {
+        std::atomic<bool> is_cancelled = false;
+    };
+
+    using SharedDataPtr = std::shared_ptr<SharedData>;
+
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, const UInt32 total_bucket_, UInt32 index, UInt32 num_threads, Arena * arena_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , next_bucket_to_merge(0)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::make_shared<SharedData>())
+        , total_bucket(total_bucket_)
+        , arena(arena_)
+    {
+        bucket_begin = index * total_bucket / num_threads;
+        bucket_end = (index + 1) * total_bucket / num_threads;
+    }
+
+    String getName() const override { return "ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap"; }
+
+protected:
+    Chunk generate() override
+    {
+        UInt32 bucket_num = next_bucket_to_merge.fetch_add(1);
+
+        if (bucket_num >= bucket_end || bucket_num >= total_bucket)
+        {
+            data.reset();
+            return {};
+        }
+
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlockFixedHashMap(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
+
+        Chunk chunk = convertToChunk(block);
+        return chunk;
+    }
+
+private:
+    std::atomic<UInt32> next_bucket_to_merge = 0;
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    const UInt32 total_bucket;
+
+    // [bucket_begin, bucket_end)
+    UInt32 bucket_begin;
+    UInt32 bucket_end;
+    Arena * arena;
+};
+
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
 class ConvertingAggregatedToChunksWithMergingSource final : public ISource
@@ -306,6 +361,13 @@ public:
             if (inputs.empty())
                 createSources();
         }
+        else if (data->at(0)->size() >= 5 &&  (
+            data->at(0)->type == AggregatedDataVariants::Type::key8  ||
+            data->at(0)->type == AggregatedDataVariants::Type::key16))
+        {
+            if (inputs.empty())
+                createSourcesForFixedHashMap();
+        }
         else
         {
             mergeSingleLevel();
@@ -513,6 +575,28 @@ private:
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena);
 
+            processors.emplace_back(std::move(source));
+        }
+
+        data.reset();
+    }
+
+    void createSourcesForFixedHashMap()
+    {
+        AggregatedDataVariantsPtr & first = data->at(0);
+        processors.reserve(num_threads);
+
+        UInt32 num_buckets = 256;
+        if (first->type == AggregatedDataVariants::Type::key8)
+            num_buckets = 256;
+        else
+            num_buckets = 65536;
+
+        for (size_t thread = 0; thread < num_threads; ++thread)
+        {
+            /// Select Arena to avoid race conditions
+            Arena * arena = first->aggregates_pools.at(thread).get();
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, num_buckets, arena);
             processors.emplace_back(std::move(source));
         }
 

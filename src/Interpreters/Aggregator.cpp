@@ -1868,6 +1868,55 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     return block;
 }
 
+template <typename Method>
+Block Aggregator::convertOneBucketToBlockFixedHashMap(
+    AggregatedDataVariants & data_variants,
+    Method & method,
+    Arena * arena,
+    bool final,
+    Int32 bucket) const
+{
+    constexpr bool return_single_block = true;
+    Block block = std::get<Block>(convertToBlockImpl(
+        method,
+        method.data.impls[bucket], // TODO: fix the value here, impls[...] not applicable for fixed.
+        arena,
+        data_variants.aggregates_pools,
+        final,
+        method.data.impls[bucket].size(),
+        return_single_block));
+
+    // TODO: check here.
+    block.info.bucket_num = static_cast<int>(bucket);
+    return block;
+}
+
+Block Aggregator::mergeAndConvertOneBucketToBlockFixedHashMap(
+    ManyAggregatedDataVariants & variants,
+    Arena * arena,
+    bool final,
+    Int32 bucket,
+    std::atomic<bool> & is_cancelled) const
+{
+    auto & merged_data = *variants[0];
+    // auto method = merged_data.type;
+
+    Block block;
+    if (variants.at(0)->type == AggregatedDataVariants::Type::key8)
+    {
+        // TODO: mergeBucketImpl needs to be changed for fixed hash map case.
+        mergeBucketImpl<decltype(merged_data.key8)::element_type>(variants, bucket, arena, is_cancelled);
+        block = convertOneBucketToBlockFixedHashMap(merged_data, *merged_data.key8, arena, final, bucket);
+    }
+    else
+    {
+        mergeBucketImpl<decltype(merged_data.key16)::element_type>(variants, bucket, arena, is_cancelled);
+        block = convertOneBucketToBlockFixedHashMap(merged_data, *merged_data.key16, arena, final, bucket);
+    }
+    block.info.bucket_num = static_cast<int>(bucket);
+    return block;
+}
+
 Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
     const auto method = variants.type;
