@@ -887,10 +887,10 @@ GROUP BY user_id;
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayArray", { createAggregateFunctionGroupArray<false>, properties }, AggregateFunctionFactory::Case::Sensitive, documentation);
+    factory.registerFunction("groupArrayArray", { createAggregateFunctionGroupArray<false>, properties }, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });

@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
-#include <Poco/String.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -54,25 +53,6 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
                 "the case insensitive aggregate function name '{}' is not unique", name);
         case_insensitive_name_mapping[key] = name;
     }
-}
-
-void AggregateFunctionFactory::registerFunction(
-    const String & name,
-    AggregateFunctionCreator creator,
-    FunctionDocumentation doc,
-    Case case_sensitiveness)
-{
-    registerFunction(name, AggregateFunctionWithProperties{std::move(creator), AggregateFunctionProperties{}, std::move(doc)}, case_sensitiveness);
-}
-
-void AggregateFunctionFactory::registerFunction(
-    const String & name,
-    AggregateFunctionCreator creator,
-    AggregateFunctionProperties properties,
-    FunctionDocumentation doc,
-    Case case_sensitiveness)
-{
-    registerFunction(name, AggregateFunctionWithProperties{std::move(creator), std::move(properties), std::move(doc)}, case_sensitiveness);
 }
 
 void AggregateFunctionFactory::registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls)
@@ -371,19 +351,6 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) con
     return false;
 }
 
-FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
-{
-    auto real_name = getAliasToOrName(name);
-    if (auto it = aggregate_functions.find(real_name); it != aggregate_functions.end())
-        return it->second.documentation;
-
-    String case_insensitive_name = Poco::toLower(real_name);
-    if (auto jt = case_insensitive_aggregate_functions.find(case_insensitive_name); jt != case_insensitive_aggregate_functions.end())
-        return jt->second.documentation;
-
-    throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}", name);
-}
-
 AggregateFunctionFactory & AggregateFunctionFactory::instance()
 {
     static AggregateFunctionFactory ret;
@@ -396,3 +363,4 @@ bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
     return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
 }
 }
+

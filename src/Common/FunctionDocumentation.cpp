@@ -256,6 +256,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
+        {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 

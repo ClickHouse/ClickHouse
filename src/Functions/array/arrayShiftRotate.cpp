@@ -275,15 +275,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     };
     FunctionDocumentation::IntroducedIn introduced_in_rotateleft = {23, 8};
     FunctionDocumentation::Category category_rotateleft = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_rotateleft = {
-        description_rotateleft,
-        syntax_rotateleft,
-        arguments_rotateleft,
-        returned_value_rotateleft,
-        examples_rotateleft,
-        introduced_in_rotateleft,
-        category_rotateleft
-    };
+    FunctionDocumentation documentation_rotateleft = { description_rotateleft, syntax_rotateleft, arguments_rotateleft, {}, returned_value_rotateleft, examples_rotateleft, introduced_in_rotateleft, category_rotateleft};
 
     factory.registerFunction<FunctionArrayRotateLeft>(documentation_rotateleft);
 
@@ -302,15 +294,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     };
     FunctionDocumentation::IntroducedIn introduced_in_rotateright = {23, 8};
     FunctionDocumentation::Category category_rotateright = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_rotateright = {
-        description_rotateright,
-        syntax_rotateright,
-        arguments_rotateright,
-        returned_value_rotateright,
-        examples_rotateright,
-        introduced_in_rotateright,
-        category_rotateright
-    };
+    FunctionDocumentation documentation_rotateright = {description_rotateright, syntax_rotateright, arguments_rotateright, {},  returned_value_rotateright, examples_rotateright, introduced_in_rotateright, category_rotateright};
 
     factory.registerFunction<FunctionArrayRotateRight>(documentation_rotateright);
 
@@ -329,22 +313,14 @@ If the number of elements is negative, the array is shifted to the right.
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_shiftleft =
     {
-        {"Usage example", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,0,0]"},
-        {"Negative value of n", "SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;", "[0,0,1,2,3,4]"},
-        {"Using a default value", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;", "[3,4,5,6,42,42]"}
+        {"Usage example", "SELECT arrayShiftLeft([1, 2, 3, 4, 5, 6], 2) as res;", "[3, 4, 5, 6, 0, 0]"},
+        {"Negative value of n", "SELECT arrayShiftLeft([1, 2, 3, 4, 5, 6], -2) as res;", "[0, 0, 1, 2, 3, 4]"},
+        {"Using a default value", "SELECT arrayShiftLeft([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[3, 4, 5, 6, 42, 42]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftleft = {23, 8};
     FunctionDocumentation::Category category_shiftleft = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_shiftleft =
-    {
-        description_shiftleft,
-        syntax_shiftleft,
-        arguments_shiftleft,
-        returned_value_shiftleft,
-        examples_shiftleft,
-        introduced_in_shiftleft,
-        category_shiftleft
-    };
+    {description_shiftleft, syntax_shiftleft, arguments_shiftleft, {}, returned_value_shiftleft, examples_shiftleft, introduced_in_shiftleft, category_shiftleft};
 
     factory.registerFunction<FunctionArrayShiftLeft>(documentation_shiftleft);
 

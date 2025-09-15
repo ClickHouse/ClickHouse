@@ -277,7 +277,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt"
     }
     };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8category};
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionSubstring<false>>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias

@@ -566,10 +566,10 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category, parameters};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::Case::Insensitive, documentation);
+    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description sum_description = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
@@ -612,10 +612,10 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
             )"}
     };
     FunctionDocumentation::IntroducedIn sum_introduced_in = {1, 1};
-    FunctionDocumentation::Category sum_category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation sum_documentation = {sum_description, sum_syntax, sum_arguments, {}, sum_returned_value, sum_examples, sum_introduced_in, sum_category, sum_parameters};
+    FunctionDocumentation::Category sum_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation sum_documentation = {sum_description, sum_syntax, sum_arguments, sum_parameters, sum_returned_value, sum_examples, sum_introduced_in, sum_category};
 
-    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties }, AggregateFunctionFactory::Case::Insensitive, sum_documentation);
+    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);
 }
 

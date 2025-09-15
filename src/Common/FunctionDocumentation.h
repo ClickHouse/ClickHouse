@@ -124,7 +124,8 @@ struct FunctionDocumentation
         UniqTheta,
         Variant,
 
-        /// Table functions
+        /// Other types of functions
+        AggregateFunction,
         TableFunction
     };
 

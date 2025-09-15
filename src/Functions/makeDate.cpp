@@ -988,7 +988,7 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};
     FunctionDocumentation::Category category_yyyymmddhhmmsstodatetime64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, {}, returned_value_yyyymmddhhmmsstodatetime64category_yyyymmddhhmmsstodatetime64};
+    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, {}, returned_value_yyyymmddhhmmsstodatetime64, examples_yyyymmddhhmmsstodatetime64, introduced_in_yyyymmddhhmmsstodatetime64, category_yyyymmddhhmmsstodatetime64};
 
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(documentation_yyyymmddhhmmsstodatetime64);
 }
