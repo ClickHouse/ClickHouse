@@ -2,6 +2,7 @@ import pytest
 import uuid
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import arrowflight_user, arrowflight_pass
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -30,7 +31,7 @@ def test_table_function():
 
 def test_table_function_with_auth():
     result = node.query(
-        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'test_user', 'test_password')"
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', '{arrowflight_user}', '{arrowflight_pass}')"
     )
     assert result == TSV(
         [
@@ -47,7 +48,7 @@ def test_table_function_with_auth():
         f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'default', '')"
     )
     assert "Wrong password" in node.query_and_get_error(
-        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'test_user', 'qwe123')"
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', '{arrowflight_user}', 'qwe123')"
     )
 
 

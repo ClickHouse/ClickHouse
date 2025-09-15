@@ -4,7 +4,7 @@
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
 python flight_server.py --port 5005 &
-python flight_server.py --port 5006 --username=test_user --password=test_password &
+python flight_server.py --port 5006 --username="admin" --password="ClickHouse_ArrowFlight_P@ssw0rd" &
 
 # Wait for signals.
 wait
