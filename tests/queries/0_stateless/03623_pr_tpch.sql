@@ -109,7 +109,7 @@ INSERT INTO lineitem SELECT * FROM generateRandom() LIMIT 100;
 
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1;
 
--- Q6
+-- Q7
 SELECT
   supp_nation,
   cust_nation,
@@ -238,7 +238,7 @@ ORDER BY
   cust_nation,
   l_year FORMAT NULL;
 
--- Q9
+-- Q10
 SELECT
   c_custkey,
   c_name,
