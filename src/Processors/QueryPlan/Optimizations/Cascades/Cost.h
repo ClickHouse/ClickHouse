@@ -13,8 +13,7 @@ using Cost = Float64;
 struct ExpressionCost
 {
     Cost subtree_cost = 0;
-    Float64 number_of_rows = 0;
-    /// TODO: number of distinct values, histograms?
+//    Float64 number_of_rows = 0;
 };
 
 
@@ -26,23 +25,35 @@ using GroupId = size_t;
 
 class JoinStepLogical;
 class ReadFromMergeTree;
+class FilterStep;
+class ExpressionStep;
 
 class CostEstimator
 {
 public:
-    CostEstimator(const Memo & memo_, const IOptimizerStatistics & statistics_)
+    CostEstimator(const Memo & memo_, const IOptimizerStatistics & statistics_lookup_)
         : memo(memo_)
-        , statistics(statistics_)
+        , statistics_lookup(statistics_lookup_)
     {}
 
     ExpressionCost estimateCost(GroupExpressionPtr expression);
 
 private:
-    ExpressionCost estimateHashJoinCost(const JoinStepLogical & join_step, GroupId left_tree, GroupId right_tree);
-    ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step);
+    ExpressionCost estimateHashJoinCost(
+        const JoinStepLogical & join_step,
+        const ExpressionStatistics & this_step_statistics,
+        const ExpressionStatistics & left_statistics,
+        const ExpressionStatistics & right_statistics);
+    ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step, const ExpressionStatistics & this_step_statistics);
+
+    void fillStatistics(GroupExpressionPtr expression);
+    ExpressionStatistics fillJoinStatistics(const JoinStepLogical & join_step, const ExpressionStatistics & left_statistics, const ExpressionStatistics &right_statistics);
+    ExpressionStatistics fillReadStatistics(const ReadFromMergeTree & read_step);
+    ExpressionStatistics fillFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics fillExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
 
     const Memo & memo;
-    const IOptimizerStatistics & statistics;
+    const IOptimizerStatistics & statistics_lookup;
     LoggerPtr log = getLogger("CostEstimator");
 };
 

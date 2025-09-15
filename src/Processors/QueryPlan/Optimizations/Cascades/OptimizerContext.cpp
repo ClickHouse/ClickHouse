@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/logger_useful.h>
 #include <memory>
 
 namespace DB
@@ -54,6 +55,9 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     auto group_id = expression->group_id;
     auto group = memo.getGroup(group_id);
     auto cost = cost_estimator.estimateCost(expression);
+    expression->cost = cost;
+    LOG_TRACE(log, "Group {} expression '{}' cost {}",
+        group_id, expression->getDescription(), cost.subtree_cost);
     if (!group->best_implementation.expression || group->best_implementation.cost.subtree_cost > cost.subtree_cost)
     {
         group->best_implementation.expression = expression;

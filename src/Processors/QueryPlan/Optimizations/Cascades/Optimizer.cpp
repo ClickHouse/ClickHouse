@@ -375,6 +375,8 @@ void CascadesOptimizer::optimize()
 
     OptimizerContext optimizer_context(*statistics);
 
+    LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
+
     auto root_group_id = fillMemoFromQueryPlan(optimizer_context);
 
     LOG_TRACE(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
