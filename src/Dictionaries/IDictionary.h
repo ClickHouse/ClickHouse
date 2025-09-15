@@ -13,8 +13,8 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
-#include "Common/CurrentThread.h"
-#include "Interpreters/Context.h"
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

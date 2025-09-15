@@ -5,7 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
-#include "Dictionaries/DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <DataTypes/DataTypesDecimal.h>

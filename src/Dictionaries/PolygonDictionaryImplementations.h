@@ -2,7 +2,7 @@
 
 #include <Dictionaries/PolygonDictionary.h>
 #include <Dictionaries/PolygonDictionaryUtils.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <vector>
 
