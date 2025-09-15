@@ -293,7 +293,7 @@ SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\
     };
     FunctionDocumentation::IntroducedIn introduced_in_searchAny = {25, 7};
     FunctionDocumentation::Category category_searchAny = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_searchAny = {description_searchAny, syntax_searchAny, argument_searchAny, {}, returned_value_searchAny, examples_searchAny, introduced_in_searchAny, category_searchAny};
+    FunctionDocumentation documentation_searchAny = {description_searchAny, syntax_searchAny, arguments_searchAny, {}, returned_value_searchAny, examples_searchAny, introduced_in_searchAny, category_searchAny};
 
     factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation_searchAny);
 }
@@ -365,7 +365,7 @@ SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\
     };
     FunctionDocumentation::IntroducedIn introduced_in_searchAll = {25, 7};
     FunctionDocumentation::Category category_searchAll = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, argument_searchAll, {}, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
+    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, {}, arguments_searchAll, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
 
     factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation_searchAll);
 }

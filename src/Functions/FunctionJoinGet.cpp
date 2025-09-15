@@ -263,7 +263,7 @@ SELECT joinGet(some_table, 'name', 1, 11);
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGet = {18, 16};
     FunctionDocumentation::Category category_joinGet = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, argument_joinGet, {}, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
+    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, {}, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
 
     FunctionDocumentation::Description description_joinGetOrNull = R"(
 Allows you to extract data from a table the same way as from a dictionary.
@@ -299,7 +299,7 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGetOrNull = {20, 4};
     FunctionDocumentation::Category category_joinGetOrNull = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
+    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, {}, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
 
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>(documentation_joinGet);

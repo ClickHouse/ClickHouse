@@ -234,7 +234,7 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }
