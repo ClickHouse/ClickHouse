@@ -497,10 +497,25 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
     IteratorsPair * current_offset_iterators = nullptr;
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Check that offsets are sorted within each block number.
+    absl::flat_hash_map<UInt64, UInt64> last_offset_by_block_number;
+#endif
+
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
             continue;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        {
+            auto it = last_offset_by_block_number.find(result_block_number[row]);
+            if (it != last_offset_by_block_number.end() && it->second >= result_block_offset[row])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], result_block_number[row]);
+
+            last_offset_by_block_number[result_block_number[row]] = result_block_offset[row];
+        }
+#endif
 
         if (result_block_number[row] != prev_block_number)
         {

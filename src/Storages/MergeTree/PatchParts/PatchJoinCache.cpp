@@ -254,6 +254,11 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     std::lock_guard lock(mutex);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    for (const auto & block : blocks)
+        assertCompatibleHeader(*block_with_data, *block, "patch join cache");
+#endif
+
     size_t new_block_idx = blocks.size();
     blocks.push_back(std::move(block_with_data));
 
