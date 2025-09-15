@@ -452,7 +452,7 @@ SELECT argMin(a, tuple(b)) FROM test;
     };
     FunctionDocumentation::IntroducedIn min_introduced_in = {1, 1};
     FunctionDocumentation::Category min_category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, min_returned_value, min_examples, min_introduced_in, min_category};
+    FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
 
     factory.registerFunction("argMin", {createAggregateFunctionArgMinMax<true>, properties}, AggregateFunctionFactory::Case::Sensitive, min_documentation);
 
@@ -520,7 +520,7 @@ SELECT argMax(a, tuple(b)) FROM test;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("argMax", {createAggregateFunctionArgMinMax<false>, properties}, AggregateFunctionFactory::Case::Sensitive, documentation);
 }

@@ -214,7 +214,7 @@ ORDER BY hour;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunctions;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
     factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties}, AggregateFunctionFactory::Case::Sensitive, documentation);
