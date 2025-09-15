@@ -220,6 +220,29 @@ namespace
 
 REGISTER_FUNCTION(DecodeHTMLComponent)
 {
-    factory.registerFunction<FunctionDecodeHTMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Decodes HTML entities in a string to their corresponding characters.
+)";
+    FunctionDocumentation::Syntax syntax = "decodeHTMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing HTML entities to decode.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the string with HTML entities decoded.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')",
+        R"(
+┌─decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')─┐
+│ <div>Hello & "World"</div>                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDecodeHTMLComponent>(documentation);
 }
 }

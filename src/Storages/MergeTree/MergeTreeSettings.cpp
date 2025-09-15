@@ -247,6 +247,48 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    Serialization version for JSON data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
+
+    Only version `v3` supports changing the shared data serialization version.
+    )", 0) \
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    Serialization version for shared data inside JSON data type.
+
+    Possible values:
+    - `map` - store shared data as `Map(String, String)`
+    - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
+    - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
+    Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+
+    Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+    [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
+    )", 0) \
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    This setting allows to specify different serialization version of the
+    shared data inside JSON type for zero level parts that are created during inserts.
+    It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+    the insertion time significantly.
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
+    Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
+    Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    )", 0) \
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    Serialization version for Dynamic data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
+    )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
@@ -854,7 +896,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Replication settings. */ \
-    DECLARE(UInt64, replicated_deduplication_window, 1000, R"(
+    DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
     The number of most recently inserted blocks for which ClickHouse Keeper stores
     hash sums to check for duplicates.
 
@@ -1227,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
@@ -1242,6 +1284,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
+    )", 0) \
+    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
+    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
+    Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
@@ -1330,6 +1376,9 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_remote_filesystem_prefetch, true, R"(
     If true prefetching of data from remote filesystem is used for the next
     column during merge
+    )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
+    If true, lightweight delete is optimized on vertical merge.
     )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
@@ -1447,7 +1496,7 @@ namespace ErrorCodes
     Allow Nullable types as primary keys.
     )", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow ussage of '_part_offfset' column in projections select query.
+    Allow usage of '_part_offset' column in projections select query.
     )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
@@ -1736,6 +1785,12 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    Enabled cleanup of Keeper entries of empty partition.
+    )", 0) \
+    DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
+    How many seconds partition will be stored in keeper if it has no parts.
+    )", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
@@ -1879,6 +1934,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_receive_timeout, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, max_digestion_size_per_segment, 256_MiB) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period, 30) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \

@@ -1139,13 +1139,14 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
+        "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1220,6 +1221,14 @@ class MergeTreeSettingsRandomizer:
         "enable_block_offset_column": lambda: random.randint(0, 1),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
+        "object_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "object_shared_data_serialization_version": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
+        "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
+        "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
     }
 
     @staticmethod
@@ -1323,9 +1332,6 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_basename}'"
-        )
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -1373,6 +1379,10 @@ class TestCase:
         # Since using CLICKHOUSE_TMP is easier to use in expect.
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
+
+        testcase_args.testcase_client = (
+            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
@@ -1992,7 +2002,7 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename}-{args.testcase_database}'
 
         query_params = ""
         if "need-query-parameters" in self.tags:
@@ -2293,7 +2303,7 @@ class TestCase:
                     f"SHOW TABLES FROM {database}",
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
                 .decode()
@@ -2318,7 +2328,7 @@ class TestCase:
                     drop_database_query,
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
             except HTTPError as e:
@@ -3616,6 +3626,10 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
+
     if args.report_logs_stats:
         try:
             reportLogStats(args)
@@ -3629,20 +3643,28 @@ def main(args):
 
 
 def find_binary(name):
-    if os.access(name, os.X_OK):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
         return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
         bin_path = os.path.join(path, name)
-        if os.access(bin_path, os.X_OK):
+        if is_executable(bin_path):
             return bin_path
 
     # maybe it wasn't in PATH
     bin_path = os.path.join("/usr/local/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
         return bin_path
     bin_path = os.path.join("/usr/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
+        return bin_path
+
+    # Default binary path if source folder contains build
+    bin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../build/programs/{name}")
+    if is_executable(bin_path):
         return bin_path
 
     raise TestException(f"{name} was not found in PATH")
