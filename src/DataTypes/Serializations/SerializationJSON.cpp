@@ -305,7 +305,7 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", std::string_view(object.data(), std::min(object.size(), size_t(1000))), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", std::string_view(object.data(), std::min(object.size(), 1000uz)), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
 
     String error;
     JSONExtractInsertSettings insert_settings;
