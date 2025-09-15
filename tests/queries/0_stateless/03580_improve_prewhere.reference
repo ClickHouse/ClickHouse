@@ -1,5 +1,4 @@
 -- { echoOn }
-set allow_statistics_optimize = 1;
 -- Condition: lower(primary_key) = '00' can't make use of primary key index. It shouldn't be moved to the end of prewhere conditions.
 select trimLeft(explain) from (
 EXPLAIN actions=1
