@@ -284,6 +284,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
             max_block = std::max(max_block, block_number);
         }
 
+        /// try_emplace overload with hint doesn't return 'inserted' flag,
+        /// so we need to check size before and after emplace.
         size_t old_size = current_offsets->size();
         auto it = current_offsets->try_emplace(current_offsets->end(), block_offset);
         bool inserted = current_offsets->size() > old_size;

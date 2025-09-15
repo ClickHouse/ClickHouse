@@ -74,17 +74,17 @@ public:
 private:
     void build();
 
-    UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
+    ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
@@ -493,6 +493,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     };
 
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    /// Mapping from block number to iterator in offsets map.
     absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
     IteratorsPair * current_offset_iterators = nullptr;
 
