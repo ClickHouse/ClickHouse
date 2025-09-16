@@ -128,4 +128,3 @@ DROP DATABASE dboverlay SYNC;
 
 * Facade overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.
 * `clickhouse-local` path (`OwnedMembers`) preserves the legacy expectation that overlay UUID equals the first member’s UUID.
-
