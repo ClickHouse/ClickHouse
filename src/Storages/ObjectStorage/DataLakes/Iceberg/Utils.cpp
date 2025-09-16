@@ -328,17 +328,13 @@ static bool isTemporaryMetadataFile(const String & path)
 {
     /// Temporary metadata files are created during commit operation.
     /// They have .tmp suffix
-    LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Check if '{}' is temporary metadata file", path);
     if (!path.ends_with(".metadata.json"))
     {
-        LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Path '{}' doesn't end with .metadata.json", path);
-
         return false;
     }
     String substring = path.substr(0, path.size() - strlen(".metadata.json"));
     if (!Poco::UUID{}.tryParse(substring))
     {
-        LOG_DEBUG(&Poco::Logger::get("IcebergUtils"), "Substring '{}' is not a valid uuid", substring);
         return false;
     }
     return true;

@@ -286,11 +286,6 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* if_not_updated_before */ true);
         return;
     }
-    LOG_DEBUG(
-        &Poco::Logger::get("updateExternalDynamicMetadataIfExists"),
-        "Updating external dynamic metadata for storage {}, stacktrace: {}",
-        getStorageID().getFullTableName(),
-        StackTrace().toString());
 
     configuration->update(
         object_storage,
@@ -298,14 +293,6 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         /* if_not_updated_before */ false);
 
     auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
-
-    LOG_DEBUG(
-        &Poco::Logger::get("updateExternalDynamicMetadataIfExists"),
-        "Metadata of table {} has iceberg data: {}",
-        getStorageID().getFullTableName(),
-        metadata_snapshot.iceberg_table_state.has_value() ? "true" : "false");
-
-
     setInMemoryMetadata(metadata_snapshot);
 }
 

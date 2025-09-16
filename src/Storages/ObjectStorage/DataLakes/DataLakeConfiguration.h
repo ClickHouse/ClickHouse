@@ -107,25 +107,17 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-
-        BaseStorageConfiguration::update(object_storage, local_context, true);
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
             if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
+        BaseStorageConfiguration::update(object_storage, local_context, true);
 
         DataLakeMetadata::createInitial(
-            object_storage,
-            weak_from_this(),
-            local_context,
-            columns,
-            partition_by,
-            if_not_exists,
-            catalog,
-            table_id_
-        );
+            object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
     }
 
     bool supportsDelete() const override
@@ -179,13 +171,6 @@ public:
         return std::nullopt;
     }
 
-
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
-    {
-        assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context);
-    }
-
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
@@ -196,6 +181,24 @@ public:
     {
         assertInitialized();
         return current_metadata->totalBytes(local_context);
+    }
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        assertInitialized();
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        assertInitialized();
+        return current_metadata->getSchemaTransformer(local_context, object_info);
+    }
+
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
+    {
+        assertInitialized();
+        return current_metadata->getStorageSnapshotMetadata(context);
     }
 
     /// This method should work even if metadata is not initialized
@@ -219,17 +222,6 @@ public:
     {
         assertInitialized();
         return current_metadata->supportsWrites();
-    }
-
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, object_info);
-    }
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
     ObjectIterator iterate(
