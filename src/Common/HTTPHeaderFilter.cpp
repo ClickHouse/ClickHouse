@@ -13,14 +13,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
 
-    for (const auto & entry : entries)
+    for (auto & entry : entries)
     {
+        if (entry.name.contains('\n') || entry.value.contains('\n'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
         /// Strip whitespace and control characters from header name for validation
-        std::string normalized_name = entry.name;
+        std::string & normalized_name = entry.name;
         normalized_name.erase(
             std::remove_if(
                 normalized_name.begin(),
