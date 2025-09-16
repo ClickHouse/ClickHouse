@@ -367,6 +367,7 @@
 03273_primary_index_cache_low_cardinality
     profile events
 03279_join_choose_build_table
+03279_join_choose_build_table_statistics
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
 03165_string_functions_with_token_text_indexes

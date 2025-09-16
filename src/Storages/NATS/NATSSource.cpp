@@ -6,7 +6,7 @@
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/NATS/NATSConsumer.h>
+#include <Storages/NATS/INATSConsumer.h>
 
 namespace DB
 {
