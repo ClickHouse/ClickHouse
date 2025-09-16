@@ -294,7 +294,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     };
     FunctionDocumentation::IntroducedIn introduced_in_rotateright = {23, 8};
     FunctionDocumentation::Category category_rotateright = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_rotateright = {description_rotateright, syntax_rotateright, arguments_rotateright, {},  returned_value_rotateright, examples_rotateright, introduced_in_rotateright, category_rotateright};
+    FunctionDocumentation documentation_rotateright = {description_rotateright, syntax_rotateright, arguments_rotateright, {}, returned_value_rotateright, examples_rotateright, introduced_in_rotateright, category_rotateright};
 
     factory.registerFunction<FunctionArrayRotateRight>(documentation_rotateright);
 
