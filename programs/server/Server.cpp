@@ -2593,9 +2593,7 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-
-        global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
-
+        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());

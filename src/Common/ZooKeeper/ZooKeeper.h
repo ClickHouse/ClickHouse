@@ -35,7 +35,6 @@ namespace CurrentMetrics
 namespace DB
 {
 class ZooKeeperLog;
-class AggregatedZooKeeperLog;
 class ZooKeeperWithFaultInjection;
 class BackgroundSchedulePoolTaskHolder;
 
@@ -188,10 +187,10 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     /// See addCheckSessionOp
     void initSession();
@@ -205,8 +204,7 @@ public:
     std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(ZooKeeperArgs args_,
-                      std::shared_ptr<DB::ZooKeeperLog> zk_log_,
-                      std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -583,6 +581,8 @@ public:
 
     void finalize(const String & reason);
 
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
@@ -689,7 +689,6 @@ private:
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-    std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     AtomicStopwatch session_uptime;
 
