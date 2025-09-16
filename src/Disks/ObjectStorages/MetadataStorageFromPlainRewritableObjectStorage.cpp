@@ -301,9 +301,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
     if (path == "/")
         return true;
     std::string normalized_path = path;
-    if (normalized_path.ends_with('/')) // fsull directory name check
+    /// full directory name check
+    if (normalized_path.ends_with('/'))
         normalized_path.pop_back();
-    return path_map->existsPartialOrFullPath(normalized_path);
+    return path_map->existsPartialOrFullPath(std::move(normalized_path));
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const

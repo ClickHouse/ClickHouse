@@ -70,7 +70,7 @@ public:
         return map.contains(local_path);
     }
 
-    bool existsPartialOrFullPath(const std::string & path) const
+    bool existsPartialOrFullPath(std::string path) const
     {
         std::lock_guard lock(mutex);
 
@@ -82,10 +82,10 @@ public:
         if (found_path == path)
             return true;
 
-        std::string normalized_path = path;
-        if (!normalized_path.ends_with('/')) //Prevent partial subdirectory match
-            normalized_path.push_back('/');
-        return found_path.starts_with(normalized_path);
+        /// Prevent partial subdirectory match
+        if (!path.ends_with('/'))
+            path.push_back('/');
+        return found_path.starts_with(path);
     }
 
     void addOrReplacePath(std::string path, RemotePathInfo info)
