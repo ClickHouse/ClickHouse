@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -248,7 +249,7 @@ void SerializationArray::enumerateStreams(
 
     auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
     auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationNumber<UInt64>>(),
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
