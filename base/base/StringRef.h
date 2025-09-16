@@ -204,7 +204,8 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-inline bool operator== (StringRef lhs, StringRef rhs)
+template<bool case_insensitive>
+inline bool compare(StringRef lhs, StringRef rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -215,9 +216,24 @@ inline bool operator== (StringRef lhs, StringRef rhs)
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     return memequalWide(lhs.data, rhs.data, lhs.size);
 #else
-    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    if constexpr (case_insensitive)
+    {
+        /// Bit-mask approach
+        for (size_t i = 0; i < lhs.size; ++i)
+            if ((lhs.data[i] & 0xDF) != (rhs.data[i] & 0xDF))
+                return false;
+        return true;
+    }
+    else
+        return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 #endif
 }
+
+inline bool operator== (StringRef lhs, StringRef rhs)
+{
+    return compare</*case_insensitive=*/false>(lhs, rhs);
+}
+
 
 inline bool operator!= (StringRef lhs, StringRef rhs)
 {

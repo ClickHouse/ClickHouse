@@ -30,23 +30,33 @@ struct NameStartsWith
 {
     static constexpr auto name = "startsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
+};
+struct NameStartsWithCaseInsensitive
+{
+    static constexpr auto name = "startsWithCaseInsensitive";
+    static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = true;
 };
 struct NameEndsWith
 {
     static constexpr auto name = "endsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
 };
 
 struct NameStartsWithUTF8
 {
     static constexpr auto name = "startsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
 };
 
 struct NameEndsWithUTF8
 {
     static constexpr auto name = "endsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -57,6 +67,7 @@ class FunctionStartsEndsWith : public IFunction
 public:
     static constexpr auto name = Name::name;
     static constexpr auto is_utf8 = Name::is_utf8;
+    static constexpr auto is_case_insensitive = Name::is_case_insensitive;
 
     String getName() const override
     {
@@ -231,10 +242,10 @@ private:
                 res_data[row_num] = false;
             else
             {
-                if constexpr (std::is_same_v<Name, NameStartsWith>) /// startsWith
-                    res_data[row_num] = StringRef(haystack.data, needle.size) == StringRef(needle.data, needle.size);
+                if constexpr (std::is_same_v<Name, NameStartsWith> || std::is_same_v<Name, NameStartsWithCaseInsensitive>) /// startsWith(CaseInsensitive)
+                    res_data[row_num] = compare<is_case_insensitive>(StringRef(haystack.data, needle.size), StringRef(needle.data, needle.size));
                 else if constexpr (std::is_same_v<Name, NameEndsWith>) /// endsWith
-                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size);
+                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size); // TODO
                 else /// startsWithUTF8 or endsWithUTF8
                 {
                     auto length = UTF8::countCodePoints(needle.data, needle.size);

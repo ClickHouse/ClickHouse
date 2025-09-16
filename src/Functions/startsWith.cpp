@@ -7,6 +7,7 @@ namespace DB
 {
 
 using FunctionStartsWith = FunctionStartsEndsWith<NameStartsWith>;
+using FunctionStartsWithCaseInsensitive = FunctionStartsEndsWith<NameStartsWithCaseInsensitive>;
 
 REGISTER_FUNCTION(StartsWith)
 {
@@ -35,6 +36,7 @@ Checks whether a string begins with the provided string.
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStartsWith>(documentation);
+    factory.registerFunction<FunctionStartsWithCaseInsensitive>();
 }
 
 }
