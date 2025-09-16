@@ -331,7 +331,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         TABLE_NAME,
         started_cluster,
         use_delta_kernel,
-        f"'{TABLE_NAME}'",
+        f"'{TABLE_NAME}'" if storage_type != "azure" else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'",
         "_common"
     )
 
@@ -347,12 +347,13 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     else:
         disk_name = f"disk_azure_common"
 
-    assert instance.query(f"SELECT * FROM deltaLake('{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else  f"var/lib/clickhouse/user_files/{TABLE_NAME}"
+    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
         inserted_data
     )
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
             inserted_data
         )
 

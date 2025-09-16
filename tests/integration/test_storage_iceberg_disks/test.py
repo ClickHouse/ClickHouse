@@ -56,11 +56,11 @@ def generate_cluster_def(common_path, port, azure_container):
         <disks>
             <disk_local_common>
                 <type>local</type>
-                <path>/iceberg_data/default/</path>
+                <path>/var/lib/clickhouse/user_files/iceberg_data/default/</path>
             </disk_local_common>
             <disk_s3_common>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/iceberg_data/default/</endpoint>
+                <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/iceberg_data/default/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_common>
@@ -166,9 +166,9 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
     table_name_4 = f"{TABLE_NAME}_{storage_type}_4"
     table_name_5 = f"{TABLE_NAME}_{storage_type}_5"
 
-    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else f'iceberg_data/default/{TABLE_NAME}'
+    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else f'var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}'
     assert "Path suffixes" in instance.query_and_get_error(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('../', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
-    assert "Path suffixes" in instance.query_and_get_error(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('/iceberg_data/default', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
+    assert "Path suffixes" in instance.query_and_get_error(f"CREATE TABLE {table_name_1} ENGINE=Iceberg('/var/lib/clickhouse/user_files/default', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
 
     instance.query(f"CREATE TABLE {table_name_2} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
     assert instance.query(f"SELECT * FROM {table_name_2}") == instance.query(
@@ -266,13 +266,13 @@ def test_cluster_table_function(started_cluster, storage_type):
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
-    table_function_expr = f"iceberg('{TABLE_NAME}')" if storage_type == "s3" else f"iceberg('iceberg_data/default/{TABLE_NAME}')"
+    table_function_expr = f"iceberg('{TABLE_NAME}')" if storage_type == "s3" else f"iceberg('var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}')"
     select_regular = (
         instance.query(f"SELECT * FROM {table_function_expr} SETTINGS datalake_disk_name = 'disk_{storage_type}_common'").strip().split()
     )
 
     # Cluster Query with node1 as coordinator
-    table_function_expr_cluster = f"icebergCluster('cluster_simple', '{TABLE_NAME}')" if storage_type == "s3" else f"icebergCluster('cluster_simple', 'iceberg_data/default/{TABLE_NAME}')"
+    table_function_expr_cluster = f"icebergCluster('cluster_simple', '{TABLE_NAME}')" if storage_type == "s3" else f"icebergCluster('cluster_simple', 'var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}')"
     select_cluster = (
         instance.query(f"SELECT * FROM {table_function_expr_cluster} SETTINGS datalake_disk_name = 'disk_{storage_type}_common'").strip().split()
     )
