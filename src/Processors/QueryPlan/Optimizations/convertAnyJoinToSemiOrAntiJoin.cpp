@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/IColumn.h>
@@ -99,6 +100,38 @@ FilterResult filterResultForNotMatchedRows(const ActionsDAG & filter_dag, const 
     return getFilterResult(filter_output[0]);
 }
 
+/// Check if filter has a form like "column" or "NOT column", where column is an input
+bool isSimpleFilter(const ActionsDAG::Node * filter_node, bool must_negate)
+{
+    /// Skip aliases
+    while (filter_node->type == ActionsDAG::ActionType::ALIAS)
+        filter_node = filter_node->children.front();
+
+    switch (filter_node->type)
+    {
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (must_negate && filter_node->function_base && filter_node->function_base->getName() == "not")
+                return isSimpleFilter(filter_node->children.front(), false);
+            return false;
+        }
+        case ActionsDAG::ActionType::INPUT:
+            return !must_negate;
+        default:
+            return false;
+    }
+}
+
+QueryPlanStepPtr convertToExpressionStep(FilterStep * filter_node)
+{
+    auto dag = std::move(filter_node->getExpression());
+    if (filter_node->removesFilterColumn())
+        dag.removeUnusedResult(filter_node->getFilterColumnName());
+    auto new_expression_step = std::make_unique<ExpressionStep>(filter_node->getInputHeaders().front(), std::move(dag));
+    new_expression_step->setStepDescription(*filter_node);
+    return new_expression_step;
+}
+
 enum class JoinSide
 {
     Left,
@@ -166,12 +199,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
-                if (result_for_matched_rows == FilterResult::TRUE)
+                if (result_for_matched_rows == FilterResult::TRUE && isSimpleFilter(filter_dag.tryFindInOutputs(filter_column_name), false))
                 {
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
-                    parent_node->step = std::move(child_node->step);
-                    parent_node->children = std::move(child_node->children);
+                    parent_node->step = convertToExpressionStep(filter);
                     return 2;
                 }
                 return 1;
@@ -180,12 +212,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
-                if (result_for_not_matched_rows == FilterResult::TRUE)
+                if (result_for_not_matched_rows == FilterResult::TRUE && isSimpleFilter(filter_dag.tryFindInOutputs(filter_column_name), true))
                 {
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
-                    parent_node->step = std::move(child_node->step);
-                    parent_node->children = std::move(child_node->children);
+                    parent_node->step = convertToExpressionStep(filter);
                     return 2;
                 }
                 return 1;
@@ -201,12 +232,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
-                if (result_for_matched_rows == FilterResult::TRUE)
+                if (result_for_matched_rows == FilterResult::TRUE && isSimpleFilter(filter_dag.tryFindInOutputs(filter_column_name), false))
                 {
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
-                    parent_node->step = std::move(child_node->step);
-                    parent_node->children = std::move(child_node->children);
+                    parent_node->step = convertToExpressionStep(filter);
                     return 2;
                 }
                 return 1;
@@ -215,12 +245,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
-                if (result_for_not_matched_rows == FilterResult::TRUE)
+                if (result_for_not_matched_rows == FilterResult::TRUE && isSimpleFilter(filter_dag.tryFindInOutputs(filter_column_name), true))
                 {
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
-                    parent_node->step = std::move(child_node->step);
-                    parent_node->children = std::move(child_node->children);
+                    parent_node->step = convertToExpressionStep(filter);
                     return 2;
                 }
                 return 1;
