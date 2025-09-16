@@ -15,12 +15,18 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Disks/IO/ReadBufferFromDistributedCache.h>
+#include <Core/DistributedCacheProtocol.h>
+#endif
+#include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -28,14 +34,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
 }
 
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
-    return std::make_shared<FakeDiskTransaction>(*this);
+    if (use_fake_transaction)
+        return std::make_shared<FakeDiskTransaction>(*this);
+    return createObjectStorageTransaction();
 }
 
 ObjectStoragePtr DiskObjectStorage::getObjectStorage()
@@ -46,7 +53,6 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
-        *this,
         *object_storage,
         *metadata_storage);
 }
@@ -54,7 +60,6 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
     return std::make_shared<MultipleDisksObjectStorageTransaction>(
-        *this,
         *object_storage,
         *metadata_storage,
         *to_disk.getObjectStorage(),
@@ -68,7 +73,8 @@ DiskObjectStorage::DiskObjectStorage(
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+    const String & config_prefix,
+    bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
@@ -76,6 +82,8 @@ DiskObjectStorage::DiskObjectStorage(
     , object_storage(std::move(object_storage_))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
+    , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
+    , use_fake_transaction(use_fake_transaction_)
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
@@ -85,6 +93,7 @@ DiskObjectStorage::DiskObjectStorage(
         .description = object_storage->getDescription(),
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
+        .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
     resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
@@ -361,9 +370,23 @@ void DiskObjectStorage::createDirectory(const String & path)
 
 void DiskObjectStorage::createDirectories(const String & path)
 {
-    auto transaction = createObjectStorageTransaction();
-    transaction->createDirectories(path);
-    transaction->commit();
+    /// Super clumsy code which allows to avoid race condition in MetaInKeeper
+    if (metadata_storage->isTransactional())
+    {
+        while (!metadata_storage->existsFileOrDirectory(path))
+        {
+            auto transaction = createObjectStorageTransaction();
+            transaction->createDirectories(path);
+            if (isSuccessfulOutcome(transaction->tryCommit(TransactionCommitOptionsVariant{})))
+                break;
+        }
+    }
+    else
+    {
+        auto transaction = createObjectStorageTransaction();
+        transaction->createDirectories(path);
+        transaction->commit();
+    }
 }
 
 
@@ -450,6 +473,7 @@ void DiskObjectStorage::shutdown()
 void DiskObjectStorage::startupImpl()
 {
     LOG_INFO(log, "Starting up disk {}", name);
+    metadata_storage->startup();
     object_storage->startup();
 
     LOG_INFO(log, "Disk {} started up", name);
@@ -598,6 +622,29 @@ bool DiskObjectStorage::isWriteOnce() const
     return object_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::isSharedCompatible() const
+{
+    switch (object_storage->getType())
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::Azure:
+        case ObjectStorageType::Web:
+            break;
+        default:
+            return false;
+    }
+
+    switch (metadata_storage->getType())
+    {
+        case MetadataStorageType::Plain:
+        case MetadataStorageType::PlainRewritable:
+        case MetadataStorageType::StaticWeb:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool DiskObjectStorage::supportsHardLinks() const
 {
     return !isWriteOnce() && !object_storage->isPlain();
@@ -617,7 +664,8 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
-        config_prefix);
+        config_prefix,
+        use_fake_transaction);
 }
 
 template <class Settings>
@@ -668,66 +716,65 @@ String DiskObjectStorage::getWriteResourceNameNoLock() const
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    return readFileFromStorageObjects(storage_objects, path, settings, read_hint, file_size);
-}
-
-
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageObjects(
-    const StoredObjects & storage_objects,
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
     auto global_context = Context::getGlobalContextInstance();
 
     if (storage_objects.empty())
-    {
-        if (file_size.has_value() && *file_size != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Empty list of objects for nonempty file on disk {} at {}", name, path);
         return std::make_unique<ReadBufferFromEmptyFile>();
-    }
 
     /// Matryoshka of read buffers:
     ///
     /// [AsynchronousBoundedReadBuffer] (if use_async_buffer)
     ///   [CachedInMemoryReadBufferFromFile] (if use_page_cache)
-    ///     ReadBufferFromRemoteFSGather
-    ///       [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
-    ///         ReadBufferFromS3 or similar
+    ///     [ReadBufferFromDistributedCache] (if use_distributed_cache)
+    ///       ReadBufferFromRemoteFSGather
+    ///         [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
+    ///           ReadBufferFromS3 or similar
     ///
     /// Some of them have special requirements:
     ///  * use_external_buffer = true is required for the buffer nested directly inside
-    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile, and
-    ///    ReadBufferFromRemoteFSGather.
-    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile must be freely seekable.
-    ///    I.e. either remote_read_buffer_restrict_seek = false or buffer implementation that
-    ///    ignores that setting.
-    ///    Note: ReadBufferFromRemoteFSGather ignores this setting.
+    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile,
+    ///    ReadBufferFromDistributedCache, and ReadBufferFromRemoteFSGather.
+    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile or
+    ///    ReadBufferFromDistributedCache must be freely seekable. I.e. either
+    ///    remote_read_buffer_restrict_seek = false or buffer implementation that ignores this setting.
+    ///    Note: ReadBufferFromRemoteFSGather and ReadBufferFromDistributedCache ignore this setting.
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
     read_settings = read_settings.withNestedBuffer();
 
-    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    const bool use_page_cache =
-        (!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
-        && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache;
+    bool use_distributed_cache = false;
+#if ENABLE_DISTRIBUTED_CACHE
+    ObjectStorageConnectionInfoPtr connection_info;
+    if (enable_distributed_cache
+        && settings.read_through_distributed_cache
+        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
+    {
+        connection_info = object_storage->getConnectionInfo();
+        if (connection_info)
+            use_distributed_cache = true;
+    }
+#endif
 
-    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache;
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    const bool file_cache_enabled = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    const bool use_page_cache =
+        read_settings.page_cache
+        && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
+                                  : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
+
+    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache || use_distributed_cache;
 
     auto read_buffer_creator =
-        [this, read_settings, read_hint, file_size]
+        [this, read_settings, read_hint]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        return object_storage->readObject(object_, read_settings, read_hint, file_size);
+        return object_storage->readObject(object_, read_settings, read_hint);
     };
 
     /// Avoid cache fragmentation by choosing a bigger buffer size.
@@ -735,23 +782,50 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageOb
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && read_settings.enable_filesystem_cache
+        && !use_distributed_cache;
 
     size_t buffer_size = prefer_bigger_buffer_size
         ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
         : settings.remote_fs_buffer_size;
 
-    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
+    size_t total_objects_size = getTotalSize(storage_objects);
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
+    auto read_from_object_storage_gather = [=]()
+    {
+        return std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(read_buffer_creator),
+            storage_objects,
+            read_settings,
+            use_external_buffer_for_gather,
+            /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    };
+
     std::unique_ptr<ReadBufferFromFileBase> impl;
-    impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        storage_objects,
-        read_settings,
-        use_external_buffer_for_gather,
-        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+
+#if ENABLE_DISTRIBUTED_CACHE
+    if (use_distributed_cache)
+    {
+        LOG_TEST(log, "Reading from distributed cache");
+
+        auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+        impl = std::make_unique<ReadBufferFromDistributedCache>(
+            path,
+            storage_objects,
+            read_settings,
+            connection_info,
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(query_context ? query_context->getSettingsRef() : global_context->getSettingsRef()),
+            read_from_object_storage_gather,
+            /*use_external_buffer*/use_page_cache || use_async_buffer,
+            global_context->getDistributedCacheLog(),
+            /* include_credentials_in_cache_key */false);
+    }
+#endif
+
+    if (!impl)
+        impl = read_from_object_storage_gather();
 
     if (use_page_cache)
     {
@@ -770,12 +844,16 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageOb
     if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        const size_t min_bytes_for_seek = use_distributed_cache
+            ? read_settings.distributed_cache_settings.min_bytes_for_seek
+            : read_settings.remote_read_min_bytes_for_seek;
+
         return std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
             reader,
             read_settings,
             buffer_size,
-            read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
+            min_bytes_for_seek,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 
@@ -786,11 +864,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageOb
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
-        return readFile(path, settings, read_hint, file_size);
+        return readFile(path, settings, read_hint);
     else
         return {};
 }
@@ -847,11 +924,13 @@ void DiskObjectStorage::applyNewSettings(
             read_resource_name_from_config = new_read_resource_name;
         if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
             write_resource_name_from_config = new_write_resource_name;
+        enable_distributed_cache = config.getBool(config_prefix + ".enable_distributed_cache", true);
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
+    metadata_storage->applyNewSettings(config, config_prefix, context_);
 }
 
 #if USE_AWS_S3

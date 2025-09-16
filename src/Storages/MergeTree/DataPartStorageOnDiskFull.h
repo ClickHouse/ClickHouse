@@ -1,7 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
@@ -12,8 +11,6 @@ class DataPartStorageOnDiskFull final : public DataPartStorageOnDiskBase
 public:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
-
-    ~DataPartStorageOnDiskFull() override;
 
     MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
     DataPartStoragePtr getProjection(const std::string & name) const override;
@@ -32,14 +29,12 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     void createProjection(const std::string & name) override;
 
@@ -64,8 +59,6 @@ public:
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }
 
-    void validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function) override;
-    bool isTransactional() const override;
 private:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;

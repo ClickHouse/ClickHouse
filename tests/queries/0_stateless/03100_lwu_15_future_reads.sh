@@ -33,14 +33,14 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_future_reads SET v = v + 1000 WHERE id >= 100 AND id < 200
 " &
 
 wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_future_reads/block_numbers/all" "block-0000000001"
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_future_reads SET v = v + 2000 WHERE id >= 200 AND id < 300;
     OPTIMIZE TABLE t_lwu_future_reads PARTITION ID 'all' FINAL;
 "

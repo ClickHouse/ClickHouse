@@ -35,6 +35,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part->storage.getContext()->getSettingsRef(),
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
+        data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
@@ -73,7 +74,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_infos.add(block);
 }
 
-std::pair<MergeTreeData::DataPart::Checksums, NameSet>
+MergeTreeData::DataPart::Checksums
 MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & all_checksums)
@@ -96,10 +97,16 @@ MergedColumnOnlyOutputStream::fillChecksums(
     auto serialization_infos = new_part->getSerializationInfos();
     serialization_infos.replaceData(new_serialization_infos);
 
-    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
-    auto removed_files = removeExpiredColumnsFromPart(new_part, columns, serialization_infos, checksums);
-    return {std::move(checksums), std::move(removed_files)};
+    for (const String & removed_file : removed_files)
+    {
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
+        all_checksums.files.erase(removed_file);
+    }
+
+    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    return checksums;
 }
 
 void MergedColumnOnlyOutputStream::finish(bool sync)

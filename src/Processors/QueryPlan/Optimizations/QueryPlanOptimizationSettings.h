@@ -22,7 +22,8 @@ struct QueryPlanOptimizationSettings
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        bool is_parallel_replicas_initiator_with_projection_support_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -61,6 +62,8 @@ struct QueryPlanOptimizationSettings
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
+    /// Maximum number of tables in query graph to reorder
+    UInt64 query_plan_optimize_join_order_limit;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
@@ -90,16 +93,24 @@ struct QueryPlanOptimizationSettings
 
     /// Other settings related to plan-level optimizations
 
+    size_t max_step_description_length = 0;
+
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
+    /// This parameter is used to distinguish between the initiator and the remote replicas.
+    bool is_parallel_replicas_initiator_with_projection_support = false;
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    VectorSearchFilterStrategy vector_search_filter_strategy;
+    /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
+    bool vector_search_with_rescoring;
+    VectorSearchFilterStrategy vector_search_filter_strategy;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

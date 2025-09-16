@@ -64,11 +64,6 @@ public:
     PatchPartsForReader getAllPatches() const { return patch_parts; }
     PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
 
-    String printMutationCommands() const
-    {
-        return mutation_commands.toString();
-    }
-
 private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);

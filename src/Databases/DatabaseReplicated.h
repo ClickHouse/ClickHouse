@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <optional>
 
 #include <Databases/DatabaseAtomic.h>
@@ -28,6 +29,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+
 struct ReplicaInfo
 {
     bool is_active;
@@ -44,6 +46,21 @@ public:
     static constexpr auto REPLICA_UNSYNCED_MARKER = "\tUNSYNCED";
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
     static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
+
+    /** For the system table database replicas. */
+    struct ReplicatedStatus
+    {
+        bool is_readonly;
+        bool is_session_expired;
+        UInt32 max_log_ptr;
+        String replica_name;
+        String replica_path;
+        String zookeeper_path;
+        String shard_name;
+        UInt32 log_ptr;
+        UInt32 total_replicas;
+        String zookeeper_exception;
+    };
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
@@ -88,6 +105,8 @@ public:
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
+    void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
+
     /// Returns cluster consisting of database replicas
     ClusterPtr tryGetCluster() const;
     ClusterPtr tryGetAllGroupsCluster() const;
@@ -106,6 +125,8 @@ public:
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
     static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
+
+    void restoreDatabaseMetadataInKeeper(ContextPtr ctx);
 
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
@@ -143,7 +164,7 @@ private:
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
     ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
-    ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const;
+    ASTPtr parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const;
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
@@ -172,6 +193,12 @@ private:
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;
+
+    void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
+
+    void restoreTablesMetadataInKeeper();
+
+    void reinitializeDDLWorker();
 
     static BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);

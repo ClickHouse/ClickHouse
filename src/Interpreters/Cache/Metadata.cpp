@@ -410,7 +410,7 @@ CacheMetadata::removeEmptyKey(
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
-    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+    LOG_TEST(log, "Key {} is removed from metadata", key);
 
     const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
     const fs::path key_prefix_directory = key_directory.parent_path();
@@ -654,6 +654,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                 chassert(file_segment.assertCorrectness());
 
                 downloadImpl(file_segment, memory);
+                holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
             {
@@ -763,7 +764,6 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
     file_segment.completePartAndResetDownloader();
-    file_segment.complete(/* allow_background_download */false);
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }

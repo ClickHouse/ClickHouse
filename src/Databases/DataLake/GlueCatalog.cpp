@@ -1,5 +1,7 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
+#include <Core/ServerSettings.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #if USE_AWS_S3 && USE_AVRO
@@ -8,6 +10,13 @@
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
+#include <aws/glue/model/CreateTableRequest.h>
+#include <aws/glue/model/DeleteTableRequest.h>
+#include <aws/glue/model/CreateDatabaseRequest.h>
+#include <aws/glue/model/UpdateTableRequest.h>
+#include <aws/glue/model/TableInput.h>
+#include <aws/glue/model/StorageDescriptor.h>
+#include <aws/glue/model/Column.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -54,9 +63,16 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
+    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
+}
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsUInt64 s3_max_redirects;
+    extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
 namespace DB::StorageObjectStorageSetting
@@ -84,13 +100,13 @@ namespace DataLake
 GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
-    const DB::DatabaseDataLakeSettings & settings_,
+    const CatalogSettings & settings_,
     DB::ASTPtr table_engine_definition_)
     : ICatalog("")
     , DB::WithContext(context_)
-    , log(getLogger("GlueCatalog(" + settings_[DB::DatabaseDataLakeSetting::region].value + ")"))
-    , credentials(settings_[DB::DatabaseDataLakeSetting::aws_access_key_id].value, settings_[DB::DatabaseDataLakeSetting::aws_secret_access_key].value)
-    , region(settings_[DB::DatabaseDataLakeSetting::region].value)
+    , log(getLogger("GlueCatalog(" + settings_.region + ")"))
+    , credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key)
+    , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
     , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
@@ -98,24 +114,34 @@ GlueCatalog::GlueCatalog(
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
+    const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
-    int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
-    int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
+    int s3_max_redirects = static_cast<int>(server_settings[DB::ServerSetting::s3_max_redirects]);
+    // just for compatibility with old setting
+    if (global_settings.isChanged("s3_max_redirects"))
+        s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
+
+    int s3_retry_attempts = static_cast<int>(server_settings[DB::ServerSetting::s3_retry_attempts]);
+    // just for compatibility with old setting
+    if (global_settings.isChanged("s3_retry_attempts"))
+        s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
+
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
+    bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
         region,
         getContext()->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         false,
         nullptr,
-        nullptr
-    );
+        nullptr);
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -209,7 +235,6 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     do
     {
         request.SetNextToken(next_token);
-
         auto outcome = glue_client->GetTables(request);
         if (outcome.IsSuccess())
         {
@@ -273,6 +298,7 @@ bool GlueCatalog::tryGetTableMetadata(
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
+
     auto outcome = glue_client->GetTable(request);
     if (outcome.IsSuccess())
     {
@@ -284,7 +310,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (table_type != "ICEBERG")
+        if (Poco::toUpper(table_type) != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())
@@ -293,7 +319,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 message_part = "no table_type";
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
-                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have equalsIgnoreCase(table_type, '{}')",
                    database_name + "." + table_name, message_part, "ICEBERG"));
         }
 
@@ -425,7 +451,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
 
-        auto table_endpoint = settings[DB::DatabaseDataLakeSetting::storage_endpoint].value;
+        auto table_endpoint = settings.storage_endpoint;
         if (args.empty())
             args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
         else
@@ -458,18 +484,18 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     }
     auto metadata_object = *metadata_objects.get(metadata_path);
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));
         if (schema->getValue<Int64>("schema-id") == current_schema_id)
         {
-            auto fields = schema->getArray(Iceberg::f_fields);
+            auto fields = schema->getArray(DB::Iceberg::f_fields);
             for (size_t j = 0; j < fields->size(); ++j)
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>(Iceberg::f_name) == column_name)
-                    return field->getValue<String>(Iceberg::f_type) == Iceberg::f_timestamptz;
+                if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
+                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
             }
         }
     }
@@ -477,6 +503,102 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     return false;
 }
 
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    Aws::Glue::Model::CreateDatabaseRequest create_request;
+    Aws::Glue::Model::DatabaseInput db_input;
+    db_input.SetName(namespace_name);
+    create_request.SetDatabaseInput(db_input);
+
+    glue_client->CreateDatabase(create_request);
+}
+
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    createNamespaceIfNotExists(namespace_name);
+
+    Aws::Glue::Model::CreateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    fs::path original_path = new_metadata_path;
+
+    fs::path parent = original_path.parent_path();
+    fs::path grandparent = parent.parent_path();
+
+    sd.SetLocation(grandparent.c_str());
+
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = new_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->CreateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+}
+
+bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    Aws::Glue::Model::UpdateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    fs::path original_path = new_metadata_path;
+
+    fs::path parent = original_path.parent_path();
+    fs::path grandparent = parent.parent_path();
+
+    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
+    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
+    sd.SetLocation(grandparent.c_str());
+
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = new_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->UpdateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+
+    return true;
+}
+
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+{
+    Aws::Glue::Model::DeleteTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetName(table_name);
+
+    auto response = glue_client->DeleteTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Can not delete table from glue catalog: {}",
+            response.GetError().GetMessage());
+}
 
 }
 

@@ -240,3 +240,14 @@ TEST(SLRUCache, MaxCount)
         }
     }
 }
+
+TEST(SLRUCache, noOnRemoveEntryCallback)
+{
+    DB::SLRUCachePolicy<std::string, size_t> slru_cache = {CurrentMetrics::end(), CurrentMetrics::end(), 20, 1, 0.5, {}};
+    slru_cache.set("key1", std::make_shared<size_t>(10));
+    slru_cache.set("key2", std::make_shared<size_t>(20));
+    auto value = slru_cache.get("key2");
+    ASSERT_TRUE(value != nullptr);
+    value = slru_cache.get("key1");
+    ASSERT_TRUE(value == nullptr);
+}

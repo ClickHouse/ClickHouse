@@ -216,6 +216,16 @@ Default value: `30000`.
 
 For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
+### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
+
+By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session. 
+
+### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
+
+In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up.
+
+Default value: `3600` (1 hour).
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
@@ -287,7 +297,6 @@ Example:
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-
 ## Wildcards in path {#wildcards-in-path}
 
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
@@ -306,12 +315,11 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is not true since version 25.8 if `use_persistent_processing_nodes = 1`.
 
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
-
 
 ## Introspection {#introspection}
 
