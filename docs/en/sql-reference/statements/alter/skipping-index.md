@@ -5,7 +5,7 @@ sidebar_position: 42
 slug: /sql-reference/statements/alter/skipping-index
 title: 'Manipulating Data Skipping Indices'
 toc_hidden_folder: true
-doc_type: 'guide'
+doc_type: 'reference'
 ---
 
 # Manipulating Data Skipping Indices

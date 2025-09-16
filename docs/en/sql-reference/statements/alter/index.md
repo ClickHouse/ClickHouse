@@ -4,7 +4,7 @@ sidebar_label: 'ALTER'
 sidebar_position: 35
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
-doc_type: 'guide'
+doc_type: 'reference'
 ---
 
 # ALTER
