@@ -57,6 +57,10 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/datetime)";
         else if (type.starts_with("DateTime64")) /// "DateTime64(P)", "DateTime64(3)", "DateTime64(6)", ...
             result += "`](/sql-reference/data-types/datetime64)";
+        else if (type == "Time")
+            result += "`](/sql-reference/data-types/time)";
+        else if (type.starts_with("Time64")) //// "Time64(P)", "Time64(3)", ...
+            result += "`](/sql-reference/data-types/time64)";
         else if (type == "Enum")
             result += "`](/sql-reference/data-types/enum)";
         else if (type == "UUID")
@@ -97,6 +101,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
             result += "`](/sql-reference/data-types/geo#multipolygon)";
+        else if (type == "numericIndexedVector")
+            result += "`](/sql-reference/functions/#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
             result += "`](/sql-reference/data-types/special-data-types/expression)";
         else if (type == "Set")
@@ -132,6 +138,19 @@ String FunctionDocumentation::argumentsAsString() const
 
         /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
         /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
+        if (!types.empty())
+            result += mapTypesToTypesWithLinks(types, syntax);
+    }
+    return result;
+}
+
+String FunctionDocumentation::parametersAsString() const
+{
+    String result;
+    for (const auto & [name, description_, types] : parameters)
+    {
+        result += "- `" + name + "` — " + description_ + " ";
+
         if (!types.empty())
             result += mapTypesToTypesWithLinks(types, syntax);
     }
@@ -243,6 +262,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
+        {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 

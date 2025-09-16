@@ -198,7 +198,7 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }

@@ -274,7 +274,7 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
     };
     FunctionDocumentation::IntroducedIn introduced_in_coverage = {25, 6};
     FunctionDocumentation::Category category_coverage = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation_coverage = {description_coverage, syntax_coverage, arguments_coverage, returned_value_coverage, examples_coverage, introduced_in_coverage, category_coverage};
+    FunctionDocumentation documentation_coverage = {description_coverage, syntax_coverage, arguments_coverage, {}, returned_value_coverage, examples_coverage, introduced_in_coverage, category_coverage};
 
     factory.registerFunction<FunctionMergeTreePartCoverage>(documentation_coverage, FunctionFactory::Case::Insensitive);
 
@@ -302,7 +302,7 @@ SELECT info.partition_id, info.min_block, info.max_block, info.level, info.mutat
     };
     FunctionDocumentation::IntroducedIn introduced_in_info = {25, 6};
     FunctionDocumentation::Category category_info = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation_info = {description_info, syntax_info, arguments_info, returned_value_info, examples_info, introduced_in_info, category_info};
+    FunctionDocumentation documentation_info = {description_info, syntax_info, arguments_info, {}, returned_value_info, examples_info, introduced_in_info, category_info};
 
     factory.registerFunction<FunctionMergeTreePartInfo>(documentation_info, FunctionFactory::Case::Insensitive);
 }

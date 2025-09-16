@@ -204,7 +204,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
     };
     FunctionDocumentation::IntroducedIn introduced_in_decodeURLComponent = {1, 1};
     FunctionDocumentation::Category category_decodeURLComponent = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_decodeURLComponent = {description_decodeURLComponent, syntax_decodeURLComponent, arguments_decodeURLComponent, returned_value_decodeURLComponent, examples_decodeURLComponent, introduced_in_decodeURLComponent, category_decodeURLComponent};
+    FunctionDocumentation documentation_decodeURLComponent = {description_decodeURLComponent, syntax_decodeURLComponent, arguments_decodeURLComponent, {}, returned_value_decodeURLComponent, examples_decodeURLComponent, introduced_in_decodeURLComponent, category_decodeURLComponent};
 
     factory.registerFunction<FunctionDecodeURLComponent>(documentation_decodeURLComponent);
 
@@ -232,7 +232,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
     };
     FunctionDocumentation::IntroducedIn introduced_in_encodeURLComponent = {22, 3};
     FunctionDocumentation::Category category_encodeURLComponent = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_encodeURLComponent = {description_encodeURLComponent, syntax_encodeURLComponent, arguments_encodeURLComponent, returned_value_encodeURLComponent, examples_encodeURLComponent, introduced_in_encodeURLComponent, category_encodeURLComponent};
+    FunctionDocumentation documentation_encodeURLComponent = {description_encodeURLComponent, syntax_encodeURLComponent, arguments_encodeURLComponent, {}, returned_value_encodeURLComponent, examples_encodeURLComponent, introduced_in_encodeURLComponent, category_encodeURLComponent};
 
     factory.registerFunction<FunctionEncodeURLComponent>(documentation_encodeURLComponent);
 
@@ -260,7 +260,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
     };
     FunctionDocumentation::IntroducedIn introduced_in_decodeURLFormComponent = {1, 1};
     FunctionDocumentation::Category category_decodeURLFormComponent = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_decodeURLFormComponent = {description_decodeURLFormComponent, syntax_decodeURLFormComponent, arguments_decodeURLFormComponent, returned_value_decodeURLFormComponent, examples_decodeURLFormComponent, introduced_in_decodeURLFormComponent, category_decodeURLFormComponent};
+    FunctionDocumentation documentation_decodeURLFormComponent = {description_decodeURLFormComponent, syntax_decodeURLFormComponent, arguments_decodeURLFormComponent, {}, returned_value_decodeURLFormComponent, examples_decodeURLFormComponent, introduced_in_decodeURLFormComponent, category_decodeURLFormComponent};
 
     factory.registerFunction<FunctionDecodeURLFormComponent>(documentation_decodeURLFormComponent);
 
@@ -288,7 +288,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
     };
     FunctionDocumentation::IntroducedIn introduced_in_encodeURLFormComponent = {22, 3};
     FunctionDocumentation::Category category_encodeURLFormComponent = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_encodeURLFormComponent = {description_encodeURLFormComponent, syntax_encodeURLFormComponent, arguments_encodeURLFormComponent, returned_value_encodeURLFormComponent, examples_encodeURLFormComponent, introduced_in_encodeURLFormComponent, category_encodeURLFormComponent};
+    FunctionDocumentation documentation_encodeURLFormComponent = {description_encodeURLFormComponent, syntax_encodeURLFormComponent, arguments_encodeURLFormComponent, {}, returned_value_encodeURLFormComponent, examples_encodeURLFormComponent, introduced_in_encodeURLFormComponent, category_encodeURLFormComponent};
 
     factory.registerFunction<FunctionEncodeURLFormComponent>(documentation_encodeURLFormComponent);
 }

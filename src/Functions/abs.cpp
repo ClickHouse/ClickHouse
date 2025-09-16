@@ -58,7 +58,7 @@ REGISTER_FUNCTION(Abs)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT abs(-0.5)", "0.5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionAbs>(documentation, FunctionFactory::Case::Insensitive);
 }

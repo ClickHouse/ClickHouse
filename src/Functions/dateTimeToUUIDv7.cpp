@@ -142,7 +142,7 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
-    factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 
 }
 }

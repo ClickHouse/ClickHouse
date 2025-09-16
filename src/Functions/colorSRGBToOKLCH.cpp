@@ -219,7 +219,7 @@ SELECT colorSRGBToOKLCH((128, 64, 32), 2.2) AS lch
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionColorSRGBToOKLCH>(documentation);
 }

@@ -100,7 +100,7 @@ Creates an array of length `length` filled with the constant `x`.
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1, 1, 1]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionArrayWithConstant>(documentation);
 }

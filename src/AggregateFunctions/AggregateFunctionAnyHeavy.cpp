@@ -162,8 +162,62 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Selects a frequently occurring value using the heavy hitters algorithm.
+If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned.
+Normally, the result is nondeterministic.
+    )";
+    FunctionDocumentation::Syntax syntax = "anyHeavy(column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "The column name.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a frequently occurring value, typically the most frequent if it occurs in more than 50% of cases per thread.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+-- Sample data: web server errors
+CREATE TABLE error_logs (
+    timestamp DateTime,
+    error_code String,
+    user_agent String,
+    ip_address String
+)
+ENGINE = Memory();
+
+INSERT INTO error_logs VALUES
+    ('2024-01-15 10:15:00', '404', 'Chrome/120.0', '192.168.1.1'),
+    ('2024-01-15 10:16:00', '404', 'Firefox/121.0', '192.168.1.2'),
+    ('2024-01-15 10:17:00', '500', 'Chrome/120.0', '192.168.1.3'),
+    ('2024-01-15 10:18:00', '404', 'Safari/17.2', '192.168.1.1'),
+    ('2024-01-15 10:19:00', '403', 'Chrome/120.0', '192.168.1.4'),
+    ('2024-01-15 10:20:00', '404', 'Chrome/120.0', '192.168.1.2'),
+    ('2024-01-15 10:21:00', '404', 'Firefox/121.0', '192.168.1.5'),
+    ('2024-01-15 10:22:00', '502', 'Chrome/120.0', '192.168.1.6'),
+    ('2024-01-15 10:23:00', '404', 'Chrome/120.0', '192.168.1.1');
+
+-- Get the most commonly occurring error code per hour (fast approximation)
+SELECT
+    toStartOfHour(timestamp) as hour,
+    anyHeavy(error_code) as dominant_error,
+    count() as total_errors
+FROM error_logs
+GROUP BY hour
+ORDER BY hour;
+        )",
+        R"(
+┌────────────────hour─┬─dominant_error─┬─total_errors─┐
+│ 2024-01-15 10:00:00 │ 404            │            9 │
+└─────────────────────┴────────────────┴──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});
+    factory.registerFunction("anyHeavy", createAggregateFunctionAnyHeavy, default_properties, documentation, AggregateFunctionFactory::Case::Sensitive);
 }
 
 }

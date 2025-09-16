@@ -198,7 +198,7 @@ FROM numbers(5);
     };
     FunctionDocumentation::IntroducedIn introduced_in_runningAccumulate = {1, 1};
     FunctionDocumentation::Category category_runningAccumulate = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_runningAccumulate = {description_runningAccumulate, syntax_runningAccumulate, arguments_runningAccumulate, returned_value_runningAccumulate, examples_runningAccumulate, introduced_in_runningAccumulate, category_runningAccumulate};
+    FunctionDocumentation documentation_runningAccumulate = {description_runningAccumulate, syntax_runningAccumulate, arguments_runningAccumulate, {}, returned_value_runningAccumulate, examples_runningAccumulate, introduced_in_runningAccumulate, category_runningAccumulate};
 
     factory.registerFunction<FunctionRunningAccumulate>(documentation_runningAccumulate);
 }

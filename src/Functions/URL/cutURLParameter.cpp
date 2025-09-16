@@ -203,7 +203,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutURLParameter = {1, 1};
     FunctionDocumentation::Category category_cutURLParameter = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_cutURLParameter = {description_cutURLParameter, syntax_cutURLParameter, arguments_cutURLParameter, returned_value_cutURLParameter, examples_cutURLParameter, introduced_in_cutURLParameter, category_cutURLParameter};
+    FunctionDocumentation documentation_cutURLParameter = {description_cutURLParameter, syntax_cutURLParameter, arguments_cutURLParameter, {}, returned_value_cutURLParameter, examples_cutURLParameter, introduced_in_cutURLParameter, category_cutURLParameter};
 
     factory.registerFunction<FunctionCutURLParameter>(documentation_cutURLParameter);
 }

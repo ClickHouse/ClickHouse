@@ -492,7 +492,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionToStartOfInterval>(documentation);
     }

@@ -94,7 +94,7 @@ SELECT defaultValueOfArgumentType(CAST(1 AS Nullable(Int8)));
     };
     FunctionDocumentation::IntroducedIn introduced_in_defaultValueOfArgumentType = {1, 1};
     FunctionDocumentation::Category category_defaultValueOfArgumentType = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultValueOfArgumentType = {description_defaultValueOfArgumentType, syntax_defaultValueOfArgumentType, arguments_defaultValueOfArgumentType, returned_value_defaultValueOfArgumentType, examples_defaultValueOfArgumentType, introduced_in_defaultValueOfArgumentType, category_defaultValueOfArgumentType};
+    FunctionDocumentation documentation_defaultValueOfArgumentType = {description_defaultValueOfArgumentType, syntax_defaultValueOfArgumentType, arguments_defaultValueOfArgumentType, {}, returned_value_defaultValueOfArgumentType, examples_defaultValueOfArgumentType, introduced_in_defaultValueOfArgumentType, category_defaultValueOfArgumentType};
 
     factory.registerFunction<FunctionDefaultValueOfArgumentType>(documentation_defaultValueOfArgumentType);
 }

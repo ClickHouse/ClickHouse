@@ -80,7 +80,7 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_dumpColumnStructure = {1, 1};
     FunctionDocumentation::Category category_dumpColumnStructure = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_dumpColumnStructure = {description_dumpColumnStructure, syntax_dumpColumnStructure, arguments_dumpColumnStructure, returned_value_dumpColumnStructure, examples_dumpColumnStructure, introduced_in_dumpColumnStructure, category_dumpColumnStructure};
+    FunctionDocumentation documentation_dumpColumnStructure = {description_dumpColumnStructure, syntax_dumpColumnStructure, arguments_dumpColumnStructure, {}, returned_value_dumpColumnStructure, examples_dumpColumnStructure, introduced_in_dumpColumnStructure, category_dumpColumnStructure};
 
     factory.registerFunction<FunctionDumpColumnStructure>(documentation_dumpColumnStructure);
 }

@@ -260,7 +260,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
 
-    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 class FunctionIcebergBucket : public IFunction
@@ -350,7 +350,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
 
-    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }

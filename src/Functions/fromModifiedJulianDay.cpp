@@ -239,7 +239,7 @@ SELECT fromModifiedJulianDay(58849)
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDay = {description_fromModifiedJulianDay, syntax_fromModifiedJulianDay, arguments_fromModifiedJulianDay, returned_value_fromModifiedJulianDay, examples_fromModifiedJulianDay, introduced_in_fromModifiedJulianDay, category_fromModifiedJulianDay};
+        FunctionDocumentation documentation_fromModifiedJulianDay = {description_fromModifiedJulianDay, syntax_fromModifiedJulianDay, arguments_fromModifiedJulianDay, {}, returned_value_fromModifiedJulianDay, examples_fromModifiedJulianDay, introduced_in_fromModifiedJulianDay, category_fromModifiedJulianDay};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>(documentation_fromModifiedJulianDay);
 
@@ -268,7 +268,7 @@ SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {description_fromModifiedJulianDayOrNull, syntax_fromModifiedJulianDayOrNull, arguments_fromModifiedJulianDayOrNull, returned_value_fromModifiedJulianDayOrNull, examples_fromModifiedJulianDayOrNull, introduced_in_fromModifiedJulianDayOrNull, category_fromModifiedJulianDayOrNull};
+        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {description_fromModifiedJulianDayOrNull, syntax_fromModifiedJulianDayOrNull, arguments_fromModifiedJulianDayOrNull, {}, returned_value_fromModifiedJulianDayOrNull, examples_fromModifiedJulianDayOrNull, introduced_in_fromModifiedJulianDayOrNull, category_fromModifiedJulianDayOrNull};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>(documentation_fromModifiedJulianDayOrNull);
     }

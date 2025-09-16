@@ -167,6 +167,66 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a Float64 type.
+If the suffix State is added, it returns a NumericIndexedVector object.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupNumericIndexedVectorState(col1, col2)
+groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, col2)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"type", "Optional. Specifies the storage format. Currently, only 'BSI' is supported.", {"String"}},
+        {"integer_bit_num", "Optional.Effective under the 'BSI' storage format, this parameter indicates the number of bits used for the integer part.", {"UInt32"}},
+        {"fraction_bit_num", "Optional. Effective under the 'BSI' storage format, this parameter indicates the number of bits used for the fractional part.", {"UInt32"}},
+        {"col1", "The index column.", {"UInt8", "UInt16", "UInt32", "Int8", "Int16", "Int32"}},
+        {"col2", "The value column.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a Float64 value representing the sum of all values.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT groupNumericIndexedVector(UserID, PlayTime) AS num FROM t;
+        )",
+        R"(
+┌─num─┐
+│  60 │
+└─────┘
+        )"
+    },
+    {
+        "Using the `-State` combinator suffix",
+        R"(
+SELECT groupNumericIndexedVectorState(UserID, PlayTime) as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+        )",
+        R"(
+┌─res─┬─toTypeName(res)─────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8)  │ 60                                    │
+└─────┴─────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using StateIf suffix with condition",
+        R"(
+SELECT groupNumericIndexedVectorStateIf(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+SELECT groupNumericIndexedVectorStateIf('BSI', 32, 0)(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+
+        )",
+        R"(
+┌─res─┬─toTypeName(res)────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+┌─res─┬─toTypeName(res)──────────────────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction('BSI', 32, 0)(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
     factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, createAggregateFunctionNumericIndexedVector);
 }
 

@@ -24,7 +24,7 @@ Returns the square root of the argument.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT sqrt(16);", "4"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSqrt>(documentation, FunctionFactory::Case::Insensitive);
 }

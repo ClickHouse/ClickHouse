@@ -46,7 +46,7 @@ REGISTER_FUNCTION(GCD)
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionGCD>(documentation);
 }

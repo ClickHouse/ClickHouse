@@ -525,7 +525,7 @@ For example:
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
+    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, {}, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
 
     factory.registerFunction<FunctionArrayAUC<false>>(documentation_roc);
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
@@ -565,7 +565,7 @@ For example:
 )"}};
     FunctionDocumentation::IntroducedIn introduced_in_pr = {20, 4};
     FunctionDocumentation::Category category_pr = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
+    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, {}, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
 
     factory.registerFunction<FunctionArrayAUC<true>>(documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");

@@ -52,7 +52,7 @@ As an exception, if a regular expression worked on an empty substring, the repla
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionReplaceRegexpAll>(documentation);
     factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::Case::Insensitive);
