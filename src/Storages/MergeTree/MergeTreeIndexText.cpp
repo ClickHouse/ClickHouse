@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int CORRUPTED_DATA;
 }
 
 static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
