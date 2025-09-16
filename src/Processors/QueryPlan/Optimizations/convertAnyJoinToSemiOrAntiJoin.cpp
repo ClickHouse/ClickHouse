@@ -37,9 +37,23 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
-
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
-    auto filter_output = ActionsDAG::evaluatePartialResult(combined_dag_input, { combined_dag.tryFindInOutputs(filter_column_name) }, 1, false, true);
+
+    ColumnsWithTypeAndName filter_output;
+    try
+    {
+        filter_output = ActionsDAG::evaluatePartialResult(
+            combined_dag_input,
+            { combined_dag.tryFindInOutputs(filter_column_name) },
+            /*input_rows_count=*/1,
+            /*throw_on_error=*/false,
+            /*skip_materialize=*/true);
+    }
+    catch (...)
+    {
+        /// If we cannot evaluate the filter expression, return UNKNOWN
+        return FilterResult::UNKNOWN;
+    }
 
     return getFilterResult(filter_output[0]);
 }
@@ -66,7 +80,21 @@ FilterResult filterResultForNotMatchedRows(const ActionsDAG & filter_dag, const 
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 
-    auto filter_output = ActionsDAG::evaluatePartialResult(filter_input, { filter_dag.tryFindInOutputs(filter_column_name) }, 1, false, true);
+    ColumnsWithTypeAndName filter_output;
+    try
+    {
+        filter_output = ActionsDAG::evaluatePartialResult(
+            filter_input,
+            { filter_dag.tryFindInOutputs(filter_column_name) },
+            /*input_rows_count=*/1,
+            /*throw_on_error=*/false,
+            /*skip_materialize=*/true);
+    }
+    catch (...)
+    {
+        /// If we cannot evaluate the filter expression, return UNKNOWN
+        return FilterResult::UNKNOWN;
+    }
 
     return getFilterResult(filter_output[0]);
 }
