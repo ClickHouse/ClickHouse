@@ -67,7 +67,7 @@ public:
 
         if (stream.use_count() > 1)
         {
-            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads. HTTP keep alive is not possible. Use count {}", stream.use_count());
+            LOG_INFO(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads. HTTP keep alive is not possible. Use count {}", stream.use_count());
             return false;
         }
         else
