@@ -313,16 +313,11 @@ private:
             threads = threads_;
         }
 
-        void ignore()
-        {
-            reported = true;
-        }
-
         // In --precise mode: it must be called on a closed interval when all queries started during it are finished
         // Otherwise: it is called just after close()
         void report()
         {
-            if (reported)
+            if (reported || end_ns == std::numeric_limits<UInt64>::max())
                 return;
             reported = true;
             benchmark.report(stats, (end_ns - start_ns) / 1e9, threads);
@@ -495,15 +490,6 @@ private:
 
         pool.wait();
         total_watch.stop();
-
-        {
-            std::lock_guard lock(interval_mutex);
-            // Do not report leftovers after the last interval
-            if (interval) {
-                interval->ignore();
-                interval.reset();
-            }
-        }
 
         report(total_stats, total_watch.elapsedSeconds());
     }
