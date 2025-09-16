@@ -110,13 +110,14 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
                 uri.addQueryParameter(query_param.name, query_param.value);
             }
 
+            std::string output_params = fmt::format("<uuid_mode=text_yql;complex_type_mode=positional;encode_utf8={}>", connection_info.encode_utf8  ?  "true" : "false");
             DB::HTTPHeaderEntries http_headers{
                 /// Always use json format for input and output.
                 {"Accept", "application/json"},
                 {"Content-Type", "application/json"},
                 {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
                 {"X-YT-Header-Format", "<format=text>yson"},
-                {"X-YT-Output-Format", "<uuid_mode=text_yql;complex_type_mode=positional>json"}
+                {"X-YT-Output-Format", fmt::format("{}json", output_params)},
             };
 
             LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());

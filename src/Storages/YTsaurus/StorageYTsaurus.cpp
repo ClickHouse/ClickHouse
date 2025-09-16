@@ -30,6 +30,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_table_engine;
 }
 
+namespace YTsaurusSetting
+{
+    extern const YTsaurusSettingsBool encode_utf8;
+}
+
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -40,7 +45,11 @@ StorageYTsaurus::StorageYTsaurus(
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
-    , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
+    , client_connection_info{
+        .http_proxy_urls = std::move(configuration_.http_proxy_urls),
+        .oauth_token = std::move(configuration_.oauth_token),
+        .encode_utf8 = settings[YTsaurusSetting::encode_utf8],
+    }
     , log(getLogger("StorageYTsaurus(" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;

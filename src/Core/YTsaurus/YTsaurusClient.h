@@ -46,6 +46,7 @@ public:
         std::vector<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
+        bool encode_utf8 = false;
     };
 
     explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
