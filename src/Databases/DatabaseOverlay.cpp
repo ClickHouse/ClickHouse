@@ -39,7 +39,7 @@ DatabaseOverlay & DatabaseOverlay::registerNextDatabase(DatabasePtr database)
 {
     if (!database)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::LOGICAL_ERROR,
             "Overlay database {} received a null underlying database pointer",
             backQuote(getDatabaseName()));
     databases.push_back(std::move(database));
