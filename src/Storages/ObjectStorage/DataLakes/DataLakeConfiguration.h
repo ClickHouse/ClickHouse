@@ -40,7 +40,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
 }
@@ -190,13 +189,13 @@ public:
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
+        return current_metadata->totalRows(local_context);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
+        return current_metadata->totalBytes(local_context);
     }
 
     bool needsUpdateForSchemaConsistency() const override

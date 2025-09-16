@@ -82,8 +82,8 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
-    std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
+    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;

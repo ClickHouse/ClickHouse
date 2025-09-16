@@ -53,7 +53,6 @@ namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
 
@@ -222,7 +221,7 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
-    // This will update metadata for table functions which contains specific information about table state (e.g. for Iceberg)
+    /// This will update metadata for table functions which contains specific information about table state (e.g. for Iceberg)
     if (!do_lazy_init && mode == LoadingStrictnessLevel::CREATE)
         updateExternalDynamicMetadataIfExists(context);
 }

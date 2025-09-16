@@ -738,7 +738,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 }
 
 
-std::optional<size_t> IcebergMetadata::updateConfigurationAndGetTotalRows(ContextPtr local_context) const
+std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto configuration_ptr = getConfiguration();
 
@@ -784,7 +784,7 @@ std::optional<size_t> IcebergMetadata::updateConfigurationAndGetTotalRows(Contex
 }
 
 
-std::optional<size_t> IcebergMetadata::updateConfigurationAndGetTotalBytes(ContextPtr local_context) const
+std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const
 {
     auto configuration_ptr = getConfiguration();
 

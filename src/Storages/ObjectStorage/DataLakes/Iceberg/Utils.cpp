@@ -51,7 +51,6 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
