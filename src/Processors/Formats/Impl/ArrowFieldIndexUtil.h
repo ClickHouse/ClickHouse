@@ -16,6 +16,8 @@
 #include <Common/Exception.h>
 #include <parquet/metadata.h>
 
+#include <iostream>
+
 namespace arrow
 {
     class Schema;
@@ -238,7 +240,17 @@ private:
             findRequiredIndices(Nested::concatenateName(name, "value"), Nested::concatenateName(transformed_name, "value"), header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
-        auto it = field_indices.find(transformed_name);
+        auto name_to_search = transformed_name;
+        auto it = field_indices.find(name_to_search);
+        if (it == field_indices.end())
+        {
+            /// There are some transforms with non equals input and output formats
+            /// For example geoparquet has binary as input format and 3d list in output format
+            /// In such situation we need to delete all list attributes from name to get correct representation
+            while (name_to_search.ends_with("list.element"))
+                name_to_search = name_to_search.substr(0, name_to_search.size() - 13);
+            it = field_indices.find(name_to_search);
+        }
         if (it == field_indices.end())
         {
             if (!allow_missing_columns)

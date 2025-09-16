@@ -96,7 +96,7 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "s3a://test/field_ids_struct_test/metadata/field_ids_complex_test/metadata/snap-2512638186869817292-1-ec467367-15a4-4610-8ea8-cf76797afb03.avro",
+    "manifest-list" : "s3a://test/field_ids_struct_test/metadata/field_ids_complex_test/metadata/snap-607752583403487091-1-140c8dff-1d83-4841-bc40-9aa85205b555.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],
