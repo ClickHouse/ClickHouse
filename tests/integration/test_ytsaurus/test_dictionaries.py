@@ -210,9 +210,6 @@ def test_yt_dictionary_multiple_enpoints(started_cluster):
     yt.remove_table(path)
 
 
-import time
-
-
 def test_yt_dictionary_cyrillic_strings(started_cluster):
     yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     path = "//tmp/table"
