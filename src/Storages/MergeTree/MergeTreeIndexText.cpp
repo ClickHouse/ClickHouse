@@ -187,18 +187,83 @@ void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
     istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
 }
 
-static ColumnPtr deserializeTokens(ReadBuffer & istr)
+namespace {
+template <bool last_block = false>
+void deserializeFrontCodingBlock(ReadBuffer & istr, ColumnString::Chars & data, ColumnString::Offsets & offsets, size_t block_size) {
+    UInt64 offset = data.size();
+
+    /// Avoiding calling resize in a loop improves the performance.
+    data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
+
+    UInt64 block_head_offset = offset;
+    UInt64 block_head_size = 0;
+    readVarUInt(block_head_size, istr);
+
+    offset += block_head_size;
+    if (unlikely(offset > data.size()))
+        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+
+    istr.readStrict(reinterpret_cast<char *>(&data[block_head_offset]), block_head_size);
+
+    offsets.push_back(block_head_offset);
+
+    UInt64 size_internals = 0;
+    if constexpr (last_block)
+        readVarUInt(size_internals, istr);
+    else
+        size_internals = block_size - 1;
+
+    for (size_t i = 0; i < size_internals; ++i)
+    {
+        const UInt64 data_offset = offset;
+        offsets.push_back(data_offset);
+
+        UInt64 lcp = 0;
+        readVarUInt(lcp, istr);
+        UInt64 data_size = 0;
+        readVarUInt(data_size, istr);
+
+        UInt64 original_data_size = lcp + data_size;
+        offset += original_data_size;
+
+        if (unlikely(offset > data.size()))
+            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+
+        __builtin_memcpy(&data[data_offset], &data[block_head_offset], lcp);
+        istr.readStrict(reinterpret_cast<char *>(&data[data_offset + lcp]), data_size);
+    }
+
+    data.resize_exact(offset);
+}
+
+ColumnPtr deserializeTokensFrontCodingBlocks(ReadBuffer & istr)
 {
-    size_t num_tokens;
+    size_t num_tokens = 0;
     readVarUInt(num_tokens, istr);
+
+    UInt64 front_coding_block_size = 0;
+    readVarUInt(front_coding_block_size, istr);
 
     auto tokens_column = ColumnString::create();
     tokens_column->reserve(num_tokens);
 
-    SerializationString serialization_string;
-    serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+    const size_t front_coding_num_blocks = (num_tokens + front_coding_block_size - 1) / front_coding_block_size;
+    if (front_coding_num_blocks != 0)
+    {
+        ColumnString::Chars & data = tokens_column->getChars();
+        ColumnString::Offsets & offsets = tokens_column->getOffsets();
+
+        offsets.reserve(offsets.size() + num_tokens);
+
+        // UInt64 offset = data.size();
+        for (size_t i = 0; i < front_coding_num_blocks - 1; ++i)
+            deserializeFrontCodingBlock<false>(istr, data, offsets, front_coding_block_size);
+        /// Deserialize the last block
+        deserializeFrontCodingBlock<true>(istr, data, offsets, front_coding_block_size);
+    }
 
     return tokens_column;
+}
 }
 
 /// TODO: add cache for dictionary blocks
@@ -206,7 +271,7 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
-    auto tokens_column = deserializeTokens(istr);
+    auto tokens_column = deserializeTokensFrontCodingBlocks(istr);
     size_t num_tokens = tokens_column->size();
 
     std::vector<TokenInfo> token_infos;
@@ -234,6 +299,23 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
     }
 
     return DictionaryBlock(std::move(tokens_column), std::move(token_infos));
+}
+
+namespace
+{
+ColumnPtr deserializeTokens(ReadBuffer & istr)
+{
+    size_t num_tokens = 0;
+    readVarUInt(num_tokens, istr);
+
+    auto tokens_column = ColumnString::create();
+    tokens_column->reserve(num_tokens);
+
+    SerializationString serialization_string;
+    serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+
+    return tokens_column;
+}
 }
 
 /// TODO: add cache for dictionary sparse index
@@ -397,6 +479,44 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
 {
 }
 
+namespace
+{
+size_t computeCommonPrefixLength(std::string_view lhs, std::string_view rhs)
+{
+    size_t offset = 0;
+    size_t max_length = std::min(lhs.size(), rhs.size());
+    for (; offset < max_length && lhs[offset] == rhs[offset]; ++offset)
+        ;
+    return offset;
+}
+
+/*
+ * The last block might have less values than the block size, so it should be written explicitly in the last block.
+ */
+template <bool last_block = false>
+void serializeFrontCodingBlock(
+    WriteBuffer & buffer, const SortedTokensAndPostings & tokens_and_postings, size_t offset, size_t block_size)
+{
+    const auto & block_head = tokens_and_postings[offset].first;
+    writeVarUInt(block_head.size, buffer);
+    buffer.write(block_head.data, block_head.size);
+
+    const size_t internals_size = block_size - 1; /// skip block head
+
+    if constexpr (last_block)
+        writeVarUInt(internals_size, buffer);
+
+    for (size_t i = 0; i < internals_size; ++i)
+    {
+        const auto & token = tokens_and_postings[offset + 1 /* skip block head */ + i].first;
+        auto lcp = computeCommonPrefixLength(block_head.toView(), token.toView());
+        writeVarUInt(lcp, buffer);
+        writeVarUInt(token.size - lcp, buffer);
+        buffer.write(token.data + lcp, token.size - lcp);
+    }
+}
+}
+
 template <typename Stream>
 DictionarySparseIndex serializeTokensAndPostings(
     const SortedTokensAndPostings & tokens_and_postings,
@@ -432,11 +552,17 @@ DictionarySparseIndex serializeTokensAndPostings(
         size_t num_tokens_in_block = block_end - block_begin;
         writeVarUInt(num_tokens_in_block, dictionary_stream.compressed_hashing);
 
-        for (size_t i = block_begin; i < block_end; ++i)
+        /// Serialize tokens with front coding block diff (fc block diff)
         {
-            const auto & token = tokens_and_postings[i].first;
-            writeVarUInt(token.size, dictionary_stream.compressed_hashing);
-            dictionary_stream.compressed_hashing.write(token.data, token.size);
+            constexpr size_t front_coding_block_size = 4; /// TODO(ahmadov): make it a parameter or a setting variable
+            writeVarUInt(front_coding_block_size, dictionary_stream.compressed_hashing);
+            size_t offset = block_begin;
+            for (; offset + front_coding_block_size < block_end; offset += front_coding_block_size)
+                serializeFrontCodingBlock<false>(
+                    dictionary_stream.compressed_hashing, tokens_and_postings, offset, front_coding_block_size);
+
+            if (offset < block_end)
+                serializeFrontCodingBlock<true>(dictionary_stream.compressed_hashing, tokens_and_postings, offset, block_end - offset);
         }
 
         for (size_t i = block_begin; i < block_end; ++i)
