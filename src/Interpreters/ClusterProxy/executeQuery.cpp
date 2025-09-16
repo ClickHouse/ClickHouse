@@ -764,7 +764,6 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
-    rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
     auto header
