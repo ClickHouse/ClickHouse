@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
-#include <Common/Logger.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -53,6 +52,17 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
+    auto add_column = [&](const String & name)
+    {
+        /// Ensure each column is added only once
+        if (!required_columns.contains(name))
+        {
+            columns.emplace_back(name);
+            required_columns.emplace(name);
+            injected_columns.emplace(name);
+        }
+    };
+
     auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
     if (column_in_storage)
     {
@@ -66,20 +76,14 @@ bool injectRequiredColumnsRecursively(
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
-                /// Ensure each column is added only once
-                if (!required_columns.contains(column_name))
-                {
-                    columns.emplace_back(column_name);
-                    required_columns.emplace(column_name);
-                    injected_columns.emplace(column_name);
-                }
-
+                add_column(column_name);
                 return true;
             }
         }
         /// TODO: correctly determine whether the index is present in the part
         else if (column_name_in_part.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
         {
+            add_column(column_name);
             return true;
         }
     }

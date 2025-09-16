@@ -234,31 +234,4 @@ private:
     }
 };
 
-// Write a range of bits in a bit-packed array.
-// The array must be overallocated by one element.
-// The bit range must be pre-filled with zeros.
-inline void writeBitsPacked64(uint64_t * dest, size_t bit_offset, uint64_t value)
-{
-    size_t mod = bit_offset % 64;
-    dest[bit_offset / 64] |= value << mod;
-    if (mod)
-        dest[bit_offset / 64 + 1] |= value >> (64 - mod);
-}
-
-// The array must be overallocated by one element.
-inline uint64_t readBitsPacked64(const uint64_t * src, size_t bit_offset, size_t num_bits)
-{
-    size_t mod = bit_offset % 64;
-    uint64_t value = src[bit_offset / 64] >> mod;
-    if (mod)
-        value |= src[bit_offset / 64 + 1] << (64 - mod);
-
-    return value & maskLowBits<uint64_t>(num_bits);
-}
-
-inline size_t getNumCellsForBitsPacked64(size_t num_elements, size_t num_bits)
-{
-    return (num_elements * num_bits + 63) / 64 + 1;
-}
-
 }

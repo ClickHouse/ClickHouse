@@ -76,7 +76,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     }
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
-    std::ranges::sort(all_search_tokens); /// technically not necessary but leads to nicer read patterns on sorted dictionary blocks
+    std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
 }
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
@@ -359,7 +359,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return false;
 
     auto value_data_type = WhichDataType(value_type);
-    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
+    if (!value_data_type.isStringOrFixedString())
         return false;
 
     const Field & const_value = value_field;

@@ -30,10 +30,10 @@ public:
     /// Set the query string of the filter
     void setQueryString(std::string_view query_string_) { query_string = query_string_; }
 
-    /// Add term which are tokens generated from the query string
+    /// Add token which are tokens generated from the query string
     bool addToken(std::string_view token)
     {
-        if (token.length() > FST::MAX_TOKEN_LENGTH) [[unlikely]]
+        if (token.length() > FST::MAX_TOKEN_LENGTH)
             return false;
 
         tokens.push_back(String(token));
@@ -43,7 +43,7 @@ public:
 private:
     /// Query string of the filter
     String query_string;
-    /// Tokenized terms from query string
+    /// Tokens from query string
     std::vector<String> tokens;
 };
 
