@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -267,6 +268,30 @@ bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std
     }
 
     return true;
+}
+
+void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    is_from_disk = true;
+    auto disk = context->getDisk(disk_name);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
+
+    connection_params = azure_object_storage.getConnectionParameters();
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
+
+    blob_path = "/" + parsing_result.path_suffix;
+    fs::path root = disk->getPath();
+    fs::path suffix = parsing_result.path_suffix;
+    setPathForRead(blob_path.path + "/");
+    setPaths({blob_path.path + "/"});
+
+    blobs_paths = {blob_path};
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
@@ -608,6 +633,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
+    if (is_from_disk)
+        return;
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
