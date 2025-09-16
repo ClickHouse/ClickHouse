@@ -1,6 +1,8 @@
 #pragma once
 
+#include <exception>
 #include <functional>
+#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -48,7 +50,9 @@ private:
         ~Guard()
         try
         {
-            if (std::uncaught_exceptions() > uncaught_on_enter)
+            const int uncaught = std::uncaught_exceptions();
+            LOG_INFO(getLogger("BlockIO::Guard"), "uncaught = {}, uncaught_on_enter = {}, (std::current_exception != NULL) = {}", uncaught, uncaught_on_enter, std::current_exception() != NULL);
+            if (uncaught > uncaught_on_enter)
                 io.onException();
             else
                 io.onFinish();
