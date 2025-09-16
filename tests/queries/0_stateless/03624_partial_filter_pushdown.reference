@@ -1,0 +1,12 @@
+  Filter (WHERE, with partial predicates extracted)
+  Filter column: or(and(equals(__table1.number, 1_UInt8), equals(__table2.number, 2_UInt8)), and(equals(__table1.number, 3_UInt8), equals(__table2.number, 4_UInt8))) (removed)
+    Join (JOIN FillRightFirst)
+    Algorithm: HashJoin
+      Filter
+      Filter column: or(equals(__table1.number, 1_UInt8), equals(__table1.number, 3_UInt8)) (removed)
+          ReadFromSystemNumbers
+      Filter
+      Filter column: or(equals(__table2.number, 2_UInt8), equals(__table2.number, 4_UInt8)) (removed)
+          ReadFromSystemNumbers
+1	2
+3	4
