@@ -145,11 +145,14 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
     }
 }
 
-thread_local std::string last_flush_profile;
+thread_local std::array<char, 256> last_flush_profile_buffer;
+thread_local std::string_view last_flush_profile;
 
 void setLastFlushProfile(const char * filename)
 {
-    last_flush_profile = filename;
+    auto last_flush_profile_size = std::min(last_flush_profile_buffer.size(), strlen(filename));
+    std::memcpy(last_flush_profile_buffer.data(), filename, last_flush_profile_size);
+    last_flush_profile = std::string_view{last_flush_profile_buffer.data(), last_flush_profile_size};
 }
 
 }
