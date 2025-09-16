@@ -153,17 +153,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
-            const bool onSpark = integration == IntegrationCall::Dolor;
-            const String base = isOnLocal() ? (fc.lakes_path.generic_string() + "/") : (isOnAzure() ? "/" : "");
-
-            /// Set bucket path, Spark has the warehouse concept on the path :(
+            /// Set bucket path, Spark has the catalog concept on the path :(
             next_bucket_path = fmt::format(
-                "{}{}{}{}{}t{}/",
-                base,
-                onSpark ? getSparkCatalogName() : "",
-                onSpark ? "/" : "",
-                onSpark ? "test" : "",
-                onSpark ? "/" : "",
+                "{}{}{}{}t{}",
+                isOnLocal() ? fc.lakes_path.generic_string() : "",
+                isOnLocal() ? "/" : "",
+                (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
+                (integration == IntegrationCall::Dolor) ? "/test/" : "",
                 tname);
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())
@@ -267,13 +263,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool no_change) const
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         String res = bucket_path.value();
 
-        if ((isS3Engine() || isAzureEngine()) && !no_change && rg.nextSmallNumber() < 8)
+        if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
         {
             /// Replace PARTITION BY str
             const size_t partition_pos = res.find(PARTITION_STR);

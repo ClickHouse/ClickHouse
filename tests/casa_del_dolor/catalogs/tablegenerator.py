@@ -160,7 +160,9 @@ class LakeTableGenerator:
         table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        next_operation = random.randint(1, 1000)
+        next_operation = random.randint(
+            1, 500 if self.get_format() == "delta" else 1000
+        )
 
         if next_operation <= 250:
             # Set random properties
@@ -169,7 +171,7 @@ class LakeTableGenerator:
             )
             if properties:
                 key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE `{table.get_table_full_path()}` SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
         elif next_operation <= 500:
             # Unset a property
             properties = self.generate_table_properties(
@@ -177,7 +179,7 @@ class LakeTableGenerator:
             )
             if properties:
                 key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE `{table.get_table_full_path()}` UNSET TBLPROPERTIES ('{key}');"
+                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
         elif next_operation <= 600:
             # Add or drop partition field
             partition_clauses = self.add_partition_clauses(table.columns)
@@ -185,7 +187,7 @@ class LakeTableGenerator:
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
         elif next_operation <= 700:
             # Replace partition field
             partition_clauses = self.add_partition_clauses(table.columns)
@@ -197,20 +199,20 @@ class LakeTableGenerator:
             random_subset2 = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            return f"ALTER TABLE `{table.get_table_full_path()}` REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+            return f"ALTER TABLE {table.get_table_full_path()} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
         elif next_operation <= 800:
             # Set ORDER BY
             if random.randint(1, 2) == 1:
-                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE UNORDERED"
-            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
         elif next_operation <= 900:
             # Set distribution
             if random.randint(1, 2) == 1:
-                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION"
-            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
         elif next_operation <= 1000:
             # Set identifier fields
-            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
         return ""
 
     @abstractmethod
@@ -649,7 +651,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 7:
             return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
+            return f"CALL {table.catalog_name}.system.compute_partition_stats(table => '{table.get_table_full_path()}')"
         if next_option == 9:
             return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
         # if next_option == 10:
@@ -934,12 +936,18 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         self,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 100)
+        next_option = random.randint(1, 3)
 
-        if next_option <= 50:
+        if next_option == 1:
+            # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
-
-        restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
-        ).strftime("%Y-%m-%d %H:%M:%S.%f")
-        return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 2:
+            # Restore
+            restore_to = (
+                datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+            ).strftime("%Y-%m-%d %H:%M:%S.%f")
+            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 3:
+            # Optimize
+            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
+        return ""

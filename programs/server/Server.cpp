@@ -342,6 +342,7 @@ namespace ServerSetting
     extern const ServerSettingsBool abort_on_logical_error;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
+    extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
 namespace ErrorCodes
@@ -1857,6 +1858,10 @@ try
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
 
+    Names allowed_disks_table_engines;
+    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
+    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
+
     String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
     size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
     double query_condition_cache_size_ratio = server_settings[ServerSetting::query_condition_cache_size_ratio];
@@ -2588,7 +2593,9 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
+
+        global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
+
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
