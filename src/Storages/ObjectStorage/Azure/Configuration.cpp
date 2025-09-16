@@ -280,8 +280,6 @@ void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
     blob_path = "/" + parsing_result.path_suffix;
-    fs::path root = disk->getPath();
-    fs::path suffix = parsing_result.path_suffix;
     setPathForRead(blob_path.path + "/");
     setPaths({blob_path.path + "/"});
 
