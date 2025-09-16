@@ -457,6 +457,11 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
         LOG_TEST(log, "Max processed file does not exist, creating at: {}", processed_node_path_);
         requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
     }
+
+    if (set_processing)
+    {
+        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    }
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)

@@ -73,7 +73,9 @@ namespace
         /// Use more or less random interval for unordered mode cleanup task.
         /// So that distributed processing cleanup tasks would not schedule cleanup at the same time.
         pcg64 rng(randomSeed());
-        return min + rng() % (max - min + 1);
+        size_t interval = min + rng() % (max - min + 1);
+        LOG_TEST(getLogger("ObjectStorageQueueMetadata"), "Reschedule interval: {}", interval);
+        return interval;
     }
 }
 

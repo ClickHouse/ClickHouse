@@ -326,9 +326,9 @@ def test_max_set_age(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": max_age,
-            "cleanup_interval_min_ms": max_age / 3,
-            "cleanup_interval_max_ms": max_age / 3,
-            "polling_max_timeout_ms": 5000,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 200,
+            "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
         },
