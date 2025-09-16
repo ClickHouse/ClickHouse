@@ -240,6 +240,10 @@ public:
         const ContextPtr & context);
 
     static void prepareIndexesForDisjuncts(std::optional<ReadFromMergeTree::Indexes> & indexes);
+
+    static MarkRanges finalSetOfRangesForFilterWithMixedAndOr(
+    MergeTreeData::DataPartPtr part,
+    const std::optional<KeyCondition> & rpn_template_condition, const std::vector<MarkRanges> & skip_index_results);
 };
 
 }

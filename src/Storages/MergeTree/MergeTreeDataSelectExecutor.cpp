@@ -924,10 +924,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 		if (settings[Setting::use_skip_indexes_on_disjuncts])
 		{
 	            ranges.ranges = {};
+		    /// ranges.ranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, skip_index_selected_ranges);
                     for (auto mr : skip_index_selected_ranges)
 			    for (auto r : mr)
 			        ranges.ranges.push_back(r);
 		    std::sort(ranges.ranges.begin(), ranges.ranges.end());
+
+		    /// auto finalranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, skip_index_selected_ranges);
 		}
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -2301,5 +2304,79 @@ void MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(std::optional<ReadF
 
 
 }
+
+MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
+    MergeTreeData::DataPartPtr part,
+    const std::optional<KeyCondition> & rpn_template_condition, const std::vector<MarkRanges> & skip_index_results)
+{
+    /// TODO - below is just something quick, not optimal
+    std::vector< std::unordered_set<size_t> > index_results;
+    size_t i = 0;
+    index_results.resize(10);
+    for (auto s : skip_index_results)
+    {
+	    for (auto r : s)
+	    {
+		    for (size_t mark = r.begin; mark < r.end; mark++)
+			    index_results[i].insert(mark);
+	    }
+	    i++;
+    }
+
+    auto isRangeSelectedByIndex = [&](size_t idx, size_t range_begin)
+    {
+	    return index_results[idx].find(range_begin) != index_results[idx].end();
+    };
+    KeyCondition::RPN rpn = rpn_template_condition->getRPN();
+    MarkRanges res;
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    for (size_t range_begin = 0; range_begin < marks_count; range_begin++)
+    {
+
+    std::vector<bool> rpn_stack;
+    for (const auto & element : rpn)
+    {
+        if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column, range_begin));
+	}
+	else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+        {
+            rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+        {
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 || arg2;
+        }
+        else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+        {
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 && arg2;
+        }
+        else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.emplace_back(true);
+        }
+        else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(false);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+    }
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+
+    if (rpn_stack[0])
+	    res.push_back({range_begin, range_begin + 1}); /// TODO - range coalesce
+    } /// TODO
+    return res;
+}
+
 
 }
