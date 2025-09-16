@@ -218,8 +218,11 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
+    std::error_code ec;
+    if (fs::equivalent(path, prefix_path, ec))
+        return true;
     auto rel = std::filesystem::relative(path, prefix_path);
-    return !rel.empty() && rel.native()[0] != '.';
+    return (!rel.empty() && rel.native()[0] != '.');
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
