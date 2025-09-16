@@ -62,11 +62,11 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 # Able to Select from overlay tables with OK user
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_OK}" --query "
     SELECT count() FROM ${DB_OVL}.${T_A};
-" >/dev/null 2>&1 && echo "Ok."
+" >/dev/null && echo "Ok."
 
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_OK}" --query "
     SELECT count() FROM ${DB_OVL}.${T_B};
-" >/dev/null 2>&1 && echo "Ok."
+" >/dev/null && echo "Ok."
 
 # Unable to Select from overlay tables with BAD user
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_BAD}" --query "
