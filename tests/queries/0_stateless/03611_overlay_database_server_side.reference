@@ -1,4 +1,4 @@
-CREATE DATABASE dboverlay\nENGINE = Overlay(\'db_overlay_a\', \'db_overlay_b\')
+CREATE DATABASE default_1\nENGINE = Overlay(\'db_overlay_a\', \'db_overlay_b\')
 t_a
 t_b
 1	a1

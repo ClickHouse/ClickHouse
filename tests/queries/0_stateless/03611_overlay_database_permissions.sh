@@ -54,21 +54,21 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     GRANT SELECT ON ${DB_OVL}.* TO ${USER_BAD};
 "
 
-# Sanity: default user can see overlay tables
+echo 'Sanity: default user can see overlay tables'
 ${CLICKHOUSE_CLIENT} -nm --query "
     SHOW TABLES FROM ${DB_OVL};
 "
 
-# Able to Select from overlay tables with OK user
+echo 'Able to Select from overlay tables with OK user with (Access granted)'
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_OK}" --query "
     SELECT count() FROM ${DB_OVL}.${T_A};
-" >/dev/null && echo "Ok."
+" >/dev/null && echo "Access granted"
 
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_OK}" --query "
     SELECT count() FROM ${DB_OVL}.${T_B};
-" >/dev/null && echo "Ok."
+" >/dev/null && echo "Access granted"
 
-# Unable to Select from overlay tables with BAD user
+echo 'Unable to Select from overlay tables with BAD user (ACCESS_DENIED)'
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_BAD}" --query "
     SELECT count() FROM ${DB_OVL}.${T_A};
 " 2>&1 | grep -o ACCESS_DENIED | uniq

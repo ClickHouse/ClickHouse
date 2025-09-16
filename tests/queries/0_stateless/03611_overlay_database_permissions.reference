@@ -1,6 +1,9 @@
+Sanity: default user can see overlay tables
 t_a
 t_b
-Ok.
-Ok.
+Able to Select from overlay tables with OK user with (Access granted)
+Access granted
+Access granted
+Unable to Select from overlay tables with BAD user (ACCESS_DENIED)
 ACCESS_DENIED
 ACCESS_DENIED
