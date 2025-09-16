@@ -6,6 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -89,7 +90,6 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
-    class AggregatedZooKeeperLog;
 }
 
 namespace Coordination
@@ -109,8 +109,7 @@ public:
     ZooKeeper(
         const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
@@ -129,7 +128,7 @@ public:
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback,
-        WatchCallbackPtr watch = nullptr);
+        WatchCallbackPtrOrEventPtr watch = {});
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -154,12 +153,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -171,7 +170,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,
@@ -215,8 +214,7 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
-    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     void setServerCompletelyStarted();
 
@@ -270,7 +268,7 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtr watch;
+        WatchCallbackPtrOrEventPtr watch;
         clock::time_point time;
     };
 
@@ -284,11 +282,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
@@ -349,9 +343,6 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
-    /// Observes the operation in Aggregated ZooKeeper Log.
-    void observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds);
-
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
     void initFeatureFlags();
@@ -359,7 +350,6 @@ private:
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
-    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };
