@@ -473,6 +473,7 @@ namespace DB
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, allowed_disks_for_table_engines, "", "List of disks allowed for use with Iceberg", 0) \
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.
 
@@ -1139,6 +1140,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(Int32, os_threads_nice_value_zookeeper_client_send_receive, 0, R"(
     Linux nice value for send and receive threads in ZooKeeper client. Lower values mean higher CPU priority.
+
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
+    Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
 
     Requires CAP_SYS_NICE capability, otherwise no-op.
 
