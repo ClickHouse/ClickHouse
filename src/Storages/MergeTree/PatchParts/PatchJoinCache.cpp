@@ -274,6 +274,7 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     PatchOffsetsMap * current_offsets = nullptr;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    PatchOffsetsMap::const_iterator last_inserted_it;
 
     for (size_t i = 0; i < num_read_rows; ++i)
     {
@@ -287,12 +288,16 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
             min_block = std::min(min_block, block_number);
             max_block = std::max(max_block, block_number);
+
+            last_inserted_it = current_offsets->end();
         }
 
         /// try_emplace overload with hint doesn't return 'inserted' flag,
         /// so we need to check size before and after emplace.
         size_t old_size = current_offsets->size();
-        auto it = current_offsets->try_emplace(current_offsets->end(), block_offset);
+        auto it = current_offsets->try_emplace(last_inserted_it, block_offset);
+
+        last_inserted_it = it;
         bool inserted = current_offsets->size() > old_size;
 
         if (inserted)
