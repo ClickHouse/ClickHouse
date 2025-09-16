@@ -604,26 +604,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 
 int getCurrentExceptionCode()
 {
-    try
-    {
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        return e.code();
-    }
-    catch (const Poco::Exception &)
-    {
-        return ErrorCodes::POCO_EXCEPTION;
-    }
-    catch (const std::exception &)
-    {
-        return ErrorCodes::STD_EXCEPTION;
-    }
-    catch (...)
-    {
-        return ErrorCodes::UNKNOWN_EXCEPTION;
-    }
+    auto ex = std::current_exception();
+    chassert(ex);
+    return getExceptionErrorCode(ex);
 }
 
 int getExceptionErrorCode(std::exception_ptr e)

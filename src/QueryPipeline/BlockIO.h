@@ -46,18 +46,16 @@ private:
         explicit Guard(BlockIO & io_) : io(io_) {}
 
         ~Guard()
+        try
         {
-            try
-            {
-                if (std::uncaught_exceptions() > uncaught_on_enter)
-                    io.onException();
-                else
-                    io.onFinish();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("BlockIO::Guard");
-            }
+            if (std::uncaught_exceptions() > uncaught_on_enter)
+                io.onException();
+            else
+                io.onFinish();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("BlockIO::Guard");
         }
 
         Guard(const Guard &) = delete;
