@@ -930,12 +930,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             if (command.statistics_columns.empty())
             {
-                for (auto column_it = columns_desc.begin(); column_it != columns_desc.end(); column_it++)
+                for (const auto & column_desc : columns_desc)
                 {
-                    if (!column_it->statistics.empty())
+                    if (column_desc.statistics.empty())
                     {
-                        dependencies.emplace(column_it->name, ColumnDependency::STATISTICS);
-                        materialized_statistics.emplace(column_it->name);
+                        dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
+                        materialized_statistics.emplace(column_desc.name);
                     }
                 }
             }
