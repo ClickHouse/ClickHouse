@@ -680,12 +680,12 @@ public:
 
     bool isValid() const { return !queue.empty() && loser_tree[0] >= 0; }
 
-    Cursor & current() requires (strategy == SortingQueueStrategy::Default)
+    Cursor & ALWAYS_INLINE current() requires (strategy == SortingQueueStrategy::Default)
     {
         return queue[loser_tree[0]];
     }
 
-    std::pair<Cursor *, size_t> current() requires (strategy == SortingQueueStrategy::Batch)
+    std::pair<Cursor *, size_t> ALWAYS_INLINE current() requires (strategy == SortingQueueStrategy::Batch)
     {
         assert(current_batch_size > 0);
         return {&queue[loser_tree[0]], current_batch_size};
@@ -694,7 +694,7 @@ public:
     size_t size() { return queue.size(); }
 
     // Avoid frequent calls to this, as it has a high overhead
-    Cursor & nextChild()
+    Cursor & ALWAYS_INLINE nextChild()
     {
         assert(this->size() > 1);
         auto winner = loser_tree[0];
@@ -795,7 +795,7 @@ public:
             updateBatchSize();
     }
 
-    void push(SortCursorImpl & cursor)
+    void ALWAYS_INLINE push(SortCursorImpl & cursor)
     {
         queue.emplace_back(&cursor);
         buildLoserTree();
@@ -824,7 +824,7 @@ private:
         tree_high = static_cast<size_t>(std::log2(k));
     }
 
-    void adjustLoserTree(Int32 winner)
+    void ALWAYS_INLINE adjustLoserTree(Int32 winner)
     {
         if (this->size() <= 1) [[unlikely]]
         {
