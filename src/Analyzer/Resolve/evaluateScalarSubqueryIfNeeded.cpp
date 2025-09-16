@@ -277,8 +277,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (chunk.getNumRows() != 1)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                LOG_TRACE(getLogger("QueryAnalyzer"), "Has rows");
-
                 Chunk tmp_chunk;
                 while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
                 {
