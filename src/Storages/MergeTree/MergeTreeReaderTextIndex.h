@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <roaring.hh>
 
 namespace DB
 {
@@ -70,6 +71,7 @@ private:
     std::map<size_t, Granule> granules;
     absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
     PaddedPODArray<UInt32> indices_buffer;
+    roaring::Roaring analyzed_granules;
 };
 
 }

@@ -123,6 +123,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
 
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule.granule);
         granule_text.resetAfterAnalysis();
+        analyzed_granules.add(index_mark);
     }
 
     return !it->second.may_be_true;
@@ -172,6 +173,11 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         size_t index_mark = from_mark / granularity;
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+
+        /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
+        /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
+        if (!analyzed_granules.contains(index_mark))
+            canSkipMark(from_mark, current_task_last_mark);
 
         auto it = granules.find(index_mark);
         if (it == granules.end())
