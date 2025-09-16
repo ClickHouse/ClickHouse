@@ -112,6 +112,22 @@ public:
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaRange(Self & that, Func && func, UInt32 offset_begin, UInt32 offset_end)
+    {
+        for (UInt32 key_i = offset_begin; key_i < offset_end; ++key_i)
+        {
+            if (!this->buf[key_i].isZero(*this))
+            {
+                typename Self::LookupResult res_it;
+                bool inserted;
+                that.emplace(key_i, res_it, inserted, key_i);
+                func(res_it->getMapped(), this->buf[key_i].getMapped(), inserted);
+            }
+        }
+    }
+
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {

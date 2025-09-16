@@ -2993,6 +2993,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
+    LOG_INFO(log, "jianfei mergeBucketImpl, data size: {}", non_empty_data.size());
+
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
@@ -3000,12 +3002,16 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
         if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
+        {
+            LOG_INFO(log, "jianfei mergeSingleLevelDataImpl, checkLimit returned false, result_num: {}", result_num);
             break;
+        }
 
         AggregatedDataVariants & current = *non_empty_data[result_num];
 
         if (!no_more_keys)
         {
+            LOG_INFO(log, "jianfei mergeSingleLevelDataImpl, no_more_keys is false, result_num: {}", result_num);
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
@@ -3015,12 +3021,14 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
             else
 #endif
             {
+                LOG_INFO(log, "jianfei mergeSingleLevelDataImpl/mergeDataImpl compile_aggregate_functions_holder is false, result_num: {}", result_num);
                 mergeDataImpl<Method>(
                     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled);
             }
         }
         else if (res->without_key)
         {
+            LOG_INFO(log, "jianfei mergeSingleLevelDataImpl/mergeDataNoMoreKeysImpl, result_num: {}", result_num);
             mergeDataNoMoreKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 res->without_key,
@@ -3029,6 +3037,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         }
         else
         {
+            LOG_INFO(log, "jianfei mergeSingleLevelDataImpl/mergeDataOnlyExistingKeysImpl, result_num: {}", result_num);
             mergeDataOnlyExistingKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 getDataVariant<Method>(current).data,
