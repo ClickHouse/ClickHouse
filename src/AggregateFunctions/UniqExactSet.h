@@ -132,7 +132,7 @@ public:
         }
         else
         {
-            auto & lhs = asTwoLevel();
+            auto & lhs = asTwoLevelChecked();
 
             if (other.isSingleLevel())
                 return lhs.merge(other.asSingleLevel());
@@ -225,6 +225,7 @@ public:
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
     {
+        doDeepCopyIfNeeded();
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
     }
 
@@ -243,10 +244,28 @@ private:
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 
+    TwoLevelSet & asTwoLevelChecked()
+    {
+        doDeepCopyIfNeeded();
+        return *two_level_set;
+    }
+
     TwoLevelSet & asTwoLevel() { return *two_level_set; }
     const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
 
+    /// Needed when a row can participate in more than one merge, e.g., ROLLUP/CUBE
+    void doDeepCopyIfNeeded() const
+    {
+        if (two_level_set && two_level_set.use_count() > 1)
+        {
+            auto copy = std::make_shared<TwoLevelSet>(two_level_set->size());
+            for (size_t i = 0; i < two_level_set->NUM_BUCKETS; ++i)
+                copy->impls[i].merge(two_level_set->impls[i]);
+            two_level_set = std::move(copy);
+        }
+    }
+
     SingleLevelSet single_level_set;
-    std::shared_ptr<TwoLevelSet> two_level_set;
+    mutable std::shared_ptr<TwoLevelSet> two_level_set;
 };
 }
