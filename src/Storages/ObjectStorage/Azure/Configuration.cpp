@@ -632,19 +632,18 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 {
     if (disk)
     {
-        ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
-
-        blob_path = "/" + parsing_result.path_suffix;
-        setPathForRead(blob_path.path + "/");
-        setPaths({blob_path.path + "/"});
-
-        blobs_paths = {blob_path};
-        if (parsing_result.format.has_value())
-            format = *parsing_result.format;
-        if (parsing_result.compression_method.has_value())
-            compression_method = *parsing_result.compression_method;
-        if (parsing_result.structure.has_value())
-            structure = *parsing_result.structure;
+        if (format == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (structure == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
