@@ -516,8 +516,10 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     detachTablePermanently(local_context, table_name);
 }
 
-void destroy() {
-    if (!quit) {
+void destroy()
+{
+    if (!quit)
+    {
         quit = true;
         std::lock_guard lock{mutex};
     }
