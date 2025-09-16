@@ -183,6 +183,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
 }
 
 namespace MergeTreeSetting
@@ -1758,6 +1759,10 @@ static void buildIndexes(
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
+    /// Just the skeleton of the predicate - no columns resolved.
+    indexes->rpn_template_condition = KeyCondition{filter_dag, context, {}, primary_key.expression};
+
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -1818,7 +1823,6 @@ static void buildIndexes(
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
 
-    Names all_skip_index_column_names;
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
@@ -1859,15 +1863,7 @@ static void buildIndexes(
         }
 
         if (!condition->alwaysUnknownOrTrue())
-	{
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
-	}
-    }
-    {
-
-        KeyCondition template_rpn{filter_dag, context, all_skip_index_column_names, primary_key.expression};
-	LOG_TRACE(getLogger(""), "template kc is {}", template_rpn.toString());
-	template_rpn.transformToDisjuncts();
     }
     {
         std::vector<size_t> index_sizes;
@@ -1922,6 +1918,10 @@ static void buildIndexes(
     }
 
     indexes->skip_indexes = std::move(skip_indexes);
+    {
+        if (settings[Setting::use_skip_indexes_on_disjuncts])
+            MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(indexes);
+    }
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2065,6 +2065,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->rpn_template_condition,
             indexes->skip_indexes,
             reader_settings,
             log,

@@ -592,6 +592,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
+    if (minmax_idx_condition)
+	    LOG_TRACE(getLogger(""), "Parts filter condition {}", minmax_idx_condition->toString());
+
     if (metadata_snapshot->hasPartitionKey())
     {
         chassert(minmax_idx_condition && partition_pruner);
@@ -671,6 +674,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
+    const std::optional<KeyCondition> & rpn_template_condition,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
@@ -684,6 +688,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
+
+    LOG_TRACE(getLogger(""), "RPN Template Condition = {}", rpn_template_condition->toString());
 
     /// If parallel_replicas_support_projection is enabled, selected_marks will be used to determine the optimal projection.
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
@@ -871,7 +877,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 		    if (settings[Setting::use_skip_indexes_on_disjuncts])
 		    {
-			    index_and_condition.condition->transformToDisjuncts();
+	                    std::optional<MarkRanges> rejected = MarkRanges{};
+			    /// index_and_condition.condition->transformToDisjuncts();
 			    skip_index_selected_ranges.emplace_back(
                             filterMarksUsingIndex(
                             index_and_condition.index,
@@ -882,13 +889,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
+                            vector_similarity_index_cache.get(), rejected,
                             log).first);
-			    LOG_TRACE(getLogger(""),"Skip index selected {} ranges out of {}", skip_index_selected_ranges.back().size(), ranges.ranges.size());
+			    LOG_TRACE(getLogger(""),"Skip index selected {} ranges out of {}, rejected {}", skip_index_selected_ranges.back().size(), ranges.ranges.size(), rejected->size());
 			    LOG_TRACE(getLogger(""),"Input  range {}{} selected {}{}", ranges.ranges.front().begin, ranges.ranges.back().end, skip_index_selected_ranges.back().front().begin, skip_index_selected_ranges.back().back().end);
+			    ranges.ranges = rejected.value();
 		    }
 		    else
 		    {
+	            std::optional<MarkRanges> rejected;
                     /// Vector similarity indexes are not applicable on data reads.
                     if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                     {
@@ -901,7 +910,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
+                            vector_similarity_index_cache.get(), rejected,
                             log);
                     }
 
@@ -912,6 +921,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
+		if (settings[Setting::use_skip_indexes_on_disjuncts])
+		{
+	            ranges.ranges = {};
+                    for (auto mr : skip_index_selected_ranges)
+			    for (auto r : mr)
+			        ranges.ranges.push_back(r);
+		    std::sort(ranges.ranges.begin(), ranges.ranges.end());
+		}
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
                 {
@@ -1766,6 +1783,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    std::optional<MarkRanges> & rejected,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1935,7 +1953,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
+                    {
+                        if (rejected)
+			{
+                            MarkRange data_range(
+                                std::max(ranges[i].begin, index_mark * index_granularity),
+                                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+
+                            rejected->push_back(data_range);
+			}
                         continue;
+		    }
 
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * index_granularity),
@@ -2223,6 +2251,55 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         if (!select_parts(parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
+}
+
+void MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(std::optional<ReadFromMergeTree::Indexes> & indexes)
+{
+    if (!indexes || !indexes->rpn_template_condition)
+        return;
+
+    bool only_conjuncts = false, only_disjuncts = false;
+    std::tie(only_conjuncts, only_disjuncts) = indexes->rpn_template_condition->checkIfOnlyConjunctsOrOnlyDisjuncts();
+
+    if (only_conjuncts)
+        return;
+
+    /// indexes->key_condition.transformToDisjuncts();
+    /// if (indexes->minmax_idx_condition)
+    ///    indexes->minmax_idx_condition->transformToDisjuncts();
+    if (indexes->part_offset_condition)
+        indexes->part_offset_condition->transformToDisjuncts();
+    if (indexes->total_offset_condition)
+        indexes->total_offset_condition->transformToDisjuncts();
+    for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
+    {
+        auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
+	/// LOG_TRACE(getLogger(""), "Converting skip index to disjunct {}", index_and_condition.condition->toString());
+        index_and_condition.condition->transformToDisjuncts();
+    }
+
+ #if 0
+    auto rpn_template = indexes->rpn_template_condition->getRPN();
+    for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
+    {
+        if (areRPNsStructureSame(rpn_template, skip_index_rpn))
+	{
+            for (size_t rpn_idx = 0; rpn_idx < rpn_template.size(); ++rpn_idx)
+	    {
+                if (rpn_template[rpn_idx] == FUNCTION_UNKNOWN &&
+                    index_rpn[rpn_idx] != FUNCTION_UNKNWON)
+                {
+                    rpn_template[rpn_idx].function = FUNCTION_INDEX_RESULT;
+                    rpn_template[rpn_idx].key_column = index_num;
+                }
+	    }
+	}
+    }
+ #endif
+
+    return;
+
+
 }
 
 }

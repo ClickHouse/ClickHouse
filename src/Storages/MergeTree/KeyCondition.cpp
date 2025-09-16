@@ -4122,7 +4122,7 @@ void KeyCondition::transformToDisjuncts()
     }
 }
 
-std::pair<bool, bool> KeyCondition::checkIfOnlyCunjunctsOrOnlyDisjuncts() const
+std::pair<bool, bool> KeyCondition::checkIfOnlyConjunctsOrOnlyDisjuncts() const
 {
     bool only_conjuncts = true, only_disjuncts = true;
     for (const RPNElement & element : rpn)

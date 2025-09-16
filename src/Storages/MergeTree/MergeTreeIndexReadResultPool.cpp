@@ -47,6 +47,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
+	std::optional<MarkRanges> rejected;
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
@@ -56,7 +57,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             reader_settings,
             mark_cache.get(),
             uncompressed_cache.get(),
-            vector_similarity_index_cache.get(),
+            vector_similarity_index_cache.get(), rejected,
             log).first;
     }
 

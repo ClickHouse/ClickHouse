@@ -84,6 +84,7 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        std::optional<MarkRanges> & rejected,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -199,6 +200,7 @@ public:
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
+        const std::optional<KeyCondition> & rpn_template_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
@@ -236,6 +238,8 @@ public:
         const MergeTreeData & data,
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
+
+    static void prepareIndexesForDisjuncts(std::optional<ReadFromMergeTree::Indexes> & indexes);
 };
 
 }

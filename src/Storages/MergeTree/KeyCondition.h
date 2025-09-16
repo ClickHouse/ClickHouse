@@ -298,7 +298,7 @@ public:
     /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE 
     void transformToDisjuncts();
 
-    std::pair<bool, bool> checkIfOnlyCunjunctsOrOnlyDisjuncts() const;
+    std::pair<bool, bool> checkIfOnlyConjunctsOrOnlyDisjuncts() const;
 
 private:
     /// Information used when building a KeyCondition out of ActionsDAG.
