@@ -137,17 +137,18 @@ def pytest_configure(config):
         os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in master_ports])
 
 
-def pytest_xdist_setupnodes(config, specs):
-    # Find {PORTS_PER_WORKER} * {number of xdist workers} ports and
-    # allocate pool of {PORTS_PER_WORKER} ports to each worker
+if hasattr(pytest, "xdist_plugin"):
+    def pytest_xdist_setupnodes(config, specs):
+        # Find {PORTS_PER_WORKER} * {number of xdist workers} ports and
+        # allocate pool of {PORTS_PER_WORKER} ports to each worker
 
-    # Get number of xdist workers
-    num_workers = len(specs)
-    # Get free ports which will be distributed across workers
-    ports = get_unique_free_ports(num_workers * PORTS_PER_WORKER)
+        # Get number of xdist workers
+        num_workers = len(specs)
+        # Get free ports which will be distributed across workers
+        ports = get_unique_free_ports(num_workers * PORTS_PER_WORKER)
 
-    # Iterate over specs of workers and add allocated ports to env variable
-    for i, spec in enumerate(specs):
-        start_range = i * PORTS_PER_WORKER
-        per_workrer_ports = ports[start_range : start_range + PORTS_PER_WORKER]
-        spec.env["WORKER_FREE_PORTS"] = " ".join([str(p) for p in per_workrer_ports])
+        # Iterate over specs of workers and add allocated ports to env variable
+        for i, spec in enumerate(specs):
+            start_range = i * PORTS_PER_WORKER
+            per_workrer_ports = ports[start_range : start_range + PORTS_PER_WORKER]
+            spec.env["WORKER_FREE_PORTS"] = " ".join([str(p) for p in per_workrer_ports])
