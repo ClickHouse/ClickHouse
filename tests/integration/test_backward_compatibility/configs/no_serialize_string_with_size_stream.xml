@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <serialize_string_with_size_stream>0</serialize_string_with_size_stream>
+    </merge_tree>
+</clickhouse>

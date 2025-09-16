@@ -169,6 +169,7 @@ def put_azure_file_content(filename, port, data):
 def test_backup_restore(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string")
     azure_query(
         node,
         f"CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
@@ -198,6 +199,7 @@ def test_backup_restore(cluster):
 def test_backup_restore_diff_container(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_cont1")
     azure_query(
         node,
         f"CREATE TABLE test_simple_write_connection_string_cont1 (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_cont1.csv', 'CSV')",
@@ -225,6 +227,7 @@ def test_backup_restore_diff_container(cluster):
 def test_backup_restore_with_named_collection_azure_conf1(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(node, "DROP TABLE IF EXISTS test_write_connection_string")
     azure_query(
         node,
         f"CREATE TABLE test_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write.csv', 'CSV')",
@@ -252,6 +255,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
 def test_backup_restore_with_named_collection_azure_conf2(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(node, "DROP TABLE IF EXISTS test_write_connection_string_2")
     azure_query(
         node,
         f"CREATE TABLE test_write_connection_string_2 (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_2.csv', 'CSV')",
