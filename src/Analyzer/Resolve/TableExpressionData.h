@@ -40,7 +40,6 @@ struct AnalysisTableExpressionData
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
-    std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
     bool hasFullIdentifierName(IdentifierView identifier_view) const
     {
@@ -49,7 +48,7 @@ struct AnalysisTableExpressionData
 
     bool canBindIdentifier(IdentifierView identifier_view) const
     {
-        return column_identifier_first_parts.contains(identifier_view.at(0));
+        return column_name_to_column_node.contains(identifier_view.at(0));
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const

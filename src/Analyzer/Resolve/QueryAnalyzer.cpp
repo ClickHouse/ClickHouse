@@ -3477,14 +3477,6 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         }
     }
 
-    table_expression_data.column_identifier_first_parts.reserve(table_expression_data.column_name_to_column_node.size());
-
-    for (auto & [column_name, _] : table_expression_data.column_name_to_column_node)
-    {
-        Identifier column_name_identifier(column_name);
-        table_expression_data.column_identifier_first_parts.insert(column_name_identifier.at(0));
-    }
-
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {
         auto left_table_expression = extractLeftTableExpression(scope_query_node->getJoinTree());
