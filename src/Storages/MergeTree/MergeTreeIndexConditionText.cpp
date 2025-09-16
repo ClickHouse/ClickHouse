@@ -359,7 +359,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return false;
 
     auto value_data_type = WhichDataType(value_type);
-    if (!value_data_type.isStringOrFixedString())
+    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
     const Field & const_value = value_field;
