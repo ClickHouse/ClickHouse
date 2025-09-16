@@ -16,8 +16,6 @@
 #include <Common/Exception.h>
 #include <parquet/metadata.h>
 
-#include <iostream>
-
 namespace arrow
 {
     class Schema;
