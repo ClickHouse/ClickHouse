@@ -454,7 +454,7 @@ bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 
 void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
 {
-    if (this->readonly)
+    if (readonly)
         return;
     for (auto & db : databases)
         if (!db->isReadOnly())
