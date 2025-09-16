@@ -56,8 +56,8 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 
 # Sanity: default user can see overlay tables
 ${CLICKHOUSE_CLIENT} -nm --query "
-    SHOW TABLES FROM ${DB_OVL} ORDER BY name;
-" >/dev/null 2>&1 && echo "overlay: tables visible (sanity)."
+    SHOW TABLES FROM ${DB_OVL};
+"
 
 # Able to Select from overlay tables with OK user
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_OK}" --query "
