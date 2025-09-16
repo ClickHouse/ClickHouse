@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/TargetSpecific.h>
+#include <Common/UTF8Helpers.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -11,6 +12,8 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
+#include <Poco/String.h>
+#include <Poco/Unicode.h>
 
 #include <ranges>
 
@@ -68,6 +71,7 @@ public:
     static constexpr auto name = Name::name;
     static constexpr auto is_utf8 = Name::is_utf8;
     static constexpr auto is_case_insensitive = Name::is_case_insensitive;
+    static constexpr auto are_starts_with_functions = std::is_same_v<Name, NameStartsWith> || std::is_same_v<Name, NameStartsWithCaseInsensitive>;
 
     String getName() const override
     {
@@ -233,6 +237,49 @@ private:
     {
         size_t row_num = 0;
 
+        /// For case insensitive constant needle, lower its cases based on charset
+        if constexpr (is_case_insensitive)
+        {
+            if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>)
+            {
+                auto needle = needle_source.getWhole();
+                for (size_t i = 0; i < needle.size; ++i)
+                {
+                    char c = needle.data[i];
+                    if (std::isupper(c)) 
+                        needle.dat[i] = std::tolower(c); /// To lowercase
+                }
+            } 
+            else if constexpr (std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+            {
+                auto needle = needle_source.getWhole();
+
+                std::string result;
+                result.reserve(needle.size);
+
+                char * pos = needle.data;
+                char * end = needle.data + needle.size;
+
+                while (pos < end)
+                {
+                    size_t seq_len = UTF8::seqLength(*pos);
+                    std::optional<uint32_t> code_point = UTF8::convertUTF8ToCodePoint(pos, end - pos);
+                    if (!code_point)
+                        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Invalide UTF-8 needle: {}", needle.getString());
+
+                    uint32_t lower_code_point = Poco::Unicode::toLower(*code_point);
+
+                    char utf8_buf[6];
+                    size_t utf8_len = UTF8::convertCodePointToUTF8(lower_code_point, utf8_buf, sizeof(utf8_buf));
+
+                    result.append(utf8_buf, utf8_len);
+                    pos += seq_len;
+                }
+                /// Assign the new needle with all lower cases
+                needle_source = 
+            }
+        }
+
         while (!haystack_source.isEnd())
         {
             auto haystack = haystack_source.getWhole();
@@ -242,10 +289,11 @@ private:
                 res_data[row_num] = false;
             else
             {
-                if constexpr (std::is_same_v<Name, NameStartsWith> || std::is_same_v<Name, NameStartsWithCaseInsensitive>) /// startsWith(CaseInsensitive)
-                    res_data[row_num] = compare<is_case_insensitive>(StringRef(haystack.data, needle.size), StringRef(needle.data, needle.size));
+                if constexpr (are_starts_with_functions) /// startsWith(CaseInsensitive)
+                    res_data[row_num] = compare<is_case_insensitive, letter_only, lowercase_only>(
+                        StringRef(haystack.data, needle.size), StringRef(needle.data, needle.size));
                 else if constexpr (std::is_same_v<Name, NameEndsWith>) /// endsWith
-                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size); // TODO
+                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size);
                 else /// startsWithUTF8 or endsWithUTF8
                 {
                     auto length = UTF8::countCodePoints(needle.data, needle.size);
