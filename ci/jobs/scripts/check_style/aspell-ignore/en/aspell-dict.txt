@@ -76,15 +76,6 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
-backupview
-balancer
-basename
-bcrypt
-bcrypt's
-bech
-Bech
-benchmarked
-benchmarking
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -1349,6 +1340,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 benchmarked
 benchmarking
