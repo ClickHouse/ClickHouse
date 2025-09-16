@@ -241,10 +241,4 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
-StorageSnapshotPtr StorageObjectStorageCluster::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
-{
-    auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
-    configuration->sendTemporaryStateToStorageSnapshot(snapshot);
-    return snapshot;
-}
 }

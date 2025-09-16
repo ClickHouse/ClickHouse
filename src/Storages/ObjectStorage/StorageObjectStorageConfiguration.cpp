@@ -17,27 +17,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool StorageObjectStorageConfiguration::update( ///NOLINT
+void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     bool /* if_not_updated_before */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
-    return true;
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
-    ObjectStoragePtr object_storage_ptr,
-    ContextPtr context,
+    ObjectStoragePtr /*object_storage_ptr*/,
+    ContextPtr /*context*/,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
     bool /*if_not_exists*/,
     std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
 {
-    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
-    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
@@ -52,10 +49,16 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
+std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata(ContextPtr) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
+
+StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+}
+
 
 void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,

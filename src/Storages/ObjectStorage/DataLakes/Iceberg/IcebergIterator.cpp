@@ -197,7 +197,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
@@ -231,7 +231,7 @@ IcebergIterator::IcebergIterator(
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
     IDataLakeMetadata::FileProgressCallback callback_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)

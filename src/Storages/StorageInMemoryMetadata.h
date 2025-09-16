@@ -57,7 +57,7 @@ struct StorageInMemoryMetadata
     ASTPtr refresh;
 
     /// ICEBERG table state. Supported for Iceberg tables.
-    Iceberg::IcebergTableStateSnapshot iceberg_table_state;
+    std::optional<Iceberg::TableStateSnapshot> iceberg_table_state;
 
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
@@ -123,6 +123,8 @@ struct StorageInMemoryMetadata
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
+
+    void setIcebergTableState(const Iceberg::TableStateSnapshot & iceberg_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

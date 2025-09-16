@@ -871,37 +871,6 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
-
-template <typename T>
-OneThreadProtecting<T>::OneThreadProtecting() = default;
-
-template <typename T>
-void OneThreadProtecting<T>::set(T value_)
-{
-    std::lock_guard lock(mutex);
-    this->value = std::move(value_);
-    current_thread_id = getThreadId();
-}
-
-template <typename T>
-T & OneThreadProtecting<T>::get()
-{
-    std::lock_guard lock(mutex);
-    if (current_thread_id != getThreadId())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
-    return value.value();
-}
-
-template <typename T>
-const T & OneThreadProtecting<T>::get() const
-{
-    std::lock_guard lock(mutex);
-    if (current_thread_id != getThreadId())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
-    return value.value();
-}
-
-template class OneThreadProtecting<IcebergTableStateSnapshot>;
 }
 
 #endif

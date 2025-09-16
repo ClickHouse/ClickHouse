@@ -9,7 +9,7 @@ namespace DB
 namespace Iceberg
 {
 
-struct IcebergTableStateSnapshot
+struct TableStateSnapshot
 {
     String metadata_file_path;
     Int32 metadata_version;
@@ -17,17 +17,6 @@ struct IcebergTableStateSnapshot
     std::optional<Int64> snapshot_id;
 };
 
-
-struct IcebergSpecificSnapshotData : StorageSnapshot::Data
-{
-    IcebergTableStateSnapshot iceberg_table_state;
-    explicit IcebergSpecificSnapshotData(IcebergTableStateSnapshot && iceberg_table_state_)
-        : iceberg_table_state(std::move(iceberg_table_state_))
-    {
-    }
-};
-
-using IcebergTableStateSnapshotPtr = std::shared_ptr<IcebergTableStateSnapshot>;
-
+using TableStateSnapshotPtr = std::shared_ptr<TableStateSnapshot>;
 }
 }

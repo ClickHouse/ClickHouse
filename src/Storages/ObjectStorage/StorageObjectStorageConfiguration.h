@@ -134,7 +134,7 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
-    virtual bool hasExternalDynamicMetadata() { return false; }
+    virtual bool needsUpdateForSchemaConsistency() { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -161,7 +161,8 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -178,10 +179,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const noexcept { }
-
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,

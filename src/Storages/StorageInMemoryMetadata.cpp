@@ -219,6 +219,11 @@ void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
     metadata_version = metadata_version_;
 }
 
+void StorageInMemoryMetadata::setIcebergTableState(const Iceberg::TableStateSnapshot & iceberg_table_state_)
+{
+    iceberg_table_state = iceberg_table_state_;
+}
+
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
 {
     StorageInMemoryMetadata copy(*this);

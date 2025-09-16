@@ -74,16 +74,14 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    bool update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
-            return false;
+            return;
 
         BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
-
         updateMetadataIfChanged(object_storage, local_context);
-        return true;
     }
 
     void create(
@@ -95,8 +93,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-        BaseStorageConfiguration::create(
-            object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
+        BaseStorageConfiguration::update(object_storage, local_context, true);
 
         DataLakeMetadata::createInitial(
             object_storage,
@@ -146,12 +143,19 @@ public:
 
     }
 
-    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         assertInitialized();
-        if (auto schema = current_metadata->getTableSchema(); !schema.empty())
+        if (auto schema = current_metadata->getTableSchema(local_context); !schema.empty())
             return ColumnsDescription(std::move(schema));
         return std::nullopt;
+    }
+
+
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const override
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for configuration type {}", getEngineName());
     }
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
@@ -166,10 +170,10 @@ public:
         return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
-    bool hasExternalDynamicMetadata() override
+    bool needsUpdateForSchemaConsistency() override
     {
         assertInitialized();
-        return current_metadata->supportsSchemaEvolution();
+        return current_metadata->needsUpdateForSchemaConsistency();
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -206,14 +210,6 @@ public:
     {
         assertInitialized();
         return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
-    }
-
-    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
-    {
-        if (current_metadata)
-        {
-            current_metadata->sendTemporaryStateToStorageSnapshot(storage_snapshot);
-        }
     }
 
 #if USE_PARQUET

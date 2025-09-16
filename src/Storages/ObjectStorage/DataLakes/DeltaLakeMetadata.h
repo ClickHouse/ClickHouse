@@ -32,10 +32,11 @@ class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
     static constexpr auto name = "DeltaLake";
+    const char * getName() const override { return name; }
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema() const override { return schema; }
+    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 

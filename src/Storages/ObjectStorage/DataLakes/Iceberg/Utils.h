@@ -73,27 +73,6 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
-
-
-template <typename T>
-class OneThreadProtecting : public boost::noncopyable
-{
-
-public:
-    OneThreadProtecting(OneThreadProtecting<T> &&) = delete;
-    OneThreadProtecting & operator=(OneThreadProtecting<T> &&) = delete;
-
-    OneThreadProtecting();
-
-    void set(T value_);
-    const T& get() const;
-    T& get();
-
-private:
-    std::optional<T> value = std::nullopt;
-    mutable std::mutex mutex;
-    uint64_t current_thread_id = 0;
-};
 }
 
 #endif

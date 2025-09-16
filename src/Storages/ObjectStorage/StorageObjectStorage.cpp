@@ -277,36 +277,20 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 {
     StorageInMemoryMetadata metadata;
 
-    bool updated = configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
-
-    if (!configuration->hasExternalDynamicMetadata())
-        return;
-
-    if (!updated)
+    if (!configuration->needsUpdateForSchemaConsistency())
     {
-        /// Force the update.
         configuration->update(
             object_storage,
             query_context,
-            /* if_not_updated_before */ false);
+            /* if_not_updated_before */ true);
+        return;
     }
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false);
 
-    auto columns = configuration->tryGetTableStructureFromMetadata();
-    if (!columns.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
-
-    metadata.setColumns(std::move(columns.value()));
-    setInMemoryMetadata(metadata);
-}
-
-StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
-{
-    auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
-    configuration->sendTemporaryStateToStorageSnapshot(snapshot);
-    return snapshot;
+    setInMemoryMetadata(configuration->getStorageSnapshotMetadata(query_context));
 }
 
 

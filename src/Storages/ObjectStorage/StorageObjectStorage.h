@@ -154,8 +154,6 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const override;
-
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);

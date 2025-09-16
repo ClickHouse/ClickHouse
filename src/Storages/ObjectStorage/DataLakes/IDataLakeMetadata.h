@@ -53,7 +53,9 @@ public:
         = 0;
 
     /// Table schema from data lake metadata.
-    virtual NamesAndTypesList getTableSchema() const = 0;
+    virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
+
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
@@ -79,9 +81,7 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const { }
 
-    virtual bool supportsSchemaEvolution() const { return false; }
-
-    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
+    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
@@ -140,8 +140,10 @@ protected:
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented", method);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented for {}", method, getName());
     }
+
+    virtual const char * getName() const = 0;
 };
 
 using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;

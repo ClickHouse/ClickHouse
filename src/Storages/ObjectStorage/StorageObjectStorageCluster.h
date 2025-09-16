@@ -34,8 +34,6 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const override;
-
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
