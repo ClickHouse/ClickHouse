@@ -171,7 +171,7 @@ private:
             const auto * list_type = static_cast<arrow::ListType *>(field_type.get());
             const auto value_field = list_type->value_field();
             auto index_snapshot = current_start_index;
-            calculateFieldIndices(*value_field, Nested::concatenateName(field_name, "list.element"), current_start_index, result, name_prefix);
+            calculateFieldIndices(*value_field, field_name, current_start_index, result, name_prefix);
             // The nested struct field has the same name as this list field.
             // rewrite it back to the original value.
             index_info.first = index_snapshot;
@@ -231,7 +231,7 @@ private:
         }
         else if (const auto * type_array = typeid_cast<const DB::DataTypeArray *>(nested_type.get()))
         {
-            findRequiredIndices(Nested::concatenateName(name, "list.element"), Nested::concatenateName(transformed_name, "list.element"), header_index, type_array->getNestedType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
+            findRequiredIndices(name, transformed_name, header_index, type_array->getNestedType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
         else if (const auto * type_map = typeid_cast<const DB::DataTypeMap *>(nested_type.get()))
@@ -242,15 +242,6 @@ private:
         }
         auto name_to_search = transformed_name;
         auto it = field_indices.find(name_to_search);
-        if (it == field_indices.end())
-        {
-            /// There are some transforms with non equals input and output formats
-            /// For example geoparquet has binary as input format and 3d list in output format
-            /// In such situation we need to delete all list attributes from name to get correct representation
-            while (name_to_search.ends_with("list.element"))
-                name_to_search = name_to_search.substr(0, name_to_search.size() - 13);
-            it = field_indices.find(name_to_search);
-        }
         if (it == field_indices.end())
         {
             if (!allow_missing_columns)
