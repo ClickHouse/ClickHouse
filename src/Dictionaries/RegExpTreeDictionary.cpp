@@ -322,11 +322,16 @@ void RegExpTreeDictionary::loadData()
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
 
-        Block block;
-        for (auto guard = io.guard(); executor.pull(block);)
+        auto func = [&]()
         {
-            initRegexNodes(block);
-        }
+            Block block;
+            while (executor.pull(block))
+            {
+                initRegexNodes(block);
+            }
+        };
+        io.executeWithCallbacks(std::move(func));
+
         initGraph();
         if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");

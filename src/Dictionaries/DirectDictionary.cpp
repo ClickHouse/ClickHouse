@@ -95,44 +95,50 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     PullingPipelineExecutor executor(pipeline);
 
     Stopwatch watch;
-    Block block;
     size_t block_num = 0;
     size_t rows_num = 0;
-    for (auto guard = io.guard(); executor.pull(block);)
+
+    auto func = [&]()
     {
-        if (block.empty())
-            continue;
-
-        ++block_num;
-        rows_num += block.rows();
-        convertToFullIfSparse(block);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
-            block_key_columns, arena_holder.getComplexKeyArena());
-        auto block_keys = block_keys_extractor.extractAllKeys();
-
-        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+        Block block;
+        while (executor.pull(block))
         {
-            if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            if (block.empty())
                 continue;
 
-            const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
-            fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
-        }
+            ++block_num;
+            rows_num += block.rows();
+            convertToFullIfSparse(block);
 
-        for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
-        {
-            auto block_key = block_keys[block_key_index];
-            key_to_fetched_index[block_key] = fetched_key_index;
-            ++fetched_key_index;
-        }
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < dictionary_keys_size; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-        block_key_columns.clear();
-    }
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
+                block_key_columns, arena_holder.getComplexKeyArena());
+            auto block_keys = block_keys_extractor.extractAllKeys();
+
+            for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+            {
+                if (!request.shouldFillResultColumnWithIndex(attribute_index))
+                    continue;
+
+                const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
+                fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
+            }
+
+            for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
+            {
+                auto block_key = block_keys[block_key_index];
+                key_to_fetched_index[block_key] = fetched_key_index;
+                ++fetched_key_index;
+            }
+
+            block_key_columns.clear();
+        }
+    };
+    io.executeWithCallbacks(std::move(func));
+
     LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
         block_num, rows_num, watch.elapsedMilliseconds());
 
@@ -263,36 +269,42 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
-    Block block;
-    for (auto guard = io.guard(); executor.pull(block);)
+
+    auto func = [&]()
     {
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        size_t block_keys_size = block_keys_extractor.getKeysSize();
-
-        for (size_t i = 0; i < block_keys_size; ++i)
+        Block block;
+        while (executor.pull(block))
         {
-            auto block_key = block_keys_extractor.extractCurrentKey();
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < dictionary_keys_size; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-            const auto * it = requested_key_to_index.find(block_key);
-            assert(it);
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
+            size_t block_keys_size = block_keys_extractor.getKeysSize();
 
-            auto & result_data_found_indexes = it->getMapped();
-            for (size_t result_data_found_index : result_data_found_indexes)
+            for (size_t i = 0; i < block_keys_size; ++i)
             {
-                /// block_keys_size cannot be used, due to duplicates.
-                keys_found += !result_data[result_data_found_index];
-                result_data[result_data_found_index] = true;
+                auto block_key = block_keys_extractor.extractCurrentKey();
+
+                const auto * it = requested_key_to_index.find(block_key);
+                assert(it);
+
+                auto & result_data_found_indexes = it->getMapped();
+                for (size_t result_data_found_index : result_data_found_indexes)
+                {
+                    /// block_keys_size cannot be used, due to duplicates.
+                    keys_found += !result_data[result_data_found_index];
+                    result_data[result_data_found_index] = true;
+                }
+
+                block_keys_extractor.rollbackCurrentKey();
             }
 
-            block_keys_extractor.rollbackCurrentKey();
+            block_key_columns.clear();
         }
 
-        block_key_columns.clear();
-    }
+    };
+    io.executeWithCallbacks(std::move(func));
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);

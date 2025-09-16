@@ -558,11 +558,15 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
-        Block block;
-        for (auto guard = io.guard(); executor.pull(block);)
+        auto func = [&]()
         {
-            blockToAttributes(block);
-        }
+            Block block;
+            while (executor.pull(block))
+            {
+                blockToAttributes(block);
+            }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {
@@ -711,26 +715,30 @@ void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr qu
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        for (auto guard = io.guard(); executor.pull(block);)
+        auto func = [&]()
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                convertToFullIfSparse(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {

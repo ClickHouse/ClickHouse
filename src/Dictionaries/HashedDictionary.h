@@ -889,26 +889,30 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData(ContextM
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        for (auto guard = io.guard(); executor.pull(block);)
+        auto func = [&]()
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                convertToFullIfSparse(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {
@@ -1168,17 +1172,20 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
-        Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-
-        for (auto guard = io.guard(); executor.pull(block);)
+        auto func = [&]()
         {
-            resize(block.rows());
-            if (parallel_loader)
-                parallel_loader->addBlock(block);
-            else
-                blockToAttributes(block, arena_holder, /* shard= */ 0);
-        }
+            Block block;
+            while (executor.pull(block))
+            {
+                resize(block.rows());
+                if (parallel_loader)
+                    parallel_loader->addBlock(block);
+                else
+                    blockToAttributes(block, arena_holder, /* shard= */ 0);
+            }
+        };
+        io.executeWithCallbacks(std::move(func));
 
         if (parallel_loader)
             parallel_loader->finish();

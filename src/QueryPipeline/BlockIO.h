@@ -41,40 +41,18 @@ struct BlockIO
     void onException(bool log_as_error=true);
     void onCancelOrConnectionLoss();
 
-private:
-    class Guard
+    template<typename Func>
+    void executeWithCallbacks(Func && func)
+    try
     {
-    public:
-        explicit Guard(BlockIO & io_) : io(io_) {}
-
-        ~Guard()
-        try
-        {
-            const int uncaught = std::uncaught_exceptions();
-            LOG_INFO(getLogger("BlockIO::Guard"), "uncaught = {}, uncaught_on_enter = {}, (std::current_exception != NULL) = {}", uncaught, uncaught_on_enter, std::current_exception() != NULL);
-            if (uncaught > uncaught_on_enter)
-                io.onException();
-            else
-                io.onFinish();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("BlockIO::Guard");
-        }
-
-        Guard(const Guard &) = delete;
-        Guard & operator=(const Guard &) = delete;
-        Guard(Guard &&) = delete;
-        Guard & operator=(Guard &&) = delete;
-
-    private:
-        BlockIO & io;
-        const int uncaught_on_enter = std::uncaught_exceptions();
-    };
-
-public:
-    /// RAII guard for onFinish/onException handling.
-    [[nodiscard]] Guard guard();
+        func();
+        onFinish();
+    }
+    catch (...)
+    {
+        onException();
+        throw;
+    }
 
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;

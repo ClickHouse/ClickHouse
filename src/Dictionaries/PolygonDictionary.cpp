@@ -297,9 +297,13 @@ void IPolygonDictionary::loadData()
 
     DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
     io.pipeline.setConcurrencyControl(false);
-    Block block;
-    for (auto guard = io.guard(); executor.pull(block);)
-        blockToAttributes(block);
+    auto func = [&]()
+    {
+        Block block;
+        while (executor.pull(block))
+            blockToAttributes(block);
+    };
+    io.executeWithCallbacks(std::move(func));
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;

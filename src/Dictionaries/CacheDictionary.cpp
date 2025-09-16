@@ -651,41 +651,46 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
             io.pipeline.setConcurrencyControl(false);
-            Block block;
-            for (auto guard = io.guard(); executor.pull(block);)
+
+            auto func = [&]()
             {
-                Columns key_columns;
-                key_columns.reserve(skip_keys_size_offset);
-
-                convertToFullIfSparse(block);
-                auto block_columns = block.getColumns();
-
-                /// Split into keys columns and attribute columns
-                for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                Block block;
+                while (executor.pull(block))
                 {
-                    key_columns.emplace_back(*block_columns.begin());
-                    block_columns.erase(block_columns.begin());
+                    Columns key_columns;
+                    key_columns.reserve(skip_keys_size_offset);
+
+                    convertToFullIfSparse(block);
+                    auto block_columns = block.getColumns();
+
+                    /// Split into keys columns and attribute columns
+                    for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                    {
+                        key_columns.emplace_back(*block_columns.begin());
+                        block_columns.erase(block_columns.begin());
+                    }
+
+                    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
+                    auto keys_extracted_from_block = keys_extractor.extractAllKeys();
+
+                    for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
+                    {
+                        auto & column_to_update = fetched_columns_during_update[index_of_attribute];
+                        auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
+                        column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
+                    }
+
+                    for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
+                    {
+                        auto fetched_key_from_source = keys_extracted_from_block[i];
+
+                        not_found_keys.erase(fetched_key_from_source);
+                        update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
+                        found_keys_in_source.emplace_back(fetched_key_from_source);
+                    }
                 }
-
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
-                auto keys_extracted_from_block = keys_extractor.extractAllKeys();
-
-                for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
-                {
-                    auto & column_to_update = fetched_columns_during_update[index_of_attribute];
-                    auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
-                }
-
-                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
-                {
-                    auto fetched_key_from_source = keys_extracted_from_block[i];
-
-                    not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
-                    found_keys_in_source.emplace_back(fetched_key_from_source);
-                }
-            }
+            };
+            io.executeWithCallbacks(std::move(func));
 
             PaddedPODArray<KeyType> not_found_keys_in_source;
             not_found_keys_in_source.reserve(not_found_keys.size());
