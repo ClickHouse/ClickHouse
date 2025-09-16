@@ -228,3 +228,4 @@ def test_yt_dictionary_cyrillic_strings(started_cluster):
         )
         == "привет\nпривет\nпривет!!!\n"
     )
+    yt.remove_table(path)
