@@ -96,7 +96,7 @@ protected:
     Path blob_path;
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
-    bool is_from_disk = false;
+    DiskPtr disk;
 };
 
 }
