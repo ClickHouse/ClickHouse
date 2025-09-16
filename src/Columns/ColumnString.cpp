@@ -272,6 +272,26 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
     return res;
 }
 
+StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    /// Serialize string values with 0 byte at the end for compatibility
+    /// with old versions where we stored 0 byte at the end of each string value.
+    size_t string_size_with_zero_byte = sizeAt(n) + 1;
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
+    char * pos = arena.allocContinue(res.size, begin);
+    memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
+    memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
+    /// Add 0 byte at the end.
+    *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
+    res.data = pos;
+
+    return res;
+}
+
+
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t string_size = sizeAt(n);
@@ -310,6 +330,21 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 
     offsets.push_back(new_size);
     return pos + string_size;
+}
+
+const char * ColumnString::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    /// Serialized value contains string values with 0 byte at the end for compatibility.
+    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size_with_zero_byte);
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + string_size_with_zero_byte - 1;
+    chars.resize(new_size);
+    memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
+
+    offsets.push_back(new_size);
+    return pos + string_size_with_zero_byte;
 }
 
 const char * ColumnString::skipSerializedInArena(const char * pos) const
