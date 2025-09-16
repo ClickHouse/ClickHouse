@@ -150,6 +150,7 @@ thread_local std::string_view last_flush_profile;
 
 void setLastFlushProfile(const char * filename)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto last_flush_profile_size = std::min(last_flush_profile_buffer.size(), strlen(filename));
     std::memcpy(last_flush_profile_buffer.data(), filename, last_flush_profile_size);
     last_flush_profile = std::string_view{last_flush_profile_buffer.data(), last_flush_profile_size};
