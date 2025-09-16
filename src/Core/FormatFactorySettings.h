@@ -184,7 +184,7 @@ Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
 Use Parquet reader v3. Experimental.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
 )", 0) \
@@ -1451,6 +1451,9 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
+)", 0) \
+    DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
+Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types

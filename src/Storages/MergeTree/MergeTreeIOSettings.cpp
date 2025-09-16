@@ -31,6 +31,9 @@ namespace Setting
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsUInt64 filesystem_prefetches_limit;
+    extern const SettingsBool secondary_indices_enable_bulk_filtering;
+    extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
+    extern const SettingsUInt64 merge_tree_min_rows_for_seek;
 }
 
 namespace MergeTreeSetting
@@ -88,7 +91,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
 {
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & context, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
 {
     const auto & settings = context->getSettingsRef();
     return {
@@ -105,6 +108,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & conte
         .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
+        .secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering],
+        .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
+        .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
         .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
     };
 }

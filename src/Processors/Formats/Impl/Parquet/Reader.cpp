@@ -1391,10 +1391,13 @@ bool Reader::initializePage(const char * & data_ptr, const char * data_end, size
         if (end_row_idx.has_value() && *end_row_idx - next_row_idx != *num_rows_in_page)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows in page header doesn't match offset index: {} != {}", *num_rows_in_page, *end_row_idx - next_row_idx);
 
-        if (next_row_idx + *num_rows_in_page <= target_row_idx)
-            return false;
-
         page.end_row_idx = next_row_idx + *num_rows_in_page;
+
+        if (*page.end_row_idx <= target_row_idx)
+        {
+            page.next_row_idx = *page.end_row_idx;
+            return false;
+        }
     }
 
     /// Get information about page layout and encoding out of page header.

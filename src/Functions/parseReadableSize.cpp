@@ -245,70 +245,100 @@ using FunctionParseReadableSize = FunctionParseReadable<NameParseReadableSize, E
 using FunctionParseReadableSizeOrNull = FunctionParseReadable<NameParseReadableSizeOrNull, ErrorHandling::Null>;
 using FunctionParseReadableSizeOrZero = FunctionParseReadable<NameParseReadableSizeOrZero, ErrorHandling::Zero>;
 
-FunctionDocumentation parseReadableSize_documentation {
-    .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it throws an exception.",
-    .syntax = "parseReadableSize(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}},
-    .returned_value = {"Number of bytes, rounded up to the nearest integer", {"UInt64"}},
-    .examples = {
-        {
-            "basic",
-            "SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes, parseReadableSize(readable_sizes) AS sizes;",
-            R"(
+FunctionDocumentation::Description description_parseReadableSize = R"(
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it throws an exception.
+
+The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+)";
+FunctionDocumentation::Syntax syntax_parseReadableSize = "parseReadableSize(x)";
+FunctionDocumentation::Arguments arguments_parseReadableSize = {
+    {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
+};
+FunctionDocumentation::ReturnedValue returned_value_parseReadableSize = {"Returns the number of bytes, rounded up to the nearest integer.", {"UInt64"}};
+FunctionDocumentation::Examples examples_parseReadableSize = {
+{
+    "Usage example",
+    R"(
+SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes, parseReadableSize(readable_sizes) AS sizes;
+    )",
+    R"(
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
 │ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
-└────────────────┴─────────┘)"
-        },
-    },
-    .category = FunctionDocumentation::Category::Other,
+└────────────────┴─────────┘
+    )"
+},
 };
+FunctionDocumentation::IntroducedIn introduced_in_parseReadableSize = {24, 6};
+FunctionDocumentation::Category category_parseReadableSize = FunctionDocumentation::Category::Other;
+FunctionDocumentation parseReadableSize_documentation = {description_parseReadableSize, syntax_parseReadableSize, arguments_parseReadableSize, returned_value_parseReadableSize, examples_parseReadableSize, introduced_in_parseReadableSize, category_parseReadableSize};
 
-FunctionDocumentation parseReadableSizeOrNull_documentation {
-    .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `NULL`",
-    .syntax = "parseReadableSizeOrNull(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}},
-    .returned_value = {"Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input", {"Nullable(UInt64)"}},
-    .examples = {
-        {
-            "basic",
-            "SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes, parseReadableSizeOrNull(readable_sizes) AS sizes;",
-            R"(
+FunctionDocumentation::Description description_parseReadableSizeOrNull = R"(
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `NULL`.
+
+The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+)";
+FunctionDocumentation::Syntax syntax_parseReadableSizeOrNull = "parseReadableSizeOrNull(x)";
+FunctionDocumentation::Arguments arguments_parseReadableSizeOrNull = {
+    {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
+};
+FunctionDocumentation::ReturnedValue returned_value_parseReadableSizeOrNull = {"Returns the number of bytes, rounded up to the nearest integer, or `NULL` if unable to parse the input", {"Nullable(UInt64)"}};
+FunctionDocumentation::Examples examples_parseReadableSizeOrNull = {
+{
+    "Usage example",
+    R"(
+SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes, parseReadableSizeOrNull(readable_sizes) AS sizes;
+    )",
+    R"(
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
 │ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
 │ invalid        │    ᴺᵁᴸᴸ │
-└────────────────┴─────────┘)"
-        },
-    },
-    .category = FunctionDocumentation::Category::Other,
+└────────────────┴─────────┘
+    )"
+},
 };
+FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrNull = {24, 6};
+FunctionDocumentation::Category category_parseReadableSizeOrNull = FunctionDocumentation::Category::Other;
+FunctionDocumentation parseReadableSizeOrNull_documentation = {description_parseReadableSizeOrNull, syntax_parseReadableSizeOrNull, arguments_parseReadableSizeOrNull, returned_value_parseReadableSizeOrNull, examples_parseReadableSizeOrNull, introduced_in_parseReadableSizeOrNull, category_parseReadableSizeOrNull};
 
-FunctionDocumentation parseReadableSizeOrZero_documentation {
-    .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`",
-    .syntax = "parseReadableSizeOrZero(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}},
-    .returned_value = {"Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input.", {"UInt64"}},
-    .examples = {
-        {
-            "basic",
-            "SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes, parseReadableSizeOrZero(readable_sizes) AS sizes;",
-            R"(
+FunctionDocumentation::Description description_parseReadableSizeOrZero = R"(
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `0`.
+
+The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+)";
+FunctionDocumentation::Syntax syntax_parseReadableSizeOrZero = "parseReadableSizeOrZero(x)";
+FunctionDocumentation::Arguments arguments_parseReadableSizeOrZero = {
+    {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
+};
+FunctionDocumentation::ReturnedValue returned_value_parseReadableSizeOrZero = {"Returns the number of bytes, rounded up to the nearest integer, or `0` if unable to parse the input.", {"UInt64"}};
+FunctionDocumentation::Examples examples_parseReadableSizeOrZero = {
+{
+    "Usage example",
+    R"(
+SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes, parseReadableSizeOrZero(readable_sizes) AS sizes;
+    )",
+    R"(
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
 │ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
 │ invalid        │       0 │
-└────────────────┴─────────┘)",
-        },
-    },
-    .category = FunctionDocumentation::Category::Other,
+└────────────────┴─────────┘
+    )"
+},
 };
+FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrZero = {24, 6};
+FunctionDocumentation::Category category_parseReadableSizeOrZero = FunctionDocumentation::Category::Other;
+FunctionDocumentation parseReadableSizeOrZero_documentation = {description_parseReadableSizeOrZero, syntax_parseReadableSizeOrZero, arguments_parseReadableSizeOrZero, returned_value_parseReadableSizeOrZero, examples_parseReadableSizeOrZero, introduced_in_parseReadableSizeOrZero, category_parseReadableSizeOrZero};
 
 REGISTER_FUNCTION(ParseReadableSize)
 {
