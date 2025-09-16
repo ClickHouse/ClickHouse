@@ -19,15 +19,14 @@ void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
 
     for (const auto & entry : entries)
     {
-        // Strip whitespace and control characters from header name for validation
+        /// Strip whitespace and control characters from header name for validation
         std::string normalized_name = entry.name;
         normalized_name.erase(
-            std::remove_if(normalized_name.begin(), normalized_name.end(), [](char c) {
-                return std::iscntrl(static_cast<unsigned char>(c)) || 
-                        std::isspace(static_cast<unsigned char>(c));
-            }),
-            normalized_name.end()
-        );
+            std::remove_if(
+                normalized_name.begin(),
+                normalized_name.end(),
+                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
+            normalized_name.end());
 
         if (forbidden_headers.contains(normalized_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
