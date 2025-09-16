@@ -2,8 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
@@ -24,10 +22,9 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value>
+template <typename Value, typename CumulativeHistogramValue>
 struct QuantileHistogram
 {
-    using CumulativeHistogramValue = Float64;
     using UnderlyingType = NativeType<Value>;
     using Hasher = HashCRC32<UnderlyingType>;
 
@@ -71,11 +68,8 @@ struct QuantileHistogram
         if (0 == size)
             return Value();
 
-        Float64 res = getFloatInterpolatedImpl(level);
-        if constexpr (is_decimal<Value>)
-            return Value(static_cast<typename Value::NativeType>(res));
-        else
-            return static_cast<Value>(res);
+        Value res = getInterpolatedImpl(level);
+        return res;
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -89,36 +83,16 @@ struct QuantileHistogram
                 result[i] = Value();
             return;
         }
-
-        std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
-        Float64 * res = res_holder.get();
-        getManyFloatInterpolatedImpl(levels, indices, num_levels, res);
-        for (size_t i = 0; i < num_levels; ++i)
-        {
-            if constexpr (is_decimal<Value>)
-                result[i] = Value(static_cast<typename Value::NativeType>(res[i]));
-            else
-                result[i] = Value(res[i]);
-        }
-    }
-
-    Float64 getFloat(Float64 level) const
-    {
-        return getFloatInterpolatedImpl(level);
-    }
-
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
-    {
-        getManyFloatInterpolatedImpl(levels, indices, num_levels, result);
+        getManyInterpolatedImpl(levels, indices, num_levels, result);
     }
 
 private:
-    Float64 getFloatInterpolatedImpl(Float64 level) const
+    Value getInterpolatedImpl(Float64 level) const
     {
         size_t size = map.size();
 
         if (size < 2)
-            return std::numeric_limits<Float64>::quiet_NaN();
+            return std::numeric_limits<Value>::quiet_NaN();
 
         /// Copy the data to a temporary array to get the element you need in order.
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
@@ -134,19 +108,19 @@ private:
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         Pair max_bucket = array[size - 1];
         if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
-            return std::numeric_limits<Float64>::quiet_NaN();
+            return std::numeric_limits<Value>::quiet_NaN();
         CumulativeHistogramValue max_position = max_bucket.second;
         Float64 position = max_position * level;
         return quantileInterpolated(array, size, position);
     }
 
-    void getManyFloatInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
+    void getManyInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
     {
         size_t size = map.size();
         if (size < 2)
         {
             for (size_t i = 0; i < num_levels; ++i)
-                result[i] = std::numeric_limits<Float64>::quiet_NaN();
+                result[i] = std::numeric_limits<Value>::quiet_NaN();
             return;
         }
 
@@ -169,7 +143,7 @@ private:
         {
             if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             {
-                result[indices[j]] = std::numeric_limits<Float64>::quiet_NaN();
+                result[indices[j]] = std::numeric_limits<Value>::quiet_NaN();
             }
             else
             {
@@ -180,7 +154,7 @@ private:
     }
 
     /// Calculate quantile, using linear interpolation between the bucket's lower and upper bound
-    Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
+    Value quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
         const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return a.second < b; });
         if (upper_bound_it == array)
@@ -188,7 +162,7 @@ private:
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
-                return upper_bound_it->first * (position / upper_bound_it->second);
+                return static_cast<Value>(upper_bound_it->first * (position / upper_bound_it->second));
             }
             else
             {
@@ -204,51 +178,67 @@ private:
         const auto * lower_bound_it = upper_bound_it - 1;
 
         UnderlyingType histogram_bucket_lower_bound = lower_bound_it->first;
-        Float64 histogram_bucket_lower_value = lower_bound_it->second;
+        CumulativeHistogramValue histogram_bucket_lower_value = lower_bound_it->second;
         UnderlyingType histogram_bucket_upper_bound = upper_bound_it->first;
-        Float64 histogram_bucket_upper_value = upper_bound_it->second;
+        CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
 
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value);
+        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value));
     }
 };
 
-template <typename Value>
+template <typename Value, typename CumulativeHistogramValue>
 using FuncQuantileHistogram = AggregateFunctionQuantile<
     Value,
-    QuantileHistogram<Value>,
+    QuantileHistogram<Value, CumulativeHistogramValue>,
     NameQuantileHistogram,
-    false,
-    true,
-    Float64,
+    CumulativeHistogramValue,
+    void,
     false,
     false>;
-template <typename Value>
+template <typename Value, typename CumulativeHistogramValue>
 using FuncQuantilesHistogram = AggregateFunctionQuantile<
     Value,
-    QuantileHistogram<Value>,
+    QuantileHistogram<Value, CumulativeHistogramValue>,
     NameQuantilesHistogram,
-    false,
-    true,
-    Float64,
+    CumulativeHistogramValue,
+    void,
     true,
     false>;
 
-template <template <typename> class Function>
+template <template <typename, typename> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    if (argument_types.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
+    if (argument_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two arguments", name);
 
-    const DataTypePtr & argument_type = argument_types[0];
-    WhichDataType which(argument_type);
-
-    if (which.idx == TypeIndex::Float32) return std::make_shared<Function<Float32>>(argument_types, params);
-    if (which.idx == TypeIndex::Float64) return std::make_shared<Function<Float64>>(argument_types, params);
-
+    const DataTypePtr & upper_bound_argument_type = argument_types[0];
+    WhichDataType which_upper_bound(upper_bound_argument_type);
+    const DataTypePtr & cumulative_histogram_value_argument_type = argument_types[1];
+    WhichDataType which_cumulative_histogram_value(cumulative_histogram_value_argument_type);
+    if (which_upper_bound.idx == TypeIndex::Float32)
+    {
+        if (isFloat(which_cumulative_histogram_value.idx))
+            return std::make_shared<Function<Float32, Float64>>(argument_types, params);
+        else if (isUInt(which_cumulative_histogram_value.idx))
+            return std::make_shared<Function<Float32, UInt64>>(argument_types, params);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        cumulative_histogram_value_argument_type->getName(), name);
+    }
+    else if (which_upper_bound.idx == TypeIndex::Float64)
+    {
+        if (isFloat(which_cumulative_histogram_value.idx))
+            return std::make_shared<Function<Float64, Float64>>(argument_types, params);
+        else if (isUInt(which_cumulative_histogram_value.idx))
+            return std::make_shared<Function<Float64, UInt64>>(argument_types, params);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                    cumulative_histogram_value_argument_type->getName(), name);
+    }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                    argument_type->getName(), name);
+                    upper_bound_argument_type->getName(), name);
 }
 
 }

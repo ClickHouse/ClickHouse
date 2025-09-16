@@ -388,8 +388,7 @@ using FuncQuantileExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
     std::conditional_t<interpolated, NameQuantileExactWeightedInterpolated, NameQuantileExactWeighted>,
-    true,
-    false,
+    UInt64,
     std::conditional_t<return_float, Float64, void>,
     false,
     false>;
@@ -398,8 +397,7 @@ using FuncQuantilesExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
     std::conditional_t<interpolated, NameQuantilesExactWeightedInterpolated, NameQuantilesExactWeighted>,
-    true,
-    false,
+    UInt64,
     std::conditional_t<return_float, Float64, void>,
     true,
     false>;

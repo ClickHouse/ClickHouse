@@ -9,6 +9,28 @@ FROM (
 GROUP BY number
 ORDER BY number;
 
+SELECT quantileHistogram(0.9)(toFloat32(args.1), args.2 + number) -- Float32 upper bound values
+FROM (
+    SELECT arrayJoin(arrayZip(
+        [0.0, 0.5, 1.0, +Inf], 
+        [0.0, 10.0, 11.0, 12.0]
+    )) AS args, number
+    FROM numbers(10)
+)
+GROUP BY number
+ORDER BY number;
+
+SELECT quantileHistogram(0.9)(args.1, args.2 + number) -- UInt cumulative histogram values
+FROM (
+    SELECT arrayJoin(arrayZip(
+        [0.0, 0.5, 1.0, +Inf], 
+        [0, 10, 11, 12]
+    )) AS args, number
+    FROM numbers(10)
+)
+GROUP BY number
+ORDER BY number;
+
 SELECT quantileHistogram(0.9)(args.1, args.2) -- return NaN if no inf bucket
 FROM (
     SELECT arrayJoin(arrayZip(
