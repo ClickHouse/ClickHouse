@@ -11,8 +11,8 @@ DB_A="db_overlay_a_${SUF}"
 DB_B="db_overlay_b_${SUF}"
 DB_OVL="dboverlay_${SUF}"
 
-T_A="t_a_${SUF}"
-T_B="t_b_${SUF}"
+T_A="t_a"
+T_B="t_b"
 
 USER_OK="u_ok_${SUF}"
 USER_BAD="u_bad_${SUF}"

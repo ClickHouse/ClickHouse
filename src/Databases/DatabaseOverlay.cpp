@@ -215,10 +215,6 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
     return result;
 }
 
-/*
- * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
- * To use DatabaseOverlay, it must be constructed programmatically in code
- */
 ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
@@ -284,6 +280,9 @@ bool DatabaseOverlay::isReadOnly() const
 
 UUID DatabaseOverlay::getUUID() const
 {
+    // In the case of a non-readonly overlay database (typically created via clickhouse-local),
+    // the underlying database is not independently registered in the global context.
+    // Therefore, for all practical purposes, the overlay database acts as the underlying database.
     UUID result = UUIDHelpers::Nil;
     if (!readonly)
     {
@@ -397,7 +396,8 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
 {
     // `skip_not_loaded = true` is used only in asynchronous metrics.
     // We don't need to report metrics twice—once for the underlying
-    // database and again for its overlay.
+    // database and again for its overlay. It is used here to detect
+    // A DROP table operation and return an empty iterator.
     if (readonly && skip_not_loaded)
         return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
     Tables tables;
