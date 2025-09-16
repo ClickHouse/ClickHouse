@@ -224,7 +224,7 @@ def test_yt_dictionary_cyrillic_strings(started_cluster):
     instance.query(
         f"CREATE DICTIONARY yt_dict(id UInt64, value String) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0)) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
     )
-    # time.sleep(100000)
+
     assert (
         instance.query(
             "SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
