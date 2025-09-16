@@ -384,11 +384,11 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(ContextMutablePtr query_
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
-        return source_ptr->loadIds(std::move(query_context), std::move(ids));
+        return source_ptr->loadIds(std::move(query_context), ids);
     }
 
     auto requested_rows = std::views::iota(size_t{0}, requested_keys.size()) | std::ranges::to<std::vector>();
-    return source_ptr->loadKeys(query_context, key_columns, std::move(requested_rows));
+    return source_ptr->loadKeys(query_context, key_columns, requested_rows);
 }
 
 // NOTE(mstetsyuk): this way we don't run io.onFinish or io.onException (and so no logging), but other that this, everything should work
