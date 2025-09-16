@@ -463,7 +463,7 @@ void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, Loa
 
 void DatabaseOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
-    if (this->readonly)
+    if (readonly)
         return;
     for (auto & db : databases)
         if (!db->isReadOnly())
