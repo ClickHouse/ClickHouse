@@ -57,6 +57,10 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/datetime)";
         else if (type.starts_with("DateTime64")) /// "DateTime64(P)", "DateTime64(3)", "DateTime64(6)", ...
             result += "`](/sql-reference/data-types/datetime64)";
+        else if (type == "Time")
+            result += "`](/sql-reference/data-types/time)";
+        else if (type.starts_with("Time64")) //// "Time64(P)", "Time64(3)", ...
+            result += "`](/sql-reference/data-types/time64)";
         else if (type == "Enum")
             result += "`](/sql-reference/data-types/enum)";
         else if (type == "UUID")
