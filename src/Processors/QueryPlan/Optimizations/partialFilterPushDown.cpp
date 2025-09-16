@@ -20,14 +20,14 @@ namespace
 ///     (n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY') OR
 ///     (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE')
 /// the goal is to extract separate partial filters for each table
-/// for n1: 
-///     n1.n_name = 'FRANCE' OR n1.n_name = 'GERMANY' 
-/// for n2: 
+/// for n1:
+///     n1.n_name = 'FRANCE' OR n1.n_name = 'GERMANY'
+/// for n2:
 ///     n2.n_name = 'GERMANY' OR n2.n_name = 'FRANCE'
 ///
 /// The idea is to traverse the all conjunctions and disjunctions in the original condition and
 ///  1. replace elements of conjunctions that depend on other columns with 'True'
-///  2. replace the whole disjunctions with 'True' if any element depends on other columns 
+///  2. replace the whole disjunctions with 'True' if any element depends on other columns
 struct ConditionList
 {
     enum ConditionType
