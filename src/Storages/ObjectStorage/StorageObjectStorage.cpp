@@ -221,7 +221,7 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
-    /// This will update metadata for table functions which contains specific information about table state (e.g. for Iceberg)
+    /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
     if (!do_lazy_init && mode == LoadingStrictnessLevel::CREATE)
         updateExternalDynamicMetadataIfExists(context);
 }

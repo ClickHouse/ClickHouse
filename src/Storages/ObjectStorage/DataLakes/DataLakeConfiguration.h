@@ -198,6 +198,7 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
+    /// This method should work even if metadata is not initialized
     bool needsUpdateForSchemaConsistency() const override
     {
 #if USE_AVRO
