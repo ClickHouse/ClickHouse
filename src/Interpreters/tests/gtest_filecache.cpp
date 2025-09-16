@@ -1203,12 +1203,12 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 
         /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stat.compressed_size, 62);
+        ASSERT_EQ(stat.compressed_size, 64);
 
         auto reader = stream.getReadStream();
         auto * read_buf = reader.getHolder();
         const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
-        ASSERT_EQ(internal_buffer.size(), 62);
+        ASSERT_EQ(internal_buffer.size(), 64);
     }
 
     /// Temporary data stored on disk
@@ -1226,7 +1226,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         stream->write(block);
         auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stat.compressed_size, 62);
+        ASSERT_EQ(stat.compressed_size, 64);
     }
 }
 
