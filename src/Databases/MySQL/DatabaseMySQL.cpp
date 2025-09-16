@@ -516,15 +516,20 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     detachTablePermanently(local_context, table_name);
 }
 
-void destroy()
+void DatabaseMySQL::destroy()
 {
-    if (!quit)
+    const bool was_quit = quit.exchange(true, std::memory_order_relaxed);
+    if (was_quit)
+        return;
+
+
     {
-        quit = true;
-        std::lock_guard lock{mutex};
+        std::lock_guard lk{mutex};
+        cond.notify_one();
     }
-    cond.notify_one();
-    thread.join();
+
+    if (thread.joinable())
+        thread.join();
 }
 
 DatabaseMySQL::~DatabaseMySQL()
