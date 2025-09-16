@@ -302,12 +302,17 @@ struct ToDate32TransformFromSecondsOrDays
         constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
         if constexpr (is_signed_v<FromType>)
-            if (from < daynum_min_offset)
+        {
+            bool is_nan = false;
+            if constexpr (is_floating_point<FromType>)
+                 is_nan = isNaN(from);
+            if (is_nan || from < daynum_min_offset)
             {
-                if (overflow_throw) [[unlikely]]
+                if constexpr (overflow_throw)
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
                 return daynum_min_offset;
             }
+        }
 
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
             if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
