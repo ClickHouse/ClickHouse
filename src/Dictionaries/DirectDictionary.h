@@ -101,7 +101,7 @@ public:
     void applySettings(const Settings & settings);
 
 private:
-    Pipe getSourcePipe(QueryPipeline pipeline, const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourcePipe(QueryPipeline & pipeline, const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
     BlockIO loadKeys(ContextMutablePtr query_context, const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const;
 
     const DictionaryStructure dict_struct;

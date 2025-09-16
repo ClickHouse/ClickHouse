@@ -91,7 +91,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     auto [query_scope, query_context] = createLoadQueryScope(context);
     BlockIO io = loadKeys(query_context, requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(std::move(io.pipeline), key_columns, requested_keys));
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     Stopwatch watch;
@@ -259,7 +259,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto [query_scope, query_context] = createLoadQueryScope(context);
     BlockIO io = loadKeys(query_context, requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(std::move(io.pipeline), key_columns, requested_keys));
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
@@ -337,13 +337,20 @@ template <typename TExecutor = PullingPipelineExecutor>
 class SourceFromQueryPipeline : public ISource
 {
 public:
-    explicit SourceFromQueryPipeline(QueryPipeline pipeline_, ContextPtr context_ = nullptr)
+    explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
         : ISource(pipeline_.getSharedHeader())
-        , pipeline(std::move(pipeline_))
-        , executor(pipeline)
-        , context(std::move(context_))
+        , executor(pipeline_)
     {
-        pipeline.setConcurrencyControl(false);
+        pipeline_.setConcurrencyControl(false);
+    }
+
+    SourceFromQueryPipeline(QueryPipeline pipeline_, ContextPtr context_)
+        : ISource(pipeline_.getSharedHeader())
+        , pipeline_holder(std::move(pipeline_))
+        , executor(*pipeline_holder)
+        , context_holder(std::move(context_))
+    {
+        pipeline_holder->setConcurrencyControl(false);
     }
 
     std::string getName() const override
@@ -364,20 +371,20 @@ public:
     }
 
 private:
-    QueryPipeline pipeline;
+    std::optional<QueryPipeline> pipeline_holder;
     TExecutor executor;
-    ContextPtr context;
+    ContextPtr context_holder;
 };
 
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
-    QueryPipeline pipeline,
+    QueryPipeline & pipeline,
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
     if (use_async_executor)
-        return Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
-    return Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
+        return Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(pipeline));
+    return Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(pipeline));
 }
 
 template <DictionaryKeyType dictionary_key_type>
