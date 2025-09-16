@@ -1517,6 +1517,8 @@ If INSERTs build and store skip indexes. If disabled, skip indexes will be build
 )", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
 Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored during merges (see [materialize_skip_indexes_on_merge](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit MATERIALIZE INDEX query.
+
+Has no effect if materialize_skip_indexes_on_insert is false.
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part

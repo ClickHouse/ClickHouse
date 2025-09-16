@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/intExp.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -10,24 +9,27 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/intExp.h>
 #include <Common/typeid_cast.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Core/Settings.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -74,6 +76,9 @@ namespace Setting
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace MergeTreeSetting
@@ -92,6 +97,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 void buildScatterSelector(
@@ -700,14 +706,65 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     MergeTreeIndices indices;
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
-        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-
-    const auto & exclude_skip_indexes = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
-    LOG_DEBUG(glogger, "indexes to exclude: {}", exclude_skip_indexes);
-    if (exclude_skip_indexes != "")
     {
-        LOG_DEBUG(glogger, "EXCLUDING MATERIALIZED SKIP INDEXES");
+        const auto & idx_descs = metadata_snapshot->getSecondaryIndices();
+        //indices = MergeTreeIndexFactory::instance().getMany(idx_descs);
+
+        const auto & exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
+        const auto & settings = context->getSettingsRef();
+
+        if (exclude_indexes_string != "")
+        {
+            LOG_DEBUG(glogger, "indexes to exclude: {}", exclude_indexes_string);
+            // extract list of idxs to exclude
+            std::unordered_set<std::string> exclude_index_names;
+
+            //const auto & indexes_to_exclude = parseIdentifiersOrStringLiterals(exclude_indexes_string, context.getSettingsRef());
+            Tokens tokens(
+                exclude_indexes_string.data(),
+                exclude_indexes_string.data() + exclude_indexes_string.size(),
+                settings[Setting::max_query_size]);
+            IParser::Pos pos(
+                tokens,
+                static_cast<unsigned>(settings[Setting::max_parser_depth]),
+                static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+            Expected expected;
+
+            /// Use an unordered list rather than string vector
+            auto parse_single_id_or_literal = [&]
+            {
+                String str;
+                if (!parseIdentifierOrStringLiteral(pos, expected, str))
+                    return false;
+
+                exclude_index_names.insert(std::move(str));
+                return true;
+            };
+
+            if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse exclude_materialize_skip_indexes_on_insert('{}')", exclude_indexes_string);
+
+            for (const auto & index : idx_descs)
+            {
+                if (!exclude_index_names.contains(index.name))
+                {
+                    LOG_DEBUG(glogger, "including index {}", index.name);
+                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+                }
+                else
+                    LOG_DEBUG(glogger, "filtering index {}", index.name);
+            }
+        }
+
+        LOG_DEBUG(glogger, "indexes that will be materialized on insert:");
+        for (const auto & idx : indices)
+        {
+            const auto name = idx->index.name;
+            LOG_DEBUG(glogger, "index name: {}", name);
+        }
     }
+
 
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
