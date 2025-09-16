@@ -444,7 +444,7 @@ void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, Loading
 
 bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 {
-    if (this->readonly)
+    if (readonly)
         return false;
     for (const auto & db : databases)
         if (db->supportsLoadingInTopologicalOrder())
