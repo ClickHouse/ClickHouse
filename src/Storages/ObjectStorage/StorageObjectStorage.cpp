@@ -221,6 +221,10 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
+
+    // This will update metadata for table functions which contains specific information about table state (e.g. for Iceberg)
+    if (is_table_function)
+        updateExternalDynamicMetadataIfExists(context);
 }
 
 String StorageObjectStorage::getName() const
@@ -275,8 +279,6 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    StorageInMemoryMetadata metadata;
-
     if (!configuration->needsUpdateForSchemaConsistency())
     {
         configuration->update(
@@ -285,12 +287,27 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* if_not_updated_before */ true);
         return;
     }
+    LOG_DEBUG(
+        &Poco::Logger::get("updateExternalDynamicMetadataIfExists"),
+        "Updating external dynamic metadata for storage {}, stacktrace: {}",
+        getStorageID().getFullTableName(),
+        StackTrace().toString());
+
     configuration->update(
         object_storage,
         query_context,
         /* if_not_updated_before */ false);
 
-    setInMemoryMetadata(configuration->getStorageSnapshotMetadata(query_context));
+    auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("updateExternalDynamicMetadataIfExists"),
+        "Metadata of table {} has iceberg data: {}",
+        getStorageID().getFullTableName(),
+        metadata_snapshot.iceberg_table_state.has_value() ? "true" : "false");
+
+
+    setInMemoryMetadata(metadata_snapshot);
 }
 
 
@@ -508,7 +525,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         nullptr,
         false /* distributed_processing */,
         context,
-        {} /* predicate */,
+        /* predicate */ {},
         {},
         {} /* virtual_columns */,
         {}, /* hive_columns */

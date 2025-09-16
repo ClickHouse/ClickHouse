@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -152,10 +153,10 @@ public:
     }
 
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const override
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
     {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for configuration type {}", getEngineName());
+        assertInitialized();
+        return current_metadata->getStorageSnapshotMetadata(context);
     }
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
@@ -170,10 +171,12 @@ public:
         return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
-    bool needsUpdateForSchemaConsistency() override
+    bool needsUpdateForSchemaConsistency() const override
     {
-        assertInitialized();
-        return current_metadata->needsUpdateForSchemaConsistency();
+#if USE_AVRO
+        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
+#endif
+        return false;
     }
 
     IDataLakeMetadata * getExternalMetadata() override

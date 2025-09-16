@@ -102,6 +102,9 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
+
+    // This will update metadata for table functions which contains specific information about table state (e.g. for Iceberg)
+    updateExternalDynamicMetadataIfExists(context_);
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -185,6 +188,21 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     {
         args.insert(args.end(), std::move(settings_temporary_storage));
     }
+}
+
+void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (!configuration->needsUpdateForSchemaConsistency())
+    {
+        return;
+    }
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false);
+
+    auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+    setInMemoryMetadata(metadata_snapshot);
 }
 
 

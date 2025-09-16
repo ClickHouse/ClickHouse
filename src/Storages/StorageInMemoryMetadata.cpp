@@ -55,6 +55,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
+    , iceberg_table_state(other.iceberg_table_state)
 {
 }
 
@@ -87,6 +88,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
+    iceberg_table_state = other.iceberg_table_state;
+
     return *this;
 }
 

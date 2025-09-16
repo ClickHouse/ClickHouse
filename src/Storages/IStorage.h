@@ -2,9 +2,10 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -13,13 +14,13 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/VirtualColumnsDescription.h>
-#include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/TableLockHolder.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Common/logger_useful.h>
 
 #include <expected>
 #include <optional>
@@ -194,13 +195,28 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr() const
+    {
+        auto metadata_ = metadata.get();
+        LOG_DEBUG(
+            &Poco::Logger::get("getInMemoryMetadataPtr"),
+            "Getting in-memory metadata for storage {}, stacktrace: {}, has iceberg table snapshot: {}",
+            getStorageID().getFullTableName(),
+            StackTrace().toString(),
+            metadata_->iceberg_table_state.has_value() ? "true" : "false");
+        return metadata_;
+    }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("setInMemoryMetadata"),
+            "Updating in-memory metadata for storage {}, stacktrace: {}",
+            getStorageID().getFullTableName(),
+            StackTrace().toString());
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 

@@ -56,8 +56,6 @@ struct StorageInMemoryMetadata
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
 
-    /// ICEBERG table state. Supported for Iceberg tables.
-    std::optional<Iceberg::TableStateSnapshot> iceberg_table_state;
 
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
@@ -72,6 +70,9 @@ struct StorageInMemoryMetadata
     /// Version of metadata. Managed properly by ReplicatedMergeTree only
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
+
+    /// ICEBERG table state. Supported for Iceberg tables.
+    std::optional<Iceberg::TableStateSnapshot> iceberg_table_state;
 
     StorageInMemoryMetadata() = default;
 
