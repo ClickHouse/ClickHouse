@@ -534,7 +534,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+            result_data[i] = DecimalUtils::dateTimeFromComponents(
                 date_time,
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(precision));
@@ -714,7 +714,7 @@ public:
 
             auto fraction = std::llround(decimal * fraction_pow);
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::dateTimeFromComponents(date_time, fraction, precision);
         }
 
         return res_column;
