@@ -1211,10 +1211,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 {
                     chassert(clickhouse_columns_to_parquet);
 
-                    auto column_to_search = full_column_name;
                     /// Full name of the parquet column.
                     /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
-                    auto full_name = clickhouse_columns_to_parquet->at(column_to_search);
+                    auto full_name = clickhouse_columns_to_parquet->at(full_column_name);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
                     {

@@ -238,8 +238,7 @@ private:
             findRequiredIndices(Nested::concatenateName(name, "value"), Nested::concatenateName(transformed_name, "value"), header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
-        auto name_to_search = transformed_name;
-        auto it = field_indices.find(name_to_search);
+        auto it = field_indices.find(transformed_name);
         if (it == field_indices.end())
         {
             if (!allow_missing_columns)
