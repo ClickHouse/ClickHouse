@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, use-rocksdb
 -- no-fasttest: EmbeddedRocksDB requires libraries
 CREATE TABLE embeddedrock_exploit
 (
