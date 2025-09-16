@@ -102,6 +102,8 @@ protected:
 
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
+    void reduceAlloc(ssize_t compressed_delta, ssize_t uncompressed_delta);
+
     TemporaryDataOnDiskScopePtr parent = nullptr;
 
     TemporaryFileProvider file_provider;
@@ -219,6 +221,7 @@ public:
 
 private:
     void updateAllocAndCheck();
+    void freeAlloc();
 
     TemporaryDataOnDiskScope * parent;
     std::unique_ptr<TemporaryFileHolder> file_holder;

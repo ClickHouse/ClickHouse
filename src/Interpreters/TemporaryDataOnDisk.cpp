@@ -457,6 +457,14 @@ void TemporaryDataBuffer::updateAllocAndCheck()
     stat.uncompressed_size = new_uncompressed_size;
 }
 
+
+void TemporaryDataBuffer::freeAlloc()
+{
+    parent->reduceAlloc(stat.compressed_size, stat.uncompressed_size);
+    stat.compressed_size = 0;
+    stat.uncompressed_size = 0;
+}
+
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
@@ -476,6 +484,22 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
+}
+
+void TemporaryDataOnDiskScope::reduceAlloc(ssize_t compressed_delta, ssize_t uncompressed_delta)
+{
+    if (parent)
+        parent->reduceAlloc(compressed_delta, uncompressed_delta);
+
+    /// check that we don't go negative
+    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
+    }
+
+    stat.compressed_size -= compressed_delta;
+    stat.uncompressed_size -= uncompressed_delta;
 }
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
@@ -507,5 +531,6 @@ TemporaryDataBuffer::~TemporaryDataBuffer()
 {
     if (!finalized)
         cancel();
+    freeAlloc();
 }
 }
