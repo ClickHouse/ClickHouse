@@ -337,10 +337,11 @@ template <typename TExecutor = PullingPipelineExecutor>
 class SourceFromQueryPipeline : public ISource
 {
 public:
-    explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
+    explicit SourceFromQueryPipeline(QueryPipeline pipeline_, ContextPtr context_ = nullptr)
         : ISource(pipeline_.getSharedHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
+        , context(std::move(context_))
     {
         pipeline.setConcurrencyControl(false);
     }
@@ -365,6 +366,7 @@ public:
 private:
     QueryPipeline pipeline;
     TExecutor executor;
+    ContextPtr context;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -395,7 +397,7 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(ContextMutablePtr query_
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(ContextMutablePtr query_context, const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(source_ptr->loadAll(std::move(query_context)).pipeline));
+    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(source_ptr->loadAll(query_context).pipeline, query_context));
 }
 
 template <DictionaryKeyType dictionary_key_type>

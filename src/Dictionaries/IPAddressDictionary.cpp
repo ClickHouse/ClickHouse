@@ -420,7 +420,7 @@ void IPAddressDictionary::loadData()
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
         Block block;
-        while (executor.pull(block))
+        for (auto guard = io.guard(); executor.pull(block);)
         {
             const auto rows = block.rows();
             element_count += rows;
