@@ -10,14 +10,14 @@ sidebar_position: 51
 
 ## What is `DatabaseOverlay`? {#introduction}
 
-`DatabaseOverlay` is a logical “view” database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself.
+`DatabaseOverlay` is a logical "view" database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself.
 
 `DatabaseOverlay` is used in `clickhouse-local` for various reasons:
 
-- DatabaseOverlay: Implements the IDatabase interface. Allow to combine multiple databases, such as FileSystem and Memory. Internally, it stores a vector with other database pointers and proxies requests to them in turn until it is executed successfully.
-- DatabaseFilesystem: allows to read-only interact with files stored on the file system. Internally, it uses TableFunctionFile to implicitly load file when a user requests the table. Result of TableFunctionFile call cached inside to provide quick access.
-- DatabaseS3: allows to read-only interact with s3 storage. It uses TableFunctionS3 to implicitly load table from s3
-DatabaseHDFS: allows to interact with hdfs storage. It uses TableFunctionHDFS to implicitly load table from hdfs
+- `DatabaseOverlay`: Implements the `IDatabase` interface. Allow to combine multiple databases, such as `FileSystem` and Memory. Internally, it stores a vector with other database pointers and proxies requests to them in turn until it is executed successfully.
+- `DatabaseFilesystem`: allows to read-only interact with files stored on the file system. Internally, it uses `TableFunctionFile` to implicitly load file when a user requests the table. Result of `TableFunctionFile` call cached inside to provide quick access.
+- `DatabaseS3`: allows to read-only interact with s3 storage. It uses `TableFunctionS3` to implicitly load table from s3
+`DatabaseHDFS`: allows to interact with hdfs storage. It uses `TableFunctionHDFS` to implicitly load table from hdfs
 
 ---
 
