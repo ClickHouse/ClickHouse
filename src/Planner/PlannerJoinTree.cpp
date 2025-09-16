@@ -1106,15 +1106,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         {
                             // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
                             const auto & left_table_expr = join_node->getLeftTableExpression();
-                            if (left_table_expr->getNodeType() == QueryTreeNodeType::QUERY
-                                && left_table_expr->getNodeType() == QueryTreeNodeType::UNION
-                                && left_table_expr->getNodeType() == QueryTreeNodeType::JOIN)
+                            if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
 
                             const auto & right_table_expr = join_node->getRightTableExpression();
-                            if (right_table_expr->getNodeType() == QueryTreeNodeType::QUERY
-                                && right_table_expr->getNodeType() == QueryTreeNodeType::UNION
-                                && right_table_expr->getNodeType() == QueryTreeNodeType::JOIN)
+                            if (right_table_expr->getNodeType() != QueryTreeNodeType::TABLE
+                                && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
                         }
 
