@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
