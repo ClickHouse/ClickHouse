@@ -1114,6 +1114,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             if (right_table_expr->getNodeType() != QueryTreeNodeType::TABLE
                                 && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
+
+                            return true;
                         }
 
                         return false;
