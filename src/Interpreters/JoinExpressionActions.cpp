@@ -307,12 +307,20 @@ void JoinExpressionActions::swapExpressionSources()
 
     for (auto & source : data->expression_sources)
     {
-        auto previous_relation_id = source.second.getSingleBit();
-        if (!previous_relation_id || previous_relation_id > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression source {}, should have 0th or 1st bit set", source.second);
-        size_t new_relation_id = previous_relation_id == 1 ? 0 : 1;
-        source.second.set(*previous_relation_id, false);
-        source.second.set(new_relation_id, true);
+        /// Check that there are not more than 2 sources
+        if (source.second.count() > 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression source count {}, should be <=2", source.second.count());
+
+        /// Check that sources are 0 and/or 1
+        if ((source.second & BitSet::allSet(2)) != source.second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression sources {}, should only have 0 and/or 1", source.second);
+
+        BitSet swapped_sources;
+        /// Swap source 0 with source 1
+        swapped_sources.set(1, source.second.test(0));
+        /// Swap source 1 with source 0
+        swapped_sources.set(0, source.second.test(1));
+        source.second = swapped_sources;
     }
 }
 
