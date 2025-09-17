@@ -23,13 +23,9 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTupleConcat>(); }
 
     String getName() const override { return name; }
-
     bool isVariadic() const override { return true; }
-
     size_t getNumberOfArguments() const override { return 0; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -101,7 +97,22 @@ public:
 
 REGISTER_FUNCTION(TupleConcat)
 {
-    factory.registerFunction<FunctionTupleConcat>();
+    FunctionDocumentation::Description description = R"(
+Combines tuples passed as arguments.
+)";
+    FunctionDocumentation::Syntax syntax = "tupleConcat(tuple1[, tuple2, [...]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"tupleN", "Arbitrary number of arguments of Tuple type.", {"Tuple(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing all elements from the input tuples.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT tupleConcat((1, 2), ('a',), (true, false))", "(1, 2, 'a', true, false)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTupleConcat>(documentation);
 }
 
 }

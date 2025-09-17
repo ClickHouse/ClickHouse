@@ -1,26 +1,26 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+
 #include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Storages/LazilyReadInfo.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <city.h>
-#include <Storages/LazilyReadInfo.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 namespace
 {
@@ -89,13 +89,23 @@ std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_number_of_marks, description});
 }
 
+MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
+    RangesByIndex read_ranges_, MergeTreeIndexReadResultPoolPtr index_reader_, PartRemainingMarks part_remaining_marks_)
+    : read_ranges(std::move(read_ranges_))
+    , index_reader(std::move(index_reader_))
+    , part_remaining_marks(std::move(part_remaining_marks_))
+{
+    chassert(index_reader);
+}
+
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
     const PrewhereInfoPtr & prewhere_info_,
     const LazilyReadInfoPtr & lazily_read_info_,
     const ExpressionActionsSettings & actions_settings_,
-    const MergeTreeReaderSettings & reader_settings_)
+    const MergeTreeReaderSettings & reader_settings_,
+    MergeTreeIndexBuildContextPtr merge_tree_index_build_context_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
@@ -108,6 +118,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), lazily_read_info, prewhere_info))
+    , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -118,6 +129,30 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
             has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
             prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
             has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
+
+    if (reader_settings.use_query_condition_cache && prewhere_info)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    continue;
+
+                auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                if (query_condition_cache)
+                {
+                    query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                        *query_condition_cache,
+                        output->getHash(),
+                        reader_settings.query_condition_cache_store_conditions_as_plaintext ? prewhere_info->prewhere_actions.getNames()[0] : "",
+                        reader_settings.query_condition_cache_selectivity_threshold);
+                }
+
+                break;
+            }
+        }
+    }
 }
 
 String MergeTreeSelectProcessor::getName() const
@@ -125,9 +160,17 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere, bool force_short_circuit_execution);
+bool tryBuildPrewhereSteps(
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    PrewhereExprInfo & prewhere,
+    bool force_short_circuit_execution);
 
-PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps, bool force_short_circuit_execution)
+PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    bool enable_multiple_prewhere_read_steps,
+    bool force_short_circuit_execution)
 {
     PrewhereExprInfo prewhere_actions;
     if (prewhere_info)
@@ -142,6 +185,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = true,
                 .need_filter = true,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
@@ -158,6 +202,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
@@ -176,35 +221,19 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task || algorithm->needNewTask(*task))
             {
                 /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info)
+                if (query_condition_cache_writer && task)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
-
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
-
-                            String part_name = data_part->isProjectionPart()
+                    auto data_part = task->getInfo().data_part;
+                    String part_name = data_part->isProjectionPart()
                                 ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                 : data_part->name;
-                            query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
 
-                            break;
-                        }
-                    }
+                    query_condition_cache_writer->addRanges(
+                        data_part->storage.getStorageID().uuid,
+                        part_name,
+                        task->getPrewhereUnmatchedMarks(),
+                        data_part->index_granularity->getMarksCount(),
+                        data_part->index_granularity->hasFinalMark());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
@@ -262,13 +291,21 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
 
-        if (reader_settings.use_query_condition_cache && prewhere_info)
+        if (query_condition_cache_writer)
             task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
 
     return {Chunk(), 0, 0, true};
+}
+
+/// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.
+void MergeTreeSelectProcessor::cancel() noexcept
+{
+    is_cancelled = true;
+    if (merge_tree_index_build_context)
+        merge_tree_index_build_context->index_reader->cancel();
 }
 
 void MergeTreeSelectProcessor::initializeReadersChain()
@@ -281,7 +318,26 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters);
+    /// Optionally initialize the index filter for the current read task. If the build context exists and contains
+    /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
+    /// This filter will later be used to filter granules during the first reading step.
+    MergeTreeIndexReadResultPtr index_read_result;
+    if (merge_tree_index_build_context)
+    {
+        const auto & part_ranges = merge_tree_index_build_context->read_ranges.at(task->getInfo().part_index_in_query);
+        auto & remaining_marks = merge_tree_index_build_context->part_remaining_marks.at(task->getInfo().part_index_in_query).value;
+        index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges);
+
+        /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
+        /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
+        /// cleanup of any per-part cached resources (e.g., skip index read result).
+        size_t task_marks = task->getNumMarksToRead();
+        bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
+        if (part_last_task)
+            merge_tree_index_build_context->index_reader->clear(task->getInfo().data_part);
+    }
+
+    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters, std::move(index_read_result));
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(
@@ -311,7 +367,9 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
     {
         if (create_empty_column_lazy)
+        {
             column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
+        }
         else
         {
             column_with_type_and_name.column = ColumnLazy::create(columns);
@@ -337,6 +395,10 @@ Block MergeTreeSelectProcessor::transformHeader(
 static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
 {
     WriteBufferFromOwnString out;
+    const auto & index_counter = counters.getIndexCounter();
+    if (index_counter)
+        out << fmt::format("index step rows_read: {}, ", index_counter->rows_read.load());
+
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for NumericIndexedVector and Its Functions'
 sidebar_label: 'NumericIndexedVector'
-sidebar_position: 26
 slug: /sql-reference/functions/numeric-indexed-vector-functions
 title: 'NumericIndexedVector Functions'
 ---
@@ -23,9 +22,13 @@ A vector contains indices and their corresponding values. The following are some
 - The Bit-Sliced Index mechanism converts value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits used for the fractional part, default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
 - There are three cases for indices: non-zero value, zero value and non-existent. In NumericIndexedVector, only non-zero value and zero value will be stored. In addition, in pointwise operations between two NumericIndexedVectors, the value of non-existent index will be treated as 0. In the division scenario, the result is zero when the divisor is zero.
 
-# Create a numericIndexedVector object
+## Create a numericIndexedVector object {#create-numeric-indexed-vector-object}
 
-There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`. Of course, you can continue to add suffix `-if` to accept an additional condition. The aggregate function will only process the rows that trigger the condition. The other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
+There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`.
+You can add suffix `-if` to accept an additional condition.
+The aggregate function will only process the rows that trigger the condition.
+The other is to build it from a map using `numericIndexedVectorBuild`.
+The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
 
 ## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
@@ -114,7 +117,7 @@ Result
 └─────┴────────────────────────────────────────────────────────────┘
 ```
 
-# numericIndexedVectorToMap
+## numericIndexedVectorToMap
 
 Converts a NumericIndexedVector to a map.
 
@@ -142,7 +145,7 @@ Result
 └──────────────────┘
 ```
 
-# numericIndexedVectorCardinality
+## numericIndexedVectorCardinality
 
 Returns the cardinality (number of unique indexes) of the NumericIndexedVector.
 
@@ -170,7 +173,7 @@ Result
 └─────┘
 ```
 
-# numericIndexedVectorAllValueSum
+## numericIndexedVectorAllValueSum
 
 Returns sum of all the values in NumericIndexedVector.
 
@@ -198,8 +201,7 @@ Result
 └─────┘
 ```
 
-
-# numericIndexedVectorGetValue
+## numericIndexedVectorGetValue
 
 Retrieves the value corresponding to a specified index.
 
@@ -228,7 +230,7 @@ Result
 └─────┘
 ```
 
-# numericIndexedVectorShortDebugString
+## numericIndexedVectorShortDebugString
 
 Returns internal information of the NumericIndexedVector in a json format. This function is primarily used for debugging purposes.
 
@@ -272,7 +274,7 @@ The following information is valid in BSI vector type.
     - `bitmap_info`: Information of each bitmap
         - `cardinality`: Number of indexes in each bitmap.
 
-# numericIndexedVectorPointwiseAdd
+## numericIndexedVectorPointwiseAdd
 
 Performs pointwise addition between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -290,9 +292,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, 2)) AS res2;
@@ -306,7 +308,7 @@ Result
 └───────────────────────┴──────────────────┘
 ```
 
-# numericIndexedVectorPointwiseSubtract
+## numericIndexedVectorPointwiseSubtract
 
 Performs pointwise subtraction between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -324,9 +326,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, 2)) AS res2;
@@ -340,7 +342,7 @@ Result
 └────────────────────────┴─────────────────┘
 ```
 
-# numericIndexedVectorPointwiseMultiply
+## numericIndexedVectorPointwiseMultiply
 
 Performs pointwise multiplication between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -358,9 +360,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, 2)) AS res2;
@@ -374,7 +376,7 @@ Result
 └───────────────┴──────────────────┘
 ```
 
-# numericIndexedVectorPointwiseDivide
+## numericIndexedVectorPointwiseDivide
 
 Performs pointwise division between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector. The result is zero when the divisor is zero.
 
@@ -392,9 +394,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, 2)) AS res2;
@@ -408,7 +410,7 @@ Result
 └─────────────┴─────────────────┘
 ```
 
-# numericIndexedVectorPointwiseEqual
+## numericIndexedVectorPointwiseEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding values set to 1.
 
@@ -426,9 +428,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, 20)) AS res2;
@@ -442,7 +444,7 @@ Result
 └───────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseNotEqual
+## numericIndexedVectorPointwiseNotEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant.  The result is a NumericIndexedVector containing the indices where the values are not equal, with all corresponding values set to 1.
 
@@ -460,9 +462,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, 20)) AS res2;
@@ -476,7 +478,7 @@ Result
 └───────────────┴───────────┘
 ```
 
-# numericIndexedVectorPointwiseLess
+## numericIndexedVectorPointwiseLess
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than the second vector’s value, with all corresponding values set to 1.
 
@@ -494,9 +496,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, 20)) AS res2;
@@ -510,7 +512,7 @@ Result
 └───────────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseLessEqual
+## numericIndexedVectorPointwiseLessEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than or equal to the second vector’s value, with all corresponding values set to 1.
 
@@ -528,9 +530,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, 20)) AS res2;
@@ -544,7 +546,7 @@ Result
 └───────────────┴───────────┘
 ```
 
-# numericIndexedVectorPointwiseGreater
+## numericIndexedVectorPointwiseGreater
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than the second vector’s value, with all corresponding values set to 1.
 
@@ -562,9 +564,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, 20)) AS res2;
@@ -578,7 +580,7 @@ Result
 └───────────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseGreaterEqual
+## numericIndexedVectorPointwiseGreaterEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than or equal to the second vector’s value, with all corresponding values set to 1.
 
@@ -596,9 +598,9 @@ Arguments
 Example
 
 ```sql
-with
-    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
-    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) AS vec2
 SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, vec2)) AS res1,
     numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, 20)) AS res2;

@@ -1,4 +1,4 @@
-#include "Suggest.h"
+#include <Client/Suggest.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -7,12 +7,11 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
@@ -209,7 +208,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
 
 void Suggest::fillWordsFromBlock(const Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     if (block.columns() != 1)

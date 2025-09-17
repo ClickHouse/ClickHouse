@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
@@ -18,6 +19,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace QueryPlanOptimizations
@@ -161,6 +163,14 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (column_sizes.empty())
         return;
 
+    /// These two optimizations conflict:
+    /// - vector search lookups with disabled rescoring
+    /// - PREWHERE
+    /// The former is more impactful, therefore disable PREWHERE if both may be used.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
+        return;
+
     /// Extract column compressed sizes
     std::unordered_map<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
@@ -201,9 +211,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
+    QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        filter_node->step = std::make_unique<FilterStep>(
+        new_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
@@ -212,10 +223,13 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     else
     {
         /// Have to keep this expression to change column names to column identifiers
-        filter_node->step = std::make_unique<ExpressionStep>(
+        new_step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr));
     }
+
+    new_step->setStepDescription(*filter_step);
+    filter_node->step = std::move(new_step);
 }
 
 }

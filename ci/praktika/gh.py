@@ -14,6 +14,55 @@ from praktika.utils import Shell
 
 class GH:
     @classmethod
+    def get_changed_files(cls, strict=False) -> List[str]:
+        info = Info()
+        res = None
+
+        if not info.is_local_run:
+            repo_name = info.repo_name
+            sha = info.sha
+        else:
+            repo_name = Shell.get_output(
+                f"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
+                strict=True,
+            )
+            sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
+
+        assert repo_name
+        print(repo_name)
+
+        for attempt in range(3):
+            # store changed files
+            if info.pr_number > 0:
+                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
+                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
+                )
+                assert exit_code == 0, "Failed to retrieve changed files list"
+            else:
+                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
+                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+                )
+
+            if exit_code == 0:
+                res = changed_files_str.split("\n") if changed_files_str else []
+                break
+            else:
+                print(
+                    f"Failed to get changed files, attempt [{attempt+1}], exit code [{exit_code}], error [{err}]"
+                )
+                if exit_code > 1:
+                    # assume that exit code == 1 is retryable - Fix if not true
+                    # exit_code 1 for this type of errors:  WARNING: stderr: GraphQL: Something went wrong while executing your query on 2025-08-05T15:33:56Z. Please include `E746:1CAA99:44F9F67:8B9B520:68922464` when reporting this issue.
+                    print("error is not retryable - break")
+                    break
+                time.sleep(1)
+
+        if res is None and strict:
+            raise RuntimeError("Failed to get changed files")
+
+        return res
+
+    @classmethod
     def do_command_with_retries(cls, command):
         res = False
         retry_count = 0
@@ -68,30 +117,6 @@ class GH:
                              -f body=\'{comment_body}\''
                     print(f"Update existing comments [{id}]")
                     return cls.do_command_with_retries(cmd)
-
-        if or_append_to_comment_with_substring:
-            print(f"check comment [{comment_body}] created")
-            pr_comments = f'gh api -H "Accept: application/vnd.github.v3+json" \
-                "/repos/{repo}/issues/{pr}/comments" \
-                --jq \'.[].body\''
-            output = Shell.get_output(pr_comments)
-            if output:
-                comment_ids = []
-                try:
-                    comment_ids = [
-                        json.loads(item.strip()) for item in output.split("\n")
-                    ]
-                except Exception as ex:
-                    print(f"Failed to retrieve PR comments with [{ex}]")
-                for id in comment_ids:
-                    cmd = f'gh api \
-                       -X PATCH \
-                          -H "Accept: application/vnd.github.v3+json" \
-                             "/repos/{repo}/issues/comments/{id}" \
-                             -f body=\'{comment_body}\''
-                    print(f"Update existing comments [{id}]")
-                    return cls.do_command_with_retries(cmd)
-
         cmd = f'gh pr comment {pr} --body "{comment_body}"'
         return cls.do_command_with_retries(cmd)
 
@@ -405,9 +430,18 @@ class GH:
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
+                info = Info()
                 for failed_result in self.failed_results:
-                    body += "|{}|{}|{}|{}|{}|\n".format(
+                    job_report_url = info.get_specific_report_url(
+                        info.pr_number,
+                        info.git_branch,
+                        info.sha,
                         failed_result.name,
+                        info.workflow_name,
+                    )
+                    body += "|[{}]({})|{}|{}|{}|{}|\n".format(
+                        failed_result.name,
+                        job_report_url,
                         "",
                         failed_result.status,
                         "",

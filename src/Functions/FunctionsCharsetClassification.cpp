@@ -83,10 +83,10 @@ struct CharsetClassificationImpl
         const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         if constexpr (detect_language)
-            /// 2 chars for ISO code + 1 zero byte
-            res_data.reserve(input_rows_count * 3);
+            /// 2 chars for ISO code
+            res_data.reserve(input_rows_count * 2);
         else
-            /// Mean charset length is 8
+            /// The average charset name length is 8
             res_data.reserve(input_rows_count * 8);
 
         res_offsets.resize(input_rows_count);
@@ -98,7 +98,7 @@ struct CharsetClassificationImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
+            const size_t str_len = offsets[i] - offsets[i - 1];
 
             HashMapWithStackMemory<UInt16, UInt64, DefaultHash<UInt16>, 4> model;
             calculateStats(str, str_len, model);
@@ -122,11 +122,9 @@ struct CharsetClassificationImpl
             }
 
             size_t result_value_size = result_value.size();
-            res_data.resize(current_result_offset + result_value_size + 1);
+            res_data.resize(current_result_offset + result_value_size);
             memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
-            res_data[current_result_offset + result_value_size] = '\0';
-            current_result_offset += result_value_size + 1;
-
+            current_result_offset += result_value_size;
             res_offsets[i] = current_result_offset;
         }
     }

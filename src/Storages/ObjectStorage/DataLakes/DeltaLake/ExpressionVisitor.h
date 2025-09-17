@@ -10,7 +10,7 @@
 namespace ffi
 {
 struct Expression;
-struct SharedExpression;
+struct SharedPredicate;
 }
 namespace DB
 {
@@ -20,31 +20,24 @@ class Chunk;
 namespace DeltaLake
 {
 
-/// Result of a parsed delta-kernel expression.
-class ParsedExpression
-{
-public:
-    explicit ParsedExpression(std::shared_ptr<DB::ActionsDAG> dag_, const DB::NamesAndTypesList & schema_);
+/// Get values for the `columns` considering that
+/// they contain literal (constant) values.
+/// This is used, for example, to get partition values.
+std::vector<DB::Field> getConstValuesFromExpression(
+    const DB::Names & columns,
+    const DB::ActionsDAG & dag);
 
-    /// Get values for the `columns` considering that
-    /// they contain literal (constant) values.
-    /// This is used, for example, to get partition values.
-    std::vector<DB::Field> getConstValues(const DB::Names & columns) const;
-
-    std::shared_ptr<DB::ActionsDAG> getTransform() const { return dag; }
-
-private:
-    std::shared_ptr<DB::ActionsDAG> dag;
-    const DB::NamesAndTypesList schema;
-};
-
-std::unique_ptr<ParsedExpression> visitExpression(
+/// Visit exception for scanCallback.
+std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
-    const DB::NamesAndTypesList & expression_schema);
+    const DB::NamesAndTypesList & read_schema,
+    const DB::NamesAndTypesList & expression_schema,
+    bool enable_logging);
 
 /// A method used in unit test.
 std::shared_ptr<DB::ActionsDAG> visitExpression(
-    ffi::SharedExpression * expression,
+    ffi::SharedPredicate * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema);
 
 }

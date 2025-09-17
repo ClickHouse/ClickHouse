@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-parallel
+# Tags: long, no-random-settings, no-parallel, no-distributed-cache
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +15,7 @@ optimize table t1 final;
 """
 
 for _ in {1..100}; do
-  ($CLICKHOUSE_CLIENT -q """
+  ($CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d """
     SELECT count()
     FROM
     (

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Tuple Functions'
 sidebar_label: 'Tuples'
-sidebar_position: 180
 slug: /sql-reference/functions/tuple-functions
 title: 'Tuple Functions'
 ---
@@ -155,7 +154,6 @@ SELECT
 └───────┴────────┴────────┴────────┴────────┘
 ```
 
-
 **Examples**
 
 Query:
@@ -172,7 +170,7 @@ Result:
 └─────────────────┘
 ```
 
-Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
+Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramMinHash) functions for detection of semi-duplicate strings:
 
 ```sql
 SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance

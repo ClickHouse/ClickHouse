@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "IO/S3/Credentials.h"
+#include <IO/S3/Credentials.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -53,7 +53,17 @@ struct ClientFake : DB::S3::Client
               DB::S3::ServerSideEncryptionKMSConfig(),
               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test_access_key", "test_secret"),
               DB::S3::ClientFactory::instance().createClientConfiguration(
-                  "test_region", DB::RemoteHostFilter(), 1, 0, true, true, false, {}, {}, "http"),
+                  "test_region",
+                  DB::RemoteHostFilter(),
+                  1,
+                  DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+                  true,
+                  true,
+                  true,
+                  false,
+                  {},
+                  {},
+                  "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
     {
@@ -69,7 +79,7 @@ struct ClientFake : DB::S3::Client
         {
             auto response_stream = Aws::Utils::Stream::ResponseStream(
                 Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", weak_session_ptr.lock(), sb));
-            Aws::AmazonWebServiceResult aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
         };

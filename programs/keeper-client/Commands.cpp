@@ -1,8 +1,8 @@
 
-#include "Commands.h"
+#include <Commands.h>
 #include <Common/StringUtils.h>
 #include <queue>
-#include "KeeperClient.h"
+#include <KeeperClient.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
@@ -814,6 +814,62 @@ void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     while (!operation.isTryLimitReached() && !operation.isCompleted())
         operation.perform();
+}
+
+bool GetAclCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return true;
+
+    node->args.push_back(std::move(src_path));
+    return true;
+}
+
+void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    String path;
+    if (!query->args.empty())
+        path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    else
+        path = client->cwd;
+
+    auto acls = client->zookeeper->getACL(path);
+
+    static constexpr std::array<std::pair<int32_t, std::string_view>, 5> perms_map{{
+        {Coordination::ACL::Read, "READ"},
+        {Coordination::ACL::Write, "WRITE"},
+        {Coordination::ACL::Create, "CREATE"},
+        {Coordination::ACL::Delete, "DELETE"},
+        {Coordination::ACL::Admin, "ADMIN"},
+    }};
+
+    for (const auto & acl : acls)
+    {
+        std::cout << fmt::format("[{}] {} ", acl.scheme, acl.id);
+        if (acl.permissions == Coordination::ACL::All)
+        {
+            std::cout << "ALL";
+        }
+        else
+        {
+            bool first = true;
+            for (const auto & [perm, name] : perms_map)
+            {
+                if (acl.permissions & perm)
+                {
+                    if (!first)
+                        std::cout << "|";
+                    std::cout << name;
+                    first = false;
+                }
+            }
+            if (first)
+                std::cout << "NONE";
+        }
+        std::cout << "\n";
+    }
+
 }
 
 }
