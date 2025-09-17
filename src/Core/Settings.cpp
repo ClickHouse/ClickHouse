@@ -1538,7 +1538,7 @@ SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be 
 
 SYSTEM STOP MERGES t_skip_index_insert; -- note that merges are not affected by this parameter, so we stop them for the example
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only index b is updated
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
 
 -- these querys will update all indexes regardless of exclude_materialize_skip_indexes_on_insert setting
 SYSTEM START MERGES t_skip_index_insert;
