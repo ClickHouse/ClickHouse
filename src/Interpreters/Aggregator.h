@@ -446,6 +446,10 @@ private:
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
         const;
 
+    template <typename Method, typename Table>
+    void mergeDataImplFixedMap(
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 offset_begin, UInt32 offset_end) const;
+
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
     void mergeDataNoMoreKeysImpl(
@@ -521,18 +525,12 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
-    Block convertOneBucketToBlockFixedHashMap(
-        AggregatedDataVariants & data_variants,
-        Method & method,
-        Arena * arena,
-        bool final,
-        Int32 bucket) const;
-
-    Block mergeAndConvertOneBucketToBlockFixedHashMap(
+    void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
-        Int32 bucket,
+        UInt32 offset_begin,
+        UInt32 offset_end,
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;

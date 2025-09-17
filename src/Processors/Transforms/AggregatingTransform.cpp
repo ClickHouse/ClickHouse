@@ -94,15 +94,14 @@ public:
 
     ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, const UInt32 total_bucket_, UInt32 index, UInt32 num_threads, Arena * arena_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
-        , next_bucket_to_merge(0)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<SharedData>())
         , total_bucket(total_bucket_)
         , arena(arena_)
     {
-        bucket_begin = index * total_bucket / num_threads;
-        bucket_end = (index + 1) * total_bucket / num_threads;
+        offset_begin = index * total_bucket / num_threads;
+        offset_end = (index + 1) * total_bucket / num_threads;
     }
 
     String getName() const override { return "ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap"; }
@@ -110,30 +109,34 @@ public:
 protected:
     Chunk generate() override
     {
-        UInt32 bucket_num = next_bucket_to_merge.fetch_add(1);
+        Block block;
 
-        if (bucket_num >= bucket_end || bucket_num >= total_bucket)
-        {
-            data.reset();
-            return {};
-        }
+        if (data->at(0)->type == AggregatedDataVariants::Type::key8)
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, offset_begin, offset_end, shared_data->is_cancelled);
+        else
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, offset_begin, offset_end, shared_data->is_cancelled);
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlockFixedHashMap(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
+        // auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+        // for (auto & block : blocks)
+        //     if (block.rows() > 0)
+        //         single_level_chunks.emplace_back(convertToChunk(block));
+        finished = true;
+        // data.reset();
 
+        
         Chunk chunk = convertToChunk(block);
         return chunk;
     }
 
 private:
-    std::atomic<UInt32> next_bucket_to_merge = 0;
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     const UInt32 total_bucket;
 
     // [bucket_begin, bucket_end)
-    UInt32 bucket_begin;
-    UInt32 bucket_end;
+    UInt32 offset_begin;
+    UInt32 offset_end;
     Arena * arena;
 };
 
@@ -361,15 +364,19 @@ public:
             if (inputs.empty())
                 createSources();
         }
-        else if (data->at(0)->size() >= 5 &&  (
+        /// TODO: fix condition.
+        else if (num_threads > 1 &&  (
             data->at(0)->type == AggregatedDataVariants::Type::key8  ||
             data->at(0)->type == AggregatedDataVariants::Type::key16))
         {
+            parallelize_single_level_merge = true;
+            LOG_INFO(getLogger("Aggregator"), "jianfei createSourcesForFixedHashMap, parallelize_single_level_merge set to true");
             if (inputs.empty())
                 createSourcesForFixedHashMap();
         }
         else
         {
+            LOG_INFO(getLogger("Aggregator"), "jianfei mergeSingleLevel");
             mergeSingleLevel();
         }
     }
@@ -423,6 +430,9 @@ public:
         /// Single level case.
         if (inputs.empty())
             return Status::Ready;
+        else if (parallelize_single_level_merge)
+            // Also single level, but need to check all input ports are finished.
+            return prepareParallelizeSingleLevel();
 
         /// Two-level case.
         return prepareTwoLevel();
@@ -434,6 +444,58 @@ public:
     }
 
 private:
+    IProcessor::Status prepareParallelizeSingleLevel()
+    {
+        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel");
+        auto & output = outputs.front();
+
+        /// Read all input sources and collect their chunks
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished() && input.hasData())
+            {
+                auto chunk = input.pull();
+                // For single-level FixedHashMap, we don't need bucket ordering
+                // Just collect all chunks directly
+                if (chunk.hasRows())
+                {
+                    LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, chunk has rows");
+                    single_level_chunks.emplace_back(std::move(chunk));
+                }
+            }
+        }
+
+        /// Check if all inputs are finished
+        bool all_inputs_finished = true;
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished())
+            {
+                all_inputs_finished = false;
+                break;
+            }
+        }
+
+        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, all_inputs_finished: {}", all_inputs_finished);
+
+        /// If we have chunks ready to output, do it
+        if (!single_level_chunks.empty())
+        {
+            return preparePushToOutput();
+        }
+
+        /// If all inputs are finished and no more chunks, we're done
+        if (all_inputs_finished)
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        /// Otherwise wait for more data
+        return Status::NeedData;
+    }
+
+
     IProcessor::Status preparePushToOutput()
     {
         if (single_level_chunks.empty())
@@ -458,6 +520,7 @@ private:
     {
         auto & output = outputs.front();
 
+        /// NOTE(jianfei): in case of two level, we check the input ports and get the chunk from the input ports.
         for (auto & input : inputs)
         {
             if (!input.isFinished() && input.hasData())
@@ -500,6 +563,7 @@ private:
 
     bool is_initialized = false;
     bool finished = false;
+    bool parallelize_single_level_merge = false;
 
     Chunks single_level_chunks;
 
@@ -556,6 +620,9 @@ private:
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+
+
+        /// NOTE(jianfei): used to get the block directly inline here in a single transform for single level.
         for (auto & block : blocks)
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));
@@ -596,7 +663,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, num_buckets, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, num_buckets, thread, num_threads, arena);
             processors.emplace_back(std::move(source));
         }
 
