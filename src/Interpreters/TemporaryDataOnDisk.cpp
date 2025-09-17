@@ -347,7 +347,7 @@ bool TemporaryDataReadBuffer::nextImpl()
     return true;
 }
 
-TemporaryDataBuffer::TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
     , file_holder(parent->file_provider(reserve_size))
@@ -461,7 +461,7 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
-        parent->reduceAlloc(stat.compressed_size, stat.uncompressed_size);
+        parent->deltaAllocAndCheck(stat.compressed_size, stat.uncompressed_size);
     stat.compressed_size = 0;
     stat.uncompressed_size = 0;
 }
@@ -487,23 +487,7 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-void TemporaryDataOnDiskScope::reduceAlloc(ssize_t compressed_delta, ssize_t uncompressed_delta)
-{
-    if (parent)
-        parent->reduceAlloc(compressed_delta, uncompressed_delta);
-
-    /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
-    }
-
-    stat.compressed_size -= compressed_delta;
-    stat.uncompressed_size -= uncompressed_delta;
-}
-
-TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
 {
     /// Constant columns must be avoided since they are not supported in (de/)serialization, but we have to keep lazy columns

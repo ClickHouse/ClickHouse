@@ -1068,7 +1068,7 @@ private:
 
     BackupEntries generate() override
     {
-        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");

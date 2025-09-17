@@ -427,7 +427,7 @@ namespace
             /// Writing data.bin
             IndexForNativeFormat index;
             {
-                auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
                 NativeWriter block_out{data_out->getCompressedWriteBuffer(), 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
@@ -438,7 +438,7 @@ namespace
 
             /// Writing index.mrk
             {
-                auto index_mrk_out = std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                auto index_mrk_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
                 index.write(*index_mrk_out);
                 index_mrk_out->finishWriting();
                 backup_entries[index_mrk_pos]
