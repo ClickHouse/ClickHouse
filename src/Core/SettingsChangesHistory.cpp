@@ -50,7 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
-            {"optimize_rewrite_like_to_range", false, true, "New setting"},
+            {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"jemalloc_enable_profiler", false, false, "New setting"},
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},

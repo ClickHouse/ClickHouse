@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/LikeToRangeRewritePass.h>
+#include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -16,32 +16,33 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool optimize_rewrite_like_to_range;
+    extern const SettingsBool optimize_rewrite_like_perfect_affix;
 }
 
 namespace
 {
 
-/** Rewrite LIKE expressions with perfect prefix to range expressions.
-  * For example, `col LIKE 'ClickHouse%'` is rewritten as `col >= ClickHouse AND col < ClickHousf`.
+/** Rewrite LIKE expressions with perfect affix (prefix or suffix) to startsWith or endsWith functions.
   * The scope of the rewrite:
-  *     - `col LIKE      'Prefix%'`: as `col >= 'Prefix' AND col <  'Prefy'`
-  *     - `col NOT LIKE  'Prefix%'`: as `col <  'Prefix' OR  col >= 'Prefy'`
-  *     - `col ILIKE     'Prefix%'`: as `lower(col) >= 'prefix' AND lower(col) <  'prefy'`
-  *     - `col NOT ILIKE 'Prefix%'`: as `lower(col) <  'prefix' OR  lower(col) >= 'prefy'`
+  *     - `col LIKE 'Prefix%'`: as `startsWith(col, 'Prefix')`
+  *     - `col LIKE '%Suffix'`: as `endsWith(col, 'Suffix')`
+  *     - `NOT LIKE `: with `NOT`
+  * Out of scope:
+  *     - `ILIKE` is not rewritten until starts/endsWithCaseInsensitive is implemented
   * Type requirement on the left operand, `col`:
-  *     - Only resolved column of type `String` or `FixedString`
+  *     - `startsWith`: Only resolved column of type `String` or `FixedString`
+  *     - `endsWith`: Only resolved column of type `String`
   *     - `LowCardinality(String)` is unsupported due to non-order-preserving encoding
   */
-class LikeToRangeRewriteVisitor : public InDepthQueryTreeVisitorWithContext<LikeToRangeRewriteVisitor>
+class LikePerfectAffixRewriteVisitor : public InDepthQueryTreeVisitorWithContext<LikePerfectAffixRewriteVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<LikeToRangeRewriteVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<LikePerfectAffixRewriteVisitor>;
     using Base::Base;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_like_to_range])
+        if (!getSettings()[Setting::optimize_rewrite_like_perfect_affix])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -75,8 +76,7 @@ public:
             return;
 
         /// Only rewrite for perfect prefix or suffix
-        /// Suffix is prefix in reverse
-        if (is_suffix)
+        if (is_suffix) /// Suffix is prefix in reverse
             std::reverse(pattern.begin(), pattern.end());
 
         auto [affix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
@@ -116,9 +116,9 @@ private:
 
 }
 
-void LikeToRangeRewritePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void LikePerfectAffixRewritePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    LikeToRangeRewriteVisitor visitor(context);
+    LikePerfectAffixRewriteVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

@@ -4,7 +4,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/Passes/LikeToRangeRewritePass.h>
+#include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/tests/gtest_analyzer_utils.h>
 #include <Analyzer/Utils.h>
 #include <Common/tests/gtest_global_context.h>
@@ -16,13 +16,13 @@
 
 using namespace DB;
 
-TEST(LikeToRangeRewrite, rewrite)
+TEST(LikePerfectAffixRewrite, rewrite)
 {
     tryRegisterFunctions();
     auto test_f = [&](const String & cond, const String & expected)
     {
         testPassOnCondition(
-            QueryTreePassPtr(new LikeToRangeRewritePass()), DataTypePtr(new DataTypeString()), 
+            QueryTreePassPtr(new LikePerfectAffixRewritePass()), DataTypePtr(new DataTypeString()), 
             cond, expected);
     };
 
