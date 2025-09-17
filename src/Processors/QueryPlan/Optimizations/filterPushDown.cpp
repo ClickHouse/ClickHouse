@@ -247,7 +247,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto * join = typeid_cast<JoinStep *>(child.get());
     auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
 
-    const bool disj_pushdown_enabled = (join && join->useDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_disjunctions_push_down);
+    const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
 
     if (has_or && !disj_pushdown_enabled)
     {

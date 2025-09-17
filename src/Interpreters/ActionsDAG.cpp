@@ -2605,7 +2605,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 ///   - min(and(children)) = sum_i(min(children[i]))
 ///   - alias forwards to its children
 ///   - leaf/atom: 1 if it's allowed after the bottom-up closure, else 0
-static size_t minAllowedAtomsInDNF(
+size_t minAllowedAtomsInDNF(
     const ActionsDAG::Node * node,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_nodes,
     std::unordered_map<const ActionsDAG::Node *, size_t> & memo)

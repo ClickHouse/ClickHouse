@@ -87,7 +87,7 @@ JoinStep::JoinStep(
     NameSet required_output_,
     bool keep_left_read_in_order_,
     bool use_new_analyzer_,
-    bool use_disjunctions_push_down_)
+    bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
     , min_block_size_rows(min_block_size_rows_)
@@ -96,7 +96,7 @@ JoinStep::JoinStep(
     , required_output(std::move(required_output_))
     , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
-    , use_disjunctions_push_down(use_disjunctions_push_down_)
+    , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
     , disjunctions_optimization_applied(false)
 {
     updateInputHeaders({left_header_, right_header_});

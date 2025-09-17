@@ -76,7 +76,7 @@ private:
     std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
-    bool use_disjunctions_push_down;
+    bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
 
@@ -88,7 +88,7 @@ public:
     void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
 
     bool swap_streams = false;
-    bool useDisjunctionsPushDown() const { return use_disjunctions_push_down; }
+    bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
     PrimaryKeySharding primary_key_sharding;
 };
 
