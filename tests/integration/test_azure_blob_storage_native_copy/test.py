@@ -34,28 +34,14 @@ def generate_config(port):
                         <metadata_type>local</metadata_type>
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
-                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
+                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
                         <container_name>cont</container_name>
                         <skip_access_check>false</skip_access_check>
+                        <account_name>devstoreaccount1</account_name>
+                        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                         <use_native_copy>true</use_native_copy>
                     </disk_azure>
                     <disk_azure_other_bucket>
-                        <metadata_type>local</metadata_type>
-                        <type>object_storage</type>
-                        <object_storage_type>azure_blob_storage</object_storage_type>
-                        <use_native_copy>true</use_native_copy>
-                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
-                        <container_name>othercontainer</container_name>
-                        <skip_access_check>false</skip_access_check>
-                    </disk_azure_other_bucket>
-                    <disk_azure_cache>
-                        <type>cache</type>
-                        <disk>disk_azure</disk>
-                        <path>/tmp/azure_cache/</path>
-                        <max_size>1000000000</max_size>
-                        <cache_on_write_operations>1</cache_on_write_operations>
-                    </disk_azure_cache>
-                    <disk_azure_different_auth>
                         <metadata_type>local</metadata_type>
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
@@ -65,17 +51,14 @@ def generate_config(port):
                         <skip_access_check>false</skip_access_check>
                         <account_name>devstoreaccount1</account_name>
                         <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
-                    </disk_azure_different_auth>
-                    <disk_azure_small_native_copy>
-                        <metadata_type>local</metadata_type>
-                        <type>object_storage</type>
-                        <object_storage_type>azure_blob_storage</object_storage_type>
-                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
-                        <container_name>cont</container_name>
-                        <skip_access_check>false</skip_access_check>
-                        <use_native_copy>true</use_native_copy>
-                        <max_single_part_copy_size>4</max_single_part_copy_size>
-                    </disk_azure_small_native_copy>
+                    </disk_azure_other_bucket>
+                    <disk_azure_cache>
+                        <type>cache</type>
+                        <disk>disk_azure</disk>
+                        <path>/tmp/azure_cache/</path>
+                        <max_size>1000000000</max_size>
+                        <cache_on_write_operations>1</cache_on_write_operations>
+                    </disk_azure_cache>
                 </disks>
                 <policies>
                     <policy_azure>
@@ -99,20 +82,12 @@ def generate_config(port):
                             </main>
                         </volumes>
                     </policy_azure_cache>
-                    <policy_azure_different_auth>
-                        <volumes>
-                            <main>
-                                <disk>disk_azure_different_auth</disk>
-                            </main>
-                        </volumes>
-                    </policy_azure_different_auth>
                 </policies>
             </storage_configuration>
             <backups>
                 <allowed_disk>disk_azure</allowed_disk>
                 <allowed_disk>disk_azure_cache</allowed_disk>
                 <allowed_disk>disk_azure_other_bucket</allowed_disk>
-                <allowed_disk>disk_azure_different_auth</allowed_disk>
             </backups>
         </clickhouse>
         """
@@ -138,11 +113,6 @@ def cluster():
         )
         cluster.add_instance(
             "node3",
-            main_configs=[path],
-            with_azurite=True,
-        )
-        cluster.add_instance(
-            "node4",
             main_configs=[path],
             with_azurite=True,
         )
@@ -189,15 +159,13 @@ def azure_query(
 
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
-    azure_query(node1, f"DROP TABLE IF EXISTS test_simple_merge_tree SYNC")
     azure_query(
         node1,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node1, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node1,
@@ -208,7 +176,7 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
 
     azure_query(
         node1,
-        f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination} SETTINGS allow_azure_native_copy = 1;",
+        f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
     )
     assert (
         azure_query(node1, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
@@ -222,7 +190,6 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
 
 def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
-    azure_query(node2, f"DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket SYNC")
     azure_query(
         node2,
         f"CREATE TABLE test_simple_merge_tree_different_bucket(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_other_bucket'",
@@ -231,8 +198,7 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
         node2, f"INSERT INTO test_simple_merge_tree_different_bucket VALUES (1, 'a')"
     )
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_different_bucket_backup_different_bucket')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_different_bucket_backup_different_bucket')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node2,
@@ -260,15 +226,13 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
 
 def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     node3 = cluster.instances["node3"]
-    azure_query(node3, f"DROP TABLE IF EXISTS test_simple_merge_tree_async SYNC")
     azure_query(
         node3,
         f"CREATE TABLE test_simple_merge_tree_async(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node3, f"INSERT INTO test_simple_merge_tree_async VALUES (1, 'a')")
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_async_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_async_backup')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node3,
@@ -292,90 +256,3 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
 
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async")
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async_restored")
-
-
-def test_backup_restore_native_copy_disabled_in_query(cluster):
-    node4 = cluster.instances["node4"]
-    azure_query(node4, f"DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query SYNC")
-    azure_query(
-        node4,
-        f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_in_query(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure'",
-    )
-    azure_query(
-        node4,
-        f"INSERT INTO test_simple_merge_tree_native_copy_disabled_in_query VALUES (1, 'a')",
-    )
-
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_native_copy_disabled_in_query_backup')"
-    print("BACKUP DEST", backup_destination)
-    azure_query(
-        node4,
-        f"BACKUP TABLE test_simple_merge_tree_native_copy_disabled_in_query TO {backup_destination} SETTINGS allow_azure_native_copy = 0",
-    )
-
-    assert not node4.contains_in_log("using native copy")
-
-
-def test_backup_restore_native_copy_disabled_due_to_different_auth(cluster):
-    node4 = cluster.instances["node4"]
-    azure_query(node4, f"DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_due_to_different_auth SYNC")
-    azure_query(
-        node4,
-        f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_due_to_different_auth(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_different_auth'",
-    )
-    azure_query(
-        node4,
-        f"INSERT INTO test_simple_merge_tree_native_copy_disabled_due_to_different_auth VALUES (1, 'a')",
-    )
-
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_native_copy_disabled_due_to_different_auth_backup')"
-    print("BACKUP DEST", backup_destination)
-    azure_query(
-        node4,
-        f"BACKUP TABLE test_simple_merge_tree_native_copy_disabled_due_to_different_auth TO {backup_destination}",
-    )
-
-    assert not node4.contains_in_log("using native copy")
-
-
-def test_clickhouse_disks_azure(cluster):
-    node4 = cluster.instances["node4"]
-    disk = "disk_azure_small_native_copy"
-    node4.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"echo 'meow' | /usr/bin/clickhouse disks --disk {disk} --query 'write im_a_file.txt'",
-        ]
-    )
-    out = node4.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "disks",
-            "--disk",
-            disk,
-            "--query",
-            "read im_a_file.txt",
-        ]
-    )
-    assert out == "meow\n\n"
-    node4.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"/usr/bin/clickhouse disks --disk {disk} --log-level trace --query 'copy im_a_file.txt another_file.txt'",
-        ]
-    )
-    out = node4.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "disks",
-            "--disk",
-            disk,
-            "--query",
-            "read another_file.txt",
-        ]
-    )
-    assert out == "meow\n\n"

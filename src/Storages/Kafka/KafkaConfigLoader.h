@@ -5,7 +5,6 @@
 #include <Core/Names.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Logger.h>
-#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
 namespace DB
 {
@@ -47,7 +46,7 @@ struct KafkaConfigLoader
     };
 
     template <typename TKafkaStorage>
-    static cppkafka::Configuration getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkPtr());
+    static cppkafka::Configuration getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params);
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);

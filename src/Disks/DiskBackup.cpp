@@ -144,7 +144,7 @@ void DiskBackup::replaceFile(const String &, const String &)
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
+DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>, std::optional<size_t>) const
 {
     std::string replaced_path = replacePathPrefix(path);
     return backup->readFile(replaced_path);
@@ -267,6 +267,10 @@ DataSourceDescription DiskBackup::getDataSourceDescription() const
     description.description = "DiskBackup";
 
     return description;
+}
+
+void DiskBackup::startupImpl(ContextPtr)
+{
 }
 
 void DiskBackup::shutdown()

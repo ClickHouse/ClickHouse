@@ -17,12 +17,12 @@ Columns:
 - `name` ([String](../../sql-reference/data-types/string.md)) — [Dictionary name](../../sql-reference/dictionaries/index.md).
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Dictionary UUID.
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Dictionary status. Possible values:
-  - `NOT_LOADED` — Dictionary was not loaded because it was not used.
-  - `LOADED` — Dictionary loaded successfully.
-  - `FAILED` — Unable to load the dictionary as a result of an error.
-  - `LOADING` — Dictionary is loading now.
-  - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](/sql-reference/statements/system#reload-dictionaries) query, timeout, dictionary config has changed).
-  - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+    - `NOT_LOADED` — Dictionary was not loaded because it was not used.
+    - `LOADED` — Dictionary loaded successfully.
+    - `FAILED` — Unable to load the dictionary as a result of an error.
+    - `LOADING` — Dictionary is loading now.
+    - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](/sql-reference/statements/system#reload-dictionaries) query, timeout, dictionary config has changed).
+    - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
 - `origin` ([String](../../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Type of dictionary allocation. [Storing Dictionaries in Memory](/sql-reference/dictionaries#storing-dictionaries-in-memory).
 - `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](/operations/system-tables/dictionaries) provided by the dictionary.
@@ -40,7 +40,6 @@ Columns:
 - `lifetime_max` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Maximum [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 - `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 - `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
-- `error_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) - Number of errors since last successful loading. Helps to monitor some troubles with dictionary sources and investigate the causes.
 - `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
 - `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 - `comment` ([String](../../sql-reference/data-types/string.md)) — Text of the comment to dictionary.
@@ -49,7 +48,7 @@ Columns:
 
 Configure the dictionary:
 
-```sql
+``` sql
 CREATE DICTIONARY dictionary_with_comment
 (
     id UInt64,
@@ -64,11 +63,11 @@ COMMENT 'The temporary dictionary';
 
 Make sure that the dictionary is loaded.
 
-```sql
+``` sql
 SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 database:                    default

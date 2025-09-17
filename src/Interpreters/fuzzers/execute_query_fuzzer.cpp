@@ -37,10 +37,10 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(false);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(false);
+    registerDictionaries(false);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -75,7 +75,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         {
             PullingPipelineExecutor executor(io.pipeline);
             Block res;
-            while (res.empty() && executor.pull(res));
+            while (!res && executor.pull(res));
         }
         /// We don't want to execute it and thus need to finish it properly.
         else

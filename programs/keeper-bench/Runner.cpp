@@ -1,4 +1,4 @@
-#include <Runner.h>
+#include "Runner.h"
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -41,7 +41,7 @@ namespace CurrentMetrics
 
 namespace DB::Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -576,8 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
-            nullptr,
+            1,
+            std::nullopt,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);
@@ -1318,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
     future.get();
 
     std::span children_span(children);

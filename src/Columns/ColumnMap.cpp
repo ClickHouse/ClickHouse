@@ -155,29 +155,14 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
     return nested->serializeValueIntoArena(n, arena, begin);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
-}
-
 char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return nested->serializeValueIntoMemory(n, memory);
 }
 
-std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
-{
-    return nested->getSerializedValueSize(n);
-}
-
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
     return nested->deserializeAndInsertFromArena(pos);
-}
-
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
 }
 
 const char * ColumnMap::skipSerializedInArena(const char * pos) const
@@ -301,13 +286,13 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnMap::prepareForSquashing(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->prepareForSquashing(nested_source_columns, factor);
+    nested->prepareForSquashing(nested_source_columns);
 }
 
 void ColumnMap::shrinkToFit()
