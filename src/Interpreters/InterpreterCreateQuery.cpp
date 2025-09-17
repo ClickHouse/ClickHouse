@@ -1498,6 +1498,12 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+bool isCreateQueryWithImmediateInsertSelect(const ASTCreateQuery & create)
+{
+    return create.select && !create.attach && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate);
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2146,7 +2152,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         /// Try fill temporary table
         BlockIO fill_io = fillTableIfNeeded(create);
-        executeTrivialBlockIO(fill_io, getContext());
+        /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
+        /// passing this callback allows tcp sessions to send progress, stats and logs.
+        /// It prevents getting socket timeout as well.
+        bool with_interactive_cancel = isCreateQueryWithImmediateInsertSelect(create);
+        executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
         /// Replace target table with created one
         ASTRenameQuery::Element elem
@@ -2216,9 +2226,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view && !create.is_live_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    if (isCreateQueryWithImmediateInsertSelect(create))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
