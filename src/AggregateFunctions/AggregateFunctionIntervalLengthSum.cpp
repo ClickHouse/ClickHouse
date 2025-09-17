@@ -288,7 +288,6 @@ intervalLengthSum(start, end)
         {"start", "The starting value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}},
         {"end", "The ending value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}}
     };
-    FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be UInt64 or Float64 type.", {"UInt64", "Float64"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -336,10 +335,9 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, {},
-  documentation});
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, {}, documentation});
 }
 
 }
