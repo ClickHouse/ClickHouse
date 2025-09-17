@@ -57,7 +57,7 @@ def get_spark(cluster : ClickHouseCluster):
             .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
             .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog") \
             .config("spark.sql.catalog.spark_catalog.type", "hadoop") \
-            .config("spark.sql.catalog.spark_catalog.warehouse", "s3a://root/iceberg_data") \
+            .config("spark.sql.catalog.spark_catalog.warehouse", "s3a://root/var/lib/clickhouse/user_files/iceberg_data") \
             .config("spark.hadoop.fs.s3a.endpoint", f"http://{cluster.minio_ip}:{cluster.minio_port}/") \
             .config("spark.hadoop.fs.s3a.access.key", minio_access_key) \
             .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key) \
