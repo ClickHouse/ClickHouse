@@ -107,7 +107,7 @@ REGISTER_FUNCTION(FilterContains)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"True if the key was found in the filter", {"Bool"}};
     FunctionDocumentation::Examples examples = {{"Example", "This function is not supposed to be used in user queries. It might be added to query plan during optimization. ", ""}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     factory.registerFunction<FunctionFilterContains>({description, syntax, arguments, returned_value, examples, introduced_in, category}, FunctionFactory::Case::Sensitive);
