@@ -1122,7 +1122,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
-                Nested::concatenateName(full_column_name, "list.element"),
+                full_column_name,
                 dictionary_infos,
                 nested_type_hint,
                 is_nested_nullable_column,
@@ -1212,12 +1212,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 {
                     chassert(clickhouse_columns_to_parquet);
 
-                    auto column_to_search = full_column_name;
-                    if (column_to_search.ends_with("list.element"))
-                        column_to_search = column_to_search.substr(0, column_to_search.size() - 13);
                     /// Full name of the parquet column.
                     /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
-                    auto full_name = clickhouse_columns_to_parquet->at(column_to_search);
+                    auto full_name = clickhouse_columns_to_parquet->at(full_column_name);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
                     {
