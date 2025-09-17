@@ -1,4 +1,5 @@
 #include <Client/ClientApplicationBase.h>
+#include <Client/ClientBaseOptimizedParts.h>
 
 #include <filesystem>
 #include <vector>
@@ -23,59 +24,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNRECOGNIZED_ARGUMENTS;
-}
-
-namespace
-{
-
-/*
- * This functor is used to parse command line arguments and replace dashes with underscores,
- * allowing options to be specified using either dashes or underscores.
- */
-class OptionsAliasParser
-{
-public:
-    explicit OptionsAliasParser(const boost::program_options::options_description& options)
-    {
-        options_names.reserve(options.options().size());
-        for (const auto& option : options.options())
-            options_names.insert(option->long_name());
-    }
-
-    /*
-     * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
-     * Implements boost::program_options::ext_parser logic
-     */
-    std::pair<std::string, std::string> operator()(const std::string & token) const
-    {
-        if (!token.starts_with("--"))
-            return {};
-        std::string arg = token.substr(2);
-
-        // divide token by '=' to separate key and value if options style=long_allow_adjacent
-        auto pos_eq = arg.find('=');
-        std::string key = arg.substr(0, pos_eq);
-
-        if (options_names.contains(key))
-            // option does not require any changes, because it is already correct
-            return {};
-
-        std::replace(key.begin(), key.end(), '-', '_');
-        if (!options_names.contains(key))
-            // after replacing '-' with '_' argument is still unknown
-            return {};
-
-        std::string value;
-        if (pos_eq != std::string::npos && pos_eq < arg.size())
-            value = arg.substr(pos_eq + 1);
-
-        return {key, value};
-    }
-
-private:
-    std::unordered_set<std::string> options_names;
-};
-
 }
 
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
@@ -133,6 +81,39 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
     }
 
     po::store(parsed, options);
+}
+
+OptionsAliasParser::OptionsAliasParser(const boost::program_options::options_description& options)
+{
+    options_names.reserve(options.options().size());
+    for (const auto& option : options.options())
+        options_names.insert(option->long_name());
+}
+
+std::pair<std::string, std::string> OptionsAliasParser::operator()(const std::string & token) const
+{
+    if (!token.starts_with("--"))
+        return {};
+    std::string arg = token.substr(2);
+
+    // divide token by '=' to separate key and value if options style=long_allow_adjacent
+    auto pos_eq = arg.find('=');
+    std::string key = arg.substr(0, pos_eq);
+
+    if (options_names.contains(key))
+        // option does not require any changes, because it is already correct
+        return {};
+
+    std::replace(key.begin(), key.end(), '-', '_');
+    if (!options_names.contains(key))
+        // after replacing '-' with '_' argument is still unknown
+        return {};
+
+    std::string value;
+    if (pos_eq != std::string::npos && pos_eq < arg.size())
+        value = arg.substr(pos_eq + 1);
+
+    return {key, value};
 }
 
 }
