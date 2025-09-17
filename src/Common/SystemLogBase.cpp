@@ -127,7 +127,15 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+        const size_t last_log_index = getLastLogIndex();
+        if (settings.wait_flush_on_crash)
+        {
+            waitFlush(last_log_index,  /* should_prepare_tables_anyway */ true);
+        }
+        else
+        {
+            notifyFlush(last_log_index, /* should_prepare_tables_anyway */ true);
+        }
     }
 }
 

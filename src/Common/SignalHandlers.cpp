@@ -6,6 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <Interpreters/SystemLog.h>
 #include <base/sleep.h>
 #include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -26,8 +27,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_SET_SIGNAL_HANDLER;
-extern const int CANNOT_SEND_SIGNAL;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_SEND_SIGNAL;
 }
 
 }
@@ -516,7 +517,8 @@ try
     if (collectCrashLog)
         collectCrashLog(sig, thread_num, query_id, stack_trace);
 
-    Context::getGlobalContextInstance()->handleCrash();
+    SystemLogs system_logs = Context::getGlobalContextInstance()->getSystemLogs();
+    system_logs.handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)

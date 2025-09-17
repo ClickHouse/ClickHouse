@@ -110,6 +110,7 @@ struct SystemLogQueueSettings
     size_t buffer_size_rows_flush_threshold;
     size_t flush_interval_milliseconds;
     bool notify_flush_on_crash;
+    bool wait_flush_on_crash;
     bool turn_off_logger;
 };
 
@@ -223,6 +224,7 @@ public:
     static consteval size_t getDefaultReservedSize() { return 8192; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7500; }
     static consteval bool shouldNotifyFlushOnCrash() { return false; }
+    static consteval bool shouldWaitFlushOnCrash() { return false; }
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:

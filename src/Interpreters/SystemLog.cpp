@@ -3,6 +3,8 @@
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
+#include <base/sleep.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
@@ -68,6 +70,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char sleep_in_logs_flush[];
+}
 
 namespace ServerSetting
 {
@@ -286,6 +293,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
+
+    log_settings.queue_settings.wait_flush_on_crash = config.getBool(config_prefix + ".wait_flush_on_crash",
+                                                                       TSystemLog::shouldWaitFlushOnCrash());
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
@@ -612,6 +622,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
             to_flush.size(), to_flush_end);
+
+        fiu_do_on(FailPoints::sleep_in_logs_flush,
+        {
+            sleepForSeconds(30);
+        });
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
