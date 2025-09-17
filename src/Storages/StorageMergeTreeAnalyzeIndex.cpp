@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <Core/Field.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -64,6 +65,8 @@ protected:
         auto ranges = getIndexAnalysis();
         MutableColumns res_columns = header->cloneEmptyColumns();
 
+        std::unordered_set<std::string> processed_parts;
+
         for (const auto & ranges_in_part : ranges)
         {
             size_t i = 0;
@@ -76,6 +79,19 @@ protected:
                     field.push_back(Tuple{range.begin, range.end});
                 res_columns[i++]->insert(std::move(field));
             }
+
+            processed_parts.insert(ranges_in_part.data_part->name);
+        }
+
+        /// Add existing parts, but filtered out into the result.
+        for (const auto & part : data_parts)
+        {
+            if (processed_parts.contains(part->name))
+                continue;
+
+            size_t i = 0;
+            res_columns[i++]->insert(part->name);
+            res_columns[i++]->insertDefault();
         }
 
         size_t rows = res_columns.front()->size();
