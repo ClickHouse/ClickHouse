@@ -138,18 +138,23 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
     IColumn::Filter delete_vector(num_rows, true);
     size_t num_rows_after_filtration = num_rows;
 
-    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
+    auto chunk_info = chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
 
     size_t row_num_offset = chunk_info->row_num_offset;
-    for (size_t i = 0; i < num_rows; i++)
+    const auto & applied_filter = chunk_info->applied_filter;
+    size_t num_indices = applied_filter.empty() ? num_rows : applied_filter.size();
+    for (size_t i = 0; i < num_indices; i++)
     {
-        size_t row_idx = row_num_offset + i;
-        if (bitmap.rb_contains(row_idx))
+        if (applied_filter.empty() || applied_filter[i])
         {
-            delete_vector[i] = false;
-            num_rows_after_filtration--;
+            size_t row_idx = row_num_offset + i;
+            if (bitmap.rb_contains(row_idx))
+            {
+                delete_vector[i] = false;
+                num_rows_after_filtration--;
+            }
         }
     }
 
@@ -223,43 +228,53 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows, true);
     size_t num_rows_after_filtration = chunk.getNumRows();
-    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
+    auto chunk_info = chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
 
-    size_t total_previous_chunks_size = chunk_info->row_num_offset;
-    if (previous_chunk_offset && previous_chunk_offset.value() > total_previous_chunks_size)
+    size_t num_indices = chunk_info->applied_filter.empty() ? chunk.getNumRows() : chunk_info->applied_filter.size();
+
+    if (previous_chunk_end_offset && previous_chunk_end_offset.value() > chunk_info->row_num_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");
-    previous_chunk_offset = total_previous_chunks_size;
-    for (size_t i = 0; i < chunk.getNumRows(); ++i)
+    previous_chunk_end_offset = chunk_info->row_num_offset + num_indices;
+
+    size_t idx_in_chunk = 0;
+    for (size_t i = 0; i < num_indices; i++)
     {
-        while (!latest_positions.empty())
+        if (chunk_info->applied_filter.empty() || chunk_info->applied_filter[i])
         {
-            auto it = latest_positions.begin();
-            if (it->first < i + total_previous_chunks_size)
+            size_t row_idx = chunk_info->row_num_offset + i;
+
+            while (!latest_positions.empty())
             {
-                size_t delete_source_index = it->second;
-                latest_positions.erase(it);
-                if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
+                auto it = latest_positions.begin();
+                if (it->first < row_idx)
                 {
-                    fetchNewChunkFromSource(delete_source_index);
+                    size_t delete_source_index = it->second;
+                    latest_positions.erase(it);
+                    if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
+                    {
+                        fetchNewChunkFromSource(delete_source_index);
+                    }
+                    else
+                    {
+                        ++iterator_at_latest_chunks[delete_source_index];
+                        auto position_index = delete_source_column_indices[delete_source_index].position_index;
+                        size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
+                        latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
+                    }
+                }
+                else if (it->first == row_idx)
+                {
+                    filter[idx_in_chunk] = false;
+                    --num_rows_after_filtration;
+                    break;
                 }
                 else
-                {
-                    ++iterator_at_latest_chunks[delete_source_index];
-                    auto position_index = delete_source_column_indices[delete_source_index].position_index;
-                    size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
-                    latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
-                }
+                    break;
             }
-            else if (it->first == i + total_previous_chunks_size)
-            {
-                filter[i] = false;
-                --num_rows_after_filtration;
-                break;
-            }
-            else
-                break;
+
+            idx_in_chunk += 1;
         }
     }
 
