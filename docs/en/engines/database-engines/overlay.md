@@ -6,18 +6,13 @@ sidebar_label: 'Overlay'
 sidebar_position: 51
 ---
 
-# `DatabaseOverlay` — design & behavior (current implementation)
+# `Overlay` — design & behavior (current implementation)
 
-## What is `DatabaseOverlay`? {#introduction}
+## What is `Overlay`? {#introduction}
 
-`DatabaseOverlay` is a logical "view" database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself.
+`Overlay` is a logical "view" database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself.
 
-`DatabaseOverlay` is used in `clickhouse-local` for various reasons:
-
-- `DatabaseOverlay`: Implements the `IDatabase` interface. Allow to combine multiple databases, such as `FileSystem` and Memory. Internally, it stores a vector with other database pointers and proxies requests to them in turn until it is executed successfully.
-- `DatabaseFilesystem`: allows to read-only interact with files stored on the file system. Internally, it uses `TableFunctionFile` to implicitly load file when a user requests the table. Result of `TableFunctionFile` call cached inside to provide quick access.
-- `DatabaseS3`: allows to read-only interact with s3 storage. It uses `TableFunctionS3` to implicitly load table from s3
-`DatabaseHDFS`: allows to interact with hdfs storage. It uses `TableFunctionHDFS` to implicitly load table from hdfs
+`Overlay` is used in `clickhouse-local` for to load local files in temporary ephemeral databases.
 
 ---
 
@@ -40,30 +35,6 @@ sidebar_position: 51
 | `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying DB.         |
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
-
-### Database life cycle (facade mode) {#life-cycle}
-
-* `DROP DATABASE dboverlay` — **succeeds** and **does not** cascade to members.
-
-  * Implementation details that make this safe:
-
-    * `getUUID()` returns **Nil** (no DB UUID mapping).
-    * `getTablesIterator(ctx, filter, /*skip_not_loaded=*/true)` returns **empty** (so the dropper doesn’t see tables).
-    * `empty()` returns **true** (facade reports empty during destructive passes).
-    * `dropTable()` is a **no-op** (dropper won’t fail mid-way).
-    * `drop()` is a **no-op** (doesn’t touch member DBs).
-* `isReadOnly()` returns **true** in case of server (**readonly**) implementation (so the server doesn’t block `DROP DATABASE` up front). Mutating table ops are still guarded individually.
-
----
-
-## Resilience & safety {#safty}
-
-* **Null-safety**: all loops over `databases` skip `nullptr` entries; `registerNextDatabase()` rejects `nullptr`.
-  This prevents crashes from bad metadata or attach order.
-* **No-op on startup tasks** in facade mode: `loadStoredObjects`, `beforeLoadingMetadata`, `loadTablesMetadata`, `loadTableFromMetadata*`, `startup*`, `wait*`, `stopLoading` — all return immediately.
-  This avoids double registrations and keeps the overlay a pure view.
-
----
 
 ## Error codes and messages (facade mode) {#error-codes}
 
@@ -126,5 +97,4 @@ DROP DATABASE dboverlay SYNC;
 
 ## Compatibility notes {#compatibility}
 
-* Facade overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.
-* `clickhouse-local` path (`OwnedMembers`) preserves the legacy expectation that overlay UUID equals the first member’s UUID.
+* Overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.

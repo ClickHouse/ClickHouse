@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Unique names per test run
 SUF="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-DB_A="db_overlay_a_${SUF}"
-DB_B="db_overlay_b_${SUF}"
+DB_A="db_a_${SUF}"
+DB_B="db_b_${SUF}"
 DB_OVL="dboverlay_${SUF}"
 
 T_A="t_a"
