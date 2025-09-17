@@ -322,7 +322,7 @@ static void explainStep(
     const ExplainPlanOptions & options,
     size_t max_description_lengs)
 {
-    std::string prefix(settings.offset, ' ');
+    const std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 

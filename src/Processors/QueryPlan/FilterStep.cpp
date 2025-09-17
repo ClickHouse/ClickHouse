@@ -292,6 +292,9 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMu
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
 
+    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "In {} cannot be more inputs in the DAG than columns in the input header", getName());
+
     const auto required_output_count = required_outputs.size();
     auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
