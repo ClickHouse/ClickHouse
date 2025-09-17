@@ -12,6 +12,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -938,6 +939,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
+        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
+            "startup_scripts_failure_reason",
+            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+            {"error_name"}
+        );
+        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -2593,7 +2600,9 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
+
+        global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
+
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
