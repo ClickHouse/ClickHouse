@@ -47,7 +47,7 @@ def clear_workloads_and_resources():
 
 
 @pytest.fixture(scope="function")
-def with_custom_config(cluster, request):
+def with_custom_config(request):
     for name, server_settings in request.param.items():
         node = cluster.instances[name]
         xml = "".join(f"<{k}>{v}</{k}>" for k, v in server_settings.items())
@@ -379,7 +379,16 @@ class DynamicQueryPool:
         mylog(f"Workload {self.workload} thread_id={thread_id} stopped")
 
 
-@pytest.mark.parametrize("with_custom_config", [{ 'node': {"cpu_slot_preemption_timeout_ms": "1"}}], indirect=True)
+@pytest.mark.parametrize(
+    "with_custom_config",
+    [
+        pytest.param(
+            {'node': {"cpu_slot_preemption_timeout_ms": "1"}},
+            id="cpu-slot-preemption-timeout-1ms",
+        )
+    ],
+    indirect=True,
+)
 def test_downscaling(with_custom_config):
     node.query(
         f"""
