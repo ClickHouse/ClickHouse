@@ -176,7 +176,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
     actions_settings = std::move(actions_settings_);
 
-    enable_join_runtime_filters = from[Setting::enable_join_runtime_filters];
+    enable_join_runtime_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_join_runtime_filters];
     join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
