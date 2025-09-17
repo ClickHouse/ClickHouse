@@ -150,10 +150,20 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if info.pr_number == 0 and info.is_push_event:
+    version_dict = None
+    if not info.is_local_run:
         version_dict = info.get_kv_data("version")
-    else:
+
+    if not version_dict:
         version_dict = CHVersion.get_current_version_as_dict()
+        if not info.is_local_run:
+            print(
+                "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
+            )
+            info.add_workflow_report_message(
+                "WARNING: ClickHouse version has not been found in workflow kv storage"
+            )
+    assert version_dict
 
     if res and JobStages.CMAKE in stages:
         assert version_dict, "Failed to determine build version"

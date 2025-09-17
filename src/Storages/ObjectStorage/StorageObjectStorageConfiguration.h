@@ -13,6 +13,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -233,6 +234,8 @@ public:
         return false;
     }
 
+    virtual void drop(ContextPtr) {}
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -245,6 +248,10 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
+    }
 
     void assertInitialized() const;
 

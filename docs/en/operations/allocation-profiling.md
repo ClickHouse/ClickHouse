@@ -11,17 +11,171 @@ import TabItem from '@theme/TabItem';
 # Allocation profiling
 
 ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator. Jemalloc comes with some tools for allocation sampling and profiling.  
-To make allocation profiling more convenient, `SYSTEM` commands are provided along with four letter word (4LW) commands in Keeper.
+To make allocation profiling more convenient, ClickHouse and Keeper allow you to control sampling using configs, query settings,`SYSTEM` commands and four letter word (4LW) commands in Keeper.   
+Additionally, samples can be collected into `system.trace_log` table under `JemallocSample` type.
 
-## Sampling allocations and flushing heap profiles {#sampling-allocations-and-flushing-heap-profiles}
+:::note
 
-If you want to sample and profile allocations in `jemalloc`, you need to start ClickHouse/Keeper with profiling enabled using the environment variable `MALLOC_CONF`:
+This guide is applicable for versions 25.9+.
+For older versions, please check [allocation profiling for versions before 25.9](/operations/allocation-profiling-old.md).
 
-```sh
-MALLOC_CONF=background_thread:true,prof:true
+:::
+
+## Sampling allocations {#sampling-allocations}
+
+If you want to sample and profile allocations in `jemalloc`, you need to start ClickHouse/Keeper with config `jemalloc_enable_global_profiler` enabled.
+
+```xml
+<clickhouse>
+    <jemalloc_enable_global_profiler>1</jemalloc_enable_global_profiler>
+</clickhouse>
 ```
 
 `jemalloc` will sample allocations and store the information internally.
+
+You can also enable allocations per query by using `jemalloc_enable_profiler` setting.
+
+:::warning Warning
+Because ClickHouse is an allocation-heavy application, jemalloc sampling may incur performance overhead.
+:::
+
+## Storing jemalloc samples in `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
+
+You can store all the jemalloc samples in `system.trace_log` under `JemallocSample` type.
+To enable it globally you can use config `jemalloc_collect_global_profile_samples_in_trace_log`.
+
+```xml
+<clickhouse>
+    <jemalloc_collect_global_profile_samples_in_trace_log>1</jemalloc_collect_global_profile_samples_in_trace_log>
+</clickhouse>
+```
+
+:::warning Warning
+Because ClickHouse is an allocation-heavy application, collecting all samples in system.trace_log may incur high load.
+:::
+
+You can also enable it per query by using `jemalloc_collect_profile_samples_in_trace_log` setting.
+
+### Example of analyzing memory usage of a query using `system.trace_log` {#example-analyzing-memory-usage-trace-log}
+
+First, we need to run the query with enabled jemalloc profiler and collect the samples for it into `system.trace_log`:
+
+```sql
+SELECT *
+FROM numbers(1000000)
+ORDER BY number DESC
+SETTINGS max_bytes_ratio_before_external_sort = 0
+FORMAT `Null`
+SETTINGS jemalloc_enable_profiler = 1, jemalloc_collect_profile_samples_in_trace_log = 1
+
+Query id: 8678d8fe-62c5-48b8-b0cd-26851c62dd75
+
+Ok.
+
+0 rows in set. Elapsed: 0.009 sec. Processed 1.00 million rows, 8.00 MB (108.58 million rows/s., 868.61 MB/s.)
+Peak memory usage: 12.65 MiB.
+```
+
+:::note
+If ClickHouse was started with `jemalloc_enable_global_profiler`, you don't have to enable `jemalloc_enable_profiler`.   
+Same is true for `jemalloc_collect_global_profile_samples_in_trace_log` and `jemalloc_collect_profile_samples_in_trace_log`.
+:::
+
+We will flush the `system.trace_log`:
+
+```sql
+SYSTEM FLUSH LOGS trace_log
+```
+and query it to get memory usage of the query we run for each time point:
+```sql
+WITH per_bucket AS
+(
+    SELECT
+        event_time_microseconds AS bucket_time,
+        sum(size) AS bucket_sum
+    FROM system.trace_log
+    WHERE trace_type = 'JemallocSample'
+      AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+    GROUP BY bucket_time
+)
+SELECT
+    bucket_time,
+    sum(bucket_sum) OVER (
+        ORDER BY bucket_time ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS cumulative_size,
+    formatReadableSize(cumulative_size) AS cumulative_size_readable
+FROM per_bucket
+ORDER BY bucket_time
+```
+
+We can also find the time where the memory usage was the highest:
+
+```sql
+SELECT
+    argMax(bucket_time, cumulative_size),
+    max(cumulative_size)
+FROM
+(
+    WITH per_bucket AS
+    (
+        SELECT
+            event_time_microseconds AS bucket_time,
+            sum(size) AS bucket_sum
+        FROM system.trace_log
+        WHERE trace_type = 'JemallocSample'
+          AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+        GROUP BY bucket_time
+    )
+    SELECT
+        bucket_time,
+        sum(bucket_sum) OVER (
+            ORDER BY bucket_time ASC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_size,
+        formatReadableSize(cumulative_size) AS cumulative_size_readable
+    FROM per_bucket
+    ORDER BY bucket_time
+)
+```
+
+We can use that result to see from where did we have the most active allocations at that time point:
+
+```sql
+SELECT
+    concat(
+        '\n',
+        arrayStringConcat(
+            arrayMap(
+                (x, y) -> concat(x, ': ', y),
+                arrayMap(x -> addressToLine(x), allocation_trace),
+                arrayMap(x -> demangle(addressToSymbol(x)), allocation_trace)
+            ),
+            '\n'
+        )
+    ) AS symbolized_trace,
+    sum(s) AS per_trace_sum
+FROM
+(
+    SELECT
+        ptr,
+        sum(size) AS s,
+        argMax(trace, event_time_microseconds) AS allocation_trace
+    FROM system.trace_log
+    WHERE trace_type = 'JemallocSample'
+      AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+      AND event_time_microseconds <= '2025-09-04 11:56:21.737139'
+    GROUP BY ptr
+    HAVING s > 0
+)
+GROUP BY ALL
+ORDER BY per_trace_sum ASC
+```
+
+## Flushing heap profiles {#flushing-heap-profiles}
+
+By default, the heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.  
+For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap`, and follows the same rules.
 
 You can tell `jemalloc` to flush the current profile by running:
 
@@ -30,6 +184,13 @@ You can tell `jemalloc` to flush the current profile by running:
     
 ```sql
 SYSTEM JEMALLOC FLUSH PROFILE
+```
+
+It will return the location of the flushed profile.
+
+You can also specify a different prefix for the file in the query:
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE TO '/tmp/my_own_prefix'
 ```
 
 </TabItem>
@@ -42,14 +203,11 @@ echo jmfp | nc localhost 9181
 </TabItem>
 </Tabs>
 
-By default, the heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.  
-For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap`, and follows the same rules.
-
 A different location can be defined by appending the `MALLOC_CONF` environment variable with the `prof_prefix` option.  
 For example, if you want to generate profiles in the `/data` folder where the filename prefix will be `my_current_profile`, you can run ClickHouse/Keeper with the following environment variable:
 
 ```sh
-MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
+MALLOC_CONF=prof_prefix:/data/my_current_profile
 ```
 
 The generated file will be appended to the prefix PID and sequence number.
@@ -63,7 +221,7 @@ For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc
 
 :::note
 `jeprof` uses `addr2line` to generate stacktraces which can be really slow.  
-If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
+If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.   
 
 ```bash
 git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
@@ -71,6 +229,9 @@ cd addr2line
 cargo build --features bin --release
 cp ./target/release/addr2line path/to/current/addr2line
 ```
+
+Alternatively, `llvm-addr2line` works equally well.
+
 :::
 
 There are many different formats to generate from the heap profile using `jeprof`.
@@ -121,58 +282,6 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 ```
 
 Another interesting tool is [speedscope](https://www.speedscope.app/) that allows you to analyze collected stacks in a more interactive way.
-
-## Controlling allocation profiler during runtime {#controlling-allocation-profiler-during-runtime}
-
-If ClickHouse/Keeper is started with the profiler enabled, additional commands for disabling/enabling allocation profiling during runtime are supported.
-Using those commands, it's easier to profile only specific intervals.
-
-To disable the profiler:
-
-<Tabs groupId="binary">
-<TabItem value="clickhouse" label="ClickHouse">
-
-```sql
-SYSTEM JEMALLOC DISABLE PROFILE
-```
-
-</TabItem>
-<TabItem value="keeper" label="Keeper">
-
-```sh
-echo jmdp | nc localhost 9181
-```
-
-</TabItem>
-</Tabs>
-
-To enable the profiler:
-
-<Tabs groupId="binary">
-<TabItem value="clickhouse" label="ClickHouse">
-
-```sql
-SYSTEM JEMALLOC ENABLE PROFILE
-```
-
-</TabItem>
-<TabItem value="keeper" label="Keeper">
-
-```sh
-echo jmep | nc localhost 9181
-```
-
-</TabItem>
-</Tabs>
-
-It's also possible to control the initial state of the profiler by setting the `prof_active` option which is enabled by default.  
-For example, if you don't want to sample allocations during startup but only after, you can enable the profiler. You can start ClickHouse/Keeper with the following environment variable:
-
-```sh
-MALLOC_CONF=background_thread:true,prof:true,prof_active:false
-```
-
-The profiler can be enabled later.
 
 ## Additional options for the profiler {#additional-options-for-profiler}
 
