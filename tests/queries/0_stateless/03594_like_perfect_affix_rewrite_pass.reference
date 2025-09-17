@@ -110,14 +110,72 @@ FROM default.tab AS __table1
 WHERE __table1.col_string NOT LIKE \'app_ication%\'
 6
 6
-Test low cardinality attribute - should NOT be rewritten
+Test low cardinality string column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE __table1.col_lowcardinality_string LIKE \'a%\'
+WHERE startsWith(__table1.col_lowcardinality_string, \'a\')
 3
 3
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE __table1.col_lowcardinality_string LIKE \'%a\'
+WHERE endsWith(__table1.col_lowcardinality_string, \'a\')
+3
+3
+Test nullable string column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_nullable_string, \'a\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_nullable_string, \'a\')
+3
+3
+Test low cardinality nullable string column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_nullable_string, \'a\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_lowcardinality_nullable_string, \'a\')
+3
+3
+Test low cardinality fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_fixedstring, \'a\')
+3
+3
+Test low cardinality fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_fixedstring LIKE \'%a\\0\'
+3
+3
+Test nullable fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_nullable_fixedstring, \'a\')
+3
+3
+Test nullable fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_nullable_fixedstring LIKE \'%a\\0\'
+3
+3
+Test low cardinality nullable fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_nullable_fixedstring, \'a\')
+3
+3
+Test low cardinality nullable fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_nullable_fixedstring LIKE \'%a\\0\'
 3
 3

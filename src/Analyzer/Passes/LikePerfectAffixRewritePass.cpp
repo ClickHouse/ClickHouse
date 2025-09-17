@@ -7,6 +7,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Core/Settings.h>
 #include <Common/StringUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 
@@ -26,13 +28,13 @@ namespace
   * The scope of the rewrite:
   *     - `col LIKE 'Prefix%'`: as `startsWith(col, 'Prefix')`
   *     - `col LIKE '%Suffix'`: as `endsWith(col, 'Suffix')`
-  *     - `NOT LIKE `: with `NOT`
+  *     - `NOT LIKE `: negating above functions with `NOT`
   * Out of scope:
-  *     - `ILIKE` is not rewritten until starts/endsWithCaseInsensitive is implemented
+  *     - `ILIKE` is not rewritten until starts/endsWithCaseInsensitive is implemented, because lower() or left() based rewrites are suboptimal
   * Type requirement on the left operand, `col`:
-  *     - `startsWith`: Only resolved column of type `String` or `FixedString`
-  *     - `endsWith`: Only resolved column of type `String`
-  *     - `LowCardinality(String)` is unsupported due to non-order-preserving encoding
+  *     - `startsWith`: Only resolved column of type `String`, `FixedString`, or nested types of these:
+  *         - `LowCardinality(S)`, `Nulable(S)`, `LowCardinality(Nullable(S))` where `S` is either `String` or `FixedString`.
+  *     - `endsWith`: same as `startsWith` except `FixedString` (nested or not), because `c LIKE '%suffix\0'` is not equal to `endsWith(c, 'suffix\0')`.
   */
 class LikePerfectAffixRewriteVisitor : public InDepthQueryTreeVisitorWithContext<LikePerfectAffixRewriteVisitor>
 {
@@ -59,8 +61,8 @@ public:
         if (args.size() != 2)
             return;
 
-        /// Do not rewrite for non-column, non-string left hand side
-        if (args[0]->getNodeType() != QueryTreeNodeType::COLUMN || !isStringOrFixedString(args[0]->getResultType()))
+        /// Do not rewrite for non-column left hand side
+        if (args[0]->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
         /// Extract affix (prefix or suffix) and check if suitable for rewrite
@@ -71,12 +73,15 @@ public:
         auto pattern = pattern_constant->getValue().safeGet<String>();
         const bool is_suffix = pattern.starts_with("%");
 
-        /// Do not rewrite for FixedString LIKE suffix, which requires triming trailing null chars
-        if (is_suffix && isFixedString(args[0]->getResultType()))
+        /// Do not rewrite for
+        /// (1) non-string related type (String, FixedString, or nested within LowCardinality or Nullable or both)
+        /// (2) Suffix matching on FixedString, which requires trimming trailing null chars
+        if (!isResultTypeSupported(args[0]->getResultType(), is_suffix))
             return;
 
         /// Only rewrite for perfect prefix or suffix
-        if (is_suffix) /// Suffix is prefix in reverse
+        /// Suffix is prefix in reverse
+        if (is_suffix)
             std::reverse(pattern.begin(), pattern.end());
 
         auto [affix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
@@ -111,6 +116,40 @@ private:
         op_function->getArguments().getNodes() = {std::forward<Args>(operands)...};
         op_function->resolveAsFunction(op_resolver);
         return op_function;
+    }
+
+    inline bool isStr(const DataTypePtr & type, const bool for_suffix)
+    {
+        /// Do not rewrite for fixedstring with suffix, because `col LIKE '%suffix\0'` is not `endsWith(col, 'suffix\0')`
+        if (for_suffix)
+            return isString(type);
+        else
+            return isStringOrFixedString(type);
+    }
+
+    inline bool isResultTypeSupported(const DataTypePtr & type, const bool for_suffix)
+    {
+        return isStr(type, for_suffix) || isNullableStr(type, for_suffix) || isLowCardinalityMaybeNullableStr(type, for_suffix);
+    }
+
+    inline bool isLowCardinalityMaybeNullableStr(const DataTypePtr & type, const bool for_suffix)
+    {
+        if (const DataTypeLowCardinality * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        {
+            DataTypePtr type_dictionary = type_low_cardinality->getDictionaryType();
+            return isStr(type_dictionary, for_suffix) || isNullableStr(type_dictionary, for_suffix);
+        }
+        return false;
+    }
+
+    inline bool isNullableStr(const DataTypePtr & type, const bool for_suffix)
+    {
+        if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            DataTypePtr type_nested = type_nullable->getNestedType();
+            return isStr(type_nested, for_suffix);
+        }
+        return false;
     }
 };
 
