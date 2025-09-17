@@ -91,6 +91,7 @@ std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & 
 
     Expected expected;
     std::unordered_set<std::string> res;
+
     auto parse_single_id_or_literal = [&]
     {
         String str_out;
