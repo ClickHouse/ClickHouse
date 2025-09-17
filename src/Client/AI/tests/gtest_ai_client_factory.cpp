@@ -18,6 +18,29 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+/// Test AIClientFactory with no configuration
+TEST(AIClientFactory, NoConfiguration)
+{
+    AIConfiguration config;
+    auto result = AIClientFactory::createClient(config);
+
+    // If environment variables are set, it will create a client
+    if (Poco::Environment::has("OPENAI_API_KEY") || Poco::Environment::has("ANTHROPIC_API_KEY"))
+    {
+        EXPECT_FALSE(result.no_configuration_found);
+        EXPECT_TRUE(result.client.has_value());
+        EXPECT_TRUE(result.inferred_from_env);
+        EXPECT_FALSE(result.provider.empty());
+    }
+    else
+    {
+        // No environment variables - should return no_configuration_found
+        EXPECT_TRUE(result.no_configuration_found);
+        EXPECT_FALSE(result.client.has_value());
+        EXPECT_TRUE(result.provider.empty());
+    }
+}
+
 /// Test AIClientFactory with invalid configurations
 TEST(AIClientFactory, InvalidProvider)
 {
@@ -48,29 +71,26 @@ TEST(AIClientFactory, EmptyAPIKey)
     config.api_key = "";
 
     // When API key is empty, it should check environment variable
-    // If env var is not set, it should throw
-    if (!Poco::Environment::has("OPENAI_API_KEY"))
+    // The behavior depends on whether OpenAI SDK can create a client with env vars
+    try
     {
-        EXPECT_THROW({
-            AIClientFactory::createClient(config);
-        }, std::runtime_error);
-        
-        try
+        auto result = AIClientFactory::createClient(config);
+        if (result.client.has_value())
         {
-            AIClientFactory::createClient(config);
+            // Environment variable was found and used
+            EXPECT_TRUE(result.client->provider_name() == "openai");
+            EXPECT_TRUE(result.inferred_from_env);
         }
-        catch (const std::runtime_error & e)
+        else
         {
-            EXPECT_NE(std::string(e.what()).find("environment variable not set"), std::string::npos);
+            // This shouldn't happen for OpenAI provider - it should either succeed or throw
+            FAIL() << "OpenAI provider should either create a client or throw an exception";
         }
     }
-    else
+    catch (const std::runtime_error & e)
     {
-        // If env var is set, it should use that and not throw
-        EXPECT_NO_THROW({
-            auto client = AIClientFactory::createClient(config);
-            EXPECT_TRUE(client.provider_name() == "openai");
-        });
+        // No environment variable found - this is expected if OPENAI_API_KEY is not set
+        EXPECT_NE(std::string(e.what()).find("environment variable not set"), std::string::npos);
     }
 }
 
@@ -142,16 +162,20 @@ TEST(AIClientFactory, SpecialCharactersInAPIKey)
     
     // Should not throw - API keys can contain special characters
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.has_value());
+        EXPECT_TRUE(result.client->is_valid());
+        EXPECT_FALSE(result.inferred_from_env);
     });
     
     // Test API key with unicode characters
     config.api_key = "sk-测试-κλειδί-ключ";
     
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.has_value());
+        EXPECT_TRUE(result.client->is_valid());
+        EXPECT_FALSE(result.inferred_from_env);
     });
 }
 
@@ -179,9 +203,11 @@ TEST(AIClientFactory, CreateRealClient)
     
     // Should not throw
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
-        EXPECT_EQ(config.provider, client.provider_name());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.has_value());
+        EXPECT_TRUE(result.client->is_valid());
+        EXPECT_EQ(config.provider, result.client->provider_name());
+        EXPECT_FALSE(result.inferred_from_env);
     });
 }
 
@@ -271,11 +297,11 @@ TEST(AIClientFactory, MissingRequiredFields)
 {
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration();
     
-    // Missing provider - should use default
+    // Missing provider - should remain empty
     config->setString("ai.api_key", "test_key");
     
     AIConfiguration ai_config = AIClientFactory::loadConfiguration(*config);
-    EXPECT_EQ("openai", ai_config.provider); // Should use default
+    EXPECT_TRUE(ai_config.provider.empty()); // Should remain empty
     
     // Missing API key - should remain empty
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config2 = new Poco::Util::XMLConfiguration();

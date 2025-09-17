@@ -86,6 +86,21 @@ parser.add_argument(
     help="Space-separated list of server port(s). Corresponds to '--host' options.",
 )
 parser.add_argument(
+    "--user",
+    default="default",
+    help="Username for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--password",
+    default="",
+    help="Password for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--secure",
+    action="store_true",
+    help="Use SSL/TLS connection.",
+)
+parser.add_argument(
     "--runs", type=int, default=1, help="Number of query runs per server."
 )
 parser.add_argument(
@@ -232,7 +247,7 @@ reportStageEnd("before-connect")
 
 # Open connections
 servers = [
-    {"host": host or args.host[0], "port": port or args.port[0]}
+    { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
 # Force settings_is_important to fail queries on unknown settings.
@@ -241,7 +256,8 @@ all_connections = [
 ]
 
 for i, s in enumerate(servers):
-    print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
+    ssl_status = "SSL" if s["secure"] else "no-SSL"
+    print(f'server\t{i}\t{s["host"]}\t{s["port"]}\t{s["user"]}\t{ssl_status}')
 
 reportStageEnd("connect")
 

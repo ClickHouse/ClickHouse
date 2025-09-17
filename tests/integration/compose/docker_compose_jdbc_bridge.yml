@@ -24,3 +24,4 @@ services:
       - type: ${JDBC_BRIDGE_FS:-tmpfs}
         source: ${JDBC_BRIDGE_LOGS:-}
         target: /app/logs
+    stop_grace_period: 5s

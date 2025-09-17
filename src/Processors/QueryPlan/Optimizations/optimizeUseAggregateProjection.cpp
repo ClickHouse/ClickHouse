@@ -11,9 +11,6 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
@@ -80,7 +77,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -400,7 +397,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             // minmax_count_projection cannot be used when there is no data to process, because
             // it will produce incorrect result during constant aggregation.
             // See https://github.com/ClickHouse/ClickHouse/issues/36728
-            if (block)
+            if (!block.empty())
             {
                 MinMaxProjectionCandidate minmax;
                 minmax.candidate = std::move(candidate);
@@ -466,7 +463,12 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length)
 {
     if (node.children.size() != 1)
         return {};
@@ -720,10 +722,22 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
+        && !is_parallel_replicas_initiator_with_projection_support;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
+        /// The min-max projection optimization modifies ReadFromMergeTree to ReadFromPreparedSource.
+        /// -------------------------------------------------------------------------------------------------
+        ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_minmax_count_projection)
+        /// -------------------------------------------------------------------------------------------------
+        /// When parallel replicas is enabled, only the initiator should read the min-max projection to avoid data duplication.
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(
+                std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
     }
@@ -749,7 +763,18 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(block_with_count)));
+        /// The exact count optimization may modify the `ReadFromMergeTree` to use `ReadFromPreparedSource`.
+        /// ---------------------------if parent parts have been partially filtered------------------------
+        ///                                             AggregatingProjection
+        ///  ReadFromMergeTree  ---is replaced by--->       ReadFromMergeTree
+        ///                                                 ReadFromPreparedSource (_exact_count_projection)
+        /// ------------------------------------------------------------------------------------------------
+        /// When parallel replicas is enabled, only the initiator should read the exact count projection to avoid data duplication.
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(block_with_count.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;
@@ -777,18 +802,24 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             reading->getNumStreams(),
             max_added_blocks,
             best_candidate->merge_tree_projection_select_result_ptr,
-            reading->isParallelReadingEnabled());
-
-        if (!projection_reading)
-        {
-            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames());
-            Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        }
+            reading->isParallelReadingEnabled(),
+            reading->getParallelReadingExtension());
 
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
         filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+
+        /// Only the initiator should read the projection to avoid potential data duplication.
+        bool should_skip_projection_reading_on_remote_replicas = is_parallel_reading_on_remote_replicas && has_parent_parts;
+        if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
+        {
+            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(
+                proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames()))));
+            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        }
+
+        if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+            fallbackToLocalProjectionReading(projection_reading);
     }
 
     if (!query_info.is_internal && context->hasQueryContext())
@@ -800,7 +831,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         });
     }
 
-    projection_reading->setStepDescription(selected_projection_name);
+    projection_reading->setStepDescription(selected_projection_name, max_step_description_length);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
 
     /// Root node of optimized child plan using @projection_name

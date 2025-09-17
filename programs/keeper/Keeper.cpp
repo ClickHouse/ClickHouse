@@ -1,6 +1,7 @@
 #include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
@@ -55,10 +56,6 @@
 #    include <Server/CertificateReloader.h>
 #endif
 
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
-
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
@@ -95,6 +92,14 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -308,7 +313,13 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config());
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
     Poco::Logger * log = &logger();
 
@@ -560,8 +571,7 @@ try
 
     async_metrics.start();
 
-    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
-    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+    Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
@@ -577,7 +587,7 @@ try
         config_path,
         extra_paths,
         getKeeperPath(config()),
-        std::move(unused_cache),
+        /* zk_node_cache_= */ nullptr,
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
@@ -656,10 +666,6 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
-
-#if USE_GWP_ASAN
-    GWPAsan::initFinished();
-#endif
 
     LOG_INFO(log, "Ready for connections.");
 

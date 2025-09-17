@@ -24,6 +24,8 @@ namespace S3RequestSetting
 class S3ObjectStorage : public IObjectStorage
 {
 private:
+    friend class S3PlainObjectStorage;
+
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -64,8 +66,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -87,6 +88,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
@@ -129,6 +132,9 @@ public:
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
+
+    S3::URI getURI() const { return uri; }
+    S3Settings getS3Settings() const { return *s3_settings.get(); }
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);

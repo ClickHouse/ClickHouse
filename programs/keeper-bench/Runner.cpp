@@ -576,7 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            DB::FormatParserGroup::singleThreaded(context->getSettingsRef()),
+            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+            nullptr,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);
@@ -1317,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
     future.get();
 
     std::span children_span(children);
