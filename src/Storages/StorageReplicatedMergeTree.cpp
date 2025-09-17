@@ -1710,9 +1710,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-
-    removeImplicitStatistics(new_metadata.columns);
-    addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
     setProperties(new_metadata, old_metadata);
 
     try
@@ -6473,7 +6470,10 @@ void StorageReplicatedMergeTree::alter(
     const auto & query_settings = query_context->getSettingsRef();
 
     StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+
+    removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
+    addImplicitStatistics(future_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
     if (commands.isSettingsAlter())
     {

@@ -80,8 +80,8 @@ public:
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
 
-    String getFileName() const;
-    const String & columnName() const;
+    String getStatisticName() const;
+    const String & getColumnName() const;
 
     UInt64 rowCount() const;
 

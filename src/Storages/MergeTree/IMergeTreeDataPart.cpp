@@ -858,7 +858,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     ColumnsStatistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
+        String file_name = escapeForFileName(stat->getStatisticName()) + STATS_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (auto stat_file = readFileIfExists(file_name))
@@ -884,7 +884,7 @@ Estimates IMergeTreeDataPart::getEstimates() const
     auto statistics = loadStatistics();
 
     for (const auto & stat : statistics)
-        estimates->emplace(stat->columnName(), stat->getEstimate());
+        estimates->emplace(stat->getColumnName(), stat->getEstimate());
 
     return *estimates;
 }

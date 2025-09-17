@@ -407,7 +407,10 @@ void StorageMergeTree::alter(
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
+
+    removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+    addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
         MergeTreeData::verifySortingKey(new_metadata.sorting_key);
@@ -450,9 +453,6 @@ void StorageMergeTree::alter(
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
-
-            removeImplicitStatistics(new_metadata.columns);
-            addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);

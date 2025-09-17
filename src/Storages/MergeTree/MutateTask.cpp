@@ -809,7 +809,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
-        files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
+        files_to_skip.insert(escapeForFileName(stat->getStatisticName()) + STATS_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {

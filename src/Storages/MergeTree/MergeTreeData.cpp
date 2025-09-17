@@ -3999,9 +3999,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 getName());
     }
 
-    commands.apply(new_metadata, local_context);
-
     removeImplicitStatistics(new_metadata.columns);
+    commands.apply(new_metadata, local_context);
     addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
