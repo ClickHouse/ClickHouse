@@ -100,7 +100,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(2);
 
 Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
-See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency gaurantees.
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
  
 :::note
 As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
