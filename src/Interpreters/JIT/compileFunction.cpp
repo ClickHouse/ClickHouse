@@ -616,6 +616,18 @@ static void compileSortDescription(llvm::Module & module,
 
         auto dummy_column = column_type->createColumn();
 
+        auto try_load_nullable_value = [&](llvm::Value * value, llvm::Value * column_null_data, llvm::Value * index_arg) -> llvm::Value *
+        {
+            if (column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
+                value = nullable_value;
+            }
+            return value;
+        };
+
         auto load_column_string_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
         {
             auto * string_ref_type = buildStringRefType(b);
@@ -627,21 +639,14 @@ static void compileSortDescription(llvm::Module & module,
             auto * column_offset_data = b.CreateExtractValue(column, {2});
 
             /// build struct : {chars ptr, offset ptr, index}
-            /// The string comparison logic is relatively complex, so here we only pass the raw memory pointer. The specific
-            /// implementation will be completed in ColumnString::compileComparator
+            /// The string comparison logic is relatively complex, so here we only pass the raw memory pointers and the row index.
+            /// The specific implementation will be completed in ColumnString::compileComparator
             llvm::Value * value = llvm::UndefValue::get(string_ref_type);
             value = b.CreateInsertValue(value, column_data, {0});
             value = b.CreateInsertValue(value, column_offset_data, {1});
             value = b.CreateInsertValue(value, index_arg, {2});
 
-            if (column_null_data)
-            {
-                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
-                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
-                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
-                value = nullable_value;
-            }
-            return value;
+            return try_load_nullable_value(value, column_null_data, index_arg);
         };
 
         auto load_column_fixed_string_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
@@ -658,14 +663,7 @@ static void compileSortDescription(llvm::Module & module,
             value = b.CreateInsertValue(value, column_data, {0});
             value = b.CreateInsertValue(value, index_arg, {1});
 
-            if (column_null_data)
-            {
-                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
-                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
-                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
-                value = nullable_value;
-            }
-            return value;
+            return try_load_nullable_value(value, column_null_data, index_arg);
         };
 
         auto load_column_native_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
@@ -683,14 +681,7 @@ static void compileSortDescription(llvm::Module & module,
             llvm::Value * column_element_offset = b.CreateInBoundsGEP(column_native_type, column_data, index_arg);
             llvm::Value * value = b.CreateLoad(column_native_type, column_element_offset);
 
-            if (column_null_data)
-            {
-                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
-                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
-                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
-                value = nullable_value;
-            }
-            return value;
+            return try_load_nullable_value(value, column_null_data, index_arg);
         };
 
         llvm::Value * lhs_value = nullptr;
