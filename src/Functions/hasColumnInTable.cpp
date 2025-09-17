@@ -166,7 +166,46 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 
 REGISTER_FUNCTION(HasColumnInTable)
 {
-    factory.registerFunction<FunctionHasColumnInTable>();
+    FunctionDocumentation::Description description = R"(
+Checks if a specific column exists in a database table.
+For elements in a nested data structure, the function checks for the existence of a column.
+For the nested data structure itself, the function returns `0`.
+    )";
+    FunctionDocumentation::Syntax syntax = "hasColumnInTable([hostname[, username[, password]],]database, table, column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"database", "Name of the database.", {"const String"}},
+        {"table", "Name of the table.", {"const String"}},
+        {"column", "Name of the column.", {"const String"}},
+        {"hostname", "Optional. Remote server name to perform the check on.", {"const String"}},
+        {"username", "Optional. Username for remote server.", {"const String"}},
+        {"password", "Optional. Password for remote server.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the given column exists, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Check an existing column",
+        R"(
+SELECT hasColumnInTable('system','metrics','metric')
+        )",
+        R"(
+1
+        )"
+    },
+    {
+        "Check a non-existing column",
+        R"(
+SELECT hasColumnInTable('system','metrics','non-existing_column')
+        )",
+        R"(
+0
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionHasColumnInTable>(documentation);
 }
 
 }

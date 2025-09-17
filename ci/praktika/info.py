@@ -190,6 +190,7 @@ class Info:
         return None
 
     def store_kv_data(self, key, value):
+        print(f"Store workflow kv data: key [{key}], value [{value}]")
         self.env.JOB_KV_DATA[key] = value
         self.env.dump()
 

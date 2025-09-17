@@ -7,7 +7,9 @@ import threading
 import time
 import uuid
 
+
 import pytest
+from pathlib import Path
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -2791,3 +2793,108 @@ def test_key_value_args(started_cluster):
         f"S3(\\'{url}\\', \\'TSVRaw\\', format = \\'TSVRaw\\', access_key_id = \\'minio\\', secret_access_key = \\'[HIDDEN]\\', compression_method = \\'gzip\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
+
+
+def test_file_pruning_with_hive_style_partitioning(started_cluster):
+    node = started_cluster.instances["dummy"]
+    table_name = f"test_pruning_with_hive_style_partitioning_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+    minio = started_cluster.minio_client
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}"
+    node.query(
+        f"""
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'hive')
+    PARTITION BY (b, c)
+    """
+    )
+    node.query(
+        f"INSERT INTO {table_name} SELECT number, number % 5, toString(number % 2) FROM numbers(20)",
+        settings={"use_hive_partitioning": True},
+    )
+
+    objects = []
+    for obj in list(
+        minio.list_objects(
+            started_cluster.minio_bucket,
+            prefix=table_name,
+            recursive=True,
+        )
+    ):
+        objects.append(obj.object_name)
+
+    objects.sort()
+    assert len(objects) == 10
+
+    prefixes = []
+    for object in objects:
+        assert object.endswith(".parquet")
+        path = Path(object)
+        prefixes.append(str(path.parent))
+
+    assert len(prefixes) == 10
+    assert prefixes == [
+        f"{table_name}/b=0/c=0",
+        f"{table_name}/b=0/c=1",
+        f"{table_name}/b=1/c=0",
+        f"{table_name}/b=1/c=1",
+        f"{table_name}/b=2/c=0",
+        f"{table_name}/b=2/c=1",
+        f"{table_name}/b=3/c=0",
+        f"{table_name}/b=3/c=1",
+        f"{table_name}/b=4/c=0",
+        f"{table_name}/b=4/c=1",
+    ]
+
+    def check_read_files(expected, query_id):
+        node.query("SYSTEM FLUSH LOGS")
+        assert expected == int(
+            node.query(
+                f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type='QueryFinish'"
+            )
+        )
+
+    # 5 files, each file contains 2 rows
+    assert 5 == int(
+        node.query(f"SELECT uniqExact(_path) FROM {table_name} WHERE c == '0'")
+    )
+
+    query_id = f"{table_name}_query_1"
+    assert 10 == int(
+        node.query(
+            f"SELECT count() FROM {table_name} WHERE c == '0'", query_id=query_id
+        )
+    )
+    # Check files are pruned.
+    check_read_files(5, query_id)
+
+    # 2 files, each contains 2 rows
+    assert 2 == int(
+        node.query(f"SELECT uniqExact(_path) FROM {table_name} WHERE b == 3")
+    )
+
+    query_id = f"{table_name}_query_2"
+    assert 4 == int(
+        node.query(f"SELECT count() FROM {table_name} WHERE b == 3", query_id=query_id)
+    )
+    # Check files are pruned.
+    check_read_files(2, query_id)
+
+    # 1 file with 2 rows.
+    assert 1 == int(
+        node.query(f"SELECT uniqExact(_path) FROM {table_name} WHERE b == 3 AND c == '1'")
+    )
+
+    query_id = f"{table_name}_query_3"
+    assert 2 == int(
+        node.query(f"SELECT count() FROM {table_name} WHERE b == 3 AND c == '1'", query_id=query_id)
+    )
+    # Check files are pruned.
+    check_read_files(1, query_id)
+
+    query_id = f"{table_name}_query_4"
+    assert 1 == int(
+        node.query(f"SELECT count() FROM {table_name} WHERE a == 1", query_id=query_id)
+    )
+    # Nothing is pruned, because `a` is not a partition column.
+    check_read_files(10, query_id)

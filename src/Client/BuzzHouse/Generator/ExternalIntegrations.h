@@ -57,6 +57,8 @@ public:
 
     virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
+    virtual bool performExternalCommand(uint64_t, const String &, const String &) { return true; }
+
     virtual ~ClickHouseIntegration() = default;
 };
 
@@ -288,9 +290,6 @@ public:
 
 class MinIOIntegration : public ClickHouseIntegration
 {
-private:
-    bool sendRequest(const String & resource);
-
 public:
     explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)
@@ -356,6 +355,8 @@ public:
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+
+    bool performExternalCommand(uint64_t, const String &, const String &) override;
 
     ~DolorIntegration() override = default;
 };
@@ -435,6 +436,8 @@ public:
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
     void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+
+    bool performExternalCommand(uint64_t seed, IntegrationCall ic, const String & cname, const String & tname);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
