@@ -2323,7 +2323,7 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
 
 CONV_FN(ArrowFlightFunc, afunc)
 {
-    ret += "arrowflight('";
+    ret += "arrowFlight('";
     ret += afunc.address();
     ret += "', '";
     ret += afunc.dataset();
