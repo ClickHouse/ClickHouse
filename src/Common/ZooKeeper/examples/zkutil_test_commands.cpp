@@ -21,7 +21,7 @@ try
     std::cout << "create path" << std::endl;
     zk->create("/test", "old", zkutil::CreateMode::Persistent);
     Coordination::Stat stat;
-    zkutil::EventPtr watch = std::make_shared<Poco::Event>();
+    Coordination::EventPtr watch = std::make_shared<Poco::Event>();
 
     std::cout << "get path" << std::endl;
     zk->get("/test", &stat, watch);

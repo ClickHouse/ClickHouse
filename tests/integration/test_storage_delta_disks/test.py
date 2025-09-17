@@ -50,7 +50,7 @@ def get_spark():
 
     return builder.master("local").getOrCreate()
 
-def generate_cluster_def(common_path):
+def generate_cluster_def(common_path, port, azure_container):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/named_collections.xml",
@@ -80,9 +80,18 @@ def generate_cluster_def(common_path):
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_1_common>
+            <disk_azure_common>
+                <type>object_storage</type>
+                <object_storage_type>azure_blob_storage</object_storage_type>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                <container_name>{azure_container}</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+            </disk_azure_common>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -96,7 +105,8 @@ def started_cluster():
         user_files_path = os.path.join(
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
-        conf_path = generate_cluster_def(user_files_path + "/")
+        port = cluster.azurite_port
+        conf_path = generate_cluster_def(user_files_path + "/", port, "mycontainer")
         cluster.add_instance(
             "node1",
             main_configs=[conf_path, "configs/cluster.xml"],
@@ -145,12 +155,6 @@ def started_cluster():
         cluster.azure_container_name = "mycontainer"
 
         cluster.blob_service_client = cluster.blob_service_client
-
-        container_client = cluster.blob_service_client.create_container(
-            cluster.azure_container_name
-        )
-
-        cluster.container_client = container_client
 
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
@@ -292,7 +296,7 @@ def create_initial_data_file(
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("1", "local"), ("0", "azure")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -328,7 +332,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         TABLE_NAME,
         started_cluster,
         use_delta_kernel,
-        f"'{TABLE_NAME}'",
+        f"'{TABLE_NAME}'" if storage_type != "azure" else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'",
         "_common"
     )
 
@@ -339,15 +343,18 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     if storage_type == "s3":
         disk_name = f"disk_s3_{use_delta_kernel}_common"
-    else:
+    elif storage_type == "local":
         disk_name = f"disk_local_common"
+    else:
+        disk_name = f"disk_azure_common"
 
-    assert instance.query(f"SELECT * FROM deltaLake('{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else  f"var/lib/clickhouse/user_files/{TABLE_NAME}"
+    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
         inserted_data
     )
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
             inserted_data
         )
 
