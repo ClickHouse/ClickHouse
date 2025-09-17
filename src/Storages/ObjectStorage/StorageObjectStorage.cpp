@@ -477,35 +477,57 @@ bool StorageObjectStorage::optimize(
 }
 
 void StorageObjectStorage::truncate(
-    const ASTPtr & /* query */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder & /* table_holder */)
+    const ASTPtr &,
+    const StorageMetadataPtr &,
+    ContextPtr,
+    TableExclusiveLockHolder &)
 {
-    const auto path = configuration->getRawPath();
+    const auto raw = configuration->getRawPath();
 
     if (configuration->isArchive())
-    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
-    }
+                        raw.path);
 
-    if (path.hasGlobs())
-    {
-        throw Exception(
-            ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
-    }
+    if (raw.hasGlobs())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
+                        getName(), raw.path);
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    // use read prefix so we delete everything SELECT would see.
+    const auto read_prefix = configuration->getPathForRead().path;
+
+    // stream objects lazily to bound memory.
+    auto it = object_storage->iterate(read_prefix, /*max_keys=*/0); // 0 => backend default
+
+    static constexpr size_t DELETE_BATCH = 1000;
+    StoredObjects batch; batch.reserve(DELETE_BATCH);
+
+    while (it->isValid())
     {
-        objects.emplace_back(key.path);
+        batch.emplace_back(it->key());          // exact key from iterator
+        it->next();
+
+        if (batch.size() >= DELETE_BATCH)
+        {
+            object_storage->removeObjectsIfExist(batch);
+            batch.clear();
+        }
     }
-    object_storage->removeObjectsIfExist(objects);
+    if (!batch.empty())
+        object_storage->removeObjectsIfExist(batch);
+
+    // remove any literal configured keys.
+    if (!configuration->getPaths().empty())
+    {
+        StoredObjects configured;
+        configured.reserve(configuration->getPaths().size());
+        for (const auto & k : configuration->getPaths())
+            configured.emplace_back(k.path);
+        object_storage->removeObjectsIfExist(configured);
+    }
 }
+
 
 void StorageObjectStorage::drop()
 {
