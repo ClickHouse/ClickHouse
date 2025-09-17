@@ -21,11 +21,12 @@ select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings clus
 -- { echoOff }
 system flush logs query_log;
 select format(
-  'allow_experimental_parallel_reading_from_replicas={}, cluster_for_parallel_replicas={}, distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
+  'allow_experimental_parallel_reading_from_replicas={}, cluster_for_parallel_replicas={}, distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
   Settings['allow_experimental_parallel_reading_from_replicas'],
   Settings['cluster_for_parallel_replicas'],
   Settings['distributed_index_analysis'],
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
+  ProfileEvents['DistributedIndexAnalysisMissingParts'],
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'],
   ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0
 )

@@ -51,6 +51,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedIndexAnalysisMicroseconds;
     extern const Event DistributedIndexAnalysisFailedReplicas;
+    extern const Event DistributedIndexAnalysisMissingParts;
     extern const Event DistributedIndexAnalysisScheduledReplicas;
 }
 
@@ -337,6 +338,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     if (!missing_parts.empty())
     {
+        ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisMissingParts);
+
         const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
         LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
         auto parts_ranges = local_index_analysis_callback(missing_parts);
