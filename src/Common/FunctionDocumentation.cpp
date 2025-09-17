@@ -138,6 +138,20 @@ String FunctionDocumentation::argumentsAsString() const
     return result;
 }
 
+
+String FunctionDocumentation::parametersAsString() const
+{
+    String result;
+    for (const auto & [name, description_, types] : parameters)
+    {
+        result += "- `" + name + "` — " + description_ + " ";
+
+        if (!types.empty())
+            result += mapTypesToTypesWithLinks(types, syntax);
+    }
+    return result;
+}
+
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
 /// Example:
 ///
@@ -243,6 +257,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
+		{Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 
