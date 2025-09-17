@@ -704,19 +704,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     MergeTreeIndices indices;
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
     {
-        const auto & idx_descs = metadata_snapshot->getSecondaryIndices();
+        const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
         const auto & exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
 
         if (exclude_indexes_string != "")
         {
             const auto & exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
-            for (const auto & index : idx_descs)
+            for (const auto & index : index_descriptions)
                 if (!exclude_index_names.contains(index.name))
                     indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
         }
-
-        for (const auto & idx : indices)
-            const auto name = idx->index.name;
     }
 
 
