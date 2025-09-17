@@ -44,6 +44,16 @@ ALTER TABLE t_skip_index_insert MATERIALIZE INDEX `id,x_b`;
 SELECT 'MATERIALIZE INDEX should also cause both indexes to participate in filtering despite exclude setting';
 EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
 
+TRUNCATE TABLE t_skip_index_insert;
+
+SYSTEM STOP MERGES t_skip_index_insert;
+
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
+
+SELECT 'query-level session setting should override session setting at file level, so id,x_b should not be updated';
+EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT count()
@@ -54,7 +64,7 @@ WHERE current_database = currentDatabase()
 
 TRUNCATE TABLE t_skip_index_insert;
 
-SET exclude_materialize_skip_indexes_on_insert='idx_a,`id,x_b`';
+SET exclude_materialize_skip_indexes_on_insert='idx_a, `id,x_b`';
 
 SYSTEM STOP MERGES t_skip_index_insert;
 

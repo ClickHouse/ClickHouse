@@ -1532,19 +1532,23 @@ CREATE TABLE t_skip_index_insert
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
-SET enable_analyzer = 1;
 SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
---SET exclude_materialize_skip_indexes_on_insert='idx_a,idx_b'; -- neither index will be updated on insert
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index will be updated on insert
 
 SYSTEM STOP MERGES t_skip_index_insert; -- note that merges are not affected by this parameter, so we stop them for the example
 
 INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
 
 -- these querys will update all indexes regardless of exclude_materialize_skip_indexes_on_insert setting
 SYSTEM START MERGES t_skip_index_insert;
 OPTIMIZE TABLE t_skip_index_insert FINAL;
 
 ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can also be used to explicitly materialize the index
+
+SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
