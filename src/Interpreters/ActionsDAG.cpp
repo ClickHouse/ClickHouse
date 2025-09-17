@@ -2394,6 +2394,66 @@ inline bool isSpecFn(const ActionsDAG::Node * n, String fn_name)
         && n->function_base->getName() == fn_name;
 }
 
+/// flatten top-level disjunction into a vector of branch subtrees
+static void flattenTopLevelOrBranches(const ActionsDAG::Node * node, std::vector<const ActionsDAG::Node *> & out)
+{
+    if (!node)
+        return;
+
+    /// we skip aliases to reach the underlying expression
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(!node->children.empty());
+        flattenTopLevelOrBranches(node->children.front(), out);
+        return;
+    }
+
+    if (isSpecFn(node, "or"))
+    {
+        for (const auto * ch : node->children)
+            flattenTopLevelOrBranches(ch, out);
+        return;
+    }
+
+    out.push_back(node);
+}
+
+static bool branchContainsAllowedAtom(const ActionsDAG::Node * branch,
+                                      const std::unordered_set<const ActionsDAG::Node *> & allowed_atoms)
+{
+    if (!branch)
+        return false;
+
+    std::stack<const ActionsDAG::Node *> st;
+    st.push(branch);
+    while (!st.empty())
+    {
+        const auto * n = st.top();
+        st.pop();
+
+        if (n->type == ActionsDAG::ActionType::ALIAS)
+        {
+            if (!n->children.empty())
+                st.push(n->children.front());
+            continue;
+        }
+
+        if (isSpecFn(n, "or") || isSpecFn(n, "and"))
+        {
+            for (const auto * ch : n->children)
+                st.push(ch);
+            continue;
+        }
+
+        if (!isConstNode(n) && allowed_atoms.contains(n))
+            return true;
+
+        for (const auto * ch : n->children)
+            st.push(ch);
+    }
+    return false;
+}
+
 bool predicateContainsOr(const ActionsDAG::Node * root)
 {
     if (!root) return false;
@@ -2429,6 +2489,7 @@ struct DisjunctionNodes
 {
     std::vector<const ActionsDAG::Node *> allowed;
     std::vector<const ActionsDAG::Node *> rejected;
+    bool has_unconstrained_branch = false;
 };
 
 /// Take a node which result is a predicate.
@@ -2536,6 +2597,61 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     }
 
     return conjunction;
+}
+
+/// Calcilate the minimal number of allowed atoms across any disjunct
+/// rules:
+///   - min(or(children)) = min_i(min(children[i]))
+///   - min(and(children)) = sum_i(min(children[i]))
+///   - alias forwards to its children
+///   - leaf/atom: 1 if it's allowed after the bottom-up closure, else 0
+static size_t minAllowedAtomsInDNF(
+    const ActionsDAG::Node * node,
+    const std::unordered_set<const ActionsDAG::Node *> & allowed_nodes,
+    std::unordered_map<const ActionsDAG::Node *, size_t> & memo)
+{
+    if (!node)
+        return 0;
+    if (auto it = memo.find(node); it != memo.end())
+        return it->second;
+
+    size_t result = 0;
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        size_t sum = 0;
+        for (const auto * ch : node->children)
+            sum += minAllowedAtomsInDNF(ch, allowed_nodes, memo);
+        result = sum;
+    }
+    else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        const auto & name = node->function_base->getName();
+        if (name == "or")
+        {
+            size_t best = std::numeric_limits<size_t>::max();
+            for (const auto * ch : node->children)
+                best = std::min(best, minAllowedAtomsInDNF(ch, allowed_nodes, memo));
+            result = (best == std::numeric_limits<size_t>::max() ? 0 : best);
+        }
+        else if (name == "and")
+        {
+            size_t sum = 0;
+            for (const auto * ch : node->children)
+                sum += minAllowedAtomsInDNF(ch, allowed_nodes, memo);
+            result = sum;
+        }
+        else
+        {
+            result = allowed_nodes.contains(node) ? 1 : 0;
+        }
+    }
+    else
+    {
+        result = allowed_nodes.contains(node) ? 1 : 0;
+    }
+
+    memo.emplace(node, result);
+    return result;
 }
 
 /// Collect leaf predicates, condition of which contains at least one OR node
@@ -2649,6 +2765,12 @@ DisjunctionNodes getDisjunctionNodes(
             if (seen_rejected.insert(a).second)
                 disjunction.rejected.push_back(a);
         }
+    }
+
+    // 4) if there exists a disjunct that contributes 0 allowed atoms on this side, pushing OR to this side is unsafe
+    {
+        std::unordered_map<const ActionsDAG::Node *, size_t> memo;
+        disjunction.has_unconstrained_branch = (minAllowedAtomsInDNF(predicate, allowed_nodes, memo) == 0);
     }
 
     return disjunction;
@@ -2991,6 +3113,30 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     if (has_or)
     {
         auto disjunction = getDisjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+        // if any OR-branch does not constrain this side at all, do not push disjunctions to this side
+        if (disjunction.has_unconstrained_branch)
+            disjunction.allowed.clear();
+        /// we ensure every top-level OR branch contributes at least one allowed atom
+        {
+            std::vector<const ActionsDAG::Node *> branches;
+            flattenTopLevelOrBranches(predicate, branches);
+            if (branches.size() > 1)
+            {
+                std::unordered_set<const ActionsDAG::Node *> allowed_atoms(
+                    disjunction.allowed.begin(), disjunction.allowed.end());
+                bool all_branches_covered = true;
+                for (const auto * br : branches)
+                {
+                    if (!branchContainsAllowedAtom(br, allowed_atoms))
+                    {
+                        all_branches_covered = false;
+                        break;
+                    }
+                }
+                if (!all_branches_covered)
+                    disjunction.allowed.clear();
+            }
+        }
         if (conjunction.allowed.empty() && disjunction.allowed.empty())
             return {};
 
@@ -3226,6 +3372,41 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
                 left_stream_allowed_disjunctions.push_back(n);
             if (!right_stream_allowed_disjunctions_set.contains(n))
                 right_stream_allowed_disjunctions.push_back(n);
+        }
+
+        /// if some OR branch does not constrain a side at all, do not push disjunctions to that side
+        if (left_stream_push_down_disjunctions.has_unconstrained_branch)
+            left_stream_allowed_disjunctions.clear();
+        if (right_stream_push_down_disjunctions.has_unconstrained_branch)
+            right_stream_allowed_disjunctions.clear();
+
+        // Safety: ensure that for each top-level OR branch, there is a pushdown atom
+        // for the corresponding side; otherwise drop disjunction pushdown for that side.
+        std::vector<const ActionsDAG::Node *> branches;
+        branches.reserve(4);
+        flattenTopLevelOrBranches(predicate, branches);
+        if (branches.size() > 1)
+        {
+            std::unordered_set<const ActionsDAG::Node *> left_atoms(
+                left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
+            std::unordered_set<const ActionsDAG::Node *> right_atoms(
+                right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
+
+            bool left_ok = true;
+            bool right_ok = true;
+            for (const auto * br : branches)
+            {
+                if (left_ok && !branchContainsAllowedAtom(br, left_atoms))
+                    left_ok = false;
+                if (right_ok && !branchContainsAllowedAtom(br, right_atoms))
+                    right_ok = false;
+                if (!left_ok && !right_ok)
+                    break;
+            }
+            if (!left_ok)
+                left_stream_allowed_disjunctions.clear();
+            if (!right_ok)
+                right_stream_allowed_disjunctions.clear();
         }
     }
 

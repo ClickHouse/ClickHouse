@@ -52,3 +52,21 @@
 6	a6	6	b6
 7	a7	7	b7
 10	a10	10	b10
+--- Case E: result (enabled) ---
+1	2
+3	4
+5	0
+5	1
+5	2
+5	3
+5	4
+5	5
+--- Case E: result (disabled) ---
+1	2
+3	4
+5	0
+5	1
+5	2
+5	3
+5	4
+5	5

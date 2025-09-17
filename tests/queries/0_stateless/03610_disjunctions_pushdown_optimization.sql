@@ -250,3 +250,20 @@ FORMAT TSV;
 
 DROP TABLE table1;
 DROP TABLE table2;
+
+-- CASE E: every OR-branch contributes at least one pushable atom for that side
+SELECT '--- Case E: result (enabled) ---';
+SET use_disjunctions_push_down = 1;
+SELECT n1.number, n2.number
+FROM numbers(6) AS n1, numbers(6) AS n2
+WHERE ((n1.number = 1 AND n2.number = 2) OR (n1.number = 3 AND n2.number = 4) OR (n1.number = 5))
+ORDER BY n1.number, n2.number
+FORMAT TSV;
+
+SELECT '--- Case E: result (disabled) ---';
+SET use_disjunctions_push_down = 0;
+SELECT n1.number, n2.number
+FROM numbers(6) AS n1, numbers(6) AS n2
+WHERE ((n1.number = 1 AND n2.number = 2) OR (n1.number = 3 AND n2.number = 4) OR (n1.number = 5))
+ORDER BY n1.number, n2.number
+FORMAT TSV;
