@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageMergeTreeAnalyzeIndex.h>
@@ -138,8 +140,10 @@ ColumnsDescription TableFunctionMergeTreeAnalyzeIndex::getActualTableStructure(C
 {
     return ColumnsDescription(NamesAndTypesList({
         {"part_name", std::make_shared<DataTypeString>()},
-        {"range_start", std::make_shared<DataTypeUInt64>()},
-        {"range_end", std::make_shared<DataTypeUInt64>()},
+        {"ranges", std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
+            std::make_shared<DataTypeUInt64>(), // begin
+            std::make_shared<DataTypeUInt64>(), // end
+        }))},
     }));
 }
 

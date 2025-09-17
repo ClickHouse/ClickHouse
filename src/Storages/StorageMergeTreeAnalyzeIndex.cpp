@@ -1,3 +1,4 @@
+#include <Core/Field.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -65,12 +66,15 @@ protected:
 
         for (const auto & ranges_in_part : ranges)
         {
-            for (const auto & range : ranges_in_part.ranges)
+            size_t i = 0;
+            res_columns[i++]->insert(ranges_in_part.data_part->name);
+
+            /// ranges
             {
-                size_t i = 0;
-                res_columns[i++]->insert(ranges_in_part.data_part->name);
-                res_columns[i++]->insert(range.begin);
-                res_columns[i++]->insert(range.end);
+                Array field;
+                for (const auto & range : ranges_in_part.ranges)
+                    field.push_back(Tuple{range.begin, range.end});
+                res_columns[i++]->insert(std::move(field));
             }
         }
 
