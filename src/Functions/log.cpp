@@ -46,7 +46,20 @@ using FunctionLog = FunctionMathUnary<UnaryFunctionVectorized<LogName, log>>;
 
 REGISTER_FUNCTION(Log)
 {
-    factory.registerFunction<FunctionLog>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the natural logarithm of the argument.
+)";
+    FunctionDocumentation::Syntax syntax = "log(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The number for which to compute the natural logarithm of.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the natural logarithm of `x`.", {"Float*"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT log(10);", "2.302585092994046"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLog>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("ln", "log", FunctionFactory::Case::Insensitive);
 }
 

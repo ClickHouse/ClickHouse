@@ -2,7 +2,7 @@
 description: 'This table contains histogram metrics that can be calculated instantly
   and exported in the Prometheus format. It is always up to date.'
 keywords: ['system table', 'histogram_metrics']
-slug: /en/operations/system-tables/histogram_metrics
+slug: /operations/system-tables/histogram_metrics
 title: 'system.histogram_metrics'
 ---
 

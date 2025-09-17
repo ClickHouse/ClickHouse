@@ -37,10 +37,12 @@ namespace Setting
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
+    extern const SettingsDouble query_condition_cache_selectivity_threshold;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -54,6 +56,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
@@ -62,6 +66,8 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace ServerSetting
@@ -72,6 +78,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -79,7 +86,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     ExpressionActionsSettings actions_settings_,
-    PreparedSetsCachePtr prepared_sets_cache_)
+    PreparedSetsCachePtr prepared_sets_cache_,
+    bool is_parallel_replicas_initiator_with_projection_support_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -101,6 +109,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+
+    bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
+    query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
+    if (query_plan_optimize_join_order_limit > 64)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
+            "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
@@ -113,10 +129,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
+    query_condition_cache_selectivity_threshold = from[Setting::query_condition_cache_selectivity_threshold];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+    is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
@@ -166,7 +184,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
-        from->getPreparedSetsCache())
+        from->getPreparedSetsCache(),
+        from->canUseParallelReplicasOnInitiator()
+            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
+            && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
 }
 

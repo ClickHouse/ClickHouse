@@ -97,9 +97,10 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_AUTHENTICATION),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 12);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values

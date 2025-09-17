@@ -55,7 +55,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -90,12 +90,13 @@ protected:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
+    const String & getFunctionURI() const override { return configuration->getRawURI(); }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
-    StorageObjectStorageConfigurationPtr getConfiguration() const;
+    StorageObjectStorageConfigurationPtr getConfiguration(ContextPtr context) const;
 
     static std::shared_ptr<Settings> createEmptySettings();
 

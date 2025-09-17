@@ -5,3 +5,4 @@ services:
       - "5005:5005"
     command: ["python", "flight_server.py"]
     stop_signal: SIGINT
+    stop_grace_period: 5s

@@ -7,6 +7,9 @@
 namespace DB
 {
 
+class UncompressedCache;
+using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:
@@ -56,7 +59,7 @@ protected:
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
-    const PatchReadResultCachePtr patch_read_result_cache;
+    const PatchJoinCachePtr patch_join_cache;
     const Block header;
 
     void fillPerPartInfos(const Settings & settings);
