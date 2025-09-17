@@ -38,6 +38,16 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch{std::make_shared<WatchEvent>()}
+    , zookeeper_watch(std::make_shared<Coordination::WatchCallback>(
+      [my_watch = watch](const Coordination::WatchResponse & response)
+      {
+          if (response.type == Coordination::Event::CHANGED)
+          {
+              std::unique_lock lock{my_watch->mutex};
+              my_watch->triggered++;
+              my_watch->cv.notify_one();
+          }
+      }))
     , config_storage(std::make_shared<WorkloadEntityConfigStorage>(global_context_))
 {
     log = getLogger("WorkloadEntityKeeperStorage");
@@ -234,23 +244,13 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
 
 std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper)
 {
-    const auto data_watcher = [my_watch = watch](const Coordination::WatchResponse & response)
-    {
-        if (response.type == Coordination::Event::CHANGED)
-        {
-            std::unique_lock lock{my_watch->mutex};
-            my_watch->triggered++;
-            my_watch->cv.notify_one();
-        }
-    };
-
     Coordination::Stat stat;
     String data;
-    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, data_watcher);
+    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, zookeeper_watch);
     if (!exists)
     {
         createRootNodes(zookeeper);
-        data = zookeeper->getWatch(zookeeper_path, &stat, data_watcher);
+        data = zookeeper->getWatch(zookeeper_path, &stat, zookeeper_watch);
     }
     return {data, stat.version};
 }

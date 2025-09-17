@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
@@ -16,6 +15,7 @@
 #include <base/extended_types.h>
 #include <base/sort.h>
 
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/TargetSpecific.h>
 
 /** Radix sort, has the following functionality:
@@ -31,22 +31,6 @@
   * 1. LSB, stable.
   * 2. MSB, unstable, with support for partial sort.
   */
-
-
-/** Used as a template parameter. See below.
-  */
-struct RadixSortAllocator
-{
-    static void * allocate(size_t size)
-    {
-        return ::operator new(size);
-    }
-
-    static void deallocate(void * ptr, size_t size)
-    {
-        ::operator delete(ptr, size);
-    }
-};
 
 
 /** A transformation that transforms the bit representation of a key into an unsigned integer number,
@@ -97,11 +81,6 @@ struct RadixSortFloatTraits
     /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
 
-    /// An object with the functions allocate and deallocate.
-    /// Can be used, for example, to allocate memory for a temporary array on the stack.
-    /// To do this, the allocator itself is created on the stack.
-    using Allocator = RadixSortAllocator;
-
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 
@@ -144,7 +123,6 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -183,7 +161,6 @@ struct RadixSortIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -289,10 +266,10 @@ private:
         /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
         std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]{}};
 
-        typename Traits::Allocator allocator;
+        AllocatorWithMemoryTracking<typename Traits::Element> allocator;
 
         /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
-        Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
+        Element * swap_buffer = allocator.allocate(size);
 
         /// Transform the array and calculate the histogram.
         /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
@@ -436,7 +413,7 @@ private:
                 std::reverse(arr, arr + size);
         }
 
-        allocator.deallocate(swap_buffer, size * sizeof(Element));
+        allocator.deallocate(swap_buffer, size);
     }
 
 
