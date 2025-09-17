@@ -634,7 +634,7 @@ Block mergeBlockWithPipe(
 
                 result_fetched_column->insertRangeFrom(*update_column, 0, rows);
             }
-        }      
+        }
     };
     io.executeWithCallbacks(std::move(func));
 
