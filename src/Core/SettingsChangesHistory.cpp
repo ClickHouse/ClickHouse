@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
-            {"parallel_replicas_distributed_index_analysis", false, false, "New setting"},
+            {"distributed_index_analysis", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
@@ -51,7 +51,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
-            {"parallel_replicas_distributed_index_analysis", false, false, "New setting"},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
