@@ -525,18 +525,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     /// Check if it's a dynamic subcolumn
     else if (table_expression_data.supports_subcolumns)
     {
-        auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
-        auto jt = table_expression_data.column_name_to_column_node.find(column_name);
-        if (jt != table_expression_data.column_name_to_column_node.end() && jt->second->getColumnType()->hasDynamicSubcolumns())
+        if (auto column_and_subcolumn = table_expression_data.tryGetColumnAndSubcolumn(identifier_full_name))
         {
-            if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
+            if (auto subcolumn_type = column_and_subcolumn->column_node->getColumnType()->tryGetSubcolumnType(column_and_subcolumn->subcolumn_name))
             {
-                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
+                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_type}, column_and_subcolumn->column_node->getColumnSource());
                 can_resolve_directly_from_storage = true;
             }
         }
     }
 
+    size_t identifier_bind_size = identifier_column_qualifier_parts;
 
     if (can_resolve_directly_from_storage)
     {
@@ -545,9 +544,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
     else
     {
-        auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
-        if (it != table_expression_data.column_name_to_column_node.end())
-            result_expression = it->second;
+        if (auto column_and_subcolumn = table_expression_data.tryGetColumnAndSubcolumn(identifier_full_name))
+        {
+            identifier_bind_size += column_and_subcolumn->bind_size;
+            result_expression = column_and_subcolumn->column_node;
+        }
     }
 
     bool clone_is_needed = true;
@@ -558,7 +559,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (result_expression && !match_full_identifier && identifier_without_column_qualifier.isCompound())
     {
-        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
         result_expression = tryResolveIdentifierFromCompoundExpression(identifier,
             identifier_bind_size,
             result_expression,

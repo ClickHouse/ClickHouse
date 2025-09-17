@@ -1,7 +1,8 @@
 #pragma once
 
-#include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
+#include <IO/Operators.h>
+#include "DataTypes/NestedUtils.h"
 
 namespace DB
 {
@@ -40,6 +41,7 @@ struct AnalysisTableExpressionData
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
+    std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
     bool hasFullIdentifierName(IdentifierView identifier_view) const
     {
@@ -48,7 +50,8 @@ struct AnalysisTableExpressionData
 
     bool canBindIdentifier(IdentifierView identifier_view) const
     {
-        return column_name_to_column_node.contains(identifier_view.at(0));
+        return column_identifier_first_parts.contains(identifier_view.at(0)) || column_name_to_column_node.contains(identifier_view.at(0))
+            || tryGetColumnAndSubcolumn(identifier_view.getFullName());
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
@@ -76,6 +79,28 @@ struct AnalysisTableExpressionData
         dump(buffer);
 
         return buffer.str();
+    }
+
+    struct ColumnAndSubcolumnInfo
+    {
+        std::string_view column_name;
+        std::string_view subcolumn_name;
+        size_t bind_size;
+        ColumnNodePtr column_node;
+    };
+
+    std::optional<ColumnAndSubcolumnInfo> tryGetColumnAndSubcolumn(std::string_view full_identifier_name) const
+    {
+        size_t bind_size = 0;
+        for (auto [column, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
+        {
+            ++bind_size;
+            auto it = column_name_to_column_node.find(column);
+            if (it != column_name_to_column_node.end())
+                return ColumnAndSubcolumnInfo{column, subcolumn, bind_size, it->second};
+        }
+
+        return std::nullopt;
     }
 };
 
