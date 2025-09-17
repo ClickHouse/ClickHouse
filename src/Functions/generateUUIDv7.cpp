@@ -110,7 +110,7 @@ private:
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
     FunctionDocumentation::Description description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "SELECT generateUUIDv7()";
+    FunctionDocumentation::Syntax syntax = "generateUUIDv7()";
     FunctionDocumentation::Arguments arguments = {{"expression", "Optional. The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored."}};
     FunctionDocumentation::ReturnedValue returned_value = {"A value of type UUID version 7."};
     FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
