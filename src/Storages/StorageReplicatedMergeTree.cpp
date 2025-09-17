@@ -174,7 +174,6 @@ namespace Setting
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_fetch_partition_retries_count;
     extern const SettingsUInt64 max_partitions_per_insert_block;
-    extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool materialize_ttl_after_modify;
     extern const SettingsUInt64 mutations_sync;
     extern const SettingsBool optimize_skip_merged_partitions;
@@ -7028,22 +7027,6 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         });
     }
     return results;
-}
-
-
-void StorageReplicatedMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
-{
-    auto table_id = getStorageID();
-
-    const auto & query_settings = query_context->getSettingsRef();
-    if (query_settings[Setting::max_table_size_to_drop].changed)
-    {
-        getContext()->checkTableCanBeDropped(
-            table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings[Setting::max_table_size_to_drop]);
-        return;
-    }
-
-    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
 void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_name) const
