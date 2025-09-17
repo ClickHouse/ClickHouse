@@ -14,6 +14,9 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 #include "config.h" /// USE_DATASKETCHES
@@ -25,6 +28,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -206,6 +211,27 @@ UInt64 ColumnStatistics::estimateCardinality() const
     return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
+Estimate ColumnStatistics::getEstimate() const
+{
+    Estimate info;
+    info.rows_count = rows;
+
+    for (const auto & [type, _] : stats)
+        info.types.insert(type);
+
+    if (stats.contains(StatisticsType::Uniq))
+        info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+
+    if (stats.contains(StatisticsType::MinMax))
+    {
+        const auto & minmax_stats = assert_cast<const StatisticsMinMax &>(*stats.at(StatisticsType::MinMax));
+        info.estimated_min = minmax_stats.getMin();
+        info.estimated_max = minmax_stats.getMax();
+    }
+
+    return info;
+}
+
 /// -------------------------------------
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
@@ -320,8 +346,28 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", type);
-        it->second(desc, data_type);
+
+        if (!it->second(desc, data_type))
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
     }
+}
+
+ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+{
+    ColumnStatisticsDescription result;
+    result.data_type = data_type;
+
+    for (const auto & entry : stats.types_to_desc)
+    {
+        auto it = validators.find(entry.first);
+        if (it == validators.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", entry.first);
+
+        if (it->second(entry.second, data_type))
+            result.types_to_desc.insert(entry);
+    }
+
+    return result;
 }
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
@@ -345,6 +391,76 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
         if (!col.statistics.empty())
             result.push_back(get(col));
     return result;
+}
+
+static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)
+{
+    ParserStatisticsType stat_type_parser;
+    auto stats_ast = parseQuery(stat_type_parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    ColumnStatisticsDescription::StatisticsTypeDescMap result;
+
+    for (const auto & arg : stats_ast->as<ASTFunction &>().arguments->children)
+    {
+        const auto * arg_func = arg->as<ASTFunction>();
+        if (!arg_func)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
+
+        auto stat_type = stringToStatisticsType(arg_func->name);
+        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg, true));
+    }
+
+    return result;
+}
+
+void removeImplicitStatistics(ColumnsDescription & columns)
+{
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            continue;
+
+        columns.modify(column.name, [&](ColumnDescription & column_desc)
+        {
+            auto & stats = column_desc.statistics.types_to_desc;
+            for (auto it = stats.begin(); it != stats.end();)
+            {
+                if (it->second.is_implicit)
+                    it = stats.erase(it);
+                else
+                    ++it;
+            }
+        });
+    }
+}
+
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
+{
+    if (statistics_types_str.empty())
+        return;
+
+    auto stats_ast_map = parseColumnStatisticsFromString(statistics_types_str);
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        auto default_kind = column.default_desc.kind;
+        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
+            continue;
+
+        ColumnStatisticsDescription stats_desc;
+        stats_desc.data_type = column.type;
+        stats_desc.types_to_desc = stats_ast_map;
+        stats_desc = factory.cloneWithSupportedStatistics(stats_desc, column.type);
+
+        if (!stats_desc.empty())
+        {
+            columns.modify(column.name, [&](ColumnDescription & column_desc)
+            {
+                column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/ true);
+            });
+        }
+    }
 }
 
 }

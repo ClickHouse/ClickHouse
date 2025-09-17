@@ -12,8 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_STATISTICS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices.
@@ -88,13 +87,11 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'countmin' does not support type {}", data_type->getName());
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

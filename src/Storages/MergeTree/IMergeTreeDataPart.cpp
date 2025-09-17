@@ -873,6 +873,22 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     return result;
 }
 
+Estimates IMergeTreeDataPart::getEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+
+    if (estimates.has_value())
+        return *estimates;
+
+    estimates = Estimates();
+    auto statistics = loadStatistics();
+
+    for (const auto & stat : statistics)
+        estimates->emplace(stat->columnName(), stat->getEstimate());
+
+    return *estimates;
+}
+
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
 {
     /// Memory should not be limited during ATTACH TABLE query.

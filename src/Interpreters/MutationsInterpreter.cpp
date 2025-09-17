@@ -932,6 +932,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
             }
@@ -1031,6 +1032,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            materialized_statistics.insert(command.column_name);
+
             /// Check if the type of this column is changed and there are projections that
             /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
@@ -1170,6 +1173,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (column.statistics.empty())
+            continue;
+
+        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
+            materialized_statistics.insert(column.name);
     }
 
     /// Stages might be empty when we materialize skip indices or projections which don't add any

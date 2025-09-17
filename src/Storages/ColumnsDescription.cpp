@@ -156,7 +156,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
-    if (!statistics.empty())
+    if (statistics.hasExplicitStatistics())
     {
         writeChar('\t', buf);
         writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);
@@ -223,7 +223,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
 
             if (col_ast->statistics_desc)
-                statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
+                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_ast->statistics_desc, name, type);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

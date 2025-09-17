@@ -991,6 +991,17 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
+def auto_statistics_generator():
+    def gen():
+        if random.random() < 0.3:
+            return ""
+
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
+        return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
+
+    return gen
+
+
 def randomize_external_sort_group_by():
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
@@ -1147,6 +1158,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        # "auto_statistics_types": auto_statistics_generator(),
         **randomize_external_sort_group_by(),
     }
 

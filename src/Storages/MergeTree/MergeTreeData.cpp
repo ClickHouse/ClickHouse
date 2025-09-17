@@ -267,6 +267,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace ServerSetting
@@ -4000,6 +4001,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
+    removeImplicitStatistics(new_metadata.columns);
+    addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
+
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
@@ -4336,19 +4340,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 if (old_metadata.getColumns().has(command.column_name))
                 {
-                    columns_to_check_conversion.push_back(
-                        new_metadata.getColumns().getPhysical(command.column_name));
-
-                    const auto & old_column = old_metadata.getColumns().get(command.column_name);
-                    if (!old_column.statistics.empty())
-                    {
-                        const auto & new_column = new_metadata.getColumns().get(command.column_name);
-                        if (!old_column.type->equals(*new_column.type))
-                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                            "ALTER types of column {} with statistics is not safe "
-                                            "because it can change the representation of statistics",
-                                            backQuoteIfNeed(command.column_name));
-                    }
+                    columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
             }
         }
