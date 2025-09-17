@@ -9,6 +9,8 @@ insert into test_10m select number, number*100 from numbers(10e6);
 set parallel_replicas_for_non_replicated_merge_tree=1;
 set parallel_replicas_index_analysis_only_on_coordinator=1;
 set parallel_replicas_local_plan=1;
+--- Ignore warnings when replica does not respond, and analysis is done on initiator
+set send_logs_level='error';
 
 -- { echo }
 select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=0;
