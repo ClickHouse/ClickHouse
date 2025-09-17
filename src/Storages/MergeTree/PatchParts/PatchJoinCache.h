@@ -24,14 +24,14 @@ struct RangesInPatchParts;
   *  It makes two-level map more cache-friendly than single-level ((_block_number, _block_offset) -> (block_idx, row_idx)).
   *
   *  There are four facts about block offsets:
-  *  1. Block offsets are unique within a block number inside regular parts.
-  *  2. Block offsets are sorted within a block number inside regular parts.
-  *  3. Block offsets have large sorted ranges within a block number inside patch parts.
-  *  4. Block offsets are not globally sorted even within a block number and may have duplicates.
+  *  1. Block offsets are unique within a block number in regular parts.
+  *  2. Block offsets are sorted within a block number in regular parts.
+  *  3. Block offsets have large sorted ranges within a block number in patch parts.
+  *  4. Block offsets are not globally sorted even within a block number and may have duplicates in patch parts.
   *
   *  We build a sorted map _block_offset -> (block_idx, row_idx) for each block number to resolve (4).
-  * When applying a patch, the order of rows in the read block is not violated, and (1) and (2) are true.
-  *  To apply the patch, we build a hash table (_block_number -> iterator in sorted map)
+  *  When applying a patch, the order of rows in the read block is not violated, and (1) and (2) are true.
+  *  Then we build a hash table (_block_number -> iterator in sorted map)
   *  and apply the patch using a two-iterators-like algorithm (see applyPatchJoin function).
   *
   *  Because of (3), values are mostly inserted at the end of the map, and we can utilize
@@ -47,7 +47,7 @@ using PatchHashMap = absl::node_hash_map<UInt64, PatchOffsetsMap, HashCRC32<UInt
   *  i.e., when data is inserted almost in the order of the order key (the order key has a timestamp value), which is the typical case.
   *
   *  The cache allows reading data from patches in small ranges and lowers the amount of patch parts
-  *  to apply by aggregating data from multiple patch parts into a single map in the entry.
+  *  to apply by aggregating data from multiple read blocks into a single map in the entry.
   *
   *  A cache entry is created for each patch part. To lower lock contention, each entry is split into buckets
   *  by the patch part's ranges. Each bucket has contiguous ranges of the patch part, and is sorted by the range's beginning.

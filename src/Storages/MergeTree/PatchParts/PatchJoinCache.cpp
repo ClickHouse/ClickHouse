@@ -235,7 +235,6 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
     return futures;
 }
 
-
 void PatchJoinCache::Entry::addBlock(Block read_block)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
@@ -274,6 +273,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     PatchOffsetsMap * current_offsets = nullptr;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    /// Offsets are mostly sorted, so use the iterator to latest inserted offset as a hint
+    /// to optimize the insertion. It gives average complexity of O(1) instead of O(log n).
     PatchOffsetsMap::const_iterator last_inserted_it;
 
     for (size_t i = 0; i < num_read_rows; ++i)
@@ -288,7 +289,6 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
             min_block = std::min(min_block, block_number);
             max_block = std::max(max_block, block_number);
-
             last_inserted_it = current_offsets->end();
         }
 
@@ -296,7 +296,6 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
         /// so we need to check size before and after emplace.
         size_t old_size = current_offsets->size();
         auto it = current_offsets->try_emplace(last_inserted_it, block_offset);
-
         last_inserted_it = it;
         bool inserted = current_offsets->size() > old_size;
 
@@ -311,6 +310,7 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
             UInt64 current_version = data_version_column[i];
             UInt64 existing_version = assert_cast<const ColumnUInt64 &>(*existing_version_column).getData()[patch_row_index];
+            chassert(current_version != existing_version);
 
             /// Keep only the row with the highest version.
             if (current_version > existing_version)
