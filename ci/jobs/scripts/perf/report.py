@@ -130,7 +130,7 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 {{ text-align: right; }}
 
   </style>
-  <title>Clickhouse performance comparison</title>
+  <title>ClickHouse performance comparison</title>
 </head>
 <body>
 <div class="main">
