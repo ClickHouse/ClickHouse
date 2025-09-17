@@ -629,6 +629,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
+
     const auto & query_settings_ref = local_context->getSettingsRef();
 
     const auto storage_type = configuration_ptr->getType();

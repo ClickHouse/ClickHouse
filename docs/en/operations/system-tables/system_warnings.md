@@ -25,6 +25,7 @@ The table can be configured with these settings:
 - [max_part_num_to_warn](../server-configuration-parameters/settings.md#max_part_num_to_warn)
 - [max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warn)
 - [max_pending_mutations_execution_time_to_warn](/operations/server-configuration-parameters/settings#max_pending_mutations_execution_time_to_warn)
+- [resource_overload_warnings](/operations/settings/server-overload#resource-overload-warnings)
 
 Columns:
 

@@ -28,8 +28,8 @@ def test_writes_drop_table(started_cluster_iceberg_with_spark, format_version, s
     files = default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
     # drop should not delete user data
     assert len(files) > 0

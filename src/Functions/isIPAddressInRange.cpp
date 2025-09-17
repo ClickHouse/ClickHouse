@@ -388,6 +388,26 @@ namespace DB
 
     REGISTER_FUNCTION(IsIPAddressContainedIn)
     {
-        factory.registerFunction<FunctionIsIPAddressContainedIn>();
+        FunctionDocumentation::Description description = R"(
+Determines if an IP address is contained in a network represented in the [Classless Inter-Domain Routing (CIDR)](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation.
+
+This function accepts both IPv4 and IPv6 addresses (and networks) represented as strings. It returns `0` if the IP version of the address and the CIDR don't match.
+        )";
+        FunctionDocumentation::Syntax syntax = "isIPAddressInRange(address, prefix)";
+        FunctionDocumentation::Arguments arguments = {
+            {"address", "An IPv4 or IPv6 address.", {"String"}},
+            {"prefix", "An IPv4 or IPv6 network prefix in CIDR.", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the IP version of the address and the CIDR match, otherwise `0`.", {"UInt8"}};
+        FunctionDocumentation::Examples examples = {
+            {"IPv4 address in range", "SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8')", "1"},
+            {"IPv4 address not in range", "SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16')", "0"},
+            {"IPv6 address not in range", "SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')", "0"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionIsIPAddressContainedIn>(documentation);
     }
 }

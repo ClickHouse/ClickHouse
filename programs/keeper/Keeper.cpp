@@ -1,6 +1,7 @@
 #include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
@@ -570,8 +571,7 @@ try
 
     async_metrics.start();
 
-    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
-    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+    Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
@@ -587,7 +587,7 @@ try
         config_path,
         extra_paths,
         getKeeperPath(config()),
-        std::move(unused_cache),
+        /* zk_node_cache_= */ nullptr,
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {

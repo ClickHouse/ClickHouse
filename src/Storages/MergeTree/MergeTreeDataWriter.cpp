@@ -161,12 +161,144 @@ void buildScatterSelector(
 namespace
 {
 
+template <bool with_where, typename TTLType, typename WhereColumnType, typename ValueExtractor>
+void updateTTLInfo(
+    MergeTreeDataPartTTLInfo & ttl_info,
+    const PaddedPODArray<TTLType> & ttl_data,
+    const WhereColumnType * where_column,
+    ValueExtractor && value_extractor)
+{
+    for (size_t i = 0; i < ttl_data.size(); ++i)
+    {
+        if constexpr (with_where)
+        {
+            /// Update ttl info only if row passes the filter.
+            /// Rows that don't pass the filter should not affect TTL.
+            if (where_column->getBool(i))
+            {
+                auto value = value_extractor(ttl_data[i]);
+                ttl_info.update(value);
+            }
+        }
+        else
+        {
+            auto value = value_extractor(ttl_data[i]);
+            ttl_info.update(value);
+        }
+    }
+}
+
+template <bool with_where, typename WhereColumnType>
+void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const WhereColumnType * where_column)
+{
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date->getData(), where_column, [&date_lut](UInt16 val)
+        {
+            return date_lut.fromDayNum(DayNum(val));
+        });
+    }
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_time->getData(), where_column, [](UInt32 val)
+        {
+            return val;
+        });
+    }
+    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_32->getData(), where_column, [&date_lut](Int32 val)
+        {
+            return date_lut.fromDayNum(ExtendedDayNum(val));
+        });
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_time_64->getData(), where_column, [scale = column_date_time_64->getScale()](DateTime64 val)
+        {
+            return val / intExp10OfSize<Int64>(scale);
+        });
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type ({}) of result TTL column", ttl_column.getName());
+    }
+}
+
+void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column)
+{
+    if (where_column)
+    {
+        /// Add specialization for UInt8 because it's the most common type for filter
+        if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(where_column))
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column_uint8);
+        else
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column);
+    }
+    else
+    {
+        updateTTLInfo<false>(ttl_info, ttl_column, where_column);
+    }
+}
+
+template <typename ColumnType>
+bool hasRowsInFilter(const ColumnType & where_column)
+{
+    for (size_t i = 0; i < where_column.size(); ++i)
+    {
+        if (where_column.getBool(i))
+            return true;
+    }
+    return false;
+}
+
+bool hasRowsInFilter(const IColumn & where_column)
+{
+    /// Add specialization for UInt8 because it's the most common type for filter
+    if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
+        return hasRowsInFilter(*where_column_uint8);
+    else
+        return hasRowsInFilter(where_column);
+}
+
+void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
+{
+    if (where_column && !hasRowsInFilter(*where_column))
+        return;
+
+    if (typeid_cast<const ColumnUInt16 *>(&ttl_column.getDataColumn()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        ttl_info.update(date_lut.fromDayNum(DayNum(ttl_column.getValue<UInt16>())));
+    }
+    else if (typeid_cast<const ColumnUInt32 *>(&ttl_column.getDataColumn()))
+    {
+        ttl_info.update(ttl_column.getValue<UInt32>());
+    }
+    else if (typeid_cast<const ColumnInt32 *>(&ttl_column.getDataColumn()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(ttl_column.getValue<Int32>())));
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column.getDataColumn()))
+    {
+        ttl_info.update(ttl_column.getValue<DateTime64>() / intExp10OfSize<Int64>(column_date_time_64->getScale()));
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type ({}) of result TTL column", ttl_column.getName());
+    }
+
+}
+
 /// Computes ttls and updates ttl infos
 void updateTTL(
     const ContextPtr context,
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
-    DB::MergeTreeDataPartTTLInfo & ttl_info,
+    MergeTreeDataPartTTLInfo & ttl_info,
     const Block & block,
     bool update_part_min_max_ttls)
 {
@@ -175,54 +307,27 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    ColumnPtr where_column;
 
-    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
+    if (ttl_entry.where_expression_ast)
     {
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-        for (const auto & val : column_date->getData())
-            ttl_info.update(date_lut.fromDayNum(DayNum(val)));
+        auto where_expr_and_set = ttl_entry.buildWhereExpression(context);
+        for (auto & subquery : where_expr_and_set.sets->getSubqueries())
+            subquery->buildSetInplace(context);
+
+        where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
+        if (where_column)
+            where_column = where_column->convertToFullColumnIfConst();
     }
-    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
+
+    if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
-        for (const auto & val : column_date_time->getData())
-            ttl_info.update(val);
-    }
-    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(ttl_column.get()))
-    {
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-        for (const auto & val : column_date_32->getData())
-            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(val)));
-    }
-    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(ttl_column.get()))
-    {
-        for (const auto & val : column_date_time_64->getData())
-            ttl_info.update(val / intExp10OfSize<Int64>(column_date_time_64->getScale()));
-    }
-    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
-    {
-        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-        {
-            const auto & date_lut = DateLUT::serverTimezoneInstance();
-            ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
-        }
-        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
-        {
-            ttl_info.update(column_const->getValue<UInt32>());
-        }
-        else if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
-        {
-            const auto & date_lut = DateLUT::serverTimezoneInstance();
-            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>())));
-        }
-        else if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
-        {
-            ttl_info.update(column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale()));
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+        updateTTLInfoConst(ttl_info, *column_const, where_column.get());
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    {
+        updateTTLInfo(ttl_info, *ttl_column, where_column.get());
+    }
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);

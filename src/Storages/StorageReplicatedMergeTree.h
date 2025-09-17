@@ -501,7 +501,6 @@ private:
     BackgroundSchedulePoolTaskHolder queue_updating_task;
 
     BackgroundSchedulePoolTaskHolder mutations_updating_task;
-    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePoolTaskHolder merge_selecting_task;
@@ -555,7 +554,7 @@ private:
         std::shared_ptr<std::atomic<bool>> exists;
     };
 
-    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks TSA_GUARDED_BY(existing_zero_copy_locks_mutex);
 
     void readLocalImpl(
         QueryPlan & query_plan,

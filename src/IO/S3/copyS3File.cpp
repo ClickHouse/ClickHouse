@@ -117,7 +117,7 @@ namespace
         size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
-        std::atomic<bool> multipart_upload_aborted = false;
+        std::atomic<bool> upload_part_failed = false;
         Strings part_tags;
 
         std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
@@ -177,8 +177,6 @@ namespace
 
         void completeMultipartUpload()
         {
-            if (multipart_upload_aborted)
-                return;
 
             LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
 
@@ -246,8 +244,6 @@ namespace
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort,
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
                                            outcome.IsSuccess() ? nullptr : &outcome.GetError());
-
-            multipart_upload_aborted = true;
         }
 
         void checkObjectAfterUpload()
@@ -269,8 +265,8 @@ namespace
             {
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
-                    if (multipart_upload_aborted)
-                        break; /// No more part uploads.
+                    if (upload_part_failed)
+                        break;
 
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
@@ -288,9 +284,13 @@ namespace
             catch (...)
             {
                 tryLogCurrentException(log, fmt::format("While performing multipart upload of {}", dest_key));
-                // Multipart upload failed because it wasn't possible to schedule all the tasks.
-                // To avoid execution of already scheduled tasks we abort MultipartUpload.
-                abortMultipartUpload();
+                // Multipart upload failed because not all tasks could be scheduled.
+                // waitForAllBackgroundTasks will rethrow the actual exception.
+                {
+                    std::lock_guard lock(bg_tasks_mutex);
+                    if (!bg_exception)
+                        bg_exception = std::current_exception();
+                }
                 waitForAllBackgroundTasks();
                 throw;
             }
@@ -399,12 +399,10 @@ namespace
                         }
                         catch (...)
                         {
+                            tryLogCurrentException(log, fmt::format("While writing part #{}", task->part_number));
                             std::lock_guard lock(bg_tasks_mutex);
                             if (!bg_exception)
-                            {
-                                tryLogCurrentException(log, fmt::format("While writing part #{}", task->part_number));
                                 bg_exception = std::current_exception(); /// The exception will be rethrown after all background tasks stop working.
-                            }
                         }
                         task_finish_notify();
                     }, Priority{});
@@ -428,8 +426,8 @@ namespace
 
         void processUploadTask(UploadPartTask & task)
         {
-            if (multipart_upload_aborted)
-                return; /// Already aborted.
+            if (upload_part_failed)
+                return; /// Skipped: another upload task failed.
 
             auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
             auto tag = processUploadPartRequest(*request);
@@ -452,15 +450,14 @@ namespace
 
             std::unique_lock lock(bg_tasks_mutex);
             /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
-            bg_tasks_condvar.wait(lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
+            bg_tasks_condvar.wait(
+                lock,
+                [this]()
+                { return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
 
             auto exception = TSA_SUPPRESS_WARNING_FOR_READ(bg_exception);
             if (exception)
             {
-                /// abortMultipartUpload() might be called already, see processUploadPartRequest().
-                /// However if there were concurrent uploads at that time, those part uploads might or might not succeed.
-                /// As a result, it might be necessary to abort a given multipart upload multiple times in order to completely free
-                /// all storage consumed by all parts.
                 abortMultipartUpload();
 
                 std::rethrow_exception(exception);
@@ -643,7 +640,7 @@ namespace
 
             if (!outcome.IsSuccess())
             {
-                abortMultipartUpload();
+                upload_part_failed = true;
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
@@ -861,7 +858,7 @@ namespace
             auto outcome = client_ptr->UploadPartCopy(req);
             if (!outcome.IsSuccess())
             {
-                abortMultipartUpload();
+                upload_part_failed = true;
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 

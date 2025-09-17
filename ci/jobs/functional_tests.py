@@ -284,7 +284,7 @@ def main():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
-                    f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
+                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
                 if info.is_local_run:
                     time.sleep(10)

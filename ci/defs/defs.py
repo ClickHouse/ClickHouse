@@ -102,18 +102,6 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-old-centos",
-        path="./ci/docker/compatibility/centos",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-ubuntu",
-        path="./ci/docker/compatibility/ubuntu",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
@@ -354,8 +342,9 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
-    COMPILER_CACHE = "chcache"
+    COMPILER_CHCACHE = "chcache"
     COMPILER_CACHE_LEGACY = "sccache"
+    COMPILER_CACHE = COMPILER_CACHE_LEGACY
 
 
 class ArtifactNames:
