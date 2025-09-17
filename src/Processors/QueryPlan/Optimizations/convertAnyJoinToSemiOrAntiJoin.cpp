@@ -126,7 +126,7 @@ QueryPlanStepPtr convertToExpressionStep(FilterStep * filter_node)
 {
     auto dag = std::move(filter_node->getExpression());
     if (filter_node->removesFilterColumn())
-        dag.removeUnusedResult(filter_node->getFilterColumnName());
+        dag.removeFromOutputs(filter_node->getFilterColumnName());
     auto new_expression_step = std::make_unique<ExpressionStep>(filter_node->getInputHeaders().front(), std::move(dag));
     new_expression_step->setStepDescription(*filter_node);
     return new_expression_step;

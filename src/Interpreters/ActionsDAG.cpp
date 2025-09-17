@@ -24,7 +24,9 @@
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <algorithm>
 #include <stack>
+#include <string>
 #include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
@@ -1417,6 +1419,23 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     if (it != inputs.end())
         inputs.erase(it);
     return true;
+}
+
+void ActionsDAG::removeFromOutputs(const std::string & node_name)
+{
+    auto it = std::find_if(
+        outputs.begin(),
+        outputs.end(),
+        [&node_name](const Node * node)
+        {
+            return node->result_name == node_name;
+        });
+
+    if (it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found node with {} in the outputs of ActionsDAG\n{}", node_name, dumpDAG());
+    outputs.erase(it);
+
+    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::clone() const

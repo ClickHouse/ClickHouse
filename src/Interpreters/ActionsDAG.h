@@ -192,6 +192,11 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
+    /// Remove node with <node_name> from outputs.
+    /// Remove unused actions after that.
+    /// Do not remove any inputs.
+    void removeFromOutputs(const std::string & node_name);
+
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 

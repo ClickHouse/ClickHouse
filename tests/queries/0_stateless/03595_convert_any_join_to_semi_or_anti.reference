@@ -8,7 +8,9 @@ Positions: 0
         Function: count() → UInt64
         Arguments: none
   Skip merging: 0
-    Expression (Before GROUP BY)
+    Expression ((Before GROUP BY + WHERE))
+    Actions: INPUT :: 0 -> exists(__table2) UInt8 : 0
+             INPUT :: 1 -> __table1.uid Int16 : 1
     Positions:
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __table1.uid Int16 : 0
@@ -79,7 +81,9 @@ Positions: 0
         Function: count() → UInt64
         Arguments: none
   Skip merging: 0
-    Expression (Before GROUP BY)
+    Expression ((Before GROUP BY + WHERE))
+    Actions: INPUT :: 0 -> exists(__table2) UInt8 : 0
+             INPUT :: 1 -> __table1.uid Int16 : 1
     Positions:
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __table1.uid Int16 : 0

@@ -1,6 +1,8 @@
-Expression ((Project names + Projection))
-Actions: COLUMN Const(UInt8) -> 1 UInt8 : 0
-Positions: 0
+Expression ((Project names + (Projection + WHERE)))
+Actions: INPUT :: 0 -> exists(__table2) UInt8 : 0
+         INPUT :: 1 -> __table1.i1 Int64 : 1
+         COLUMN Const(UInt8) -> 1 UInt8 : 2
+Positions: 2
   Expression (Post Join Actions)
   Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
            INPUT :: 1 -> exists(__table2) UInt8 : 1
