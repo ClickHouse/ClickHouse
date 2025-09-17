@@ -19,7 +19,6 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-USE_ENCRYPTED_STORAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -112,7 +111,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
-if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
     ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 fi
 
@@ -149,9 +148,16 @@ ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
+
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
+fi
 
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
@@ -296,13 +302,13 @@ function setup_storage_policy()
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     setup_storage_policy
 
-    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
         ln -sf $SRC_PATH/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
     else
         ln -sf $SRC_PATH/config.d/s3_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
     fi
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
         ln -sf $SRC_PATH/config.d/azure_encrypted_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
     else
         ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
@@ -362,7 +368,7 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+    if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
         rm $ch_server_1_path/config.d/transactions.xml
         rm $ch_server_2_path/config.d/transactions.xml
         cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml

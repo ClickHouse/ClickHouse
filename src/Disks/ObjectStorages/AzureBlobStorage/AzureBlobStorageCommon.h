@@ -155,7 +155,12 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly);
 
-BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & settings, bool for_disk);
+BlobClientOptions getClientOptions(
+    const ContextPtr & context,
+    const Settings & settings,
+    const RequestSettings & request_settings,
+    bool for_disk);
+
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 #endif

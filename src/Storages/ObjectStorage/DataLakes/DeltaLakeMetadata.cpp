@@ -1,7 +1,8 @@
+#include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <base/JSON.h>
 #include "config.h"
-#include <set>
 
 #if USE_PARQUET
 
@@ -22,6 +23,7 @@
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -239,7 +241,7 @@ struct DeltaLakeMetadataImpl
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
         while (!buf->eof())
@@ -409,7 +411,7 @@ struct DeltaLakeMetadataImpl
         String json_str;
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(last_checkpoint_file);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
         const JSON json(json_str);
@@ -479,13 +481,15 @@ struct DeltaLakeMetadataImpl
 
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(checkpoint_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = ParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = format_settings.parquet.use_native_reader_v3
+            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
+            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -506,6 +510,7 @@ struct DeltaLakeMetadataImpl
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings,
+            std::nullopt,
             std::nullopt,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
@@ -624,6 +629,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
+
     const auto & query_settings_ref = local_context->getSettingsRef();
 
     const auto storage_type = configuration_ptr->getType();

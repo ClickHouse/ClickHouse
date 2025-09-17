@@ -17,8 +17,20 @@ class RunnerLabels:
     CI_SERVICES_EBS = "ci_services_ebs"
     BUILDER_AMD = ["self-hosted", "builder"]
     BUILDER_ARM = ["self-hosted", "builder-aarch64"]
-    FUNC_TESTER_AMD = ["self-hosted", "func-tester"]
-    FUNC_TESTER_ARM = ["self-hosted", "func-tester-aarch64"]
+    FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
+    FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
+    AMD_LARGE = ["self-hosted", "amd-large"]
+    ARM_LARGE = ["self-hosted", "arm-large"]
+    AMD_MEDIUM = ["self-hosted", "amd-medium"]
+    ARM_MEDIUM = ["self-hosted", "arm-medium"]
+    AMD_MEDIUM_CPU = ["self-hosted", "amd-medium-cpu"]
+    ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
+    AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
+    ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
+    AMD_SMALL = ["self-hosted", "amd-small"]
+    ARM_SMALL = ["self-hosted", "arm-small"]
+    AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
+    ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
@@ -32,27 +44,34 @@ BASE_BRANCH = "master"
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
+
+chcache_secret = Secret.Config(
+    name="chcache_password",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     azure_secret,
+    chcache_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -81,18 +100,6 @@ DOCKERS = [
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-centos",
-        path="./ci/docker/compatibility/centos",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-ubuntu",
-        path="./ci/docker/compatibility/ubuntu",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stateless-test",
@@ -152,7 +159,7 @@ DOCKERS = [
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -193,6 +200,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-js-client",
         path="./ci/docker/integration/mysql_js_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/arrowflight-server-test",
+        path="./ci/docker/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -253,6 +266,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/sqlancer-test",
         path="./ci/docker/sqlancer-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/mysql_dotnet_client",
+        path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -323,6 +342,10 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
+    COMPILER_CHCACHE = "chcache"
+    COMPILER_CACHE_LEGACY = "sccache"
+    COMPILER_CACHE = COMPILER_CACHE_LEGACY
+
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
@@ -360,7 +383,7 @@ class ArtifactNames:
     DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAM"
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
@@ -416,7 +439,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAM,
+            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
