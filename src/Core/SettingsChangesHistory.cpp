@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
+            {"auto_statistics_types", "", "", "New setting."},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},

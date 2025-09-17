@@ -226,6 +226,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace FailPoints
@@ -1709,6 +1710,9 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
+
+    removeImplicitStatistics(new_metadata.columns);
+    addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
     setProperties(new_metadata, old_metadata);
 
     try
