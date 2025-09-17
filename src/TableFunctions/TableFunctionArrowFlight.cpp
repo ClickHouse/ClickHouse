@@ -6,7 +6,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageArrowFlight.h>
 #include <Storages/checkAndGetLiteralArgument.h>
