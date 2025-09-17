@@ -50,6 +50,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     user_configs=user_configs,
                     macros={"layer": 0, "shard": i // 2 + 1, "replica": i % 2 + 1},
                     with_zookeeper=True,
+                    with_remote_database_disk=False,  # Disable `with_remote_database_disk` because Keeper might reject connections from the instance.
                 )
 
             self.start()

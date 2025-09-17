@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/special-data-types/nothing
+description: 'Documentation for the Nothing special data type'
+sidebar_label: 'Nothing'
 sidebar_position: 60
-sidebar_label: Nothing
+slug: /sql-reference/data-types/special-data-types/nothing
+title: 'Nothing'
 ---
 
 # Nothing
@@ -12,11 +14,11 @@ For example, literal [NULL](/sql-reference/syntax#null) has type of `Nullable(No
 
 The `Nothing` type can also used to denote empty arrays:
 
-``` sql
+```sql
 SELECT toTypeName(array())
 ```
 
-``` text
+```text
 ┌─toTypeName(array())─┐
 │ Array(Nothing)      │
 └─────────────────────┘

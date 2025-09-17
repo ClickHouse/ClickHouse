@@ -1,5 +1,7 @@
 #include <memory>
+
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -19,6 +21,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -78,7 +81,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
@@ -108,6 +110,8 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 
@@ -996,7 +1000,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> analyzed_join,
     const ColumnsWithTypeAndName & left_sample_columns,
-    const Block & right_sample_block,
+    SharedHeader right_sample_block,
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
@@ -1005,7 +1009,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
-        JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
+        JoinPtr direct_join = tryKeyValueJoin(analyzed_join, *right_sample_block);
         if (direct_join)
         {
             /// Do not need to execute plan for right part, it's ready.
@@ -1046,7 +1050,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
+            return std::make_shared<GraceHashJoin>(
+                context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
+                context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
+                analyzed_join, std::make_shared<const Block>(std::move(left_sample_block)), right_sample_block, context->getTempDataOnDisk());
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
@@ -1061,7 +1068,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    Block right_sample_block = joined_plan->getCurrentHeader();
+    auto right_sample_block = joined_plan->getCurrentHeader();
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
@@ -1104,18 +1111,18 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
-        Block original_right_columns = interpreter->getSampleBlock();
-        ActionsDAG rename_dag(original_right_columns.getColumnsWithTypeAndName());
+        auto original_right_columns = interpreter->getSampleBlock();
+        ActionsDAG rename_dag(original_right_columns->getColumnsWithTypeAndName());
         for (const auto & name_with_alias : required_columns_with_aliases)
         {
-            if (name_with_alias.first != name_with_alias.second && original_right_columns.has(name_with_alias.first))
+            if (name_with_alias.first != name_with_alias.second && original_right_columns->has(name_with_alias.first))
             {
-                auto pos = original_right_columns.getPositionByName(name_with_alias.first);
+                auto pos = original_right_columns->getPositionByName(name_with_alias.first);
                 const auto & alias = rename_dag.addAlias(*rename_dag.getInputs()[pos], name_with_alias.second);
                 rename_dag.getOutputs()[pos] = &alias;
             }
         }
-        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentHeader());
+        rename_dag.appendInputsForUnusedColumns(*joined_plan->getCurrentHeader());
         auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
@@ -1203,7 +1210,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader()->getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
@@ -2134,7 +2141,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 auto actual_header = Aggregator::Params::getHeader(
                     header_before_aggregation, /*only_merge*/ false, keys, aggregates, /*final*/ true);
                 actual_header
-                    = AggregatingStep::appendGroupingColumn(std::move(actual_header), keys, has_grouping, settings[Setting::group_by_use_nulls]);
+                    = AggregatingStep::appendGroupingColumn(actual_header, keys, has_grouping, settings[Setting::group_by_use_nulls]);
 
                 Block expected_header;
                 for (const auto & expected : query_analyzer.aggregated_columns)

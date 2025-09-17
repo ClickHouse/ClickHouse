@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
 
@@ -16,11 +19,29 @@ String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
     for (size_t i = 0; i < pre_columns.size(); ++i)
-    {
-        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
-    }
-    s << "COLUMNS: " << columns.toString() << "\n";
+        s << "STEP " << i << ":\n" << pre_columns[i].toString() << "\n";
+
+    s << "MAIN:\n" << columns.toString() << "\n";
+
+    for (size_t i = 0; i < patch_columns.size(); ++i)
+        s << "PATCH " << i << ":\n" << patch_columns[i].toString() << "\n";
+
     return s.str();
+}
+
+Names MergeTreeReadTaskColumns::getAllColumnNames() const
+{
+    Names res;
+    for (const auto & step_columns : pre_columns)
+    {
+        for (const auto & column : step_columns)
+            res.push_back(column.name);
+    }
+
+    for (const auto & column : columns)
+        res.push_back(column.name);
+
+    return res;
 }
 
 void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
@@ -31,33 +52,36 @@ void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
     pre_columns.clear();
 }
 
-bool MergeTreeReadTaskInfo::hasLightweightDelete() const
-{
-    return data_part->hasLightweightDelete();
-}
-
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
     MarkRanges mark_ranges_,
+    std::vector<MarkRanges> patches_mark_ranges_,
     const BlockSizeParams & block_size_params_,
     MergeTreeBlockSizePredictorPtr size_predictor_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
+    , patches_mark_ranges(std::move(patches_mark_ranges_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
 {
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
-    const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges)
+    const MergeTreeReadTaskInfoPtr & read_info,
+    const Extras & extras,
+    const MarkRanges & ranges,
+    const std::vector<MarkRanges> & patches_ranges)
 {
     Readers new_readers;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        return read_info->data_part->getReader(
+        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
+
+        return createMergeTreeReader(
+            part_info,
             columns_to_read,
             extras.storage_snapshot,
             ranges,
@@ -65,7 +89,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
@@ -73,13 +96,46 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
+    bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
+    if (is_vector_search)
+        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints, read_info->task_columns.columns);
+
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
+    {
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+        if (is_vector_search)
+            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
+    }
+
+    auto create_patch_reader = [&](size_t part_idx)
+    {
+        return createMergeTreeReader(
+            read_info->patch_parts[part_idx].part,
+            read_info->task_columns.patch_columns[part_idx],
+            extras.storage_snapshot,
+            patches_ranges[part_idx],
+            read_info->const_virtual_fields,
+            extras.uncompressed_cache,
+            extras.mark_cache,
+            /*deserialization_prefixes_cache=*/ nullptr,
+            extras.reader_settings,
+            extras.value_size_map,
+            extras.profile_callback);
+    };
+
+    for (size_t i = 0; i < read_info->patch_parts.size(); ++i)
+    {
+        new_readers.patches.push_back(getPatchReader(
+            read_info->patch_parts[i],
+            create_patch_reader(i),
+            extras.patch_join_cache));
+    }
 
     return new_readers;
 }
 
-MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
+    const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
         throw Exception(
@@ -88,15 +144,29 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
             prewhere_actions.steps.size(), task_readers.prewhere.size());
 
     std::vector<MergeTreeRangeReader> range_readers;
-    range_readers.reserve(prewhere_actions.steps.size() + 1);
+    size_t num_readers = prewhere_actions.steps.size() + 1;
+    if (task_readers.index)
+        ++num_readers;
+    range_readers.reserve(num_readers);
 
+    if (task_readers.index)
+    {
+        range_readers.emplace_back(
+            task_readers.index.get(),
+            Block{},
+            /*prewhere_info_=*/nullptr,
+            read_steps_performance_counters.getCounterForIndexStep(),
+            /*main_reader_=*/false);
+    }
+
+    size_t counter_idx = 0;
     for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
     {
         range_readers.emplace_back(
             task_readers.prewhere[i].get(),
             (i == 0) ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
-            read_steps_performance_counters.getCountersForStep(i),
+            read_steps_performance_counters.getCountersForStep(counter_idx++),
             /*main_reader_=*/ false);
     }
 
@@ -106,17 +176,23 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
             task_readers.main.get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
-            read_steps_performance_counters.getCountersForStep(range_readers.size()),
+            read_steps_performance_counters.getCountersForStep(counter_idx),
             /*main_reader_=*/ true);
     }
 
-    return MergeTreeReadersChain{std::move(range_readers)};
+    return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
 }
 
-void MergeTreeReadTask::initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+void MergeTreeReadTask::initializeReadersChain(
+    const PrewhereExprInfo & prewhere_actions,
+    ReadStepsPerformanceCounters & read_steps_performance_counters,
+    MergeTreeIndexReadResultPtr index_read_result)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
+
+    if (index_read_result)
+        readers.index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
 
     readers_chain = createReadersChain(readers, prewhere_actions, read_steps_performance_counters);
 }
@@ -169,7 +245,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -212,7 +288,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     return res;
 }
 
-void MergeTreeReadTask::addPreWhereUnmatchedMarks(MarkRanges & mark_ranges_)
+void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }

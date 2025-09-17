@@ -1,4 +1,4 @@
-#include "CachedObjectStorage.h"
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -74,8 +74,7 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_settings.enable_filesystem_cache)
     {
@@ -87,7 +86,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 
             auto read_buffer_creator = [=, this]()
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -110,7 +109,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         }
     }
 
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
@@ -191,15 +190,6 @@ void CachedObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
-}
-
-std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

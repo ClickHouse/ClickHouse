@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/data-types/float
+description: 'Documentation for floating-point data types in ClickHouse: Float32,
+  Float64, and BFloat16'
+sidebar_label: 'Float32 | Float64 | BFloat16'
 sidebar_position: 4
-sidebar_label: Float32 | Float64 | BFloat16
-title: Float32 | Float64 | BFloat16 Types
+slug: /sql-reference/data-types/float
+title: 'Float32 | Float64 | BFloat16 Types'
 ---
 
 :::note
@@ -16,7 +18,7 @@ CREATE TABLE IF NOT EXISTS float_vs_decimal
    my_float Float64,
    my_decimal Decimal64(3)
 )
-Engine=MergeTree
+ENGINE=MergeTree
 ORDER BY tuple();
 
 # Generate 1 000 000 random numbers with 2 decimal places and store them as a float and as a decimal
@@ -49,13 +51,13 @@ Float types in ClickHouse have the following aliases:
 
 When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
-## Using Floating-point Numbers {#using-floating-point-numbers}
+## Using floating-point numbers {#using-floating-point-numbers}
 
 - Computations with floating-point numbers might produce a rounding error.
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 1 - 0.9
 
 ┌───────minus(1, 0.9)─┐
@@ -75,7 +77,7 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0.5 / 0
 
 ┌─divide(0.5, 0)─┐
@@ -87,7 +89,7 @@ SELECT 0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT -0.5 / 0
 
 ┌─divide(-0.5, 0)─┐
@@ -99,7 +101,7 @@ SELECT -0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0 / 0
 
 ┌─divide(0, 0)─┐

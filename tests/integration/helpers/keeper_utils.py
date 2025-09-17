@@ -9,9 +9,10 @@ import time
 from os import path as p
 from typing import Iterable, List, Optional, Sequence, Union
 
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
 from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.client import KazooClient
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -76,12 +77,16 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30):
+    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30, identity=None):
         self.bin_path = bin_path
         self.host = host
         self.port = port
 
         retry_count = 0
+
+        identity_arg = []
+        if identity:
+            identity_arg = ["--identity", identity]
 
         while True:
             try:
@@ -97,6 +102,7 @@ class KeeperClient(object):
                         "error",
                         "--tests-mode",
                         "--no-confirmation",
+                        *identity_arg
                     ],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -184,6 +190,9 @@ class KeeperClient(object):
     def rm(self, path: str, version: Optional[int] = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
+    def rmr(self, path: str) -> None:
+        self.execute_query(f"rmr '{path}'")
+
     def exists(self, path: str, timeout: float = 60.0) -> bool:
         return bool(int(self.execute_query(f"exists '{path}'", timeout)))
 
@@ -212,6 +221,9 @@ class KeeperClient(object):
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
+
+    def get_acl(self, path: str, timeout: float = 60.0):
+        return self.execute_query(f"get_acl '{path}'", timeout)
 
     def reconfig(
         self,
@@ -243,12 +255,13 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, identity: Optional[str] = None
     ) -> "KeeperClient":
         client = cls(
             cluster.server_bin_path,
             cluster.get_instance_ip(keeper_node),
             port or cluster.zookeeper_port,
+            identity=identity
         )
 
         try:
@@ -372,8 +385,8 @@ def get_any_follower(cluster, nodes):
 
 
 def get_fake_zk(
-    cluster, nodename, timeout: float = 30.0, password=None, retries=10
-) -> KazooClient:
+    cluster, nodename, timeout: float = 30.0, password=None, retries=10, start=True
+) -> KazooClientWithImplicitRetries:
     kazoo_retry = {
         "max_tries": retries,
     }
@@ -382,14 +395,15 @@ def get_fake_zk(
     if password is not None:
         client_id = (0, password)
 
-    _fake = KazooClient(
+    _fake = KazooClientWithImplicitRetries(
         hosts=cluster.get_instance_ip(nodename) + ":9181",
         client_id=client_id,
         timeout=timeout,
         connection_retry=kazoo_retry,
         command_retry=kazoo_retry,
     )
-    _fake.start()
+    if start:
+        _fake.start()
     return _fake
 
 

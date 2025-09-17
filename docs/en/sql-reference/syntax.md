@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/syntax
+description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Syntax'
 sidebar_position: 2
-sidebar_label: Syntax
-title: Syntax
-displayed_sidebar: sqlreference
+slug: /sql-reference/syntax
+title: 'Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -19,7 +20,7 @@ The full SQL parser is used in all cases except for the `INSERT` query, which us
 
 Let's examine the query below:
 
-``` sql
+```sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -37,7 +38,6 @@ When the aforementioned setting is set to `1`,
 ClickHouse first tries to parse values with the fast stream parser. 
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
-
 
 The data can have any format. 
 When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
@@ -76,7 +76,7 @@ Keywords are **case-insensitive** when they correspond to:
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 :::note
-You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
+You can check whether a data type name is case-sensitive in the [system.data_type_families](/operations/system-tables/data_type_families) table.
 :::
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
@@ -108,7 +108,6 @@ See the table below for examples of valid and invalid identifiers:
 | Valid identifiers                              | Invalid identifiers                    |
 |------------------------------------------------|----------------------------------------|
 | `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
-
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -222,9 +221,9 @@ To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/
 :::note
 The following should be noted for `NULL`:
 
-- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](../interfaces/formats.md#formats).
+- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](../sql-reference/operators/index.md#is-null) and [`IS NOT NULL`](../sql-reference/operators/index.md#is-not-null) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isNull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isNotNull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -284,7 +283,7 @@ SELECT
    {c: DateTime},
    {d: Map(String, Array(UInt8))};
 
-13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
+13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
 ```
 </details>
 
@@ -351,7 +350,7 @@ For example, the expression
 
 is transformed to 
 
-```
+```text
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
@@ -367,25 +366,28 @@ For more information, see the sections:
 
 ## Expressions {#expressions}
 
-An expression can be the following: 
+An expression can be any of the following:
 - a function
 - an identifier
 - a literal
-- an application of an operator
+- the application of an operator
 - an expression in brackets
 - a subquery
-- or an asterisk. 
+- an asterisk
 
 It can also contain an [alias](#expression-aliases).
 
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
+A constant expression is an expression whose result is known during query analysis, i.e. before execution.
+For example, expressions over literals are constant expressions.
+
 ## Expression Aliases {#expression-aliases}
 
 An alias is a user-defined name for an [expression](#expressions) in a query.
 
-``` sql
+```sql
 expr AS alias
 ```
 
@@ -393,7 +395,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](./functions/type-conversion-functions.md#castx-t) function, the `AS` keyword has another meaning. See the description of the function. |
+| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 
@@ -419,7 +421,7 @@ SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 - Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     a Int,

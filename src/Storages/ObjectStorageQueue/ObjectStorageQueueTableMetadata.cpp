@@ -138,11 +138,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
-    , loading_retries(getOrDefault(json, "loading_retries", "", 10))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
-    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
-    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
-    , buckets(getOrDefault(json, "buckets", "", 0))
+    , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
+    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
+    , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
 }
@@ -161,7 +161,7 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
         auto log = getLogger("ObjectStorageQueueTableMetadata");
         const std::string message = fmt::format(
             "Using `processing_threads_num` from keeper: {} (local: {})",
-            from_zk.processing_threads_num, processing_threads_num);
+            from_zk.processing_threads_num.load(), processing_threads_num.load());
 
         if (processing_threads_num_changed)
             LOG_WARNING(log, "{}", message);
@@ -200,16 +200,16 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_limit,
-            tracked_files_limit);
+            from_zk.tracked_files_limit.load(),
+            tracked_files_limit.load());
 
     if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_ttl_sec,
-            tracked_files_ttl_sec);
+            from_zk.tracked_files_ttl_sec.load(),
+            tracked_files_ttl_sec.load());
 
     if (format_name != from_zk.format_name)
         throw Exception(
@@ -235,7 +235,7 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
-                from_zk.buckets, buckets);
+                from_zk.buckets.load(), buckets.load());
         }
 
         if (getBucketsNum() != from_zk.getBucketsNum())

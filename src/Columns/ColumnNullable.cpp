@@ -7,7 +7,6 @@
 #include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
@@ -85,7 +84,7 @@ void ColumnNullable::updateHashFast(SipHash & hash) const
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
-    auto new_null_map = ColumnUInt8::create();
+    auto new_null_map = ColumnUInt8::create(new_size);
 
     if (new_size > 0)
     {
@@ -170,32 +169,60 @@ void ColumnNullable::insertData(const char * pos, size_t length)
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
-    static constexpr auto s = sizeof(arr[0]);
 
-    auto * pos = arena.allocContinue(s, begin);
-    memcpy(pos, &arr[n], s);
+    /// First serialize the NULL map byte.
+    auto * pos = arena.allocContinue(1, begin);
+    *pos = arr[n];
 
+    /// If the value is NULL, that's it.
     if (arr[n])
-        return StringRef(pos, s);
+        return StringRef(pos, 1);
 
+    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
     auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - s, nested_ref.size + s);
+    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
+}
+
+StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    const auto & arr = getNullMapData();
+
+    /// First serialize the NULL map byte.
+    auto * pos = arena.allocContinue(1, begin);
+    *pos = arr[n];
+
+    /// If the value is NULL, that's it.
+    if (arr[n])
+        return StringRef(pos, 1);
+
+    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
+    auto nested_ref = getNestedColumn().serializeAggregationStateValueIntoArena(n, arena, begin);
+
+    /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
 }
 
 char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
 {
     const auto & arr = getNullMapData();
-    static constexpr auto s = sizeof(arr[0]);
 
-    memcpy(memory, &arr[n], s);
+    *memory = arr[n];
     ++memory;
 
     if (arr[n])
         return memory;
 
     return getNestedColumn().serializeValueIntoMemory(n, memory);
+}
+
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
+{
+    auto nested_size = getNestedColumn().getSerializedValueSize(n);
+    if (!nested_size)
+        return std::nullopt;
+    return 1 + *nested_size; /// +1 for null mask byte.
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
@@ -207,6 +234,21 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 
     if (val == 0)
         pos = getNestedColumn().deserializeAndInsertFromArena(pos);
+    else
+        getNestedColumn().insertDefault();
+
+    return pos;
+}
+
+const char * ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    UInt8 val = unalignedLoad<UInt8>(pos);
+    pos += sizeof(val);
+
+    getNullMapData().push_back(val);
+
+    if (val == 0)
+        pos = getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(pos);
     else
         getNestedColumn().insertDefault();
 
@@ -736,7 +778,7 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const Columns & source_columns)
+void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     Columns nested_source_columns;
@@ -748,8 +790,8 @@ void ColumnNullable::prepareForSquashing(const Columns & source_columns)
         nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
     }
 
-    nested_column->prepareForSquashing(nested_source_columns);
-    getNullMapData().reserve(new_size);
+    nested_column->prepareForSquashing(nested_source_columns, factor);
+    getNullMapData().reserve(new_size * factor);
 }
 
 void ColumnNullable::shrinkToFit()
@@ -927,6 +969,13 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     return ColumnNullable::create(new_values, new_null_map);
 }
 
+void ColumnNullable::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_nullable = assert_cast<const ColumnNullable &>(src);
+    nested_column->updateAt(src_nullable.getNestedColumn(), dst_pos, src_pos);
+    null_map->updateAt(src_nullable.getNullMapColumn(), dst_pos, src_pos);
+}
+
 ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
 {
     auto res = nested_column->cloneEmpty();
@@ -961,6 +1010,12 @@ void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & sourc
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
+}
+
+bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
+    return nested_column->dynamicStructureEquals(rhs_nested_column);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

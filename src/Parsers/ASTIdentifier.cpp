@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
@@ -53,6 +52,11 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
 
         resetFullName();
     }
+}
+
+bool ASTIdentifier::isParam() const
+{
+    return !children.empty();
 }
 
 ASTPtr ASTIdentifier::getParam() const
@@ -109,7 +113,6 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
 {
     auto format_element = [&](const String & elem_name)
     {
-        ostr << (settings.hilite ? hilite_identifier : "");
         if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
         {
             ostr << special_delimiter_and_identifier->first;
@@ -119,7 +122,6 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         {
             settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
         }
-        ostr << (settings.hilite ? hilite_none : "");
     };
 
     if (compound())
@@ -202,6 +204,7 @@ ASTPtr ASTTableIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTTableIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 
@@ -268,7 +271,7 @@ String getIdentifierName(const IAST * ast)
     if (tryGetIdentifierNameInto(ast, res))
         return res;
     if (ast)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", queryToString(*ast));
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", ast->formatForErrorMessage());
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 

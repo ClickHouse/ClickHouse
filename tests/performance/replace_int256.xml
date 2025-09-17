@@ -1,16 +1,17 @@
+<!-- Performance test for basic operations on Int256 values -->
 <test>
-    <create_query>CREATE TABLE IF NOT EXISTS t_replace_int256 (i1 Int256, i2 Int256, u1 UInt256, u2 UInt256) ENGINE = Memory()</create_query>
-    <fill_query>insert into t_replace_int256 select * from  generateRandom('i1 Int256, i2 Int256, u1 UInt256, u2 UInt256') limit 1000000</fill_query>
+    <create_query>CREATE TABLE IF NOT EXISTS tab (i1 Int256, i2 Int256, u1 UInt256, u2 UInt256) ENGINE = Memory()</create_query>
+    <fill_query>INSERT INTO tab SELECT * FROM generateRandom('i1 Int256, i2 Int256, u1 UInt256, u2 UInt256') LIMIT 1000000</fill_query>
 
     <settings>
         <max_threads>1</max_threads>
     </settings>
 
-    <query>select i1*i2, u1*u2 from t_replace_int256</query>
-    <query>select intDivOrZero(i1, i2), intDivOrZero(u1, u2) from t_replace_int256</query>
-    <query>select modulo(i1, i2), modulo(u1, u2) from t_replace_int256</query>
-    <query>select i1+i2, u1+u2 from t_replace_int256</query>
-    <query>select i1-i2, u1-u2 from t_replace_int256</query>
+    <query>SELECT i1*i2, u1*u2 FROM tab</query>
+    <query>SELECT intDivOrZero(i1, i2), intDivOrZero(u1, u2) FROM tab</query>
+    <query>SELECT modulo(i1, i2), modulo(u1, u2) FROM tab</query>
+    <query>SELECT i1+i2, u1+u2 FROM tab</query>
+    <query>SELECT i1-i2, u1-u2 FROM tab</query>
 
-    <drop_query>DROP TABLE IF EXISTS t_replace_int256</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

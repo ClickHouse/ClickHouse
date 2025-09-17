@@ -1,8 +1,9 @@
 ---
-slug: /interfaces/formats
+description: 'Overview of supported data formats for input and output in ClickHouse'
+sidebar_label: 'View all formats...'
 sidebar_position: 21
-sidebar_label: View all formats...
-title: Formats for Input and Output Data
+slug: /interfaces/formats
+title: 'Formats for input and output data'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -80,7 +81,7 @@ The supported formats are:
 | [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔   | ✔     |
 | [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔   | ✔     |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔   | ✔     |
-| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗    | ✔     |
+| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗   | ✔     |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔   | ✔     |
@@ -103,7 +104,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
-| [ProtobufList](#protobuflist)								                                                     | ✔   | ✔     |
+| [ProtobufList](#protobuflist)                                                             | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |
@@ -119,6 +120,7 @@ The supported formats are:
 | [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔   | ✗     |
 | [Native](#native)                                                                         | ✔   | ✔     |
 | [Null](#null)                                                                             | ✗   | ✔     |
+| [Hash](#hash)                                                                             | ✗   | ✔     |
 | [XML](#xml)                                                                               | ✗   | ✔     |
 | [CapnProto](#capnproto)                                                                   | ✔   | ✔     |
 | [LineAsString](#lineasstring)                                                             | ✔   | ✔     |
@@ -129,7 +131,6 @@ The supported formats are:
 | [DWARF](#dwarf)                                                                           | ✔   | ✗     |
 | [Markdown](#markdown)                                                                     | ✗   | ✔     |
 | [Form](#form)                                                                             | ✔   | ✗     |
-
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/operations/settings/settings-formats.md) section.
 
@@ -285,7 +286,7 @@ See [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompact
 
 See [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow)
 
-### JSON Formats Settings {#json-formats-settings}
+### JSON format settings {#json-formats-settings}
 
 See [JSON Format Settings](/operations/settings/formats)
 
@@ -300,6 +301,10 @@ See [Native](/interfaces/formats/Native)
 ### Null {#null}
 
 See [Null](/interfaces/formats/Null)
+
+### Hash {#hash}
+
+See [Hash](/interfaces/formats/Hash)
 
 ### Pretty {#pretty}
 
@@ -468,7 +473,7 @@ See [Dwarf](/interfaces/formats/DWARF)
 
 See [Form](/interfaces/formats/Form)
 
-## Format Schema {#formatschema}
+## Format schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
@@ -485,7 +490,7 @@ If you input or output data via the [HTTP interface](/interfaces/http.md) the fi
 should be located in the directory specified in [format_schema_path](/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
-## Skipping Errors {#skippingerrors}
+## Skipping errors {#skippingerrors}
 
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.

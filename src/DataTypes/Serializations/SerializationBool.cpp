@@ -189,7 +189,7 @@ ReturnType deserializeImpl(
     }
 
     buf.rollbackToCheckpoint();
-    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
+    if (settings.allow_special_bool_values && tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
@@ -225,7 +225,8 @@ ReturnType deserializeImpl(
 void SerializationBool::deserializeBinary(DB::Field & field, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     nested_serialization->deserializeBinary(field, istr, settings);
-    field = bool(field.safeGet<bool>());
+    if (!settings.binary.read_bool_field_as_int)
+        field = bool(field.safeGet<bool>());
 }
 
 SerializationBool::SerializationBool(const SerializationPtr &nested_)

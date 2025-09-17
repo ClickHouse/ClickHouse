@@ -10,7 +10,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -45,7 +44,7 @@ class DataSkippingIndicesSource : public ISource
 public:
     DataSkippingIndicesSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -134,7 +133,7 @@ protected:
                         auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
                         auto index_type = expression ? expression->getType() : nullptr;
                         if (index_type)
-                            res_columns[res_index++]->insert(queryToString(*index_type));
+                            res_columns[res_index++]->insert(index_type->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -142,7 +141,7 @@ protected:
                     if (column_mask[src_index++])
                     {
                         if (auto expression = index.expression_list_ast)
-                            res_columns[res_index++]->insert(queryToString(expression));
+                            res_columns[res_index++]->insert(expression->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -197,7 +196,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

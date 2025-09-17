@@ -5,6 +5,7 @@
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -51,29 +52,14 @@ public:
       * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
       * can the caller retry next() after an exception, or call other methods? not recommended
       */
-    bool next()
+    bool next();
+
+    void cancel();
+
+    bool isCanceled() const
     {
-        chassert(!hasPendingData());
-        chassert(position() <= working_buffer.end());
-
-        bytes += offset();
-        bool res = nextImpl();
-        if (!res)
-        {
-            working_buffer = Buffer(pos, pos);
-        }
-        else
-        {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
-        }
-        nextimpl_working_buffer_offset = 0;
-
-        chassert(position() <= working_buffer.end());
-
-        return res;
+        return canceled;
     }
-
 
     void nextIfAtEnd()
     {
@@ -82,7 +68,6 @@ public:
     }
 
     virtual ~ReadBuffer() = default;
-
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
@@ -251,13 +236,14 @@ private:
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+using ReadBufferUniquePtr = std::unique_ptr<ReadBuffer>;
 
 /// Due to inconsistencies in ReadBuffer-family interfaces:
 ///  - some require to fully wrap underlying buffer and own it,
 ///  - some just wrap the reference without ownership,
 /// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
 /// The uniqueness of such wraps is responsibility of the code author.
-std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & ref);
-std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr);
+ReadBufferUniquePtr wrapReadBufferReference(ReadBuffer & ref);
+ReadBufferUniquePtr wrapReadBufferPointer(ReadBufferPtr ptr);
 
 }

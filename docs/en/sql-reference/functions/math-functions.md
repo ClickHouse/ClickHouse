@@ -1,10 +1,11 @@
 ---
+description: 'Documentation for Mathematical Functions'
+sidebar_label: 'Mathematical'
 slug: /sql-reference/functions/math-functions
-sidebar_position: 125
-sidebar_label: Mathematical
+title: 'Mathematical Functions'
 ---
 
-# Mathematical Functions
+# Mathematical functions
 
 ## e {#e}
 
@@ -233,7 +234,7 @@ Type: [Float*](../data-types/float.md).
 
 (three sigma rule)
 
-``` sql
+```sql
 SELECT erf(3 / sqrt(2));
 ```
 
@@ -444,7 +445,7 @@ Returns the [hyperbolic cosine](https://in.mathworks.com/help/matlab/ref/cosh.ht
 
 **Syntax**
 
-``` sql
+```sql
 cosh(x)
 ```
 
@@ -456,11 +457,11 @@ cosh(x)
 
 - Values from the interval: $1 \le cosh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT cosh(0);
 ```
 
@@ -478,7 +479,7 @@ Returns the [inverse hyperbolic cosine](https://www.mathworks.com/help/matlab/re
 
 **Syntax**
 
-``` sql
+```sql
 acosh(x)
 ```
 
@@ -490,11 +491,11 @@ acosh(x)
 
 - The angle, in radians. Values from the interval: $0 \le acosh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT acosh(1);
 ```
 
@@ -512,7 +513,7 @@ Returns the [hyperbolic sine](https://www.mathworks.com/help/matlab/ref/sinh.htm
 
 **Syntax**
 
-``` sql
+```sql
 sinh(x)
 ```
 
@@ -524,11 +525,11 @@ sinh(x)
 
 - Values from the interval: $-\infty \lt sinh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT sinh(0);
 ```
 
@@ -546,7 +547,7 @@ Returns the [inverse hyperbolic sine](https://www.mathworks.com/help/matlab/ref/
 
 **Syntax**
 
-``` sql
+```sql
 asinh(x)
 ```
 
@@ -558,11 +559,11 @@ asinh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt asinh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT asinh(0);
 ```
 
@@ -579,7 +580,7 @@ Returns the [hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/tanh.
 
 **Syntax**
 
-``` sql
+```sql
 tanh(x)
 ```
 
@@ -591,11 +592,11 @@ tanh(x)
 
 - Values from the interval: $-1 \lt tanh(x) \lt 1$.
 
-Type: [Float*](../data-types/float.md#float32-float64).
+Type: [Float*](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT tanh(0);
 ```
 
@@ -611,7 +612,7 @@ Returns the [inverse hyperbolic tangent](https://www.mathworks.com/help/matlab/r
 
 **Syntax**
 
-``` sql
+```sql
 atanh(x)
 ```
 
@@ -623,11 +624,11 @@ atanh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt atanh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT atanh(0);
 ```
 
@@ -645,7 +646,7 @@ Returns the [atan2](https://en.wikipedia.org/wiki/Atan2) as the angle in the Euc
 
 **Syntax**
 
-``` sql
+```sql
 atan2(y, x)
 ```
 
@@ -658,11 +659,11 @@ atan2(y, x)
 
 - The angle `θ` such that $-\pi \lt 0 \le \pi$, in radians.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT atan2(1, 1);
 ```
 
@@ -680,7 +681,7 @@ Returns the length of the hypotenuse of a right-angle triangle. [Hypot](https://
 
 **Syntax**
 
-``` sql
+```sql
 hypot(x, y)
 ```
 
@@ -693,11 +694,11 @@ hypot(x, y)
 
 - The length of the hypotenuse of a right-angle triangle.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT hypot(1, 1);
 ```
 
@@ -715,7 +716,7 @@ Calculates `log(1+x)`. The [calculation](https://en.wikipedia.org/wiki/Natural_l
 
 **Syntax**
 
-``` sql
+```sql
 log1p(x)
 ```
 
@@ -727,11 +728,11 @@ log1p(x)
 
 - Values from the interval: $-\infty < log1p(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT log1p(0);
 ```
 
@@ -749,7 +750,7 @@ Returns the sign of a real number.
 
 **Syntax**
 
-``` sql
+```sql
 sign(x)
 ```
 
@@ -769,7 +770,7 @@ Type: [Int8](../data-types/int-uint.md).
 
 Sign for the zero value:
 
-``` sql
+```sql
 SELECT sign(0);
 ```
 
@@ -783,7 +784,7 @@ Result:
 
 Sign for the positive value:
 
-``` sql
+```sql
 SELECT sign(1);
 ```
 
@@ -797,7 +798,7 @@ Result:
 
 Sign for the negative value:
 
-``` sql
+```sql
 SELECT sign(-1);
 ```
 
@@ -830,7 +831,7 @@ sigmoid(x)
 
 Query:
 
-``` sql
+```sql
 SELECT round(sigmoid(x), 5) FROM (SELECT arrayJoin([-1, 0, 1]) AS x);
 ```
 
@@ -848,7 +849,7 @@ Converts radians to degrees.
 
 **Syntax**
 
-``` sql
+```sql
 degrees(x)
 ```
 
@@ -859,11 +860,11 @@ degrees(x)
 
 **Returned value**
 
-- Value in degrees. [Float64](../data-types/float.md#float32-float64).
+- Value in degrees. [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT degrees(3.141592653589793);
 ```
 
@@ -881,7 +882,7 @@ Converts degrees to radians.
 
 **Syntax**
 
-``` sql
+```sql
 radians(x)
 ```
 
@@ -893,11 +894,11 @@ radians(x)
 
 - Value in radians.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT radians(180);
 ```
 
@@ -918,13 +919,13 @@ The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any ne
 
 **Syntax**
 
-``` sql
+```sql
 factorial(n)
 ```
 
 **Example**
 
-``` sql
+```sql
 SELECT factorial(10);
 ```
 
@@ -951,7 +952,7 @@ Alias: `WIDTH_BUCKET`
 
 **Example**
 
-``` sql
+```sql
 SELECT widthBucket(10.15, -8.6, 23, 18);
 ```
 
@@ -1008,3 +1009,12 @@ Result:
 │ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

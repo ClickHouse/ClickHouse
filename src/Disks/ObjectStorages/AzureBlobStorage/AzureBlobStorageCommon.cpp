@@ -2,16 +2,27 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+#include <azure/storage/blobs/blob_options.hpp>
+#include <azure/storage/blobs/blob_responses.hpp>
+#include <azure/storage/blobs/rest_client.hpp>
+#include <azure/core/credentials/credentials.hpp>
+
+#endif
+
+#include <Core/ServerSettings.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/storage/blobs/blob_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 
 namespace ProfileEvents
 {
@@ -19,12 +30,18 @@ namespace ProfileEvents
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
     extern const Event DiskAzureCreateContainer;
+    extern const Event AzureGetRequestThrottlerCount;
+    extern const Event AzureGetRequestThrottlerSleepMicroseconds;
+    extern const Event AzurePutRequestThrottlerCount;
+    extern const Event AzurePutRequestThrottlerSleepMicroseconds;
+
 }
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsUInt64 azure_max_single_part_upload_size;
@@ -43,7 +60,29 @@ namespace Setting
     extern const SettingsUInt64 azure_sdk_retry_initial_backoff_ms;
     extern const SettingsUInt64 azure_sdk_retry_max_backoff_ms;
     extern const SettingsBool azure_check_objects_after_upload;
+    extern const SettingsBool azure_use_adaptive_timeouts;
+    extern const SettingsUInt64 azure_max_redirects;
+    extern const SettingsUInt64 azure_connect_timeout_ms;
+    extern const SettingsUInt64 azure_request_timeout_ms;
+    extern const SettingsSeconds tcp_keep_alive_timeout;
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsBool azure_sdk_use_native_client;
+
+    extern const SettingsUInt64 azure_max_get_rps;
+    extern const SettingsUInt64 azure_max_get_burst;
+    extern const SettingsUInt64 azure_max_put_rps;
+    extern const SettingsUInt64 azure_max_put_burst;
+
 }
+
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsUInt64 max_keep_alive_requests;
+}
+
 
 namespace ErrorCodes
 {
@@ -53,6 +92,8 @@ namespace ErrorCodes
 
 namespace AzureBlobStorage
 {
+
+#if USE_AZURE_BLOB_STORAGE
 
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
@@ -83,6 +124,14 @@ static void validateContainerName(const String & container_name)
 static bool isConnectionString(const std::string & candidate)
 {
     return !candidate.starts_with("http");
+}
+
+/// As ManagedIdentityCredential is related to the machine/pod, it's ok to have it as a singleton.
+/// It is beneficial because creating this object can take a lot of time and lead to throttling.
+static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIdentityCredential()
+{
+    static auto credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return credential;
 }
 
 ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
@@ -304,7 +353,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
     {
         endpoint.storage_account_url = url.substr(0, pos);
         endpoint.sas_auth = url.substr(pos + 1);
-        auth_method = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+        auth_method = getManagedIdentityCredential();
     }
 }
 
@@ -381,27 +430,80 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
     if (config.getBool(config_prefix + ".use_workload_identity", false))
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
-    return std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return getManagedIdentityCredential();
 }
 
-BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk)
+BlobClientOptions getClientOptions(
+    const ContextPtr & context,
+    const Settings & settings,
+    const RequestSettings & request_settings,
+    bool for_disk)
 {
     Azure::Core::Http::Policies::RetryOptions retry_options;
-    retry_options.MaxRetries = static_cast<Int32>(settings.sdk_max_retries);
-    retry_options.RetryDelay = std::chrono::milliseconds(settings.sdk_retry_initial_backoff_ms);
-    retry_options.MaxRetryDelay = std::chrono::milliseconds(settings.sdk_retry_max_backoff_ms);
-
-    Azure::Core::Http::CurlTransportOptions curl_options;
-    curl_options.NoSignal = true;
-    curl_options.IPResolve = settings.curl_ip_resolve;
-
+    retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
+    retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
+    retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
-    client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
+
+    if (settings[Setting::azure_sdk_use_native_client])
+    {
+        ThrottlerPtr get_request_throttler;
+        ThrottlerPtr put_request_throttler;
+
+        if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
+        {
+            get_request_throttler = std::make_shared<Throttler>(
+                settings[Setting::azure_max_get_rps],
+                settings[Setting::azure_max_get_burst],
+                ProfileEvents::AzureGetRequestThrottlerCount,
+                ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
+        }
+
+        if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
+        {
+            put_request_throttler = std::make_shared<Throttler>(
+                settings[Setting::azure_max_put_rps],
+                settings[Setting::azure_max_put_burst],
+                ProfileEvents::AzurePutRequestThrottlerCount,
+                ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
+        }
+
+        auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
+        auto tcp_keep_alive_milliseconds = static_cast<size_t>(settings[Setting::tcp_keep_alive_timeout].totalMilliseconds());
+
+        PocoAzureHTTPClientConfiguration conf{
+            .remote_host_filter = context->getRemoteHostFilter(),
+            .max_redirects = settings[Setting::azure_max_redirects],
+            .for_disk_azure = for_disk,
+            .get_request_throttler = get_request_throttler,
+            .put_request_throttler = put_request_throttler,
+            .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
+            .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
+            .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
+            .tcp_keep_alive_interval_ms = tcp_keep_alive_milliseconds,
+            .use_adaptive_timeouts = settings[Setting::azure_use_adaptive_timeouts],
+            .http_keep_alive_timeout = http_keep_alive_seconds, // Convert seconds to milliseconds
+            .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
+            .http_max_fields = settings[Setting::http_max_fields],
+            .http_max_field_name_size = settings[Setting::http_max_field_name_size],
+            .http_max_field_value_size = settings[Setting::http_max_field_value_size]};
+
+        client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
+    }
+    else /// TODO (alesapin) Remove Curl client in future releases
+    {
+        Azure::Core::Http::CurlTransportOptions curl_options;
+        curl_options.NoSignal = true;
+        curl_options.IPResolve = request_settings.curl_ip_resolve;
+        client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
+    }
 
     return client_options;
 }
+
+#endif
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
@@ -428,20 +530,27 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy)
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy)
 {
-    auto settings = getRequestSettings(query_settings);
-    settings->use_native_copy = use_native_copy;
+    auto settings = getRequestSettings(context->getSettingsRef());
+
+    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
+    if (endpoint_settings)
+        settings->use_native_copy = endpoint_settings->use_native_copy;
+
+    if (!use_native_copy)
+        settings->use_native_copy = false;
+
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref)
 {
     auto settings = std::make_unique<RequestSettings>();
-    const auto & settings_ref = context->getSettingsRef();
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
     settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);
     settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref[Setting::azure_max_single_read_retries]);
@@ -463,24 +572,86 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
 
+
+#if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
-        using CurlOptions = Azure::Core::Http::CurlTransportOptions;
-
         auto value = config.getString(config_prefix + ".curl_ip_resolve");
         if (value == "ipv4")
-            settings->curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_V4;
+            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V4;
         else if (value == "ipv6")
-            settings->curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_V6;
+            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V6;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
+#endif
 
     return settings;
 }
 
 }
 
+
+void AzureSettingsByEndpoint::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings)
+{
+    std::lock_guard lock(mutex);
+    azure_settings.clear();
+    if (!config.has(config_prefix))
+        return;
+
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_prefix, config_keys);
+
+    for (const String & key : config_keys)
+    {
+        const auto key_path = config_prefix + "." + key;
+        String endpoint_path = key_path + ".connection_string";
+
+        if (!config.has(endpoint_path))
+        {
+            endpoint_path = key_path + ".storage_account_url";
+
+            if (!config.has(endpoint_path))
+            {
+                endpoint_path = key_path + ".endpoint";
+
+                if (!config.has(endpoint_path))
+                {
+                    /// Error, shouldn't hit this todo:: throw error
+                    continue;
+                }
+            }
+        }
+
+        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
+
+        azure_settings.emplace(
+                config.getString(endpoint_path),
+                std::move(*request_settings));
+
+    }
 }
 
-#endif
+std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(
+    const String & endpoint) const
+{
+    std::lock_guard lock(mutex);
+    auto next_prefix_setting = azure_settings.upper_bound(endpoint);
+
+    /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
+    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != azure_settings.begin();)
+    {
+        std::advance(possible_prefix_setting, -1);
+        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
+        if (endpoint.starts_with(endpoint_prefix))
+            return possible_prefix_setting->second;
+    }
+
+    return {};
+}
+
+}

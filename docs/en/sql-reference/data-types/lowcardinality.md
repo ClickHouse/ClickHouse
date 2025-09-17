@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/lowcardinality
+description: 'Documentation for the LowCardinality optimization for string columns'
+sidebar_label: 'LowCardinality(T)'
 sidebar_position: 42
-sidebar_label: LowCardinality(T)
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
 ---
 
 # LowCardinality(T)
@@ -10,7 +12,7 @@ Changes the internal representation of other data types to be dictionary-encoded
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 LowCardinality(data_type)
 ```
 
@@ -30,7 +32,7 @@ Consider using `LowCardinality` instead of [Enum](../../sql-reference/data-types
 
 Create a table with a `LowCardinality`-column:
 
-``` sql
+```sql
 CREATE TABLE lc_t
 (
     `id` UInt16,
@@ -48,7 +50,7 @@ Settings:
 - [low_cardinality_use_single_dictionary_for_part](../../operations/settings/settings.md#low_cardinality_use_single_dictionary_for_part)
 - [low_cardinality_allow_in_native_format](../../operations/settings/settings.md#low_cardinality_allow_in_native_format)
 - [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types)
-- [output_format_arrow_low_cardinality_as_dictionary](../../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary)
+- [output_format_arrow_low_cardinality_as_dictionary](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
 
 Functions:
 

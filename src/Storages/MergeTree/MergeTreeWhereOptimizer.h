@@ -37,7 +37,7 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConditionSelectivityEstimator & estimator_,
+        ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -81,6 +81,21 @@ private:
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+
+        /// For debugging purposes
+        String toString() const
+        {
+            return fmt::format(
+                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "columns_size: {}, table_columns.size: {})",
+                node.getColumnName(),
+                viable,
+                good,
+                min_position_in_primary_key,
+                estimated_row_count,
+                columns_size,
+                table_columns.size());
+        }
 
         auto tuple() const
         {
@@ -147,7 +162,7 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

@@ -14,6 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/callOnce.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace DB
@@ -23,27 +24,29 @@ class TaskNotification;
 class BackgroundSchedulePoolTaskInfo;
 class BackgroundSchedulePoolTaskHolder;
 
+class BackgroundSchedulePool;
+using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
+using BackgroundSchedulePoolWeakPtr = std::weak_ptr<BackgroundSchedulePool>;
+
 
 /** Executes functions scheduled at a specific point in time.
   * Basically all tasks are added in a queue and precessed by worker threads.
   *
-  * The most important difference between this and BackgroundProcessingPool
+  * The most important difference between this and MergeTreeBackgroundExecutor
   *  is that we have the guarantee that the same function is not executed from many workers in the same time.
   *
   * The usage scenario: instead starting a separate thread for each task,
   *  register a task in BackgroundSchedulePool and when you need to run the task,
   *  call schedule or scheduleAfter(duration) method.
   */
-class BackgroundSchedulePool
+class BackgroundSchedulePool : public std::enable_shared_from_this<BackgroundSchedulePool>, private boost::noncopyable
 {
 public:
     friend class BackgroundSchedulePoolTaskInfo;
 
     using TaskInfo = BackgroundSchedulePoolTaskInfo;
-    using TaskInfoPtr = std::shared_ptr<TaskInfo>;
     using TaskFunc = std::function<void()>;
     using TaskHolder = BackgroundSchedulePoolTaskHolder;
-    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
 
     TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
 
@@ -51,14 +54,22 @@ public:
     /// be error prone. We support only increasing number of threads at runtime.
     void increaseThreadsCount(size_t new_threads_count);
 
-    /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char *thread_name_);
+    static BackgroundSchedulePoolPtr create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, const char * thread_name);
     ~BackgroundSchedulePool();
 
+    /// Shutdown the pool (set flag, destroy threads)
+    /// Should be called explicitly before destroying object.
+    void join();
+
 private:
+    using TaskInfoPtr = std::shared_ptr<TaskInfo>;
+    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
     /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
     /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
     using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
+
+    /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
+    BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char * thread_name_);
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -76,7 +87,16 @@ private:
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
-    std::deque<TaskInfoPtr> tasks TSA_GUARDED_BY(tasks_mutex);
+
+    struct TasksGroup
+    {
+        size_t num_running = 0;
+        std::optional<size_t> runnable_list_pos;
+        std::deque<TaskInfoPtr> tasks;
+
+    };
+    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
+    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
 
     /// Delayed tasks.
@@ -91,14 +111,14 @@ private:
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
     std::string thread_name;
+
+    size_t max_parallel_tasks_per_type;
 };
 
 
 class BackgroundSchedulePoolTaskInfo : public std::enable_shared_from_this<BackgroundSchedulePoolTaskInfo>, private boost::noncopyable
 {
 public:
-    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
-
     /// Schedule for execution as soon as possible (if not already scheduled).
     /// If the task was already scheduled with delay, the delay will be ignored.
     bool schedule();
@@ -110,15 +130,15 @@ public:
     bool scheduleAfter(size_t milliseconds, bool overwrite = true, bool only_if_scheduled = false);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
-    void deactivate();
+    bool deactivate();
 
-    void activate();
+    bool activate();
 
     /// Atomically activate task and schedule it for execution.
     bool activateAndSchedule();
 
-    /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
-    Coordination::WatchCallback getWatchCallback();
+    /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
+    Coordination::WatchCallbackPtr getWatchCallback();
 
     /// Returns lock that protects from concurrent task execution.
     /// This lock should not be held for a long time.
@@ -128,13 +148,18 @@ private:
     friend class TaskNotification;
     friend class BackgroundSchedulePool;
 
-    void execute();
+    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
 
-    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex);
+    void execute(BackgroundSchedulePool & pool);
 
-    BackgroundSchedulePool & pool;
+    bool scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
+
+    BackgroundSchedulePoolWeakPtr pool_ref;
     std::string log_name;
     BackgroundSchedulePool::TaskFunc function;
+
+    OnceFlag watch_callback_initialized;
+    Coordination::WatchCallbackPtr watch_callback;
 
     std::mutex exec_mutex;
     std::mutex schedule_mutex;

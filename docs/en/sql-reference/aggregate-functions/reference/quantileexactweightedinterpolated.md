@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
+description: 'Computes quantile of a numeric data sequence using linear interpolation,
+  taking into account the weight of each element.'
 sidebar_position: 176
-title: "quantileExactWeightedInterpolated"
-description: "Computes quantile of a numeric data sequence using linear interpolation, taking into account the weight of each element."
+slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
+title: 'quantileExactWeightedInterpolated'
 ---
 
 # quantileExactWeightedInterpolated
@@ -15,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`. Here is an example:
 
-``` sql
+```sql
 SELECT
     quantileExactWeightedInterpolated(0.99)(number, 1),
     quantile(0.99)(number),
@@ -30,7 +31,7 @@ FROM numbers(9)
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactWeightedInterpolated(level)(expr, weight)
 ```
 
@@ -39,7 +40,7 @@ Alias: `medianExactWeightedInterpolated`.
 **Arguments**
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 - `weight` — Column with weights of sequence members. Weight is a number of value occurrences with [Unsigned integer types](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
@@ -56,7 +57,7 @@ Type:
 
 Input table:
 
-``` text
+```text
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -67,7 +68,7 @@ Input table:
 
 Result:
 
-``` text
+```text
 ┌─quantileExactWeightedInterpolated(n, val)─┐
 │                                       1.5 │
 └───────────────────────────────────────────┘
@@ -75,5 +76,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

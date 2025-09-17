@@ -11,7 +11,7 @@ create materialized view mv1 to dst as select * from src;
 create materialized view mv2 to dst as select * from src;
 
 insert into src select * from numbers(1e6) settings log_queries=1, max_untracked_memory=0, parallel_view_processing=0;
-system flush logs;
+system flush logs query_views_log, query_log;
 
 -- { echo }
 select view_name, read_rows, read_bytes, written_rows, written_bytes from system.query_views_log where startsWith(view_name, currentDatabase() || '.mv') order by view_name format Vertical;

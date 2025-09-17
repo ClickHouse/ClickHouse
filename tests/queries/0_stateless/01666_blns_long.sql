@@ -552,17 +552,17 @@ ATTACH TABLE test;
 
 SELECT count() FROM test;
 
-INSERT INTO test ("0") VALUES ('Hello, world!');
+INSERT INTO test ("1") VALUES ('Hello, world!');
 SELECT count() FROM test;
 
-DROP TABLE IF EXISTS test_r1;
-DROP TABLE IF EXISTS test_r2;
+DROP TABLE IF EXISTS test_r1 SYNC;
+DROP TABLE IF EXISTS test_r2 SYNC;
 
 CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 INSERT INTO test_r1 SELECT * FROM test;
 CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 
-SYSTEM SYNC REPLICA test_r2;
+SYSTEM SYNC REPLICA test_r2 STRICT;
 
 SELECT count() FROM test_r1;
 SELECT count() FROM test_r2;

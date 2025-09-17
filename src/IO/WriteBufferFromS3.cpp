@@ -2,8 +2,8 @@
 
 #if USE_AWS_S3
 
-#include "StdIStreamFromMemory.h"
-#include "WriteBufferFromS3.h"
+#include <IO/StdIStreamFromMemory.h>
+#include <IO/WriteBufferFromS3.h>
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
@@ -39,9 +39,6 @@ namespace ProfileEvents
     extern const Event DiskS3AbortMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
-
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -322,9 +319,6 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::hidePartialData()
 {
-    if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
-
     chassert(memory.size() >= hidden_size + offset());
 
     hidden_size += offset();
@@ -387,7 +381,7 @@ void WriteBufferFromS3::allocateBuffer()
         return;
     }
 
-    memory = Memory(buffer_allocation_policy->getBufferSize());
+    memory = Memory<>(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -549,9 +543,9 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
             "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
-            request_settings[S3RequestSetting::max_part_number], count(), request_settings[S3RequestSetting::min_upload_part_size], request_settings[S3RequestSetting::max_upload_part_size],
-            request_settings[S3RequestSetting::upload_part_size_multiply_factor], request_settings[S3RequestSetting::upload_part_size_multiply_parts_count_threshold],
-            request_settings[S3RequestSetting::max_single_part_upload_size]);
+            request_settings[S3RequestSetting::max_part_number].value, count(), request_settings[S3RequestSetting::min_upload_part_size].value, request_settings[S3RequestSetting::max_upload_part_size].value,
+            request_settings[S3RequestSetting::upload_part_size_multiply_factor].value, request_settings[S3RequestSetting::upload_part_size_multiply_parts_count_threshold].value,
+            request_settings[S3RequestSetting::max_single_part_upload_size].value);
     }
 
     if (data.data_size > request_settings[S3RequestSetting::max_upload_part_size])
@@ -562,7 +556,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             getShortLogDetails(),
             part_number,
             data.data_size,
-            request_settings[S3RequestSetting::max_upload_part_size]
+            request_settings[S3RequestSetting::max_upload_part_size].value
             );
     }
 
@@ -582,7 +576,8 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         auto & request = std::get<0>(*worker_data);
 
-        CurrentThread::IOScope io_scope(write_settings.io_scheduling);
+        CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
+        CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
@@ -737,7 +732,8 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-            CurrentThread::IOScope io_scope(write_settings.io_scheduling);
+            CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
+            CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);

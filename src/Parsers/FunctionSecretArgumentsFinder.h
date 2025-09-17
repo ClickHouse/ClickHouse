@@ -107,17 +107,19 @@ protected:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "s3Cluster")
+        else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
+                 (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
-        else if ((function->name() == "azureBlobStorage") || (function->name() == "icebergAzure"))
+        else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
+                 (function->name() == "icebergAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "azureBlobStorageCluster")
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -137,6 +139,10 @@ protected:
         else if (function->name() == "url")
         {
             findURLSecretArguments();
+        }
+        else if (function->name() == "ytsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
         }
     }
 
@@ -188,6 +194,24 @@ protected:
         result.replacement = std::move(uri);
     }
 
+    void findRedisSecretArguments()
+    {
+        /// Redis does not have URL/address argument,
+        /// only 'host:port' and separate "password" argument.
+
+        if (isNamedCollectionName(0))
+        {
+            if (findSecretNamedArgument("password", 1))
+                return;
+        }
+        else
+        {
+            // Redis('host:port', 'db_index', 'password', 'pool_size')
+            markSecretArgument(2, false);
+            return;
+        }
+    }
+
     /// Returns the number of arguments excluding "headers" and "extra_credentials" (which should
     /// always be at the end). Marks "headers" as secret, if found.
     size_t excludeS3OrURLNestedMaps()
@@ -200,7 +224,7 @@ protected:
                 break;
             if (f->name() == "headers")
                 result.nested_maps.push_back(f->name());
-            else if (f->name() != "extra_credentials")
+            else if (f->name() != "extra_credentials" && f->name() != "equals")
                 break;
             count -= 1;
         }
@@ -218,6 +242,8 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+
+        findSecretNamedArgument("secret_access_key", url_arg_idx);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -308,6 +334,17 @@ protected:
         {
             static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
             if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
+            {
+                chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+                result.start = url_arg_idx;
+                result.are_named = argument_is_named;
+                result.count = 1;
+                result.replacement = url_arg;
+                return true;
+            }
+
+            static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+            if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
                 result.start = url_arg_idx;
@@ -487,9 +524,17 @@ protected:
         {
             findURLSecretArguments();
         }
-        else if (engine_name == "AzureBlobStorage")
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
         {
             findAzureBlobStorageTableEngineSecretArguments();
+        }
+        else if (engine_name == "Redis")
+        {
+            findRedisSecretArguments();
+        }
+        else if (engine_name == "YTsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
         }
     }
 
@@ -515,6 +560,8 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+
+        findSecretNamedArgument("secret_access_key", 0);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -579,6 +626,12 @@ protected:
             markSecretArgument(url_arg_idx + 4);
     }
 
+    void findYTsaurusStorageTableEngineSecretArguments()
+    {
+        // YTsaurus('base_uri', 'yt_path', 'auth_token')
+        markSecretArgument(2);
+    }
+
     void findDatabaseEngineSecretArguments()
     {
         const String & engine_name = function->name();
@@ -594,6 +647,10 @@ protected:
         {
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
+        }
+        else if (engine_name == "DataLakeCatalog")
+        {
+            findDataLakeCatalogSecretArguments();
         }
     }
 
@@ -625,6 +682,14 @@ protected:
         }
     }
 
+    void findDataLakeCatalogSecretArguments()
+    {
+        /// datalake catalog should support different storage types,
+        /// we need a function to check if the url is S3 or Azure.
+        /// right now we assume it's a S3 url
+        findS3DatabaseSecretArguments();
+    }
+
     void findBackupNameSecretArguments()
     {
         const String & engine_name = function->name();
@@ -633,7 +698,7 @@ protected:
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
-        else if (engine_name == "AzureBlobStorage")
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
         {
             findAzureBlobStorageTableEngineSecretArguments();
         }

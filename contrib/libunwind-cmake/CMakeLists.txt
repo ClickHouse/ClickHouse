@@ -1,4 +1,4 @@
-set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
+set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libunwind")
 
 set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
@@ -42,10 +42,3 @@ target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 # The library is using register variables that are bound to specific registers
 # Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
 target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
-
-install(
-    TARGETS unwind
-    EXPORT global
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)

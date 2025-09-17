@@ -9,6 +9,8 @@
 #include <atomic>
 #include <memory>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 struct FileCacheReserveStat;
@@ -34,7 +36,7 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
@@ -95,6 +97,8 @@ public:
     size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
 
     size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
+    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
+    virtual double getSLRUSizeRatio() const { return 0; }
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
@@ -107,6 +111,16 @@ public:
     virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
 
     virtual void check(const CachePriorityGuard::Lock &) const;
+
+    enum class IterationResult : uint8_t
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    virtual void iterate(IterateFunc func, const CachePriorityGuard::Lock &) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT

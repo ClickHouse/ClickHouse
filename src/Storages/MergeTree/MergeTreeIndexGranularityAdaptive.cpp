@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -26,6 +27,14 @@ size_t MergeTreeIndexGranularityAdaptive::getMarkRows(size_t mark_index) const
         return marks_rows_partial_sums[0];
 
     return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
+}
+
+MarkRange MergeTreeIndexGranularityAdaptive::getMarkRangeForRowOffset(size_t row_offset) const
+{
+    auto position = std::lower_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), row_offset + 1);
+    size_t begin_mark = position - marks_rows_partial_sums.begin();
+
+    return {begin_mark, begin_mark + 1};
 }
 
 bool MergeTreeIndexGranularityAdaptive::hasFinalMark() const

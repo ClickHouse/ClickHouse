@@ -36,7 +36,7 @@ query_id=$(random 8)
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" -q "
 select * from ttt format Null settings enable_filesystem_cache_log=1;
 "
-${CLICKHOUSE_CLIENT} --query_id "$query_id" -q " system flush logs"
+${CLICKHOUSE_CLIENT} --query_id "$query_id" -q " system flush logs filesystem_cache_log"
 
 ${CLICKHOUSE_CLIENT}  -q "
 select count() from system.filesystem_cache_log where query_id = '$query_id' AND read_type != 'READ_FROM_CACHE';

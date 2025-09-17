@@ -94,7 +94,7 @@ helpless_filter_query="SELECT sum(number) FROM test_parallel_replicas_automatic_
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_10M" 10000000 "$helpless_filter_query"
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_5M" 5000000 "$helpless_filter_query"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 were_parallel_replicas_used "${query_id_base}"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_count"

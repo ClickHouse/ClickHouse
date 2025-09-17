@@ -1,9 +1,12 @@
 ---
-description: "System table containing information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row."
+description: 'System table containing information about mutations of MergeTree tables
+  and their progress. Each mutation command is represented by a single row.'
+keywords: ['system table', 'mutations']
 slug: /operations/system-tables/mutations
-title: "system.mutations"
-keywords: ["system table", "mutations"]
+title: 'system.mutations'
 ---
+
+# system.mutations
 
 The table contains information about [mutations](/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
@@ -36,8 +39,8 @@ The table contains information about [mutations](/sql-reference/statements/alter
 :::
 
 - `is_done` ([UInt8](/sql-reference/data-types/int-uint.md)) — The flag whether the mutation is done or not. Possible values:
-    - `1` if the mutation is completed,
-    - `0` if the mutation is still in process.
+  - `1` if the mutation is completed,
+  - `0` if the mutation is still in process.
 
 :::note
 Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.
@@ -55,7 +58,7 @@ If there were problems with mutating some data parts, the following columns cont
 
 To track the progress on the system.mutations table, use a query like the following - this requires read permissions on the system.* tables:
 
-``` sql
+```sql
 SELECT * FROM clusterAllReplicas('cluster_name', 'db', system.mutations)
 WHERE is_done=0 AND table='tmp';
 ```
