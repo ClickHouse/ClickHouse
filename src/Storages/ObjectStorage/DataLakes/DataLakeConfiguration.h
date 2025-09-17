@@ -19,6 +19,8 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Common/filesystemHelpers.h>
+#include <Disks/DiskType.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
@@ -39,6 +41,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DataLakeStorageSetting
@@ -121,6 +124,12 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+        }
         BaseStorageConfiguration::create(
             object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 

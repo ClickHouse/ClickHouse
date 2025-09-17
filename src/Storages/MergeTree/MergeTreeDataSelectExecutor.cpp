@@ -65,6 +65,8 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -1112,9 +1114,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
             if (!matching_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            else
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
@@ -1863,7 +1868,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                    reader.read(index_mark, granule);
+                {
+                    reader.read(index_mark, condition.get(), granule);
+                }
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
@@ -2004,7 +2011,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(index_mark, granules[i]);
+                    readers[i]->read(index_mark, nullptr, granules[i]);
                     granules_filled = true;
                 }
             }
