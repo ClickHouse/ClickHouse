@@ -18,21 +18,21 @@ sidebar_position: 51
 
 ## What operations does the overlay support? {#implementation}
 
-### Table/DB discovery {#discovery}
+### Table/Database discovery {#discovery}
 
-* `SHOW TABLES FROM dboverlay` — returns the **union** of member DB tables.
+* `SHOW TABLES FROM dboverlay` — returns the **union** of member database tables.
 * `SELECT … FROM dboverlay.table` — **reads** transparently hit the underlying table.
 
 ### Mutating operations (facade mode) {#operations}
 
-| Operation                  | Behavior                                                                                  |
-| :------------------------- | :---------------------------------------------------------------------------------------- |
-| `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a clear message to create in an underlying DB. |
-| `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                           |
-| `ALTER TABLE dboverlay.*`  | **Pass-through** — forwards to the appropriate underlying DB.                             |
-| `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                           |
-| `DROP TABLE dboverlay.*`   | **No-op** — ignored (allows `DROP DATABASE dboverlay` to succeed).                        |
-| `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying DB.         |
+| Operation                  | Behavior                                                                                        |
+| :------------------------- | :-----------------------------------------------------------------------------------------------|
+| `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a clear message to create in an underlying database. |
+| `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
+| `ALTER TABLE dboverlay.*`  | **Pass-through** — forwards to the appropriate underlying database.                             |
+| `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
+| `DROP TABLE dboverlay.*`   | **No-op** — ignored (allows `DROP DATABASE dboverlay` to succeed).                              |
+| `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying database.         |
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
 
@@ -42,7 +42,7 @@ sidebar_position: 51
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Overlay CREATE/ATTACH/ALTER/RENAME TABLE   | `BAD_ARGUMENTS` — “Database `<name>` is an Overlay facade (read-only view). Run this operation in an underlying database (e.g. `<first_member>`).” |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
-| Overlay references missing DB              | `BAD_ARGUMENTS`                                                                                                                                    |
+| Overlay references missing database        | `BAD_ARGUMENTS`                                                                                                                                    |
 | DROP DATABASE overlay while tables “exist” | Succeeds (iterator/empty() semantics ensure no `DATABASE_NOT_EMPTY`)                                                                               |
 
 ---
@@ -74,7 +74,7 @@ SHOW TABLES FROM dboverlay;                -- t_a, t_b
 SELECT * FROM dboverlay.t_a ORDER BY id;   -- rows from db_a.t_a
 SELECT * FROM dboverlay.t_b ORDER BY id;   -- rows from db_b.t_b
 
--- Add a new table in an underlying DB (overlay is read-only for DDL)
+-- Add a new table in an underlying database (overlay is read-only for DDL)
 CREATE TABLE db_a.t_new (k UInt32, v String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO db_a.t_new VALUES (100,'x'), (200,'y');
 
