@@ -189,23 +189,19 @@ void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
 
 namespace {
 template <bool last_block = false>
-void deserializeFrontCodingBlock(ReadBuffer & istr, ColumnString::Chars & data, ColumnString::Offsets & offsets, size_t block_size) {
-    UInt64 offset = data.size();
-
-    /// Avoiding calling resize in a loop improves the performance.
-    data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
-
-    UInt64 block_head_offset = offset;
+void deserializeFrontCodingBlock(ReadBuffer & istr, ColumnString::Chars & data, ColumnString::Offsets & offsets, size_t& offset, size_t block_size) {
+    const UInt64 block_head_offset = offset;
     UInt64 block_head_size = 0;
     readVarUInt(block_head_size, istr);
 
     offset += block_head_size;
+
     if (unlikely(offset > data.size()))
         data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
     istr.readStrict(reinterpret_cast<char *>(&data[block_head_offset]), block_head_size);
 
-    offsets.push_back(block_head_offset);
+    offsets.push_back(offset);
 
     UInt64 size_internals = 0;
     if constexpr (last_block)
@@ -216,7 +212,6 @@ void deserializeFrontCodingBlock(ReadBuffer & istr, ColumnString::Chars & data, 
     for (size_t i = 0; i < size_internals; ++i)
     {
         const UInt64 data_offset = offset;
-        offsets.push_back(data_offset);
 
         UInt64 lcp = 0;
         readVarUInt(lcp, istr);
@@ -231,9 +226,9 @@ void deserializeFrontCodingBlock(ReadBuffer & istr, ColumnString::Chars & data, 
 
         __builtin_memcpy(&data[data_offset], &data[block_head_offset], lcp);
         istr.readStrict(reinterpret_cast<char *>(&data[data_offset + lcp]), data_size);
-    }
 
-    data.resize_exact(offset);
+        offsets.push_back(offset);
+    }
 }
 
 ColumnPtr deserializeTokensFrontCodingBlocks(ReadBuffer & istr)
@@ -253,13 +248,16 @@ ColumnPtr deserializeTokensFrontCodingBlocks(ReadBuffer & istr)
         ColumnString::Chars & data = tokens_column->getChars();
         ColumnString::Offsets & offsets = tokens_column->getOffsets();
 
-        offsets.reserve(offsets.size() + num_tokens);
+        /// Avoiding calling resize in a loop improves the performance.
+        offsets.reserve(num_tokens);
+        data.resize(4096);
 
-        // UInt64 offset = data.size();
+        size_t offset = 0;
         for (size_t i = 0; i < front_coding_num_blocks - 1; ++i)
-            deserializeFrontCodingBlock<false>(istr, data, offsets, front_coding_block_size);
+            deserializeFrontCodingBlock<false>(istr, data, offsets, offset, front_coding_block_size);
         /// Deserialize the last block
-        deserializeFrontCodingBlock<true>(istr, data, offsets, front_coding_block_size);
+        deserializeFrontCodingBlock<true>(istr, data, offsets, offset, front_coding_block_size);
+        data.resize_exact(offset);
     }
 
     return tokens_column;
