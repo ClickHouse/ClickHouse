@@ -257,23 +257,14 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
-    if (success)
-    {
-        file_status->onProcessing();
-    }
-    else
+    afterSetProcessing(success);
+    if (!success)
     {
         LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state);
         file_status->updateState(file_state);
     }
 
     LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
-
-    if (success)
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
-    else
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
-
     return success;
 }
 
@@ -312,10 +303,19 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     return prepareProcessingRequestsImpl(requests);
 }
 
-void ObjectStorageQueueIFileMetadata::finalizeProcessing()
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success)
 {
-    set_processing = true;
-    file_status->onProcessing();
+    if (success)
+    {
+        set_processing = true;
+        file_status->onProcessing();
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
+    }
+    else
+    {
+        chassert(!set_processing);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
+    }
 }
 
 void ObjectStorageQueueIFileMetadata::resetProcessing()
@@ -436,6 +436,8 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     file_status->onProcessed();
 
     set_processing = false;
+    chassert(!ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_path));
+    chassert(ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processed_node_path));
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }

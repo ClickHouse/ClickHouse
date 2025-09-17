@@ -417,16 +417,16 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(Coor
         for (size_t i = 0; i < buckets_num; ++i)
         {
             auto path = getProcessedPathWithBucket(zk_path, i);
-            prepareProcessedRequests(requests, path, /* ignore_if_exists */true);
+            doPrepareProcessedRequests(requests, path, /* ignore_if_exists */true);
         }
     }
     else
     {
-        prepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */true);
+        doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */true);
     }
 }
 
-void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
+void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     Coordination::Requests & requests,
     const std::string & processed_node_path_,
     bool ignore_if_exists)
@@ -459,14 +459,13 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
     }
 
     if (set_processing)
-    {
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-    }
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
-    prepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false);
+    chassert(set_processing);
+    doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value)

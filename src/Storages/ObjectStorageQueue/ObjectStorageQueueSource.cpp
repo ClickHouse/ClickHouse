@@ -308,7 +308,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         if (!new_batch[i])
                             continue;
 
-                        file_metadatas[i]->finalizeProcessing();
+                        file_metadatas[i]->afterSetProcessing(/* success */true);
                     }
                 }
                 else

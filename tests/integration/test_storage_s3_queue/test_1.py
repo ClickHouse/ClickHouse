@@ -61,7 +61,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -74,8 +77,27 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
             with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_without_keeper_fault_injection",
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            with_minio=True,
+            with_azurite=True,
             with_zookeeper=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -432,10 +454,13 @@ def test_max_set_age(started_cluster):
 
 
 def test_max_set_size(started_cluster):
-    node = started_cluster.instances["instance"]
-    table_name = f"max_set_size"
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"max_set_size_{generate_random_string()}"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 

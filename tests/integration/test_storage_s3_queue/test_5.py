@@ -1487,5 +1487,5 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
             found = True
             break
         time.sleep(1)
-    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    nodes = zk.get_children(f"{keeper_path}/processing")
     assert found, f"Nodes: {nodes}"

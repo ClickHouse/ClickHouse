@@ -80,7 +80,7 @@ private:
         const std::string & processed_node_path_,
         LoggerPtr log_);
 
-    void prepareProcessedRequests(
+    void doPrepareProcessedRequests(
         Coordination::Requests & requests,
         const std::string & processed_node_path_,
         bool ignore_if_exists);

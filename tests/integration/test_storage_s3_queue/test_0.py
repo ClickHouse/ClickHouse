@@ -250,6 +250,9 @@ def test_failed_retry(started_cluster, mode, engine_name):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_file(started_cluster, mode):
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
     node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_file_{mode}"
     # A unique path is necessary for repeatable tests
@@ -356,6 +359,9 @@ def test_direct_select_file(started_cluster, mode):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_multiple_files(started_cluster, mode):
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
     node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_multiple_files_{mode}"
     files_path = f"{table_name}_data"

@@ -109,7 +109,7 @@ public:
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests to set file as Processing succeeded.
-    void finalizeProcessing();
+    void afterSetProcessing(bool success);
 
     /// Set a starting point for processing.
     /// Done on table creation, when we want to tell the table
