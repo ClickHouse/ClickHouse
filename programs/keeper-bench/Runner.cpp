@@ -1318,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
     future.get();
 
     std::span children_span(children);
