@@ -25,7 +25,7 @@ public:
         NameSet required_output_,
         bool keep_left_read_in_order_,
         bool use_new_analyzer_,
-        bool use_disjunctions_push_down_ = false);
+        bool use_join_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
 
