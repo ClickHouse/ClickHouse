@@ -33,7 +33,7 @@ namespace
   *     - `ILIKE` is not rewritten until starts/endsWithCaseInsensitive is implemented, because lower() or left() based rewrites are suboptimal
   * Type requirement on the left operand, `col`:
   *     - `startsWith`: Only resolved column of type `String`, `FixedString`, or nested types of these:
-  *         - `LowCardinality(S)`, `Nulable(S)`, `LowCardinality(Nullable(S))` where `S` is either `String` or `FixedString`.
+  *         - `LowCardinality(S)`, `Nullable(S)`, `LowCardinality(Nullable(S))` where `S` is either `String` or `FixedString`.
   *     - `endsWith`: same as `startsWith` except `FixedString` (nested or not), because `c LIKE '%suffix\0'` is not equal to `endsWith(c, 'suffix\0')`.
   */
 class LikePerfectAffixRewriteVisitor : public InDepthQueryTreeVisitorWithContext<LikePerfectAffixRewriteVisitor>
@@ -118,7 +118,7 @@ private:
         return op_function;
     }
 
-    inline bool isStr(const DataTypePtr & type, const bool for_suffix)
+    bool isStr(const DataTypePtr & type, const bool for_suffix)
     {
         /// Do not rewrite for fixedstring with suffix, because `col LIKE '%suffix\0'` is not `endsWith(col, 'suffix\0')`
         if (for_suffix)
@@ -127,12 +127,12 @@ private:
             return isStringOrFixedString(type);
     }
 
-    inline bool isResultTypeSupported(const DataTypePtr & type, const bool for_suffix)
+    bool isResultTypeSupported(const DataTypePtr & type, const bool for_suffix)
     {
         return isStr(type, for_suffix) || isNullableStr(type, for_suffix) || isLowCardinalityMaybeNullableStr(type, for_suffix);
     }
 
-    inline bool isLowCardinalityMaybeNullableStr(const DataTypePtr & type, const bool for_suffix)
+    bool isLowCardinalityMaybeNullableStr(const DataTypePtr & type, const bool for_suffix)
     {
         if (const DataTypeLowCardinality * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         {
@@ -142,7 +142,7 @@ private:
         return false;
     }
 
-    inline bool isNullableStr(const DataTypePtr & type, const bool for_suffix)
+    bool isNullableStr(const DataTypePtr & type, const bool for_suffix)
     {
         if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
         {
