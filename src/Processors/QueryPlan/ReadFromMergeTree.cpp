@@ -168,7 +168,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_distributed_index_analysis;
+    extern const SettingsBool distributed_index_analysis;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -2077,10 +2077,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 is_parallel_reading_from_replicas_);
         };
 
-        bool parallel_replicas_distributed_index_analysis = is_parallel_reading_from_replicas_
-            && settings[Setting::parallel_replicas_local_plan] && context_->canUseParallelReplicasOnInitiator()
-            && settings[Setting::parallel_replicas_distributed_index_analysis];
-        if (!parallel_replicas_distributed_index_analysis)
+        if (!settings[Setting::distributed_index_analysis])
         {
             result.parts_with_ranges = analyze_index(std::move(parts));
 
@@ -2096,9 +2093,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
         else
         {
-            if (!distributed_analysis_results_callback_.has_value())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed analysis cannot be propagated to parallel replicas coordinator");
-
             std::unordered_map<std::string, const RangesInDataPart *> parts_ranges_map;
             for (const auto & part_ranges : parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
@@ -2153,8 +2147,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result_parts_ranges.push_back(part_range_info);
             }
 
-            /// Pass information to coordinator for parallel replicas
-            (distributed_analysis_results_callback_.value())(distributed_index_analysis);
+            /// Pass information to coordinator for parallel replicas (if any)
+            if (distributed_analysis_results_callback_.has_value())
+                (distributed_analysis_results_callback_.value())(distributed_index_analysis);
 
             result.parts_with_ranges = std::move(result_parts_ranges);
 

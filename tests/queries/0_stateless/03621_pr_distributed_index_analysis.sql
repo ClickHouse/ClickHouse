@@ -15,23 +15,23 @@ set send_logs_level='error';
 -- { echo }
 select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=0;
 
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_distributed_index_analysis=0;
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_distributed_index_analysis=1;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=0;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
 
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_distributed_index_analysis=0;
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_distributed_index_analysis=1;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', distributed_index_analysis=0;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', distributed_index_analysis=1;
 
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_distributed_index_analysis=1;
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 and value = 100 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_distributed_index_analysis=1;
-select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 and value = 1 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_distributed_index_analysis=1;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 and value = 100 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m where key = 1 and value = 1 settings allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
 
 -- { echoOff }
 system flush logs query_log;
 select format(
-  'allow_experimental_parallel_reading_from_replicas={}, cluster_for_parallel_replicas={}, parallel_replicas_distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
+  'allow_experimental_parallel_reading_from_replicas={}, cluster_for_parallel_replicas={}, distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
   Settings['allow_experimental_parallel_reading_from_replicas'],
   Settings['cluster_for_parallel_replicas'],
-  Settings['parallel_replicas_distributed_index_analysis'],
+  Settings['distributed_index_analysis'],
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'],
   ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0
