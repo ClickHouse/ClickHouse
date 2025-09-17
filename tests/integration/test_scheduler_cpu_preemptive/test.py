@@ -46,6 +46,32 @@ def clear_workloads_and_resources():
     yield
 
 
+@pytest.fixture(scope="function")
+def with_custom_config(cluster, request):
+    for name, server_settings in request.param.items():
+        node = cluster.instances[name]
+        xml = "".join(f"<{k}>{v}</{k}>" for k, v in server_settings.items())
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo '<clickhouse>{xml}</clickhouse>' > /etc/clickhouse-server/config.d/99-custom_config.xml",
+            ]
+        )
+        node.query("system reload config")
+    yield
+    for name, server_settings in request.param.items():
+        node = cluster.instances[name]
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f /etc/clickhouse-server/config.d/99-custom_config.xml",
+            ]
+        )
+        node.query("system reload config")
+
+
 def assert_profile_event(node, query_id, profile_event, check):
     assert check(
         int(
@@ -309,3 +335,75 @@ def test_cpu_time_fairness(queries, threads, production_length, development_leng
     )
     production.stop()
     development.stop()
+
+
+class DynamicQueryPool:
+    def __init__(self, workload: str) -> None:
+        self.workload: str = workload
+        self._lock = threading.Lock()
+        self._next_id: int = 1
+        self._threads: dict[int, tuple[threading.Thread, threading.Event]] = {}
+
+    def start(self, billions: int, max_threads: int) -> int:
+        with self._lock:
+            thread_id = self._next_id
+            self._next_id += 1
+
+        stop_event = threading.Event()
+
+        def query_thread(local_stop_event: threading.Event, tid: int) -> None:
+            while not local_stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}, thread_id={tid}")
+                node.query(
+                    f"with (select {billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
+                    f"workload='{self.workload}', max_threads={max_threads}"
+                )
+
+        thread = threading.Thread(target=query_thread, args=(stop_event, thread_id))
+        with self._lock:
+            self._threads[thread_id] = (thread, stop_event)
+        thread.start()
+        return thread_id
+
+    def stop(self, thread_id: int) -> None:
+        with self._lock:
+            pair = self._threads.get(thread_id)
+        if not pair:
+            return
+        thread, stop_event = pair
+        mylog(f"Stopping workload {self.workload}, thread_id={thread_id}")
+        stop_event.set()
+        thread.join()
+        with self._lock:
+            self._threads.pop(thread_id, None)
+        mylog(f"Workload {self.workload} thread_id={thread_id} stopped")
+
+
+@pytest.mark.parametrize("with_custom_config", [{ 'node': {"cpu_slot_preemption_timeout_ms": "1"}}], indirect=True)
+def test_downscaling(with_custom_config):
+    node.query(
+        f"""
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=8;
+        create workload development in all;
+    """
+    )
+
+    development = DynamicQueryPool("development")
+
+    active_ids: list[int] = []
+    try:
+        for _ in range(2):
+            # Gradually increase concurrency to 16
+            for _ in range(16):
+                tid = development.start(billions=1, max_threads=8)
+                active_ids.append(tid)
+                time.sleep(0.05)
+            # Gradually decrease back to 0
+            for tid in reversed(active_ids):
+                development.stop(tid)
+                time.sleep(0.05)
+            active_ids.clear()
+    finally:
+        for tid in active_ids:
+            development.stop(tid)
