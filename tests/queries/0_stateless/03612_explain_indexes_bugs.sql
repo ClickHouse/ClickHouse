@@ -1,4 +1,5 @@
 set enable_analyzer = 1;
+set parallel_replicas_local_plan = 1; -- otherwise the pipeline has parallel replicas stuff instead of MergeTree stuff, when parallel replicas are enabled
 
 create table points (x Int64, y Int64) engine MergeTree order by (x, y);
 insert into points values (100, 100);
