@@ -461,7 +461,7 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
-        parent->deltaAllocAndCheck(stat.compressed_size, stat.uncompressed_size);
+        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
     stat.compressed_size = 0;
     stat.uncompressed_size = 0;
 }
