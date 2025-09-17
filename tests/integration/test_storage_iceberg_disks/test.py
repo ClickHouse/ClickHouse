@@ -184,6 +184,7 @@ def test_many_tables(started_cluster, format_version, storage_type):
     instance.query(f"DROP TABLE {table_name_2}")
     instance.query(f"DROP TABLE {table_name}")
 
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_cluster_table_function(started_cluster, storage_type):
 
