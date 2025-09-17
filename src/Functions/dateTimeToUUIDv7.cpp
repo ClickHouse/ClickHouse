@@ -136,7 +136,7 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
     FunctionDocumentation::Description description_dateTimeToUUIDv7 = R"(
 Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
 
-See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency gaurantees.
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
 
 :::note
 As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
