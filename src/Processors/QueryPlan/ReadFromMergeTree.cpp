@@ -59,6 +59,7 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <fmt/ranges.h>
 
@@ -2104,12 +2105,24 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
                 auto parts_ranges_res = analyze_index(parts_ranges_to_analyze);
 
+                std::unordered_set<std::string_view> processed_parts;
+
                 IndexAnalysisPartsRanges res;
                 for (const auto & part_ranges : parts_ranges_res)
                 {
                     const auto & part_name = part_ranges.data_part->name;
                     res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+                    processed_parts.insert(part_name);
                 }
+
+                for (const auto & part_name : parts_)
+                {
+                    if (processed_parts.contains(part_name))
+                        continue;
+
+                    res.emplace(part_name, MarkRanges{});
+                }
+
                 return res;
             };
 
