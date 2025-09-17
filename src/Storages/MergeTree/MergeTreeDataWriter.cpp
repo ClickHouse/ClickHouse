@@ -42,9 +42,6 @@
 
 #include <fmt/ranges.h>
 
-#include <Common/logger_useful.h>
-auto glogger = getLogger("GEORGES LOGGER");
-
 namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
@@ -708,34 +705,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
     {
         const auto & idx_descs = metadata_snapshot->getSecondaryIndices();
-        //indices = MergeTreeIndexFactory::instance().getMany(idx_descs);
-
         const auto & exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
 
         if (exclude_indexes_string != "")
         {
-            LOG_DEBUG(glogger, "indexes to exclude: {}", exclude_indexes_string);
-
             const auto & exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
-
             for (const auto & index : idx_descs)
-            {
                 if (!exclude_index_names.contains(index.name))
-                {
-                    LOG_DEBUG(glogger, "including index {}", index.name);
                     indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
-                }
-                else
-                    LOG_DEBUG(glogger, "filtering index {}", index.name);
-            }
         }
 
-        LOG_DEBUG(glogger, "indexes that will be materialized on insert:");
         for (const auto & idx : indices)
-        {
             const auto name = idx->index.name;
-            LOG_DEBUG(glogger, "index name: {}", name);
-        }
     }
 
 
