@@ -1,6 +1,9 @@
 -- Tags: no-random-merge-tree-settings
 -- - no-random-merge-tree-settings -- may change amount of granulas
 
+-- FIXME:
+-- select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key in (8193, 16385)); -- Method getResultType is not supported for IDENTIFIER query tree node.
+
 drop table if exists data;
 create table data (key Int, value Int) engine=MergeTree() order by key;
 insert into data select *, *+1000000 from numbers(100000);
@@ -10,6 +13,8 @@ select * from mergeTreeAnalyzeIndex(currentDatabase(), data);
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '');
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8193);
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key >= 8193);
+select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8192+1 or key = 8192*3+1);
+select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8192+1 or key = 8192*5+1);
 
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, 'all_1_1_0', key = 8193);
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, 'no_such_part', key = 8193);

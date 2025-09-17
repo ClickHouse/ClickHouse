@@ -20,6 +20,8 @@ $CLICKHOUSE_CLIENT -nm -q "
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '');
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key = 8193);
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key >= 8193);
+  select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key = 8192+1 or key = 8192*3+1);
+  select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key = 8192+1 or key = 8192*5+1);
 
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', 'all_1_1_0', key = 8193);
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', 'no_such_part', key = 8193);

@@ -7,6 +7,10 @@ select * from mergeTreeAnalyzeIndexUUID('UUID', '', key = 8193);
 all_1_1_0	[(1,2)]
 select * from mergeTreeAnalyzeIndexUUID('UUID', '', key >= 8193);
 all_1_1_0	[(1,12)]
+select * from mergeTreeAnalyzeIndexUUID('UUID', '', key = 8192+1 or key = 8192*3+1);
+all_1_1_0	[(1,2),(3,4)]
+select * from mergeTreeAnalyzeIndexUUID('UUID', '', key = 8192+1 or key = 8192*5+1);
+all_1_1_0	[(1,2),(5,6)]
 select * from mergeTreeAnalyzeIndexUUID('UUID', 'all_1_1_0', key = 8193);
 all_1_1_0	[(1,2)]
 select * from mergeTreeAnalyzeIndexUUID('UUID', 'no_such_part', key = 8193);

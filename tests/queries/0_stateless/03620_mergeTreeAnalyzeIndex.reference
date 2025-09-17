@@ -7,6 +7,10 @@ select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8193);
 all_1_1_0	[(1,2)]
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key >= 8193);
 all_1_1_0	[(1,12)]
+select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8192+1 or key = 8192*3+1);
+all_1_1_0	[(1,2),(3,4)]
+select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8192+1 or key = 8192*5+1);
+all_1_1_0	[(1,2),(5,6)]
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, 'all_1_1_0', key = 8193);
 all_1_1_0	[(1,2)]
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, 'no_such_part', key = 8193);
