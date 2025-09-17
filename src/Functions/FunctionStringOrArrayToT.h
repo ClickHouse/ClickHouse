@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
+template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true, bool is_suitable_for_push_down_before_filter = false>
 class FunctionStringOrArrayToT : public IFunction
 {
 public:
@@ -42,6 +42,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForPushDownBeforeFilter() const override { return is_suitable_for_push_down_before_filter; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {

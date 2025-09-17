@@ -1,0 +1,18 @@
+Test 1: Basic length function
+Test 2: notEmpty function
+Test 3: empty function
+Test 4: Multiple volume reducing functions
+Test 5: With LIMIT
+Test 6: With GROUP BY
+Test 7: With JOINs
+Test 8: With subqueries
+Test 9: Complex WHERE conditions
+Test 10: Nested functions
+Test 11: UNION ALL
+Test 12: Array length functions
+Test 13: Array empty/notEmpty functions
+Test 14: Map length and empty functions
+Test 15: ARRAY JOIN with volume reducing functions
+Test 16: Array functions in WHERE with complex conditions
+Test 17: Map functions in aggregations
+Test 18: Combined array and map operations
