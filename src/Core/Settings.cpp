@@ -1551,6 +1551,9 @@ ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can also 
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 )", 0) \
+    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
+For testing purposes, enables or disables usage of bloom filter in text index.
+)", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
@@ -5074,6 +5077,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
+Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -7004,6 +7010,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
+Allow to perform full text search filtering using only the inverted index in query plan.
+)", 0) \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
