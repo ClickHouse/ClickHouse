@@ -104,7 +104,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
-    updateExternalDynamicMetadataIfExists(context_);
+    configuration->updateExternalDynamicMetadataIfExistsImpl(context_, *this, object_storage);
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -192,17 +192,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
 void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->needsUpdateForSchemaConsistency())
-    {
-        return;
-    }
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-
-    auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
-    setInMemoryMetadata(metadata_snapshot);
+    configuration->updateExternalDynamicMetadataIfExistsImpl(query_context, *this, object_storage);
 }
 
 

@@ -223,7 +223,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
     if (!do_lazy_init && mode == LoadingStrictnessLevel::CREATE)
-        updateExternalDynamicMetadataIfExists(context);
+        configuration->updateExternalDynamicMetadataIfExistsImpl(context, *this, object_storage);
 }
 
 String StorageObjectStorage::getName() const
@@ -278,22 +278,7 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->needsUpdateForSchemaConsistency())
-    {
-        configuration->update(
-            object_storage,
-            query_context,
-            /* if_not_updated_before */ true);
-        return;
-    }
-
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-
-    auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
-    setInMemoryMetadata(metadata_snapshot);
+    configuration->updateExternalDynamicMetadataIfExistsImpl(query_context, *this, object_storage);
 }
 
 

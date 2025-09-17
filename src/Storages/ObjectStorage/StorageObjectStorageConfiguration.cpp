@@ -227,4 +227,24 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
 {
 }
 
+void StorageObjectStorageConfiguration::updateExternalDynamicMetadataIfExistsImpl(
+    ContextPtr query_context, IStorage & storage, ObjectStoragePtr object_storage)
+{
+    if (!needsUpdateForSchemaConsistency())
+    {
+        update(
+            object_storage,
+            query_context,
+            /* if_not_updated_before */ true);
+        return;
+    }
+
+    update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false);
+
+    auto metadata_snapshot = getStorageSnapshotMetadata(query_context);
+    storage.setInMemoryMetadata(metadata_snapshot);
+}
 }
