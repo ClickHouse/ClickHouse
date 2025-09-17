@@ -97,6 +97,9 @@ namespace ProfileEvents
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
+    extern const Event FailedInternalQuery;
+    extern const Event FailedInternalInsertQuery;
+    extern const Event FailedInternalSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -719,6 +722,15 @@ void logQueryException(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (query_ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
 
     QueryStatusInfoPtr info;
     if (process_list_elem)

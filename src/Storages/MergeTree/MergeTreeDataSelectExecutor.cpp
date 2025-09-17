@@ -65,6 +65,8 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -1112,9 +1114,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
             if (!matching_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            else
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;

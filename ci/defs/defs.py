@@ -44,31 +44,31 @@ BASE_BRANCH = "master"
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
 chcache_secret = Secret.Config(
     name="chcache_password",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
     region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     azure_secret,
     chcache_secret,
@@ -100,18 +100,6 @@ DOCKERS = [
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-centos",
-        path="./ci/docker/compatibility/centos",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-ubuntu",
-        path="./ci/docker/compatibility/ubuntu",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stateless-test",
@@ -354,8 +342,9 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
-    COMPILER_CACHE = "chcache"
+    COMPILER_CHCACHE = "chcache"
     COMPILER_CACHE_LEGACY = "sccache"
+    COMPILER_CACHE = COMPILER_CACHE_LEGACY
 
 
 class ArtifactNames:
@@ -394,7 +383,7 @@ class ArtifactNames:
     DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAM"
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
@@ -450,7 +439,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAM,
+            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
