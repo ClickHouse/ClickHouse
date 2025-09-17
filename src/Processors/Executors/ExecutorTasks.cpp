@@ -290,19 +290,18 @@ void ExecutorTasks::preempt(size_t slot_id)
     std::unique_lock lock(mutex);
     --total_slots;
 
-    // We should make sure that preempted thread has no local task inside context.
-    // It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
+    /// We should make sure that preempted thread has no local task inside context.
+    /// It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
     auto & context = executor_contexts[slot_id];
     if (auto * task = context->popTask())
     {
         task_queue.push(task, slot_id);
         /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
-        tryWakeUpAnyOtherThreadWithTasks(*context, lock);
+        tryWakeUpAnyOtherThreadWithTasks(*context, lock); // this releases the lock if it wakes up a thread
     }
-
-    // Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
-    if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
+    else if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
     {
+        /// Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
         lock.unlock();
         finish();
     }
