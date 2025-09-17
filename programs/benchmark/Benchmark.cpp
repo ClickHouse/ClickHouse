@@ -36,7 +36,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/WriteBuffer.h>
-
+#include <Client/ClientBaseOptimizedParts.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -693,9 +693,11 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         auto options_description_non_verbose = options_description;
         settings.addToProgramOptions(options_description);
 
-        boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
-        boost::program_options::notify(options);
+        po::variables_map options;
+        po::parsed_options parsed 
+            = po::parse_command_line(argc, argv, options_description, 0, OptionsAliasParser(options_description));
+        po::store(parsed, options);
+        po::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
 
