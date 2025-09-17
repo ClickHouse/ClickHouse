@@ -25,7 +25,7 @@ inline Int64 futexTimedWait(void * address, UInt32 value, UInt64 nanos)
     UInt64 sec = nanos / nanos_per_sec;
     struct timespec timeout;
     timeout.tv_sec = time_t(std::min(sec, UInt64(std::numeric_limits<time_t>::max())));
-    timeout.tv_nsec = long(nanos % nanos_per_sec);
+    timeout.tv_nsec = int64_t(nanos % nanos_per_sec);
     return syscall(SYS_futex, address, FUTEX_WAIT_PRIVATE, value, &timeout, nullptr, 0);
 }
 
