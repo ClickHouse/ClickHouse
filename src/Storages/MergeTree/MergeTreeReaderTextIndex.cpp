@@ -212,6 +212,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         read_rows += rows_to_read;
         current_row += rows_to_read;
 
+        /// If we read no all ranges for the index granule,
+        /// it may remain in the cache till the end of the query.
+        /// It can happen for granules at the borders of the ranges.
+        /// We consider this ok, because it is not a big overhead.
         if (remaining_marks.at(index_mark).decrement(granularity))
             granules.erase(index_mark);
     }
@@ -263,6 +267,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     granule.need_read_postings = false;
 }
 
+/// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
 void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
@@ -302,6 +307,7 @@ void applyPostingsAny(
     }
 }
 
+/// Finds the intersection of the posting lists for range [granule_offset, granule_offset + num_rows)
 void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
@@ -314,7 +320,6 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    /// PostingsIteratorPair is 96 bytes, so avoid copying.
     std::vector<const PostingList *> token_postings;
 
     for (const auto & token : search_tokens)

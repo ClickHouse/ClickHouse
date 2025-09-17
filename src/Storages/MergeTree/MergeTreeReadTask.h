@@ -56,6 +56,8 @@ enum class MergeTreeReadType : uint8_t
     ParallelReplicas,
 };
 
+/// Read task for index.
+/// Some indexes (e.g. inverted text index) may read special virtual columns.
 struct IndexReadTask
 {
     NamesAndTypesList columns;

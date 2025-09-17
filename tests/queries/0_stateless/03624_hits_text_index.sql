@@ -1,4 +1,5 @@
--- Tags: stateful, long, no-parallel
+-- Tags: stateful, long, no-parallel, no-asan
+-- no-asan: too long.
 
 DROP TABLE IF EXISTS hits_text;
 

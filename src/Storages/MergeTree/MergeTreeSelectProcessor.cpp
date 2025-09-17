@@ -213,6 +213,9 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
     }
 
+    /// Add steps for reading virtual columns for indexes.
+    /// Those must be separate steps, because index readers
+    /// cannot read physical columns from table.
     for (const auto & [_, index_task] : index_read_tasks)
     {
         auto index_read_step = std::make_shared<PrewhereExprStep>();

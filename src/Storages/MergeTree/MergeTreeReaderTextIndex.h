@@ -10,11 +10,15 @@ namespace DB
 
 using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
 
+/// A part of "direct read from text index" optimization.
+/// This reader fills virtual columns for text search filters
+/// which were replaced from the text search functions using
+/// the posting lists read from the index.
+///
+/// E.g. `__text_index_<name>_hasToken` column created for `hasToken` function.
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
 public:
-    using MatchingMarks = std::vector<bool>;
-
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
