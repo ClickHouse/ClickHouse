@@ -439,7 +439,7 @@ UInt32 GinIndexStore::getNumOfSegments()
 
     UInt32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt);
 
         uint8_t version = 0;
         readBinary(version, *istr);
@@ -459,7 +459,7 @@ GinIndexStore::Format GinIndexStore::getVersion()
     if (!storage->existsFile(segment_id_file_name))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Text Index: segment ID file does not exist");
 
-    std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
+    std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt);
     uint8_t version = 0;
     readBinary(version, *istr);
     return getFormatVersion(version);
@@ -542,7 +542,7 @@ void GinIndexStore::initSegmentId()
     UInt32 segment_id;
     if (storage->existsFile(segment_id_file_name))
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt);
 
         uint8_t version = 0;
         readBinary(version, *istr);
@@ -724,10 +724,10 @@ void GinIndexStoreDeserializer::initFileStreams()
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
-    segment_descriptor_file_stream = store->storage->readFile(segment_descriptors_file_name, {}, std::nullopt, std::nullopt);
-    bloom_filter_file_stream = store->storage->readFile(bloom_filter_file_name, {}, std::nullopt, std::nullopt);
-    dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
-    postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
+    segment_descriptor_file_stream = store->storage->readFile(segment_descriptors_file_name, {}, std::nullopt);
+    bloom_filter_file_stream = store->storage->readFile(bloom_filter_file_name, {}, std::nullopt);
+    dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt);
+    postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt);
 }
 
 void GinIndexStoreDeserializer::readSegments()

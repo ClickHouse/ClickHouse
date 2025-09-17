@@ -6,6 +6,7 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -48,6 +49,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -900,25 +902,29 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_PURGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            purgeJemallocArenas();
+            Jemalloc::purgeArenas();
             break;
         }
         case Type::JEMALLOC_ENABLE_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(true);
-            break;
-        }
-        case Type::JEMALLOC_DISABLE_PROFILE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(false);
-            break;
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
+                "enable it per query using setting 'jemalloc_enable_profiler'");
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            flushJemallocProfile("/tmp/jemalloc_clickhouse", /* log= */ true);
+            Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
+            auto filename = Jemalloc::getLastFlushProfileForThread();
+            auto col = ColumnString::create();
+            col->insertData(filename.data(), filename.size());
+            Columns columns;
+            columns.emplace_back(std::move(col));
+            Chunk chunk(std::move(columns), 1);
+            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
+            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+            result.pipeline = QueryPipeline(filename_source);
             break;
         }
 #else
@@ -1133,7 +1139,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
