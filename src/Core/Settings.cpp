@@ -1542,7 +1542,7 @@ INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); --
 -- since it is a session setting it can be set on a per-query level
 INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
 
--- these querys will update all indexes regardless of exclude_materialize_skip_indexes_on_insert setting
+-- these queries will update all indexes regardless of exclude_materialize_skip_indexes_on_insert setting
 SYSTEM START MERGES t_skip_index_insert;
 OPTIMIZE TABLE t_skip_index_insert FINAL;
 

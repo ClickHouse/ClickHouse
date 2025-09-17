@@ -196,7 +196,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
