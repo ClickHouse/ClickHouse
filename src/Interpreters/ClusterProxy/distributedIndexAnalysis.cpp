@@ -1,5 +1,11 @@
 #include <unordered_map>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/FilterDescription.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
@@ -134,8 +140,15 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     auto sample_block = std::make_shared<const Block>(Block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
-        { ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "range_start" },
-        { ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "range_end" },
+        { ColumnArray::create(ColumnTuple::create(Columns{
+              ColumnUInt64::create(), // begin
+              ColumnUInt64::create(), // end
+          })),
+          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
+              std::make_shared<DataTypeUInt64>(), // begin
+              std::make_shared<DataTypeUInt64>(), // end
+          })),
+          "ranges" },
     });
 
     const auto & settings = context->getSettingsRef();
@@ -148,13 +161,19 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     {
         current = convertBLOBColumns(current);
 
-        const auto & part_name = typeid_cast<const ColumnString &>(*current.getByName("part_name").column);
-        const auto & range_start = typeid_cast<const ColumnUInt64 &>(*current.getByName("range_start").column).getData();
-        const auto & range_end = typeid_cast<const ColumnUInt64 &>(*current.getByName("range_end").column).getData();
-        size_t size = part_name.size();
+        const auto & col_part_name = assert_cast<const ColumnString &>(*current.getByName("part_name").column);
+        const auto & col_ranges_array = assert_cast<const ColumnArray &>(*current.getByName("ranges").column);
+        const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
+        const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
+        const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
+        const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
 
-        for (size_t i = 0; i < size; ++i)
-            res[part_name.getDataAt(i).toString()].push_back(MarkRange{range_start[i], range_end[i]});
+        for (size_t i = 0; i < col_part_name.size(); ++i)
+        {
+            auto & ranges_dst = res[col_part_name.getDataAt(i).toString()];
+            for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
+                ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
+        }
     }
     executor.finish();
 
