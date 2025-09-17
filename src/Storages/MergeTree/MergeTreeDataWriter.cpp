@@ -711,39 +711,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         //indices = MergeTreeIndexFactory::instance().getMany(idx_descs);
 
         const auto & exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
-        const auto & settings = context->getSettingsRef();
 
         if (exclude_indexes_string != "")
         {
             LOG_DEBUG(glogger, "indexes to exclude: {}", exclude_indexes_string);
-            // extract list of idxs to exclude
-            std::unordered_set<std::string> exclude_index_names;
 
-            //const auto & indexes_to_exclude = parseIdentifiersOrStringLiterals(exclude_indexes_string, context.getSettingsRef());
-            Tokens tokens(
-                exclude_indexes_string.data(),
-                exclude_indexes_string.data() + exclude_indexes_string.size(),
-                settings[Setting::max_query_size]);
-            IParser::Pos pos(
-                tokens,
-                static_cast<unsigned>(settings[Setting::max_parser_depth]),
-                static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
-            Expected expected;
-
-            /// Use an unordered list rather than string vector
-            auto parse_single_id_or_literal = [&]
-            {
-                String str;
-                if (!parseIdentifierOrStringLiteral(pos, expected, str))
-                    return false;
-
-                exclude_index_names.insert(std::move(str));
-                return true;
-            };
-
-            if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse exclude_materialize_skip_indexes_on_insert('{}')", exclude_indexes_string);
+            const auto & exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
 
             for (const auto & index : idx_descs)
             {
