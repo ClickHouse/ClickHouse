@@ -55,6 +55,7 @@ if ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null 
     exit 1
 fi
 
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'DROP TABLE IF EXISTS default.t_proj_external'
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'CREATE TABLE default.t_proj_external ( `k1` UInt32, `k2` UInt32, `k3` UInt32, `value` UInt32 ) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192'
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'INSERT INTO t_proj_external SELECT 1, number%2, number%4, number FROM numbers(50000)'
 
@@ -62,7 +63,7 @@ for i in {1..10}
 do
     $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'SELECT k1, k2, k3, sum(value) v FROM t_proj_external GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order = 0, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, group_by_two_level_threshold = 1'
 done
-
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'DROP TABLE IF EXISTS default.t_proj_external'
 
 # send TERM and save the error code to ensure that it is 0 (EXIT_SUCCESS)
 kill $server_pid
