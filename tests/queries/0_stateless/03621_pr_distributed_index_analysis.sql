@@ -41,6 +41,7 @@ where
   current_database = currentDatabase()
   and event_date >= yesterday()
   and type != 'QueryStart'
+  and query_kind = 'Select'
   and is_initial_query
   and has(Settings, 'allow_experimental_parallel_reading_from_replicas')
   and endsWith(log_comment, '-' || currentDatabase())
