@@ -292,6 +292,18 @@ namespace ErrorCodes
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
+
+    For example column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
+    - `t.a` for String data of tuple element `a`
+    - `t.b` for UInt32 data of tuple element `b`
+    - `t.c.size0` for array sizes of tuple element `c`
+    - `t.c.null` for null map of nested array elements of tuple element `c`
+    - `t.c` for UInt32 data pf nested array elements of tuple element `c`
+
+    When this setting is enabled, we will write a mark for each of these 5 substreams, which means that we will be able to read
+    the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
+    substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
+    we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
     )", 0) \
     \
     /** Merge selector settings. */ \

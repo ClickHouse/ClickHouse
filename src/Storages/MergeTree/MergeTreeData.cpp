@@ -199,6 +199,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsUInt64 max_table_size_to_drop;
 }
 
 namespace MergeTreeSetting
@@ -8841,6 +8842,24 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
     }
 
     return true;
+}
+
+void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    if (!supportsReplication() && isStaticStorage())
+        return;
+
+    auto table_id = getStorageID();
+
+    const auto & query_settings = query_context->getSettingsRef();
+    if (query_settings[Setting::max_table_size_to_drop].changed)
+    {
+        getContext()->checkTableCanBeDropped(
+            table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings[Setting::max_table_size_to_drop]);
+        return;
+    }
+
+    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
 void MergeTreeData::writePartLog(
