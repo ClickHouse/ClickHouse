@@ -72,9 +72,6 @@ namespace Setting
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace MergeTreeSetting
@@ -93,7 +90,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 void buildScatterSelector(
