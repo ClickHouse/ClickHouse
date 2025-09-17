@@ -80,7 +80,7 @@ TEST(Statistics, Estimator)
         std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
         for (auto stats_type : stats_type_to_create)
         {
-            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr));
+            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
         }
         ColumnDescription column_desc;
         column_desc.name = column_name;
