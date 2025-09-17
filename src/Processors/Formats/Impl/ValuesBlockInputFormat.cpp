@@ -569,20 +569,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    /// Insert value into the column.
-    /// For Dynamic type we cannot just insert Field as we loose information about the data type.
-    /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicSubcolumns())
-    {
-        std::cerr << fmt::format("Type: {}", value_raw.second->getName());
-        auto const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
-        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
-    }
-    else
-    {
-        column.insert(value);
-    }
+    column.insert(value);
     return true;
 }
 
