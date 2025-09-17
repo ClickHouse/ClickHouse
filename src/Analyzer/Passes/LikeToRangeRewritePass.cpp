@@ -51,9 +51,7 @@ public:
         const String & function_name = function_node->getFunctionName();
         const bool is_like = (function_name == "like");
         const bool is_not_like = (function_name == "notLike");
-        const bool is_ilike = (function_name == "ilike");
-        const bool is_not_ilike = (function_name == "notILike");
-        if (!(is_like || is_not_like || is_ilike || is_not_ilike))
+        if (!(is_like || is_not_like))
             return;
 
         auto & args = function_node->getArguments().getNodes();
@@ -88,20 +86,14 @@ public:
         if (is_suffix)
             std::reverse(affix.begin(), affix.end());
 
-        /// Determine if we need case conversion
-        const bool case_insensitive = (is_ilike || is_not_ilike);
-        String comparison_affix = case_insensitive
-            ? boost::algorithm::to_lower_copy(affix)
-            : affix;
+        auto affix_constant = std::make_shared<ConstantNode>(std::move(affix));
 
-        auto affix_constant = std::make_shared<ConstantNode>(std::move(comparison_affix));
-
-        auto column_node = case_insensitive ? operation("lower", args[0]) : args[0]; /// The column being compared
+        auto column_node = args[0]; /// The column being compared
         chassert(column_node != nullptr, "Column node should be non-null");
 
         /// Create startsWith/endsWith function
         FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", column_node, affix_constant);
-        if (is_not_like || is_not_ilike)
+        if (is_not_like)
             new_node = operation("not", new_node);
 
         /// Replpace the original LIKE node
