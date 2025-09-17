@@ -149,9 +149,9 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
+        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num, use_persistent_processing_nodes.load());
+        table_metadata.processing_threads_num.load(), buckets_num);
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -1276,7 +1276,8 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client)
 {
-    const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
+    const fs::path zookeeper_persistent_processing_path = zookeeper_path
+        / ObjectStorageQueueIFileMetadata::getProcessingNodesPath(true);
 
     Strings persistent_processing_nodes;
     auto code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);

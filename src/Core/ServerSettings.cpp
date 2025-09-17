@@ -7,7 +7,6 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
@@ -270,7 +269,6 @@ namespace DB
     </clickhouse>
     ```
     )", 0) \
-    DECLARE(Bool, temporary_data_in_distributed_cache, 0, R"(Store temporary data in the distributed cache.)", 0) \
     DECLARE(UInt64, aggregate_function_group_array_max_element_size, 0xFFFFFF, R"(Max array element size in bytes for groupArray function. This limit is checked at serialization and help to avoid large state size.)", 0) \
     DECLARE(GroupArrayActionWhenLimitReached, aggregate_function_group_array_action_when_limit_is_reached, GroupArrayActionWhenLimitReached::THROW, R"(Action to execute when max array element size is exceeded in groupArray: `throw` exception, or `discard` extra values)", 0) \
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
@@ -321,6 +319,26 @@ namespace DB
     Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups.
 
     To disable the cgroup observer, set this value to `0`.
+
+    see settings:
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio).
+    )", 0) \
+    DECLARE(Double, cgroup_memory_watcher_hard_limit_ratio, 0.95, R"(
+    Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which the server's
+    maximum memory consumption is adjusted to the threshold value.
+
+    See settings:
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio)
+    )", 0) \
+    DECLARE(Double, cgroup_memory_watcher_soft_limit_ratio, 0.9, R"(
+    Specifies the "soft" threshold of the memory consumption of the server process according to cgroups after which arenas in
+    jemalloc are purged.
+
+    See settings:
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
     )", 0) \
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
@@ -473,7 +491,6 @@ namespace DB
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
-    DECLARE(String, allowed_disks_for_table_engines, "", "List of disks allowed for use with Iceberg", 0) \
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.
 
@@ -764,7 +781,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Before changing it, please also take a look at related MergeTree settings, such as:
     - [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
     - [`number_of_free_entries_in_pool_to_execute_mutation`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_execute_mutation).
-    - [`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`](/operations/settings/merge-tree-settings#number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
 
     **Example**
 
@@ -799,7 +815,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.)", 0) \
-    DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
@@ -1120,38 +1135,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
-    DECLARE(Bool, jemalloc_enable_global_profiler, 0, R"(Enable jemalloc profiler)", 0) \
-    DECLARE(Bool, jemalloc_collect_global_profile_samples_in_trace_log, 0, R"(Store jemalloc sampled allocations in system.trace_log)", 0) \
-    DECLARE(Bool, jemalloc_enable_background_threads, 1, R"(Enable jemalloc background threads)", 0) \
-    DECLARE(UInt64, jemalloc_max_background_threads_num, 0, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
     DECLARE(NonZeroUInt64, threadpool_local_fs_reader_pool_size, 100, R"(The number of threads in the thread pool for reading from local filesystem when `local_filesystem_read_method = 'pread_threadpool'`.)", 0) \
     DECLARE(UInt64, threadpool_local_fs_reader_queue_size, 1000000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from local filesystem.)", 0) \
     DECLARE(NonZeroUInt64, threadpool_remote_fs_reader_pool_size, 250, R"(Number of threads in the Thread pool used for reading from remote filesystem when `remote_filesystem_read_method = 'threadpool'`.)", 0) \
     DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 1000000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
-\
-    DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
-    DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
-    DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
-    Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
-    Requires CAP_SYS_NICE capability, otherwise no-op.
-
-    Possible values: -20 to 19.
-    )", 0) \
-    DECLARE(Int32, os_threads_nice_value_zookeeper_client_send_receive, 0, R"(
-    Linux nice value for send and receive threads in ZooKeeper client. Lower values mean higher CPU priority.
-
-    Requires CAP_SYS_NICE capability, otherwise no-op.
-
-    Possible values: -20 to 19.
-    )", 0) \
-    DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
-    Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
-
-    Requires CAP_SYS_NICE capability, otherwise no-op.
-
-    Possible values: -20 to 19.
-    )", 0) \
 
 // clang-format on
 

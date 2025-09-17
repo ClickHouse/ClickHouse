@@ -71,7 +71,6 @@ CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
 
-
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -130,7 +129,6 @@ try:
     os.remove(NET_LOCK_PATH)
 except Exception:
     pass
-
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -317,7 +315,6 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
-
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -400,23 +397,28 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster):
-    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
+async def check_nats_is_available(nats_port, ssl_ctx=None):
+    nc = await nats_connect_ssl(
+        nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=ssl_ctx,
+        max_reconnect_attempts=1,
+    )
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(cluster, **connect_options):
-    ssl_ctx = cluster.nats_ssl_context
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
     nc = await nats.connect(
-        "tls://localhost:{}".format(cluster.nats_port),
-        user=nats_user,
-        password=nats_pass,
+        "tls://localhost:{}".format(nats_port),
+        user=user,
+        password=password,
         tls=ssl_ctx,
         **connect_options,
     )
@@ -476,7 +478,6 @@ def find_binary(name):
 
     raise RuntimeError(f"{name} was not found in PATH")
 
-
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -502,7 +503,6 @@ class ClickHouseCluster:
         custom_keeper_configs=[],
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
-        azurite_default_port=0,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -661,13 +661,7 @@ class ClickHouseCluster:
         self.with_azurite = False
         self.azurite_container = "azurite-container"
         self.blob_service_client = None
-        # When using plugins for Spark, it expects Azurite to run on port 10000
-        self._azurite_port = azurite_default_port
-        self.azurite_host = "azurite1"
-        self.azurite_ip = None
-        self.azurite_account = "devstoreaccount1"
-        self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-        self.azure_container_name = "cont"
+        self._azurite_port = 0
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -731,7 +725,7 @@ class ClickHouseCluster:
         self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
-        self._nats_port = 0
+        self.nats_port = 4444
         self.nats_docker_id = None
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
@@ -955,13 +949,6 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
-
-    @property
-    def nats_port(self):
-        if self._nats_port:
-            return self._nats_port
-        self._nats_port = self.port_pool.get_port()
-        return self._nats_port
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.port_pool.return_used_ports()
@@ -1492,8 +1479,6 @@ class ClickHouseCluster:
         env_variables["NATS_INTERNAL_PORT"] = "4444"
         env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
         env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
-        env_variables["NATS_USER"] = nats_user
-        env_variables["NATS_PASSWORD"] = nats_pass
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
@@ -1844,6 +1829,7 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
+
         with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
@@ -2812,7 +2798,7 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if asyncio.run(
-                check_nats_is_available(self)
+                check_nats_is_available(self.nats_port, ssl_ctx=self.nats_ssl_context)
             ):
                 break
             else:
@@ -2996,7 +2982,6 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        self.azurite_ip = self.get_instance_ip(self.azurite_host)
         connection_string = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -3920,16 +3905,9 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
-        #
-        # NOTE: it has been proven that 5m is not enough slightly, but anyway
-        # this should not be a problem, since in
-        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
-        # later we will attach with gdb to collect stacktraces, and once it
-        # will be done it will exit.
-        stop_grace_period: 10m
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -4131,11 +4109,7 @@ class ClickHouseInstance:
         self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
             clickhouse_start_command_with_conf, clickhouse_start_extra_args
         )
-        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
-        # and there is no other way to kill clickhouse properly (easily), since
-        # clickhosue is spawned with --daemon, and it is not a child neither in
-        # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4162,9 +4136,6 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
-
-        # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4510,12 +4481,11 @@ class ClickHouseInstance:
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    # @param url - URI without leading slash
-    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
-        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
-        url = f"http://{self.ip_address}:8123/{url}"
+    def http_request(self, url, method="GET", params=None, data=None, headers=None):
+        logging.debug(f"Sending HTTP request {url} to {self.name}")
+        url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+            method=method, url=url, params=params, data=data, headers=headers
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
@@ -5304,7 +5274,7 @@ class ClickHouseInstance:
         # async replication is only supported in version 23.9+
         # for tags that don't specify a version we assume it has a version of ClickHouse
         # that supports async replication if a test for it is present
-        if not self.with_dolor and (
+        if (
             version == None
             or version["major"] > 23
             or (version["major"] == 23 and version["minor"] >= 9)
@@ -5529,7 +5499,6 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
-                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,

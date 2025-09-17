@@ -70,7 +70,8 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
-    columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
+    auto event_time_seconds = current_time / 1000000;
+    columns[column_index++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
     columns[column_index++]->insert(content_type);

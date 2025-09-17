@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -176,10 +174,6 @@ public:
     Strings logs;
 
     ServerType server_type;
-
-#if USE_JEMALLOC
-    String jemalloc_profile_path;
-#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

@@ -302,8 +302,8 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
 - `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts after/before the index is applied.
-- `Granules` — The number of granules after/before the index is applied.
+- `Parts` — The number of parts before/after the index is applied.
+- `Granules` — The number of granules before/after the index is applied.
 - `Ranges` — The number of granules ranges after the index is applied.
 
 Example:
@@ -315,37 +315,37 @@ Example:
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Parts": 4/5,
-    "Granules": 11/12
+    "Parts": 5/4,
+    "Granules": 12/11
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Parts": 3/4,
-    "Granules": 10/11
+    "Parts": 4/3,
+    "Granules": 11/10
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Parts": 2/3,
-    "Granules": 6/10,
+    "Parts": 3/2,
+    "Granules": 10/6,
     "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Parts": 1/2,
-    "Granules": 2/6
+    "Parts": 2/1,
+    "Granules": 6/2
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
     "": 1/1,
-    "Granules": 1/2
+    "Granules": 2/1
   }
 ]
 ```

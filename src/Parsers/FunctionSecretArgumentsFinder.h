@@ -108,7 +108,7 @@ protected:
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
-                 (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
+                 (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
