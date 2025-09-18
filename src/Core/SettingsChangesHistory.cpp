@@ -54,6 +54,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"text_index_use_bloom_filter", true, true, "New setting."},
+            {"query_plan_direct_read_from_text_index", true, true, "New setting."},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
             {"jemalloc_enable_profiler", false, false, "New setting"},
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
