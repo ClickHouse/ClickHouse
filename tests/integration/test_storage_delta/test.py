@@ -61,7 +61,7 @@ from helpers.test_tools import TSV
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
-cluster = ClickHouseCluster(__file__, with_spark=True, , azurite_default_port=10000)
+cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
