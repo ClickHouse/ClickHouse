@@ -2040,7 +2040,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool add_index_stat_row_for_pk_expand = false;
 
     {
-        MergeTreeDataSelectExecutor::filterPartsByPartition(
+        parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
