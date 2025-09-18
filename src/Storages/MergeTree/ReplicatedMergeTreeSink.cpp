@@ -1224,7 +1224,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     while (true)
     {
-        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
         std::string value;
         /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.

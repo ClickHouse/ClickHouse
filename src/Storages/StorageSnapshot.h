@@ -44,6 +44,13 @@ struct StorageSnapshot
         StorageMetadataPtr metadata_,
         DataPtr data_);
 
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_,
+        ColumnsDescription object_columns_,
+        DataPtr data_);
+
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
 
     /// Get columns description

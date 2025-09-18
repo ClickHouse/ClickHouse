@@ -8,10 +8,10 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -386,12 +386,6 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
     SharedLockGuard lock(values_mutex);
     return values;
-}
-
-auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
-{
-    const auto it = metric_values.find(metric);
-    return it != metric_values.end() ? it->second.value : default_value;
 }
 
 namespace
@@ -876,35 +870,149 @@ void readPressureFile(
 }
 #endif
 
+const AsynchronousMetricValue *
+AsynchronousMetrics::getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name)
+{
+    if (auto it = values.find(String{name}); it != values.end())
+        return &it->second;
+    return nullptr;
+}
+
 // Warnings for pending mutations
 void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
 {
     // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
     // Warnings for part mutations
-    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
+    const auto * num_pending_mutations = getAsynchronousMetricValue(new_values, "NumberOfPendingMutations");
+    if (!num_pending_mutations)
+        return;
+
     auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
 
-    if (num_pending_mutations > max_pending_mutations_to_warn)
+    if (num_pending_mutations->value > max_pending_mutations_to_warn)
     {
         context->addOrUpdateWarningMessage(
             Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
             PreformattedMessage::create("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
     }
-    if (num_pending_mutations <= max_pending_mutations_to_warn)
+    if (num_pending_mutations->value <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
 
-    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
-        num_pending_mutations_over_execution_time > 0)
+    const auto * num_pending_mutations_over_execution_time= getAsynchronousMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
+    if (!num_pending_mutations_over_execution_time)
+        return;
+
+    if (num_pending_mutations_over_execution_time->value > 0)
     {
         context->addOrUpdateWarningMessage(
             Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
             PreformattedMessage::create(
                 "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
-                num_pending_mutations_over_execution_time));
+                num_pending_mutations_over_execution_time->value));
     }
     else
     {
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
+    }
+}
+
+void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const
+{
+    double memory_resident{};
+    double memory_total{};
+
+    /// use cgroup memory metrics if available and > 0, otherwise fallback to OS memory metrics
+    if (const auto *cgroup_memory_total = getAsynchronousMetricValue(new_values, "CGroupMemoryTotal"),
+        *cgroup_memory_used = getAsynchronousMetricValue(new_values, "CGroupMemoryUsed");
+        cgroup_memory_total && cgroup_memory_used && (cgroup_memory_total->value > 0.0 && cgroup_memory_used->value > 0.0))
+    {
+        memory_resident = cgroup_memory_used->value;
+        memory_total = cgroup_memory_total->value;
+    }
+    else if (const auto * os_memory_used = getAsynchronousMetricValue(new_values, "OSMemoryResident"),
+             *os_memory_total = getAsynchronousMetricValue(new_values, "OSMemoryTotal");
+             os_memory_used && os_memory_total && (os_memory_total->value > 0.0 && os_memory_used->value > 0.0))
+    {
+        memory_resident = os_memory_used->value;
+        memory_total = os_memory_total->value;
+    }
+    else
+    {
+        /// no memory metrics available
+        return;
+    }
+
+    const double ratio = memory_resident / memory_total;
+
+    const auto & cfg = context->getConfigRef();
+    const double mem_warn_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_warn_ratio", 0.9);
+    const double mem_clear_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_clear_ratio", 0.85);
+    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.memory_overload_duration_seconds", 600);
+
+    const auto now = Clock::now();
+    const int usage_percent = static_cast<int>(std::lround(ratio * 100.0));
+
+    const auto warning_message = PreformattedMessage::create(
+        "High ClickHouse memory usage: {} of {} used ({}%) for at least {} second(s)",
+        formatReadableSizeWithDecimalSuffix(memory_resident),
+        formatReadableSizeWithDecimalSuffix(memory_total),
+        usage_percent,
+        min_duration);
+
+    if (ratio >= mem_warn_ratio)
+    {
+        if (!mem_overload_started)
+            mem_overload_started = now;
+
+        if (now - *mem_overload_started >= std::chrono::seconds{min_duration})
+            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD, warning_message);
+        else
+            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
+    }
+    else
+    {
+        mem_overload_started.reset();
+        if (ratio <= mem_clear_ratio)
+            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
+    }
+}
+
+void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
+{
+    const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
+    if (!idle_ptr)
+        return;
+
+    /// ensure that the value is always in [0.0, 1.0]
+    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
+
+    const auto & cfg = context->getConfigRef();
+    const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
+    const double cpu_clear_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_clear_ratio", 0.85);
+    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.cpu_overload_duration_seconds", 600);
+
+    const auto now = Clock::now();
+    const int busy_percent = static_cast<int>(std::lround(busy_time * 100.0));
+    const int threshold_percent = static_cast<int>(std::lround(cpu_warn_ratio * 100.0));
+
+    const auto warning_message = PreformattedMessage::create(
+        "High CPU usage: {}% busy (>= {}%) for at least {} second(s)", busy_percent, threshold_percent, min_duration);
+
+    if (busy_time >= cpu_warn_ratio)
+    {
+        if (!cpu_overload_started)
+            cpu_overload_started = now;
+
+        if (now - *cpu_overload_started >= std::chrono::seconds{min_duration})
+            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD, warning_message);
+        else
+            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
+    }
+    else
+    {
+        cpu_overload_started.reset();
+        if (busy_time <= cpu_clear_ratio)
+            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
     }
 }
 
@@ -2235,6 +2343,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // These methods look at Asynchronous metrics and add,update or remove warnings
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
+        // server resource overload warnings
+        processWarningForMemoryOverload(new_values);
+        processWarningForCPUOverload(new_values);
     }
 }
 

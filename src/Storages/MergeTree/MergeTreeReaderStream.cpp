@@ -1,10 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <utility>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {

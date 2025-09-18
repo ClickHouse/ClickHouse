@@ -769,24 +769,23 @@ class JobConfigs:
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
-        runs_on=["#from param"],
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/compatibility_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/compatibility_check.py",
-                "./ci/docker/compatibility",
+                "./ci/jobs/compatibility_check.py",
             ],
         ),
     ).parametrize(
         Job.ParamSet(
-            parameter="release",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
-            requires=["Build (amd_release)"],
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
-            parameter="aarch64",
+            parameter="arm_release",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            requires=["Build (arm_release)"],
+            requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
@@ -1047,4 +1046,10 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
         requires=["Build (fuzzers)"],
+    )
+    vector_search_stress_job = Job.Config(
+        name="Vector Search Stress",
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        run_in_docker="clickhouse/performance-comparison",
+        command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
