@@ -42,6 +42,12 @@ void KeeperFeatureFlags::fromApiVersion(KeeperApiVersion keeper_api_version)
 
     if (keeper_api_version >= KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
         enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+
+    if (keeper_api_version >= KeeperApiVersion::WITH_REMOVE_RECURSIVE)
+        enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
+
+    if (keeper_api_version >= KeeperApiVersion::WITH_CHECK_STAT)
+        enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
 }
 
 bool KeeperFeatureFlags::isEnabled(KeeperFeatureFlag feature_flag) const

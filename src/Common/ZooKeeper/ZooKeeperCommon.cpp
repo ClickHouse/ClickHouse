@@ -605,10 +605,24 @@ void ZooKeeperGetACLResponse::readImpl(ReadBuffer & in)
     Coordination::read(stat, in);
 }
 
+OpNum ZooKeeperCheckRequest::getOpNum() const
+{
+    if (not_exists)
+        return OpNum::CheckNotExists;
+
+    if (stat_to_check.has_value())
+        return OpNum::CheckStat;
+
+    return OpNum::Check;
+}
+
 void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
     Coordination::write(version, out);
+
+    if (getOpNum() == OpNum::CheckStat)
+        Coordination::write(stat_to_check.value(), out);
 }
 
 size_t ZooKeeperCheckRequest::sizeImpl() const
@@ -620,6 +634,9 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(version, in);
+
+    if (stat_to_check)
+        Coordination::read(stat_to_check.value(), in);
 }
 
 std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
@@ -970,6 +987,9 @@ ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
     if (not_exists)
         return std::make_shared<ZooKeeperCheckNotExistsResponse>();
 
+    if (stat_to_check.has_value())
+        return std::make_shared<ZooKeeperCheckStatResponse>();
+
     return std::make_shared<ZooKeeperCheckResponse>();
 }
 
@@ -1219,6 +1239,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::CheckStat)
+            res->stat_to_check.emplace();
 
         return res;
     });
@@ -1238,6 +1260,8 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SimpleList, ZooKeeperSimpleListRequest>(*this);
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckStat, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
@@ -1246,7 +1270,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
-    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
 }
 
