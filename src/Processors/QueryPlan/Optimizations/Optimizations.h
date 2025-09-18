@@ -137,7 +137,7 @@ using Stack = std::vector<Frame>;
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);

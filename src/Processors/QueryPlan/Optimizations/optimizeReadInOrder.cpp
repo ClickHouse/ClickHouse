@@ -39,7 +39,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
-    extern const SettingsBool optimize_read_in_window_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
 }
 }
 
@@ -1120,7 +1120,7 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return;
@@ -1132,6 +1132,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
+        return;
+
+    if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
     bool apply_virtual_row = false;
@@ -1314,7 +1317,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
         || context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         return 0;
