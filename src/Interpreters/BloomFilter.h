@@ -41,7 +41,7 @@ public:
     void clear();
 
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
-    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
+    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const;
 
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.
@@ -49,6 +49,7 @@ public:
 
     const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
+    size_t getFilterSizeBytes() const { return size; }
 
     /// For debug.
     UInt64 isEmpty() const;

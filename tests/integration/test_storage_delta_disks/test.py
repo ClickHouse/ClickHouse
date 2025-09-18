@@ -31,7 +31,7 @@ from helpers.iceberg_utils import (
 )
 
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
 def get_spark():
@@ -42,6 +42,7 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files")
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .master("local")
@@ -49,7 +50,7 @@ def get_spark():
 
     return builder.master("local").getOrCreate()
 
-def generate_cluster_def(common_path):
+def generate_cluster_def(common_path, port, azure_container):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/named_collections.xml",
@@ -67,21 +68,30 @@ def generate_cluster_def(common_path):
             </disk_local_common>
             <disk_s3_0_common>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/</endpoint>
+                <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_0_common>
             <disk_s3_1_common>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/</endpoint>
+                <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_1_common>
+            <disk_azure_common>
+                <type>object_storage</type>
+                <object_storage_type>azure_blob_storage</object_storage_type>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                <container_name>{azure_container}</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+            </disk_azure_common>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -95,7 +105,8 @@ def started_cluster():
         user_files_path = os.path.join(
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
-        conf_path = generate_cluster_def(user_files_path + "/")
+        port = cluster.azurite_port
+        conf_path = generate_cluster_def(user_files_path + "/", port, "mycontainer")
         cluster.add_instance(
             "node1",
             main_configs=[conf_path, "configs/cluster.xml"],
@@ -144,12 +155,6 @@ def started_cluster():
         cluster.azure_container_name = "mycontainer"
 
         cluster.blob_service_client = cluster.blob_service_client
-
-        container_client = cluster.blob_service_client.create_container(
-            cluster.azure_container_name
-        )
-
-        cluster.container_client = container_client
 
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
@@ -270,6 +275,7 @@ def create_delta_table(
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
+
 def create_initial_data_file(
     cluster, node, query, table_name, compression_method="none", node_name="node1"
 ):
@@ -283,14 +289,14 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/{node_name}/database/user_files"
+        os.path.join(os.path.dirname(os.path.realpath(__file__))), f"{cluster.instances_dir_name}/{node_name}/database/user_files"
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("1", "local"), ("0", "azure")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -308,7 +314,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     table_path = os.path.join(user_files_path, TABLE_NAME)
 
     # We need to exclude the leading slash for local storage protocol file://
-    delta_path = table_path if storage_type == "local" else f"/{TABLE_NAME}"
+    delta_path = table_path if storage_type == "local" else f"/var/lib/clickhouse/user_files/{TABLE_NAME}"
     write_delta_from_file(spark, parquet_data_path, delta_path)
 
     files = default_upload_directory(
@@ -326,7 +332,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         TABLE_NAME,
         started_cluster,
         use_delta_kernel,
-        f"'{TABLE_NAME}'",
+        f"'{TABLE_NAME}'" if storage_type != "azure" else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'",
         "_common"
     )
 
@@ -337,15 +343,18 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     if storage_type == "s3":
         disk_name = f"disk_s3_{use_delta_kernel}_common"
-    else:
+    elif storage_type == "local":
         disk_name = f"disk_local_common"
+    else:
+        disk_name = f"disk_azure_common"
 
-    assert instance.query(f"SELECT * FROM deltaLake('{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else  f"var/lib/clickhouse/user_files/{TABLE_NAME}"
+    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
         inserted_data
     )
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
             inserted_data
         )
 
