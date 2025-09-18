@@ -98,6 +98,15 @@ def cluster():
         cluster.shutdown()
 
 
+backup_id_counter = 0
+
+
+def new_backup_name():
+    global backup_id_counter
+    backup_id_counter += 1
+    return f"backup{backup_id_counter}"
+
+
 def azure_query(
     node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
 ):
@@ -180,12 +189,13 @@ def test_backup_restore(cluster):
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_backup')"
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
     azure_query(
         node,
         f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}",
     )
-    print(get_azure_file_content("test_simple_write_c_backup/.backup", port))
+    print(get_azure_file_content(f"{backup_name}/.backup", port))
     azure_query(
         node,
         f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
@@ -207,7 +217,8 @@ def test_backup_restore_diff_container(cluster):
     azure_query(
         node, f"INSERT INTO test_simple_write_connection_string_cont1 VALUES (1, 'a')"
     )
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont1', 'test_simple_write_c_backup_cont1')"
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont1', '{backup_name}')"
     azure_query(
         node,
         f"BACKUP TABLE test_simple_write_connection_string_cont1 TO {backup_destination}",
@@ -236,12 +247,13 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
 
-    backup_destination = f"AzureBlobStorage(azure_conf1, 'test_simple_write_nc_backup')"
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage(azure_conf1, '{backup_name}')"
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string TO {backup_destination}",
     )
-    print(get_azure_file_content("test_simple_write_nc_backup/.backup", port))
+    print(get_azure_file_content(f"{backup_name}/.backup", port))
     azure_query(
         node,
         f"RESTORE TABLE test_write_connection_string AS test_write_connection_string_restored FROM {backup_destination};",
@@ -264,14 +276,15 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
     print(get_azure_file_content("test_simple_write_2.csv", port))
     assert get_azure_file_content("test_simple_write_2.csv", port) == '1,"a"\n'
 
+    backup_name = new_backup_name()
     backup_destination = (
-        f"AzureBlobStorage(azure_conf2, 'test_simple_write_nc_backup_2')"
+        f"AzureBlobStorage(azure_conf2, '{backup_name}')"
     )
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string_2 TO {backup_destination}",
     )
-    print(get_azure_file_content("test_simple_write_nc_backup_2/.backup", port))
+    print(get_azure_file_content(f"{backup_name}/.backup", port))
     azure_query(
         node,
         f"RESTORE TABLE test_write_connection_string_2 AS test_write_connection_string_restored_2 FROM {backup_destination};",
@@ -293,7 +306,8 @@ def test_backup_restore_on_merge_tree(cluster):
     )
     azure_query(node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup')"
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
     azure_query(
         node,
         f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
@@ -330,7 +344,7 @@ def test_backup_restore_correct_block_ids(cluster):
         (42, 100, 1000, 42),
         (42, 52, 86, 52),
     ]:
-        data_path = f"test_backup_correct_block_ids_{max_blocks}"
+        data_path = f"{new_backup_name()}_{max_blocks}"
 
         backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{data_path}')"
         azure_query(
