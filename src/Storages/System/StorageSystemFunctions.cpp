@@ -96,7 +96,6 @@ namespace
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
             res_columns[12]->insertDefault();
-            res_columns[12]->insertDefault();
             res_columns[13]->insertDefault();
         }
     }
