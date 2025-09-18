@@ -20,8 +20,6 @@ MACStringToNum
 MACStringToOUI
 URLHierarchy
 URLPathHierarchy
-UUIDNumToString
-UUIDStringToNum
 _CAST
 __actionName
 __bitBoolMaskAnd
@@ -39,8 +37,6 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 dateDiff
-dateTime64ToSnowflake
-dateTimeToSnowflake
 dotProduct
 evalMLMethod
 firstSignificantSubdomainCustom
@@ -51,7 +47,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-generateUUIDv4
 getTypeSerializationStreams
 globalIn
 globalInIgnoreSet
@@ -168,8 +163,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 sigmoid
-snowflakeToDateTime
-snowflakeToDateTime64
 svg
 toBool
 toDate32OrDefault
