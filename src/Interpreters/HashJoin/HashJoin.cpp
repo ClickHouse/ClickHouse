@@ -1637,6 +1637,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
         || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
             && (isLeft(kind) || isRight(kind)))
         || (strictness == JoinStrictness::Any && (isInner(kind)));
+
     if (!is_supported)
     {
         throw Exception(
@@ -1763,12 +1764,23 @@ void HashJoin::tryRerangeRightTableData()
         return;
 
     /// We should not rerange the right table on such conditions:
-    /// 1. the right table is already reranged by key or it is empty.
-    /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
-    /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
-    /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
-    if (!data || data->sorted || data->columns.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
+    /// 1. The right table is already reranged by key, or it is empty.
+    /// 2. The join clauses size is greater than 1, for example:
+    ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
+    ///    We cannot rerange the right table on different sets of keys.
+    /// 3. The number of right table rows exceeds the threshold, which may
+    ///    results in a significant cost for reranging and performance degradation.
+    /// 4. The keys of the right table are very sparse, which may result in
+    ///    insignificant performance improvement after reranging by key.
+    if (!data
+        || data->sorted
+        || data->columns.empty()
+        || data->maps.size() > 1
+        || data->rows_to_join > table_join->sortRightMaximumTableRows()
+        || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
+    {
         return;
+    }
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
