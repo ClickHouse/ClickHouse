@@ -12,7 +12,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 10485760,
          compress_marks=false,
          compress_primary_key=false,
-         serialize_string_with_size_stream=0,
+         serialization_info_version='default',
          disk = disk(
             type = cache,
             name = '02240_bypass_cache_threshold',

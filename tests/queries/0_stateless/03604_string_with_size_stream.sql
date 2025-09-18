@@ -2,7 +2,7 @@
 
 drop table if exists test;
 
-create table test (s String) engine MergeTree order by () settings serialize_string_with_size_stream = 0;
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'default', string_serialization_version = 'default';
 
 insert into test values ('hello world');
 
@@ -14,12 +14,24 @@ select column, substreams, subcolumns.names, subcolumns.types from system.parts_
 
 drop table test;
 
-create table test (s String) engine MergeTree order by () settings serialize_string_with_size_stream = 1;
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream';
 
 insert into test values ('hello world');
 
 -- Verify that string type is serialized with a physical .size stream
 select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
+
+drop table test;
+
+-- When `serialization_info_version` is set to `default`, any per-type string serialization version (`string_serialization_version`) will be ignored and reset to `DEFAULT`.
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'default', string_serialization_version = 'with_size_stream';
+
+insert into test values ('hello world');
+
+-- Verify that string type is not serialized with a physical .size stream
+select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
+
+drop table test;
 
 -- Test empty string comparison and .size subcolumn optimization
 set enable_analyzer = 1;

@@ -18,7 +18,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    serialize_string_with_size_stream = 0,
+    serialization_info_version = 'default',
     storage_policy = 'default';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;

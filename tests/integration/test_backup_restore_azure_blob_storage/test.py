@@ -332,7 +332,7 @@ def test_backup_restore_correct_block_ids(cluster):
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialize_string_with_size_stream = 0""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'default'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(

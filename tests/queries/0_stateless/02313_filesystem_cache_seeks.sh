@@ -18,10 +18,10 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; d
 
     $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "DROP TABLE IF EXISTS test_02313" > /dev/null
 
-    # s3_cache_multi is incompatible with types that use multiple streams.
-    # Therefore, we must disable `serialize_string_with_size_stream`.
+    # `s3_cache_multi` storage policy is incompatible with types that use multiple streams.
+    # To ensure compatibility, force `serialization_info_version` to `default` in this case.
     if [ "$STORAGE_POLICY" = "s3_cache_multi" ]; then
-        STRING_SERIALIZE_SETTING=", serialize_string_with_size_stream = 0"
+        STRING_SERIALIZE_SETTING=", serialization_info_version = 'default'"
     else
         STRING_SERIALIZE_SETTING=""
     fi
