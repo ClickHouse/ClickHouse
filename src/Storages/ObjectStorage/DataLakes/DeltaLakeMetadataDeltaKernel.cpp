@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeNullable.h>
-#include "Disks/ObjectStorages/IObjectStorage.h"
 #include "config.h"
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -13,6 +12,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
