@@ -206,9 +206,11 @@ public:
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         std::optional<KeyCondition> rpn_template_condition;
+        KeyCondition::RPN rpn_template_for_eval_result;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
+        KeyCondition::ConditionType filter_type{KeyCondition::OnlyConjuncts};
     };
 
     static AnalysisResultPtr selectRangesToRead(

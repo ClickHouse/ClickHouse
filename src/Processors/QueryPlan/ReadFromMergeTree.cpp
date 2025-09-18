@@ -1734,8 +1734,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-
-
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag,
@@ -1761,7 +1759,6 @@ static void buildIndexes(
 
     /// Just the skeleton of the predicate - no columns resolved.
     indexes->rpn_template_condition = KeyCondition{filter_dag, context, {}, primary_key.expression};
-
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1918,10 +1915,7 @@ static void buildIndexes(
     }
 
     indexes->skip_indexes = std::move(skip_indexes);
-    {
-        if (settings[Setting::use_skip_indexes_on_disjuncts])
-            MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(indexes);
-    }
+
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -1998,6 +1992,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
+    if (settings[Setting::use_skip_indexes_on_disjuncts])
+        MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(indexes);
+
     if (indexes->key_condition.alwaysUnknownOrTrue())
     {
         if (settings[Setting::force_primary_key])
@@ -2066,6 +2063,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->part_offset_condition,
             indexes->total_offset_condition,
             indexes->rpn_template_condition,
+            indexes->rpn_template_for_eval_result,
+            indexes->filter_type,
             indexes->skip_indexes,
             reader_settings,
             log,

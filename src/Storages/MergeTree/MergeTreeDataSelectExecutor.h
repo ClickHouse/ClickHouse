@@ -201,6 +201,8 @@ public:
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
         const std::optional<KeyCondition> & rpn_template_condition,
+	const KeyCondition::RPN & finalSetOfRangesForFilterWithMixedAndOr,
+        KeyCondition::ConditionType filter_type,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
@@ -239,11 +241,14 @@ public:
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
 
-    static void prepareIndexesForDisjuncts(std::optional<ReadFromMergeTree::Indexes> & indexes);
+    static void prepareIndexConditionsForDisjuncts(
+        std::optional<ReadFromMergeTree::Indexes> & indexes);
 
     static MarkRanges finalSetOfRangesForFilterWithMixedAndOr(
-    MergeTreeData::DataPartPtr part,
-    const std::optional<KeyCondition> & rpn_template_condition, const std::vector<MarkRanges> & skip_index_results);
+        MergeTreeData::DataPartPtr part,
+        const std::optional<KeyCondition> & rpn_template_condition,
+	const KeyCondition::RPN & finalSetOfRangesForFilterWithMixedAndOr,
+        const std::vector<MarkRanges> & skip_index_results);
 };
 
 }

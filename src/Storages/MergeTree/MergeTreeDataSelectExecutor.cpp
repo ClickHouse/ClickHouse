@@ -592,9 +592,6 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
-    if (minmax_idx_condition)
-	    LOG_TRACE(getLogger(""), "Parts filter condition {}", minmax_idx_condition->toString());
-
     if (metadata_snapshot->hasPartitionKey())
     {
         chassert(minmax_idx_condition && partition_pruner);
@@ -675,6 +672,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     const std::optional<KeyCondition> & rpn_template_condition,
+    const KeyCondition::RPN & rpn_template_for_eval_result,
+    KeyCondition::ConditionType filter_type,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
@@ -760,6 +759,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
+
     /// Let's find what range to read from each part.
     {
         auto mark_cache = context->getIndexMarkCache();
@@ -774,6 +774,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
+	    MarkRanges initial_ranges = ranges.ranges;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -844,9 +845,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 };
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
-		std::vector<MarkRanges> skip_index_selected_ranges;
-		Names all_skip_index_column_names;
 
+                /// To support mixed AND and OR conditions, we track ranges selected by each index.
+                std::vector<MarkRanges> skip_index_selected_ranges;
+                if (filter_type != KeyCondition::OnlyConjuncts)
+                {
+                    skip_index_selected_ranges.emplace_back(std::move(ranges.ranges));
+                    ranges.ranges = initial_ranges;
+                }
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -875,33 +881,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
-		    if (settings[Setting::use_skip_indexes_on_disjuncts])
-		    {
-	                    std::optional<MarkRanges> rejected = MarkRanges{};
-			    /// index_and_condition.condition->transformToDisjuncts();
-			    skip_index_selected_ranges.emplace_back(
-                            filterMarksUsingIndex(
-                            index_and_condition.index,
-                            index_and_condition.condition,
-                            ranges.data_part,
-                            ranges.ranges,
-                            ranges.read_hints,
-                            reader_settings,
-                            mark_cache.get(),
-                            uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(), rejected,
-                            log).first);
-			    LOG_TRACE(getLogger(""),"Skip index selected {} ranges out of {}, rejected {}", skip_index_selected_ranges.back().size(), ranges.ranges.size(), rejected->size());
-			    LOG_TRACE(getLogger(""),"Input  range {}{} selected {}{}", ranges.ranges.front().begin, ranges.ranges.back().end, skip_index_selected_ranges.back().front().begin, skip_index_selected_ranges.back().back().end);
-			    ranges.ranges = rejected.value();
-		    }
-		    else
-		    {
-	            std::optional<MarkRanges> rejected;
+                    std::optional<MarkRanges> rejected_ranges;
+                    if (filter_type != KeyCondition::OnlyConjuncts)
+                        rejected_ranges = MarkRanges{};
+
+                    MarkRanges selected_ranges;
                     /// Vector similarity indexes are not applicable on data reads.
                     if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                     {
-                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                        std::tie(selected_ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition,
                             ranges.data_part,
@@ -910,28 +898,48 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(), rejected,
+                            vector_similarity_index_cache.get(), rejected_ranges,
                             log);
                     }
+                    if (filter_type == KeyCondition::OnlyConjuncts)
+                    {
+                        ranges.ranges = std::move(selected_ranges);
+                        stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    }
+                    else if (filter_type == KeyCondition::OnlyDisjuncts)
+                    {
+                        stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                        skip_index_selected_ranges.emplace_back(selected_ranges);
+                        ranges.ranges = std::move(rejected_ranges.value());
+                    }
+                    else
+                    {
+                        stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                        skip_index_selected_ranges.emplace_back(selected_ranges);
+                    }
 
-                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-		    }
+
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
-		if (settings[Setting::use_skip_indexes_on_disjuncts])
-		{
-	            ranges.ranges = {};
-		    /// ranges.ranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, skip_index_selected_ranges);
-                    for (auto mr : skip_index_selected_ranges)
-			    for (auto r : mr)
-			        ranges.ranges.push_back(r);
-		    std::sort(ranges.ranges.begin(), ranges.ranges.end());
 
-		    /// auto finalranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, skip_index_selected_ranges);
-		}
+                if (settings[Setting::use_skip_indexes_on_disjuncts] && filter_type != KeyCondition::OnlyConjuncts)
+                {
+                    if (filter_type == KeyCondition::OnlyDisjuncts)
+                    {
+                        /// UNION of all individual skip index selected ranges
+                        ranges.ranges = {};
+                        for (auto mr : skip_index_selected_ranges)
+                            ranges.ranges.insert(ranges.ranges.end(), mr.begin(), mr.end());
+                        std::sort(ranges.ranges.begin(), ranges.ranges.end());
+                    }
+                    else
+                    {
+                        ranges.ranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, rpn_template_for_eval_result, skip_index_selected_ranges);
+                    }
+                }
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
                 {
@@ -1958,15 +1966,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (!result)
                     {
                         if (rejected)
-			{
+                        {
                             MarkRange data_range(
                                 std::max(ranges[i].begin, index_mark * index_granularity),
                                 std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
                             rejected->push_back(data_range);
-			}
+                        }
                         continue;
-		    }
+                    }
 
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * index_granularity),
@@ -2256,7 +2264,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     }
 }
 
-void MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(std::optional<ReadFromMergeTree::Indexes> & indexes)
+void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
+    std::optional<ReadFromMergeTree::Indexes> & indexes)
 {
     if (!indexes || !indexes->rpn_template_condition)
         return;
@@ -2265,49 +2274,88 @@ void MergeTreeDataSelectExecutor::prepareIndexesForDisjuncts(std::optional<ReadF
     std::tie(only_conjuncts, only_disjuncts) = indexes->rpn_template_condition->checkIfOnlyConjunctsOrOnlyDisjuncts();
 
     if (only_conjuncts)
+    {
+        indexes->filter_type = KeyCondition::OnlyConjuncts;
         return;
+    }
 
-    /// indexes->key_condition.transformToDisjuncts();
-    /// if (indexes->minmax_idx_condition)
-    ///    indexes->minmax_idx_condition->transformToDisjuncts();
+    /// It get's a bit complex now. We need to figure out how the columns in the
+    /// condition have resolved to indexes. Indexes can be skip indexes or primary
+    /// key index (or _part_offset).
+
+    std::unordered_map<size_t, size_t> resolved_positions;
+    
+    auto v = indexes->key_condition.getResolvedPositions();
+    for (auto i : v)
+        resolved_positions[i] = 0; /// primary key index is index 0
     if (indexes->part_offset_condition)
-        indexes->part_offset_condition->transformToDisjuncts();
+    {
+        v = indexes->part_offset_condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = 0; /// index 0 - evaluated alongwith PK
+    }
     if (indexes->total_offset_condition)
-        indexes->total_offset_condition->transformToDisjuncts();
+    {
+        v = indexes->total_offset_condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = 0; /// index 0 - evaluated alongwith PK
+    }
+
     for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
     {
         auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
-	/// LOG_TRACE(getLogger(""), "Converting skip index to disjunct {}", index_and_condition.condition->toString());
-        index_and_condition.condition->transformToDisjuncts();
+        v = index_and_condition.condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = idx + 1; /// index 0 is primary key index
     }
 
- #if 0
-    auto rpn_template = indexes->rpn_template_condition->getRPN();
+    const auto & rpn = indexes->rpn_template_condition->getRPN();
+    bool some_unknowns = false;
+    const size_t max_idx = indexes->skip_indexes.useful_indices.size() + 1;
+    for (size_t idx = 0; idx < rpn.size(); ++idx)
+    {
+        indexes->rpn_template_for_eval_result.emplace_back(rpn[idx]);
+        if (rpn[idx].function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+        {
+            if (resolved_positions.find(idx) == resolved_positions.end())
+            {
+                LOG_TRACE(getLogger(""), "Position {} not resolved in {}",
+                          idx, indexes->rpn_template_condition->toString());
+                some_unknowns = true;
+                indexes->rpn_template_for_eval_result.back().key_column = max_idx;
+                continue;
+            }
+            indexes->rpn_template_for_eval_result.back().key_column = resolved_positions.find(idx)->second;
+        }
+    }
+
+    if (only_disjuncts)
+    {
+        if (some_unknowns)
+        {
+            indexes->filter_type = KeyCondition::OnlyDisjunctsFullScan;
+        }
+        else
+        {
+            indexes->filter_type = KeyCondition::OnlyDisjuncts;
+        }
+        return;
+    }
+
+    //. We have mixed ANDs and ORs. Let us transform all to disjuncts
     for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
     {
-        if (areRPNsStructureSame(rpn_template, skip_index_rpn))
-	{
-            for (size_t rpn_idx = 0; rpn_idx < rpn_template.size(); ++rpn_idx)
-	    {
-                if (rpn_template[rpn_idx] == FUNCTION_UNKNOWN &&
-                    index_rpn[rpn_idx] != FUNCTION_UNKNWON)
-                {
-                    rpn_template[rpn_idx].function = FUNCTION_INDEX_RESULT;
-                    rpn_template[rpn_idx].key_column = index_num;
-                }
-	    }
-	}
+        auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
+        index_and_condition.condition->transformToDisjuncts();
     }
- #endif
-
+    indexes->filter_type = KeyCondition::Mixed;
     return;
-
-
 }
 
 MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
     MergeTreeData::DataPartPtr part,
-    const std::optional<KeyCondition> & rpn_template_condition, const std::vector<MarkRanges> & skip_index_results)
+    const std::optional<KeyCondition> &,
+    const KeyCondition::RPN & rpn_template_for_eval_result, const std::vector<MarkRanges> & skip_index_results)
 {
     /// TODO - below is just something quick, not optimal
     std::vector< std::unordered_set<size_t> > index_results;
@@ -2315,66 +2363,71 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
     index_results.resize(10);
     for (auto s : skip_index_results)
     {
-	    for (auto r : s)
-	    {
-		    for (size_t mark = r.begin; mark < r.end; mark++)
-			    index_results[i].insert(mark);
-	    }
-	    i++;
+        for (auto r : s)
+        {
+            for (size_t mark = r.begin; mark < r.end; mark++)
+                index_results[i].insert(mark);
+        }
+        i++;
     }
 
     auto isRangeSelectedByIndex = [&](size_t idx, size_t range_begin)
     {
-	    return index_results[idx].find(range_begin) != index_results[idx].end();
+        if (idx <= skip_index_results.size())
+            return index_results[idx].find(range_begin) != index_results[idx].end();
+        else
+            return true; /// UNKNOWN
     };
-    KeyCondition::RPN rpn = rpn_template_condition->getRPN();
+
     MarkRanges res;
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+
+    /// Evaluate the RPN over all the ranges.
     for (size_t range_begin = 0; range_begin < marks_count; range_begin++)
     {
+        std::vector<bool> rpn_stack;
+        for (const auto & element : rpn_template_for_eval_result)
+        {
+            if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+            {
+                rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column - 1, range_begin));
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            {
+                rpn_stack.back() = !rpn_stack.back();
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 || arg2;
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 && arg2;
+            }
+            else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.emplace_back(true);
+            }
+            else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+            {
+                rpn_stack.emplace_back(false);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForFilterWithMixedAndOr()", element.function);
+        }
 
-    std::vector<bool> rpn_stack;
-    for (const auto & element : rpn)
-    {
-        if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
-        {
-            rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column, range_begin));
-	}
-	else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
-        {
-            rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 || arg2;
-        }
-        else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 && arg2;
-        }
-        else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.emplace_back(true);
-        }
-        else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.emplace_back(false);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+        if (rpn_stack.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForFilterWithMixedAndOr()", rpn_stack.size());
+
+        if (rpn_stack[0])
+            res.push_back({range_begin, range_begin + 1}); /// TODO - range coalesce
     }
-    if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
-
-    if (rpn_stack[0])
-	    res.push_back({range_begin, range_begin + 1}); /// TODO - range coalesce
-    } /// TODO
     return res;
 }
 

@@ -112,6 +112,8 @@ public:
 
     void transformToDisjuncts() override;
 
+    std::vector<size_t> getResolvedPositions() const override;
+
     ~MergeTreeIndexConditionSet() override = default;
 
 private:

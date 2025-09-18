@@ -295,10 +295,28 @@ public:
         bool date_time_overflow_behavior_ignore_,
         bool relaxed_);
 
-    /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE 
-    void transformToDisjuncts();
+    enum ConditionType
+    {
+        OnlyConjuncts,
+        OnlyDisjuncts,
+        Mixed,
+        OnlyDisjunctsFullScan, /// e.g age > 50 OR salary > 1000 OR nw > 1000000. If no index on nw, then full scan is only option.
+    };
 
-    std::pair<bool, bool> checkIfOnlyConjunctsOrOnlyDisjuncts() const;
+    /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE 
+    static void transformToDisjuncts(RPN & rpn);
+
+    void transformToDisjuncts() { transformToDisjuncts(rpn); }
+
+    std::vector<size_t> getResolvedPositions() const;
+
+    /// Check if RPN expression has only AND's or only OR's or mixed AND/OR
+    static std::pair<bool, bool> checkIfOnlyConjunctsOrOnlyDisjuncts(const RPN & rpn);
+
+    std::pair<bool, bool> checkIfOnlyConjunctsOrOnlyDisjuncts() const
+    {
+        return checkIfOnlyConjunctsOrOnlyDisjuncts(rpn);
+    }
 
 private:
     /// Information used when building a KeyCondition out of ActionsDAG.

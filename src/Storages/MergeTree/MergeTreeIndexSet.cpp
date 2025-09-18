@@ -513,6 +513,11 @@ void MergeTreeIndexConditionSet::transformToDisjuncts()
     return condition.transformToDisjuncts();
 }
 
+std::vector<size_t> MergeTreeIndexConditionSet::getResolvedPositions() const
+{
+    return condition.getResolvedPositions();
+}
+
 static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, ActionsDAG * result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
 {
     chassert(node.type == ActionsDAG::ActionType::FUNCTION);

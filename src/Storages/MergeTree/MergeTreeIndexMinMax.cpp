@@ -202,6 +202,11 @@ void MergeTreeIndexConditionMinMax::transformToDisjuncts()
     condition.transformToDisjuncts();
 }
 
+std::vector<size_t> MergeTreeIndexConditionMinMax::getResolvedPositions() const
+{
+    return condition.getResolvedPositions();
+}
+
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {

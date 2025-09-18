@@ -206,9 +206,18 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
+    /// Replace all AND's with OR's and all UNKNOWNs with ALWAYS_FALSE in the RPN expression
+    /// (c1 = 5 AND (c2 = 5 OR c3 = 5))
+    /// will be transformed to (c1 = 5 OR (FALSE OR FALSE)) in column c1's skip index condition
+    /// Few MergeTreeIndexConditionXXXX use KeyCondition, some don't, hence abstract method.
     virtual void transformToDisjuncts()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support transform to disjuncts");
+    }
+
+    virtual std::vector<size_t> getResolvedPositions() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support get resolved positions");
     }
 
     template <typename RPNElement>
