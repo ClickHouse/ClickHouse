@@ -1072,7 +1072,10 @@ The table below shows the behavior of this setting for various date-time functio
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
+Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
+Enabling this setting gives the wrong impression that different values within a column can have different timezones.
+Therefore, please do not enable this setting.
 )", 0) \
     DECLARE(Bool, use_legacy_to_time, true, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
@@ -1520,6 +1523,9 @@ Possible values:
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
+    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
+For testing purposes, enables or disables usage of bloom filter in text index.
+)", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
@@ -1648,12 +1654,14 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 )", 0) \
     \
     DECLARE(String, network_compression_method, "LZ4", R"(
-Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+The codec for compressing the client/server and server/server communication.
 
 Possible values:
 
-- `LZ4` — sets LZ4 compression method.
-- `ZSTD` — sets ZSTD compression method.
+- `NONE` — no compression.
+- `LZ4` — use the LZ4 codec.
+- `LZ4HC` — use the LZ4HC codec.
+- `ZSTD` — use the ZSTD codec.
 
 **See Also**
 
@@ -1675,20 +1683,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
     DECLARE(UInt64, priority, 0, R"(
 Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.
 )", 0) \
-    DECLARE(Int64, os_thread_priority, 0, R"(
-Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
-
-:::note
-To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
-:::
-
-Possible values:
-
-- You can set values in the range `[-20, 19]`.
-
-Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
-)", 0) \
-    \
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
@@ -5055,6 +5049,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
+Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -6505,6 +6502,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
+    DECLARE(String, datalake_disk_name, "", R"(
+Which disk to use for data lake table engines.
+)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -6850,6 +6850,11 @@ Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
+Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
+It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
+The downside is potentially higher memory usage.
+)", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
@@ -6896,6 +6901,20 @@ Enable jemalloc profiler.
     )", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc profile samples in trace log.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_query, 0, R"(
+Linux nice value for query processing threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
+Linux nice value for materialized view threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
     )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
@@ -6963,6 +6982,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
+Allow to perform full text search filtering using only the inverted index in query plan.
+)", 0) \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
@@ -7135,6 +7157,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
+    MAKE_OBSOLETE(M, Int64, os_thread_priority, 0) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
