@@ -1,7 +1,9 @@
 {
   "allowedTools": [
-    "Bash",
-    "Read"
+    "Read",
+    "Write",
+    "Glob",
+    "Grep"
   ]
 }
 

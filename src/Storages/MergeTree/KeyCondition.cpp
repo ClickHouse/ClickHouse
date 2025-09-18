@@ -2979,6 +2979,10 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
+            /// TODO: Fix MergeTreeSetIndex::checkInRange handling per-column inclusive/exclusive ranges, then remove this check.
+            if (element.set_index->getIndexesMapping().size() != 1)
+                return false;
+
             for (const auto & mapping : element.set_index->getIndexesMapping())
             {
                 auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
