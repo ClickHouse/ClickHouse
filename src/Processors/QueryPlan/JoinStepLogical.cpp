@@ -344,7 +344,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
             required_nodes.push_back(output_node);
             required_outputs.erase(it);
         }
-        else if (output_node->result_name != join_dummy_result_name)
+        else if (!isDummyColumnOfThisStep(output_node))
         {
             /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one output column
             removed_any_output = true;
@@ -488,6 +488,11 @@ void JoinStepLogical::updateOutputHeader()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
     output_header = std::make_shared<const Block>(std::move(header));
+}
+
+bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
+{
+    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)

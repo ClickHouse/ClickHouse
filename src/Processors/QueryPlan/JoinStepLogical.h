@@ -163,6 +163,8 @@ protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
+    bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
+
     std::vector<std::pair<String, String>> describeJoinProperties() const;
 
     JoinExpressionActions expression_actions;
