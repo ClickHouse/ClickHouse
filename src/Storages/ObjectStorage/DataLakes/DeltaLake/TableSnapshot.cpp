@@ -3,47 +3,29 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-
-#include <Core/ColumnWithTypeAndName.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
-
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/escapeForFileName.h>
-
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
+#include "getSchemaFromSnapshot.h"
+#include "PartitionPruner.h"
+#include "KernelUtils.h"
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
-
 
 namespace fs = std::filesystem;
 
 namespace DB::ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsBool delta_lake_enable_expression_visitor_logging;
-    extern const SettingsInt64 delta_lake_snapshot_version;
-    extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
-    extern const SettingsBool delta_lake_enable_engine_predicate;
 }
 
 namespace ProfileEvents
@@ -82,60 +64,31 @@ class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 public:
     Iterator(
-        std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
+        const KernelExternEngine & engine_,
+        const KernelSnapshot & snapshot_,
+        KernelScan & scan_,
         const std::string & data_prefix_,
-        const ReadSchema & read_schema_,
-        const TableSchema & table_schema_,
-        const DB::NameToNameMap & physical_names_map_,
+        const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
+        const DB::NameToNameMap & physical_names_map_,
         DB::ObjectStoragePtr object_storage_,
-        const DB::ActionsDAG * filter_,
+        const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
-        bool enable_expression_visitor_logging_,
-        bool throw_on_engine_predicate_error_,
-        bool enable_engine_predicate_,
         LoggerPtr log_)
-        : kernel_snapshot_state(kernel_snapshot_state_)
+        : engine(engine_)
+        , snapshot(snapshot_)
+        , scan(scan_)
         , data_prefix(data_prefix_)
-        , read_schema(read_schema_)
-        , expression_schema(table_schema_)
+        , schema(schema_)
         , partition_columns(partition_columns_)
+        , physical_names_map(physical_names_map_)
         , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
-        , enable_expression_visitor_logging(enable_expression_visitor_logging_)
-        , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
-        , enable_engine_predicate(enable_engine_predicate_)
     {
-        if (filter_)
-        {
-            filter = filter_->clone();
-            pruner.emplace(
-                *filter,
-                table_schema_,
-                partition_columns_,
-                physical_names_map_,
-                DB::Context::getGlobalContextInstance());
-
-            LOG_TEST(log, "Using filter expression");
-        }
-        else
-        {
-            LOG_TEST(log, "No filter expression passed");
-        }
-
-        if (!physical_names_map_.empty())
-        {
-            for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(name, physical_names_map_);
-
-            for (auto & name : partition_columns)
-                name = getPhysicalName(name, physical_names_map_);
-        }
-
-        thread = ThreadFromGlobalPool(
+        thread = std::make_unique<ThreadFromGlobalPool>(
             [&, thread_group = DB::CurrentThread::getGroup()]
             {
                 /// Attach to current query thread group, to be able to
@@ -143,91 +96,58 @@ public:
                 DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
                 scanDataFunc();
             });
+
+        if (filter_dag_)
+            pruner.emplace(*filter_dag_, schema_, partition_columns_, DB::Context::getGlobalContextInstance());
     }
 
     ~Iterator() override
     {
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
-        if (thread.joinable())
-            thread.join();
-    }
-
-    void setScanException()
-    {
-        if (!scan_exception)
-        {
-            scan_exception = std::current_exception();
-            shutdown = true;
-        }
+        if (thread && thread->joinable())
+            thread->join();
     }
 
     void initScanState()
     {
-        if (filter.has_value() && enable_engine_predicate)
-        {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception);
-            scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
-                "scan");
-        }
-        else
-        {
-            scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
-                "scan");
-        }
-
+        scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
         scan_data_iterator = KernelUtils::unwrapResult(
-            ffi::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
+            ffi::scan_metadata_iter_init(engine.get(), scan.get()),
             "scan_metadata_iter_init");
     }
 
     void scanDataFunc()
     {
-        try
+        initScanState();
+        while (!shutdown.load())
         {
-            initScanState();
+            bool have_scan_data_res = KernelUtils::unwrapResult(
+                ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                "scan_metadata_next");
 
-            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
-
-            while (!shutdown.load())
+            if (have_scan_data_res)
             {
-                bool have_scan_data_res = KernelUtils::unwrapResult(
-                    ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                    "scan_metadata_next");
-
-                if (have_scan_data_res)
+                std::unique_lock lock(next_mutex);
+                if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
                 {
-                    std::unique_lock lock(next_mutex);
-                    if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
-                    {
-                        LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+                    LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
 
-                        schedule_next_batch_cv.wait(
-                            lock,
-                            [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
-                    }
-                }
-                else
-                {
-                    LOG_TEST(log, "All data files were listed");
-                    {
-                        std::lock_guard lock(next_mutex);
-                        iterator_finished = true;
-                        LOG_TEST(log, "Set finished");
-                    }
-                    data_files_cv.notify_all();
-                    LOG_TEST(log, "Notified");
-                    return;
+                    schedule_next_batch_cv.wait(
+                        lock,
+                        [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
                 }
             }
-        }
-        catch (...)
-        {
-            setScanException();
-            data_files_cv.notify_all();
-            LOG_DEBUG(log, "Exception during scan_metadata_next");
+            else
+            {
+                LOG_TEST(log, "All data files were listed");
+                {
+                    std::lock_guard lock(next_mutex);
+                    iterator_finished = true;
+                }
+                data_files_cv.notify_all();
+                return;
+            }
         }
     }
 
@@ -238,11 +158,6 @@ public:
         return std::numeric_limits<size_t>::max();
     }
 
-    std::optional<UInt64> getSnapshotVersion() const override
-    {
-        return kernel_snapshot_state->snapshot_version;
-    }
-
     DB::ObjectInfoPtr next(size_t) override
     {
         while (true)
@@ -250,25 +165,15 @@ public:
             DB::ObjectInfoPtr object;
             {
                 std::unique_lock lock(next_mutex);
-
-                if (!iterator_finished && data_files.empty() && !shutdown)
+                if (!iterator_finished && data_files.empty())
                 {
                     LOG_TEST(log, "Waiting for next data file");
                     schedule_next_batch_cv.notify_one();
-                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
+                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished; });
                 }
 
-                if (engine_predicate_exception && throw_on_engine_predicate_error)
-                    std::rethrow_exception(engine_predicate_exception);
-
-                if (scan_exception)
-                    std::rethrow_exception(scan_exception);
-
-                if (data_files.empty() || shutdown)
-                {
-                    LOG_TEST(log, "Data files: {}", data_files.size());
+                if (data_files.empty())
                     return nullptr;
-                }
 
                 LOG_TEST(log, "Current data files: {}", data_files.size());
 
@@ -278,12 +183,16 @@ public:
             }
 
             chassert(object);
-            if (pruner.has_value() && pruner->canBePruned(*object))
+            if (pruner.has_value())
             {
-                ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+                const auto * object_with_partition_info = dynamic_cast<const DB::ObjectInfoWithPartitionColumns *>(object.get());
+                if (object_with_partition_info && pruner->canBePruned(*object_with_partition_info))
+                {
+                    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
 
-                LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
-                continue;
+                    LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
+                    continue;
+                }
             }
 
             object->metadata = object_storage->getObjectMetadata(object->getPath());
@@ -310,65 +219,81 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::DvInfo * dv_info,
-        const ffi::Expression * transform,
-        const struct ffi::CStringMap * deprecated)
-    {
-        try
-        {
-            scanCallbackImpl(engine_context, path, size, stats, dv_info, transform, deprecated);
-        }
-        catch (...)
-        {
-            auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-            /// We cannot allow to throw exceptions from ScanCallback,
-            /// otherwise delta-kernel will panic and call terminate.
-            context->setScanException();
-        }
-    }
-
-    static void scanCallbackImpl(
-        ffi::NullableCvoid engine_context,
-        struct ffi::KernelStringSlice path,
-        int64_t size,
-        const ffi::Stats * stats,
         const ffi::DvInfo * /* dv_info */,
-        const ffi::Expression * transform,
-        const struct ffi::CStringMap * /* deprecated */)
+        const ffi::Expression * /* transform */,
+        const struct ffi::CStringMap * partition_map)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-        if (context->shutdown)
+        std::string full_path = fs::path(context->data_prefix) / KernelUtils::fromDeltaString(path);
+
+        /// Collect partition values info.
+        /// DeltaLake does not store partition values in the actual data files,
+        /// but instead in data files paths directory names.
+        /// So we extract these values here and put into `partitions_info`.
+        DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
+        if (partition_map)
         {
-            context->data_files_cv.notify_all();
-            return;
+            for (const auto & partition_column : context->partition_columns)
+            {
+                std::string * value;
+                /// This map is empty if columnMappingMode = ''.
+                /// (E.g. empty string, which is the default mode).
+                if (context->physical_names_map.empty())
+                {
+                    value = static_cast<std::string *>(ffi::get_from_string_map(
+                        partition_map,
+                        KernelUtils::toDeltaString(partition_column),
+                        KernelUtils::allocateString));
+                }
+                else
+                {
+                    /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names,
+                    /// while here in partition_map we would have physical columns as map keys.
+                    /// This will be fixed after switching to "transform"'s.
+                    auto it = context->physical_names_map.find(partition_column);
+                    if (it == context->physical_names_map.end())
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::LOGICAL_ERROR,
+                            "Cannot find parititon column {} in physical columns map",
+                            partition_column);
+                    }
+
+                    value = static_cast<std::string *>(ffi::get_from_string_map(
+                        partition_map,
+                        KernelUtils::toDeltaString(it->second),
+                        KernelUtils::allocateString));
+                }
+
+                SCOPE_EXIT({ delete value; });
+
+                if (value)
+                {
+                    auto name_and_type = context->schema.tryGetByName(partition_column);
+                    if (!name_and_type)
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::LOGICAL_ERROR,
+                            "Cannot find column `{}` in schema, there are only columns: `{}`",
+                            partition_column, fmt::join(context->schema.getNames(), ", "));
+                    }
+                    partitions_info.emplace_back(
+                        name_and_type.value(),
+                        DB::parseFieldFromString(*value, name_and_type->type));
+                }
+            }
         }
 
-        std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        LOG_TEST(
+            context->log,
+            "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
+            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown", partitions_info.size());
 
-        if (transform && !context->partition_columns.empty())
-        {
-            auto parsed_transform = visitScanCallbackExpression(
-                transform,
-                context->read_schema,
-                context->expression_schema,
-                context->enable_expression_visitor_logging);
-
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
-
-            LOG_TEST(
-                context->log,
-                "Scanned file: {}, size: {}, num records: {}, transform: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                parsed_transform->dumpNames());
-        }
+        DB::ObjectInfoPtr object;
+        if (partitions_info.empty())
+            object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
         else
-        {
-            LOG_TEST(
-                context->log,
-                "Scanned file: {}, size: {}, num records: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
-        }
+            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), std::move(full_path));
 
         {
             std::lock_guard lock(context->next_mutex);
@@ -381,26 +306,20 @@ private:
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
     using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
 
-    std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
-    KernelScan scan;
+    const KernelExternEngine & engine;
+    const KernelSnapshot & snapshot;
+    KernelScan & scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
-    std::optional<DB::ActionsDAG> filter;
 
     const std::string data_prefix;
-    DB::NamesAndTypesList read_schema;
-    DB::NamesAndTypesList expression_schema;
-    DB::Names partition_columns;
+    const DB::NamesAndTypesList & schema;
+    const DB::Names & partition_columns;
+    const DB::NameToNameMap & physical_names_map;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
-    const bool enable_expression_visitor_logging;
-    const bool throw_on_engine_predicate_error;
-    const bool enable_engine_predicate;
-
-    std::exception_ptr scan_exception;
-    std::exception_ptr engine_predicate_exception;
 
     /// Whether scanDataFunc should stop scanning.
     /// Set in destructor.
@@ -419,48 +338,29 @@ private:
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
-static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    DB::ContextPtr context_,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
 {
-    updateSettings(context_);
 }
 
 size_t TableSnapshot::getVersion() const
 {
     initSnapshot();
-    return kernel_snapshot_state->snapshot_version;
+    return snapshot_version;
 }
 
-void TableSnapshot::updateSettings(const DB::ContextPtr & context)
+bool TableSnapshot::update()
 {
-    const auto & settings = context->getSettingsRef();
-    enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
-    throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
-    enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
-    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
-    {
-        if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
-
-        snapshot_version_to_read = settings[DB::Setting::delta_lake_snapshot_version];
-    }
-}
-
-bool TableSnapshot::update(const DB::ContextPtr & context)
-{
-    updateSettings(context);
-    if (!kernel_snapshot_state)
+    if (!snapshot.get())
     {
         /// Snapshot is not yet created,
         /// so next attempt to create it would return the latest snapshot.
@@ -472,56 +372,33 @@ bool TableSnapshot::update(const DB::ContextPtr & context)
 
 void TableSnapshot::initSnapshot() const
 {
-    if (kernel_snapshot_state)
+    if (snapshot.get())
         return;
     initSnapshotImpl();
-}
-
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
-{
-    auto * engine_builder = helper_.createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    if (snapshot_version_.has_value())
-    {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot_at_version(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get(),
-                snapshot_version_.value()),
-            "snapshot");
-    }
-    else
-    {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get()),
-            "snapshot");
-    }
-    snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    auto * engine_builder = helper->createBuilder();
+    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    snapshot = KernelUtils::unwrapResult(
+        ffi::snapshot(KernelUtils::toDeltaString(helper->getTableLocation()), engine.get()), "snapshot");
+    snapshot_version = ffi::version(snapshot.get());
+    LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
 
-    LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
+    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 
-    std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(kernel_snapshot_state->snapshot.get());
-    LOG_TRACE(
-        log, "Table logical schema: {}, physical names map size: {}",
-        fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
+    LOG_TRACE(log, "Initialized scan state");
 
-    if (table_schema.empty())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
+    std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
+    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
 
-    read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
+    read_schema = getReadSchemaFromSnapshot(scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
-    partition_columns = getPartitionColumnsFromSnapshot(kernel_snapshot_state->snapshot.get());
+    partition_columns = getPartitionColumnsFromSnapshot(snapshot.get());
     LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
 }
 
@@ -532,19 +409,17 @@ DB::ObjectIterator TableSnapshot::iterate(
 {
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
-        kernel_snapshot_state,
+        engine,
+        snapshot,
+        scan,
         helper->getDataPath(),
-        getReadSchema(),
         getTableSchema(),
-        getPhysicalNamesMap(),
         getPartitionColumns(),
+        getPhysicalNamesMap(),
         object_storage,
         filter_dag,
         callback,
         list_batch_size,
-        enable_expression_visitor_logging,
-        throw_on_engine_visitor_error,
-        enable_engine_predicate,
         log);
 }
 

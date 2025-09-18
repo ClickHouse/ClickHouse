@@ -211,7 +211,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
         return;
 
     if (auto result_type = getResultType())
-        result_type->updateHash(hash_state);
+        updateHashForType(hash_state, result_type);
 }
 
 QueryTreeNodePtr FunctionNode::cloneImpl() const
@@ -249,6 +249,13 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     if (function_name == "_CAST" && !argument_nodes.empty() && argument_nodes[0]->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
 
+    /// Avoid cast for `IN tuple(...)` expression.
+    /// Tuples could be quite big, and adding a type may significantly increase query size.
+    /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
+    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
+        new_options.add_cast_for_constants = false;
+
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
@@ -256,25 +263,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->parameters = function_ast->children.back();
     }
 
-    /// We have to avoid cast for second argument of `IN` functions - it can be a quite big
-    /// tuple, and adding a type may significantly increase query size.
-    /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
-    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
-        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
-    {
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
-
-        expression_list_ast->children.push_back(argument_nodes[0]->toAST(new_options));
-
-        auto arg_options = new_options;
-        arg_options.add_cast_for_constants = false;
-        expression_list_ast->children.push_back(argument_nodes[1]->toAST(arg_options));
-
-        function_ast->children.push_back(expression_list_ast);
-    }
-    else
-        function_ast->children.push_back(arguments.toAST(new_options));
-
+    function_ast->children.push_back(arguments.toAST(new_options));
     function_ast->arguments = function_ast->children.back();
 
     auto window_node = getWindowNode();
