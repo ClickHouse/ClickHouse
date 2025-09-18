@@ -497,18 +497,17 @@ void StorageObjectStorage::truncate(
                         "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
                         getName(), raw.path);
 
-    // use read prefix so we delete everything SELECT would see.
     const auto read_prefix = configuration->getPathForRead().path;
 
-    // stream objects lazily to bound memory.
-    auto it = object_storage->iterate(read_prefix, /*max_keys=*/0); // 0 => backend default
+    auto it = object_storage->iterate(read_prefix, 0); // backend default
 
     static constexpr size_t DELETE_BATCH = 1000;
     StoredObjects batch; batch.reserve(DELETE_BATCH);
 
     while (it->isValid())
     {
-        batch.emplace_back(it->key());          // exact key from iterator
+        auto cur = it->current();                 // RelativePathWithMetadataPtr
+        batch.emplace_back(cur->relative_path);   // use the path from the current item
         it->next();
 
         if (batch.size() >= DELETE_BATCH)
@@ -520,7 +519,6 @@ void StorageObjectStorage::truncate(
     if (!batch.empty())
         object_storage->removeObjectsIfExist(batch);
 
-    // remove any literal configured keys.
     if (!configuration->getPaths().empty())
     {
         StoredObjects configured;
