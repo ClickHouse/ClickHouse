@@ -80,6 +80,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
+        {std::make_shared<DB::DataTypeInt64>(), "numRecords"},
     };
 
     DB::MutableColumns columns;
@@ -87,20 +88,21 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     for (const auto & [_, type, name] : names_and_types)
         columns.push_back(type->createColumn());
 
-    for (const auto & [path, size, partition_values] : files)
+    for (const auto & [path, size_bytes, size_rows, partition_values] : files)
     {
         if (path.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Commit file path cannot be empty");
 
         LOG_TEST(
-            log, "Committing file: {}, size: {}, partition values: {}",
-            path, size, partition_values.size());
+            log, "Committing file: {}, bytes: {}, rows: {}, partition values: {}",
+            path, size_bytes, size_rows, partition_values.size());
 
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
-        columns[2]->insert(size);
+        columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
         columns[4]->insert(true);
+        columns[5]->insert(size_rows);
     }
 
     DB::FormatSettings format_settings;
