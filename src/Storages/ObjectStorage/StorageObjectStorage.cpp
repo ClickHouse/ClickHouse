@@ -40,7 +40,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <Disks/ObjectStorages/ObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <Poco/Logger.h>
 
