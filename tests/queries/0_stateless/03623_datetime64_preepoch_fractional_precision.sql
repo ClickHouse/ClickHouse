@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- Test for DateTime64 pre-epoch fractional seconds fix (GitHub issue #85396)
 
 -- 1. Test parseDateTime64BestEffort (src/IO/parseDateTimeBestEffort.cpp)
@@ -26,9 +27,8 @@ SELECT changeDay('1969-12-01 08:15:22.789'::DateTime64, 31);
 SELECT length(toString(now64(3))) > 0;
 
 -- 5. Test ULIDStringToDateTime conversion (src/Functions/ULIDStringToDateTime.cpp)
--- Note: ULID typically contains millisecond precision timestamps
--- Use a fixed ULID for testing (represents 2016-07-30)
-SELECT ULIDStringToDateTime('01ARZ3NDEKTSV4RRFFQ69G5FAV') > '2016-01-01'::DateTime64 AS ulid_function_works;
+-- Note: Using fixed ULID to ensure test reproducibility across environments
+SELECT ULIDStringToDateTime('01ARZ3NDEKTSV4RRFFQ69G5FAV') > '2016-01-01'::DateTime64 AS ulid_test_result;
 
 -- 6. Test UUID conversion functions (src/Functions/FunctionsCodingUUID.cpp)
 -- generateUUIDv7 uses DateTime64 internally
