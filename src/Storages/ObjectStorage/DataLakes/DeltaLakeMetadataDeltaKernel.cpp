@@ -381,15 +381,8 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(key);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
-
-        char c;
         String json_str;
-        while (true)
-        {
-            if (!buf->read(c))
-                break;
-            json_str.push_back(c);
-        }
+        readStringUntilEOF(json_str, *buf);
         insertDeltaRowToLogTable(context, json_str, configuration->getRawPath().path, key, file_index++);
     }
 

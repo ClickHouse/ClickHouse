@@ -83,7 +83,10 @@ void insertDeltaRowToLogTable(
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    Context::getGlobalContextInstance()->getDeltaMetadataLog()->add(
+    auto delta_metadata_log = Context::getGlobalContextInstance()->getDeltaMetadataLog();
+    if (!delta_metadata_log)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta metadata log table is not configured");
+    delta_metadata_log->add(
         DB::DeltaMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
