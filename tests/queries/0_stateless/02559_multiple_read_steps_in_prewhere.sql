@@ -23,7 +23,7 @@ SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) A
 
 SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond1 AND id2 > 6 AND cond2 LIMIT 10;
 
-SELECT cast(id1 as UInt16) AS cond1 FROM test_02559 PREWHERE cond1 LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+SELECT cast(id1 as UInt16) AS cond1 FROM test_02559 PREWHERE cond1 LIMIT 10;
 
 SELECT * FROM test_02559 PREWHERE id1 <= 3 AND id2 > 0 WHERE (id1 + id2 < 15) LIMIT 10;
 

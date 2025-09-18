@@ -261,7 +261,7 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window < current_timestamp)
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
             {
                 Float64 removed_value = samples_in_window.front().second;
                 samples_in_window.pop_front();
