@@ -27,8 +27,8 @@ SELECT length(toString(now64(3))) > 0;
 
 -- 5. Test ULIDStringToDateTime conversion (src/Functions/ULIDStringToDateTime.cpp)
 -- Note: ULID typically contains millisecond precision timestamps
--- Generate a ULID and extract its timestamp to verify the function works
-SELECT ULIDStringToDateTime(generateULID()) > '2020-01-01'::DateTime64 AS ulid_function_works;
+-- Use a fixed ULID for testing (represents 2016-07-30)
+SELECT ULIDStringToDateTime('01ARZ3NDEKTSV4RRFFQ69G5FAV') > '2016-01-01'::DateTime64 AS ulid_function_works;
 
 -- 6. Test UUID conversion functions (src/Functions/FunctionsCodingUUID.cpp)
 -- generateUUIDv7 uses DateTime64 internally
