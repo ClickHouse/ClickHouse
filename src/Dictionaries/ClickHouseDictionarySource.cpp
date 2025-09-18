@@ -1,6 +1,7 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
+#include <Common/SettingsChanges.h>
 #include <Common/CurrentThread.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/DateLUTImpl.h>
@@ -80,7 +81,9 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     const Block & sample_block_,
-    ContextMutablePtr context_)
+    ContextMutablePtr context_,
+    SettingsChanges settings_changes_,
+    std::optional<ClientInfo> client_info_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -89,6 +92,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , context(context_)
     , pool{createPool(configuration)}
     , load_all_query{query_builder->composeLoadAllQuery()}
+    , settings_changes(std::move(settings_changes_))
+    , client_info(std::move(client_info_))
 {
 }
 
@@ -102,6 +107,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
     , load_all_query{other.load_all_query}
+    , settings_changes(other.settings_changes)
+    , client_info(other.client_info)
 {
 }
 
@@ -187,13 +194,18 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(ContextMutablePtr query
 
     if (configuration.is_local)
     {
+        query_context->applySettingsChanges(settings_changes);
+        chassert(client_info);
+        query_context->setClientInfo(*client_info);
+        query_context->setCurrentQueryId("");
+
         io = executeQuery(query, std::move(query_context), QueryFlags{ .internal = true }).second;
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
         io.pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, std::move(query_context)), false, false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context), false, false, false));
     }
 
     return io;
@@ -203,10 +215,20 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 {
     LOG_TRACE(log, "Performing invalidate query");
 
+    /// Copy context because results of scalar subqueries potentially could be cached
+    auto context_copy = Context::createCopy(context);
+    context_copy->makeQueryContext();
+    context_copy->setCurrentQueryId("");
+
     if (configuration.is_local)
     {
-        auto [query_scope, query_context] = IDictionary::createThreadGroupIfNeeded(context);
-        BlockIO io = executeQuery(request, std::move(query_context), QueryFlags{ .internal = true }).second;
+        std::unique_ptr<CurrentThread::QueryScope> query_scope;
+        if (!CurrentThread::getGroup())
+        {
+            query_scope = std::make_unique<CurrentThread::QueryScope>(context_copy);
+        }
+
+        BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
         std::string result;
         io.executeWithCallbacks([&]()
         {
@@ -214,11 +236,6 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         });
         return result;
     }
-
-    /// Copy context because results of scalar subqueries potentially could be cached
-    auto context_copy = Context::createCopy(context);
-    context_copy->makeQueryContext();
-    context_copy->setCurrentQueryId("");
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
     auto invalidate_sample_block = std::make_shared<const Block>(Block{});
@@ -302,6 +319,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             });
         }
 
+        std::optional<ClientInfo> client_info;
         ContextMutablePtr context;
         if (configuration->is_local)
         {
@@ -309,6 +327,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             Session session(global_context, ClientInfo::Interface::LOCAL);
             session.authenticate(configuration->user, configuration->password, Poco::Net::SocketAddress{});
             context = session.makeQueryContext();
+            client_info = session.getClientInfo();
         }
         else
         {
@@ -318,7 +337,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 context->getRemoteHostFilter().checkHostAndPort(configuration->host, toString(configuration->port));
         }
 
-        context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
+        SettingsChanges settings_changes = readSettingsFromDictionaryConfig(config, config_prefix);
+        context->applySettingsChanges(settings_changes);
 
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
@@ -326,7 +346,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         if (dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context, std::move(settings_changes), std::move(client_info));
     };
 
     factory.registerSource("clickhouse", create_table_source);

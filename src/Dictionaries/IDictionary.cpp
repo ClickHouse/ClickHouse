@@ -14,7 +14,6 @@ std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictio
     {
         ContextMutablePtr result_context = Context::createCopy(context);
         result_context->makeQueryContext();
-        result_context->setCurrentQueryId("");
         return {std::make_unique<CurrentThread::QueryScope>(result_context), std::move(result_context)};
     }
 
@@ -22,7 +21,6 @@ std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictio
     {
         ContextMutablePtr result_context = Context::createCopy(thread_group_thread_context);
         result_context->makeQueryContext();
-        result_context->setCurrentQueryId("");
         return {nullptr, std::move(result_context)};
     }
 
@@ -30,7 +28,6 @@ std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictio
 
     ContextMutablePtr result = Context::createCopy(context);
     result->makeQueryContext();
-    result->setCurrentQueryId("");
     return {nullptr, std::move(result)};
 }
 

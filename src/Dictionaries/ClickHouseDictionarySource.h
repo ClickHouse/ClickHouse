@@ -2,9 +2,11 @@
 
 #include <memory>
 #include <Poco/Logger.h>
+#include <Common/SettingsChanges.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -43,12 +45,14 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextMutablePtr context_);
+        ContextMutablePtr context_,
+        SettingsChanges settings_changes_,
+        std::optional<ClientInfo> client_info_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
-
+    
     BlockIO loadAll(ContextMutablePtr query_context) override;
 
     BlockIO loadUpdatedAll(ContextMutablePtr query_context) override;
@@ -89,6 +93,8 @@ private:
     ConnectionPoolWithFailoverPtr pool;
     std::string load_all_query;
     LoggerPtr log = getLogger("ClickHouseDictionarySource");
+    SettingsChanges settings_changes;
+    std::optional<ClientInfo> client_info;
 
     /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
     /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.
