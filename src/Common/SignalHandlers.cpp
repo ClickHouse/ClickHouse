@@ -517,8 +517,7 @@ try
     if (collectCrashLog)
         collectCrashLog(sig, thread_num, query_id, stack_trace);
 
-    SystemLogs system_logs = Context::getGlobalContextInstance()->getSystemLogs();
-    system_logs.handleCrash();
+    Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)

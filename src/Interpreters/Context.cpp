@@ -5008,9 +5008,15 @@ void Context::handleCrash() const
     if (!shared)
         return;
 
-    SharedLockGuard lock2(shared->mutex);
-    if (shared->system_logs)
-        shared->system_logs->handleCrash();
+    std::optional<SystemLogs> system_logs;
+    {
+        SharedLockGuard lock2(shared->mutex);
+        if (!shared->system_logs)
+            return;
+        system_logs.emplace(*shared->system_logs);
+    }
+
+    system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
