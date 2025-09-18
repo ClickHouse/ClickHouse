@@ -29,6 +29,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool delta_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
 }
 
@@ -373,6 +374,9 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(
     ObjectStoragePtr object_storage,
     ContextPtr context) const
 {
+    if (!context->getSettingsRef()[Setting::delta_log_metadata].value)
+        return;
+
     auto configuration = configuration_common.lock();
     const auto keys = listFiles(*object_storage, *configuration, deltalake_metadata_directory, metadata_file_suffix);
     size_t file_index = 0;
