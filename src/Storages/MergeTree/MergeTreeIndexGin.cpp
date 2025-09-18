@@ -163,7 +163,7 @@ MergeTreeIndexConditionGin::MergeTreeIndexConditionGin(
                     }).extractRPN());
 }
 
-/// Keep in-sync with MergeTreeIndexConditionGin::alwaysUnknownOrTrue
+/// Keep in-sync with MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue
 bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
@@ -194,112 +194,111 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
     std::vector<BoolMask> rpn_stack;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            rpn_stack.emplace_back(true, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
-        {
-            chassert(element.query_strings_for_set.size() == 1);
-            const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
-            bool exists_in_gin_filter = query_strings.empty() ? true : false;
-            for (const GinQueryString & query_string : query_strings)
+            case RPNElement::FUNCTION_UNKNOWN:
+                rpn_stack.emplace_back(true, true);
+                break;
+            case RPNElement::FUNCTION_SEARCH_ANY:
             {
-                if (granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::Any))
+                chassert(element.query_strings_for_set.size() == 1);
+                const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
+                bool exists_in_gin_filter = query_strings.empty() ? true : false;
+                for (const GinQueryString & query_string : query_strings)
                 {
-                    exists_in_gin_filter = true;
-                    break;
+                    if (granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::Any))
+                    {
+                        exists_in_gin_filter = true;
+                        break;
+                    }
                 }
+                rpn_stack.emplace_back(exists_in_gin_filter, true);
+                break;
             }
-            rpn_stack.emplace_back(exists_in_gin_filter, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
-        {
-            chassert(element.query_strings_for_set.size() == 1);
-            const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
-            bool exists_in_gin_filter = true;
-            for (const GinQueryString & query_string : query_strings)
+            case RPNElement::FUNCTION_SEARCH_ALL:
             {
-                if (!granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::All))
+                chassert(element.query_strings_for_set.size() == 1);
+                const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
+                bool exists_in_gin_filter = true;
+                for (const GinQueryString & query_string : query_strings)
                 {
-                    exists_in_gin_filter = false;
-                    break;
+                    if (!granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::All))
+                    {
+                        exists_in_gin_filter = false;
+                        break;
+                    }
                 }
+                rpn_stack.emplace_back(exists_in_gin_filter, true);
+                break;
             }
-            rpn_stack.emplace_back(exists_in_gin_filter, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS)
-        {
-            rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
+            case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_NOT_EQUALS:
+                rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
 
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_IN
-             || element.function == RPNElement::FUNCTION_NOT_IN)
-        {
-            std::vector<bool> result(element.query_strings_for_set.back().size(), true);
-
-            for (size_t column = 0; column < element.set_key_position.size(); ++column)
+                if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
+                    rpn_stack.back() = !rpn_stack.back();
+                break;
+            case RPNElement::FUNCTION_IN:
+            case RPNElement::FUNCTION_NOT_IN:
             {
-                const auto & query_strings = element.query_strings_for_set[column];
-                for (size_t row = 0; row < query_strings.size(); ++row)
-                    result[row] = result[row] && granule->gin_filter.contains(query_strings[row], postings_lists_cache_for_store);
-            }
-
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_MATCH)
-        {
-            if (!element.query_strings_for_set.empty())
-            {
-                /// Alternative substrings
                 std::vector<bool> result(element.query_strings_for_set.back().size(), true);
 
-                const auto & query_strings = element.query_strings_for_set[0];
-
-                for (size_t row = 0; row < query_strings.size(); ++row)
-                    result[row] = granule->gin_filter.contains(query_strings[row], postings_lists_cache_for_store);
+                for (size_t column = 0; column < element.set_key_position.size(); ++column)
+                {
+                    const auto & query_strings = element.query_strings_for_set[column];
+                    for (size_t row = 0; row < query_strings.size(); ++row)
+                        result[row] = result[row] && granule->gin_filter.contains(query_strings[row], postings_lists_cache_for_store);
+                }
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                if (element.function == RPNElement::FUNCTION_NOT_IN)
+                    rpn_stack.back() = !rpn_stack.back();
+                break;
             }
-            else if (element.query_string)
-            {
-                rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
-            }
+            case RPNElement::FUNCTION_MATCH:
+                if (!element.query_strings_for_set.empty())
+                {
+                    /// Alternative substrings
+                    std::vector<bool> result(element.query_strings_for_set.back().size(), true);
 
+                    const auto & query_strings = element.query_strings_for_set[0];
+
+                    for (size_t row = 0; row < query_strings.size(); ++row)
+                        result[row] = granule->gin_filter.contains(query_strings[row], postings_lists_cache_for_store);
+
+                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                }
+                else if (element.query_string)
+                {
+                    rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
+                }
+                break;
+            case RPNElement::FUNCTION_NOT:
+                rpn_stack.back() = !rpn_stack.back();
+                break;
+            case RPNElement::FUNCTION_AND:
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 & arg2;
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 | arg2;
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.emplace_back(false, true);
+                break;
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.emplace_back(true, false);
+                break;
         }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 & arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 | arg2;
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.emplace_back(false, true);
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.emplace_back(true, false);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
