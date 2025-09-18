@@ -4,6 +4,7 @@ description: 'System table containing filters for one particular table, as well 
 keywords: ['system table', 'row_policies']
 slug: /operations/system-tables/row_policies
 title: 'system.row_policies'
+doc_type: 'reference'
 ---
 
 # system.row_policies
