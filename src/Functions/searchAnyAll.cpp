@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
 #include <absl/container/flat_hash_map.h>
