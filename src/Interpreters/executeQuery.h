@@ -86,7 +86,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactve_cancel = false);
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
