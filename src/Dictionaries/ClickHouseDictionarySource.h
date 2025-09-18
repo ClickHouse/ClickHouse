@@ -52,7 +52,7 @@ public:
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
-    
+
     BlockIO loadAll(ContextMutablePtr query_context) override;
 
     BlockIO loadUpdatedAll(ContextMutablePtr query_context) override;
