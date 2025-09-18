@@ -55,8 +55,7 @@ ColumnsDescription DeltaMetadataLogElement::getColumnsDescription()
 void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
-    auto event_time_seconds = current_time / 1000000;
-    columns[column_index++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
+    columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
     columns[column_index++]->insert(table_path);
