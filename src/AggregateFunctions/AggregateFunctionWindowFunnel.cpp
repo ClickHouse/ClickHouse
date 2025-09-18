@@ -327,7 +327,7 @@ private:
                             break;
                         }
                     }
-                    
+
                     if (is_reentry)
                     {
                         for (size_t event = 0; event < events_timestamp.size(); ++event)
@@ -448,7 +448,7 @@ private:
                             break;
                         }
                     }
-                    
+
                     if (is_reentry)
                     {
                         for (size_t event = 0; event < event_sequences.size(); ++event)
@@ -599,7 +599,7 @@ public:
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
         }
-        
+
         /// Validate option combinations
         if (allow_reentry && !strict_order)
         {
