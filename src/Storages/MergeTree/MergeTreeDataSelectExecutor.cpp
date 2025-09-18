@@ -149,7 +149,6 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
