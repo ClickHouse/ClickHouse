@@ -1415,6 +1415,76 @@ void StorageReplicatedMergeTree::drop()
 }
 
 
+/// Removes zero-copy locks and their parent nodes if there are no more children
+static bool tryRemoveZeroCopyLocks(zkutil::ZooKeeperPtr zookeeper, const std::string & root_path, const std::string & replica_name)
+{
+    std::function<bool(const std::string &)> remove_recursive = [&] (const std::string & path)
+    {
+        Strings children;
+        if (zookeeper->tryGetChildren(path, children) != Coordination::Error::ZOK)
+            return false;
+
+        if (children.empty())
+            return path.ends_with(replica_name);
+
+        int children_left = children.size();
+        while (!children.empty())
+        {
+            Coordination::Requests ops;
+            Strings batch;
+            ops.reserve(zkutil::MULTI_BATCH_SIZE);
+            batch.reserve(zkutil::MULTI_BATCH_SIZE);
+            for (size_t i = 0; i < zkutil::MULTI_BATCH_SIZE && !children.empty(); ++i)
+            {
+                String child_path = fs::path(path) / children.back();
+
+                bool should_remove_child = remove_recursive(child_path);
+
+                if (should_remove_child)
+                {
+                    batch.push_back(child_path);
+                    ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
+                    children_left--;
+                }
+
+                children.pop_back();
+            }
+
+            /// Try to remove the children with a faster method - in bulk. If this fails,
+            /// this means someone is concurrently removing these children and we will have
+            /// to remove them one by one.
+            Coordination::Responses responses;
+            if (zookeeper->tryMulti(ops, responses) == Coordination::Error::ZOK)
+                continue;
+
+            std::vector<zkutil::ZooKeeper::FutureRemove> futures;
+            futures.reserve(batch.size());
+            for (const std::string & child : batch)
+                futures.push_back(zookeeper->asyncTryRemoveNoThrow(child, -1));
+
+            for (size_t i = 0; i < batch.size(); ++i)
+            {
+                auto res = futures[i].get();
+                if (res.error == Coordination::Error::ZOK ||
+                res.error == Coordination::Error::ZNONODE)
+                    continue;
+                if (res.error == Coordination::Error::ZNOTEMPTY)
+                    return false;
+
+                throw zkutil::KeeperException::fromPath(res.error, batch[i]);
+            }
+        }
+
+        return children_left == 0;
+    };
+
+    if (remove_recursive(root_path))
+        return zookeeper->tryRemove(root_path) == Coordination::Error::ZOK;
+
+    return false;
+}
+
+
 bool StorageReplicatedMergeTree::dropReplica(
     zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, LoggerPtr logger,
     MergeTreeSettingsPtr table_settings, ContextPtr context_, std::optional<bool> * has_metadata_out)
@@ -1508,12 +1578,11 @@ bool StorageReplicatedMergeTree::dropReplica(
                 LOG_TRACE(logger, "Shared ID for table doesn't exist in ZooKeeper on path {}, will not try to remove zero-copy locks.", zookeeper_table_id_path);
             else
             {
-                auto is_replicas_lock = [& zookeeper_info](const String & path) { return path.ends_with("/" + zookeeper_info.replica_name); };
                 for (const auto & zero_copy_locks_root : getZookeeperZeroCopyLockPathsImpl(table_settings_to_clean_locks, storage_policy, table_shared_id))
                 {
                     if (!zookeeper->exists(zero_copy_locks_root))
                         LOG_TRACE(logger, "Didn't find any zero-copy locks at {}.", zero_copy_locks_root);
-                    else if (!zookeeper->tryRemoveLeafsAndEmptiedParentsRecursive(zero_copy_locks_root, is_replicas_lock))
+                    else if (!tryRemoveZeroCopyLocks(zookeeper, zero_copy_locks_root, zookeeper_info.replica_name))
                         LOG_WARNING(logger, "Failed to remove all zero-copy locks for replica. Some locks may still exist.");
                 }
             }

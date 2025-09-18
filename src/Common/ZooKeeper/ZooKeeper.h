@@ -474,10 +474,6 @@ public:
     /// Node defined as RemoveException will not be deleted.
     bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, RemoveException keep_child= RemoveException{});
 
-    /// Finds nodes without children and deletes them if given condition is satisfied.
-    /// If any parent node becomes empty as a result, it is also deleted.
-    bool tryRemoveLeafsAndEmptiedParentsRecursive(const std::string & root_path, std::function<bool(const std::string &)> remove_leaf_predicate);
-
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
