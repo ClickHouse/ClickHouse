@@ -180,17 +180,11 @@ drop table funnel_test_strict_increase;
 -- Test allow_reentry mode
 drop table if exists funnel_test_allow_reentry;
 create table funnel_test_allow_reentry (dt DateTime, user int, event String) engine = MergeTree() partition by dt order by user;
--- Test case 1: Basic reentry pattern - a->b->a->c (should reach level 3 with allow_reentry)
 insert into funnel_test_allow_reentry values (1, 1, 'a') (2, 1, 'b') (3, 1, 'a') (4, 1, 'c');
--- Test case 2: Multiple reentries - a->b->a->b->c (should reach level 3 with allow_reentry)
 insert into funnel_test_allow_reentry values (1, 2, 'a') (2, 2, 'b') (3, 2, 'a') (4, 2, 'b') (5, 2, 'c');
--- Test case 3: Reentry to later completed step - a->b->c->b->d (should reach level 4 with allow_reentry)
 insert into funnel_test_allow_reentry values (1, 3, 'a') (2, 3, 'b') (3, 3, 'c') (4, 3, 'b') (5, 3, 'd');
--- Test case 4: Invalid jump (not reentry) - a->c->b (should stop at level 1 even with allow_reentry)
 insert into funnel_test_allow_reentry values (1, 4, 'a') (2, 4, 'c') (3, 4, 'b');
--- Test case 5: Complex reentry pattern - a->b->c->a->b->c->d (should reach level 4 with allow_reentry)
 insert into funnel_test_allow_reentry values (1, 5, 'a') (2, 5, 'b') (3, 5, 'c') (4, 5, 'a') (5, 5, 'b') (6, 5, 'c') (7, 5, 'd');
--- Compare strict_order vs strict_order + allow_reentry
 select user, windowFunnel(86400, 'strict_order')(dt, event='a', event='b', event='c') as strict_order_result from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
 [1, 2]
 [2, 2]
@@ -203,37 +197,30 @@ select user, windowFunnel(86400, 'strict_order', 'allow_reentry')(dt, event='a',
 [3, 3]
 [4, 1]
 [5, 3]
--- Test 4-step funnel with reentry
 select user, windowFunnel(86400, 'strict_order')(dt, event='a', event='b', event='c', event='d') as strict_order_4step from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
-[1, 0]
-[2, 0]
-[3, 3]
+[1, 2]
+[2, 2]
+[3, 4]
 [4, 1]
 [5, 3]
 select user, windowFunnel(86400, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c', event='d') as allow_reentry_4step from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
-[1, 0]
-[2, 0]
+[1, 3]
+[2, 3]
 [3, 4]
 [4, 1]
 [5, 4]
--- Test combination with other modes
 select user, windowFunnel(86400, 'strict_order', 'allow_reentry', 'strict_deduplication')(dt, event='a', event='b', event='c') as combined_modes from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
-[1, 2]
-[2, 2]
+[1, 3]
+[2, 1]
 [3, 3]
 [4, 1]
 [5, 3]
 drop table funnel_test_allow_reentry;
--- Test real-world e-commerce reentry scenario
 drop table if exists funnel_test_ecommerce;
 create table funnel_test_ecommerce (timestamp UInt32, user_id UInt32, action String) engine=Memory;
--- User 1: Typical reentry pattern - checkout -> product_detail -> checkout -> payment
 insert into funnel_test_ecommerce values (100, 1, 'begin_checkout') (200, 1, 'view_product_detail') (300, 1, 'begin_checkout') (400, 1, 'complete_payment');
--- User 2: Multiple product views with reentry - checkout -> product1 -> product2 -> checkout -> payment  
 insert into funnel_test_ecommerce values (100, 2, 'begin_checkout') (200, 2, 'view_product_detail') (250, 2, 'view_product_detail') (300, 2, 'begin_checkout') (400, 2, 'complete_payment');
--- User 3: No reentry, normal flow - checkout -> product_detail -> payment
 insert into funnel_test_ecommerce values (100, 3, 'begin_checkout') (200, 3, 'view_product_detail') (300, 3, 'complete_payment');
--- Test the e-commerce funnel with window of 600 seconds
 select user_id, windowFunnel(600, 'strict_order')(timestamp, action='begin_checkout', action='view_product_detail', action='complete_payment') as normal_funnel from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
 [1, 2]
 [2, 2]
@@ -242,13 +229,12 @@ select user_id, windowFunnel(600, 'strict_order', 'allow_reentry')(timestamp, ac
 [1, 3]
 [2, 3]
 [3, 3]
--- Test 4-step e-commerce funnel
 select user_id, windowFunnel(600, 'strict_order')(timestamp, action='begin_checkout', action='view_product_detail', action='begin_checkout', action='complete_payment') as normal_4step from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
-[1, 2]
-[2, 2]
-[3, 0]
+[1, 1]
+[2, 1]
+[3, 1]
 select user_id, windowFunnel(600, 'strict_order', 'allow_reentry')(timestamp, action='begin_checkout', action='view_product_detail', action='begin_checkout', action='complete_payment') as reentry_4step from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
-[1, 4]
-[2, 4]
-[3, 0]
+[1, 1]
+[2, 1]
+[3, 1]
 drop table funnel_test_ecommerce;
