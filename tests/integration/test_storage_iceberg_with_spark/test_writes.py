@@ -72,20 +72,21 @@ def test_writes(started_cluster_iceberg_with_spark, format_version, storage_type
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_writes_orc_format(started_cluster_iceberg_with_spark, format_version, storage_type):
+@pytest.mark.parametrize("format", ["ORC", "Avro"])
+def test_writes_orc_format(started_cluster_iceberg_with_spark, format_version, storage_type, format):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_writes_complex_types_" + storage_type + "_" + get_uuid_str()
 
     schema = "(x String)"
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, schema, format_version, format='ORC')
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, schema, format_version, format=format)
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('Pavel Ivanov');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 'Pavel Ivanov\n'
 
-    if storage_type != "local":
+    if storage_type != "local" or format != "ORC":
         return
 
     files = default_download_directory(
