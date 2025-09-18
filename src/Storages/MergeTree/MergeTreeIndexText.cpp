@@ -202,7 +202,7 @@ static ColumnPtr deserializeTokens(ReadBuffer & istr)
     auto tokens_column = ColumnString::create();
     tokens_column->reserve(num_tokens);
 
-    SerializationString serialization_string;
+    SerializationString serialization_string(false);
     serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
 
     return tokens_column;
@@ -524,7 +524,7 @@ void serializeSparseIndex(const DictionarySparseIndex & sparse_index, Stream & s
 {
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
-    SerializationString serialization_string;
+    SerializationString serialization_string(false);
     SerializationNumber<UInt64> serialization_number;
 
     writeVarUInt(sparse_index.tokens->size(), stream.compressed_hashing);

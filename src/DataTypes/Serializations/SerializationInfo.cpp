@@ -392,7 +392,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
         for (const auto & [type_name, value] : *type_versions_obj)
         {
-            size_t version_value = value.extract<size_t>();
+            size_t version_value = value.convert<size_t>();
             if (type_name == KEY_STRING_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
