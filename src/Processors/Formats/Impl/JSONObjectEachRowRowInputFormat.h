@@ -19,7 +19,7 @@ class JSONObjectEachRowInputFormat final : public JSONEachRowRowInputFormat
 public:
     JSONObjectEachRowInputFormat(
         ReadBuffer & in_,
-        SharedHeader header_,
+        const Block & header_,
         Params params_,
         const FormatSettings & format_settings_);
 

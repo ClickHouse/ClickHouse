@@ -1,13 +1,12 @@
 ---
 description: 'Documentation for Functions for Splitting Strings'
-sidebar_label: 'String splitting'
+sidebar_label: 'Splitting Strings'
+sidebar_position: 165
 slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
 ---
 
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
-
-# Functions for splitting strings
+# Functions for Splitting Strings
 
 ## splitByChar {#splitbychar}
 
@@ -16,13 +15,13 @@ Returns an array of selected substrings. Empty substrings may be selected if the
 
 **Syntax**
 
-```sql
+``` sql
 splitByChar(separator, s[, max_substrings]))
 ```
 
 **Arguments**
 
-- `separator` — The separator must be a single-byte character. [String](../data-types/string.md).
+- `separator` — The separator which should contain exactly one character. [String](../data-types/string.md).
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
@@ -49,13 +48,13 @@ A behavior similar to ClickHouse pre-v22.11 can be achieved by setting
 
 **Example**
 
-```sql
+``` sql
 SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByChar(',', '1,2,3,abcde')─┐
 │ ['1','2','3','abcde']           │
 └─────────────────────────────────┘
@@ -67,7 +66,7 @@ Splits a string into substrings separated by a string. It uses a constant string
 
 **Syntax**
 
-```sql
+``` sql
 splitByString(separator, s[, max_substrings]))
 ```
 
@@ -93,25 +92,25 @@ Setting [splitby_max_substrings_includes_remaining_string](../../operations/sett
 
 **Example**
 
-```sql
+``` sql
 SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
 │ ['1','2 3','4,5','abcde']                 │
 └───────────────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT splitByString('', 'abcde');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByString('', 'abcde')─┐
 │ ['a','b','c','d','e']      │
 └────────────────────────────┘
@@ -123,7 +122,7 @@ Splits a string into substrings separated by a regular expression. It uses a reg
 
 **Syntax**
 
-```sql
+``` sql
 splitByRegexp(regexp, s[, max_substrings]))
 ```
 
@@ -151,25 +150,25 @@ Setting [splitby_max_substrings_includes_remaining_string](../../operations/sett
 
 **Example**
 
-```sql
+``` sql
 SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
 │ ['a','bc','de','f']                    │
 └────────────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT splitByRegexp('', 'abcde');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByRegexp('', 'abcde')─┐
 │ ['a','b','c','d','e']      │
 └────────────────────────────┘
@@ -182,7 +181,7 @@ Returns an array of selected substrings.
 
 **Syntax**
 
-```sql
+``` sql
 splitByWhitespace(s[, max_substrings]))
 ```
 
@@ -202,13 +201,13 @@ Setting [splitby_max_substrings_includes_remaining_string](../../operations/sett
 
 **Example**
 
-```sql
+``` sql
 SELECT splitByWhitespace('  1!  a,  b.  ');
 ```
 
 Result:
 
-```text
+``` text
 ┌─splitByWhitespace('  1!  a,  b.  ')─┐
 │ ['1!','a,','b.']                    │
 └─────────────────────────────────────┘
@@ -221,7 +220,7 @@ Returns an array of selected substrings.
 
 **Syntax**
 
-```sql
+``` sql
 splitByNonAlpha(s[, max_substrings]))
 ```
 
@@ -241,11 +240,11 @@ Setting [splitby_max_substrings_includes_remaining_string](../../operations/sett
 
 **Example**
 
-```sql
+``` sql
 SELECT splitByNonAlpha('  1!  a,  b.  ');
 ```
 
-```text
+``` text
 ┌─splitByNonAlpha('  1!  a,  b.  ')─┐
 │ ['1','a','b']                     │
 └───────────────────────────────────┘
@@ -264,7 +263,7 @@ arrayStringConcat(arr\[, separator\])
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;
 ```
 
@@ -282,7 +281,7 @@ Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an a
 
 **Syntax**
 
-```sql
+``` sql
 alphaTokens(s[, max_substrings]))
 ```
 
@@ -303,11 +302,11 @@ Setting [splitby_max_substrings_includes_remaining_string](../../operations/sett
 
 **Example**
 
-```sql
+``` sql
 SELECT alphaTokens('abca1abc');
 ```
 
-```text
+``` text
 ┌─alphaTokens('abca1abc')─┐
 │ ['abca','abc']          │
 └─────────────────────────┘
@@ -319,7 +318,7 @@ Extracts all groups from non-overlapping substrings matched by a regular express
 
 **Syntax**
 
-```sql
+``` sql
 extractAllGroups(text, regexp)
 ```
 
@@ -334,13 +333,13 @@ extractAllGroups(text, regexp)
 
 **Example**
 
-```sql
+``` sql
 SELECT extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
 
-```text
+``` text
 ┌─extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
 │ [['abc','123'],['8','"hkl"']]                                         │
 └───────────────────────────────────────────────────────────────────────┘
@@ -350,9 +349,9 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 
-**Syntax**
+**Syntax** 
 
-```sql
+``` sql
 ngrams(string, ngramsize)
 ```
 
@@ -367,13 +366,13 @@ ngrams(string, ngramsize)
 
 **Example**
 
-```sql
+``` sql
 SELECT ngrams('ClickHouse', 3);
 ```
 
 Result:
 
-```text
+``` text
 ┌─ngrams('ClickHouse', 3)───────────────────────────┐
 │ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
 └───────────────────────────────────────────────────┘
@@ -381,21 +380,11 @@ Result:
 
 ## tokens {#tokens}
 
-Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
+Splits a string into tokens using non-alphanumeric ASCII characters as separators.
 
 **Arguments**
 
-- `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
-- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
-- `separators` — Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
-
-:::note
-In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
-To do so, pass the separators in order of descending length.
-For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
-:::
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 
 **Returned value**
 
@@ -403,39 +392,14 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 
 **Example**
 
-Using the default settings:
-
-```sql
+``` sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
 
 Result:
 
-```text
+``` text
 ┌─tokens────────────────────────────┐
 │ ['test1','test2','test3','test4'] │
 └───────────────────────────────────┘
 ```
-
-Using the ngram tokenizer with ngram length 3:
-
-```sql
-SELECT tokens('abc def', 'ngram', 3) AS tokens;
-```
-
-Result:
-
-```text
-┌─tokens──────────────────────────┐
-│ ['abc','bc ','c d',' de','def'] │
-└─────────────────────────────────┘
-```
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->

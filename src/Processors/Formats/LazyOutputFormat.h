@@ -15,7 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(SharedHeader header);
+    explicit LazyOutputFormat(const Block & header);
 
     String getName() const override { return "LazyOutputFormat"; }
 

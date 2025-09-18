@@ -329,27 +329,6 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (columns.empty())
-    {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
-    }
-
-    StringRef res(begin, 0);
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
-}
-
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
     for (const auto & column : columns)
@@ -357,21 +336,6 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
     return memory;
 }
-
-std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
-{
-    size_t res = 0;
-    for (const auto & column : columns)
-    {
-        auto element_size = column->getSerializedValueSize(n);
-        if (!element_size)
-            return std::nullopt;
-        res += *element_size;
-    }
-
-    return res;
-}
-
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
@@ -382,19 +346,6 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 
     for (auto & column : columns)
         pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
-}
-
-const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    ++column_length;
-
-    if (columns.empty())
-        return pos + 1;
-
-    for (auto & column : columns)
-        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
 
     return pos;
 }
@@ -480,8 +431,8 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        if (column_length != perm.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
 
         return cloneResized(limit ? std::min(column_length, limit) : column_length);
     }
@@ -706,16 +657,16 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const Columns & source_columns)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
         Columns nested_columns;
-        nested_columns.reserve(source_columns.size() * factor);
+        nested_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
-        getColumn(i).prepareForSquashing(nested_columns, factor);
+        getColumn(i).prepareForSquashing(nested_columns);
     }
 }
 

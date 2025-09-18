@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import platform
 import sys
 import time
 from pathlib import Path
@@ -133,7 +132,7 @@ BUILD_TO_REPORT = {
     BuildNames.PACKAGE_DEBUG: "artifact_report_build_amd_debug.json",
     BuildNames.PACKAGE_AARCH64: "artifact_report_build_arm_release.json",
     BuildNames.PACKAGE_AARCH64_ASAN: "artifact_report_build_arm_asan.json",
-    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_arm_coverage.json",
+    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_amd_coverage.json",
     BuildNames.BINARY_RELEASE: "artifact_report_build_amd_binary.json",
     BuildNames.BINARY_TIDY: "artifact_report_build_amd_tidy.json",
     BuildNames.BINARY_DARWIN: "artifact_report_build_amd_darwin.json",
@@ -157,7 +156,6 @@ def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str
         with open(artifact_report, "r", encoding="utf-8") as f:
             return json.load(f)["build_urls"]  # type: ignore
     for root, _, files in os.walk(reports_path):
-        logging.info("Got files list: %s", str(files))
         for file in files:
             if file.endswith(f"_{build_name}.json"):
                 logger.info("Found build report json %s for %s", file, build_name)
@@ -165,11 +163,9 @@ def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str
                     os.path.join(root, file), "r", encoding="utf-8"
                 ) as file_handler:
                     build_report = json.load(file_handler)
-                    if not build_report["build_urls"]:
-                        logger.warning("empty build_urls in report: %s: {build_report}")
                     return build_report["build_urls"]  # type: ignore
 
-    logger.warning("A build report is not found for %s", build_name)
+    logger.info("A build report is not found for %s", build_name)
     return []
 
 
@@ -280,26 +276,6 @@ def download_clickhouse_binary(
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
     )
-
-
-def download_clickhouse_master(result_path: Path, full: bool = False) -> None:
-    if platform.system() not in ("Linux", "Darwin"):
-        raise DownloadException(
-            f"Unsupported platform {platform.system()} for downloading ClickHouse master build"
-        )
-    arch = "amd64"
-    if platform.system() == "Darwin":
-        arch = "macos"
-    if platform.machine() in ("aarch64", "arm64"):
-        arch = "aarch64"
-        if platform.system() == "Darwin":
-            arch = "macos-aarch64"
-
-    url = (
-        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
-        f"{'-full' if full else ''}"
-    )
-    download_build_with_progress(url, result_path / "clickhouse")
 
 
 def get_clickhouse_binary_url(
