@@ -300,8 +300,10 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMu
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
     if (!split_results.output_names.contains(filter_column_name))
+    {
+        remove_filter_column = true;
         split_results.output_names.insert(filter_column_name);
-
+    }
     const auto actions_dag_required_outputs = getRequiredOutputNamesInOrder(std::move(split_results.output_names), actions_dag);
 
     auto updated_actions = actions_dag.removeUnusedActions(actions_dag_required_outputs, remove_inputs);
