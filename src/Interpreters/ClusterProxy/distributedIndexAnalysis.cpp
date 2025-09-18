@@ -280,6 +280,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         const auto & connection_pool = connection_pools.at(i);
         const auto & replica_address = connection_pool->getAddress();
 
+        res[i].first = replica_address;
         if (replica_parts.empty())
             continue;
 
@@ -291,7 +292,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
                 LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
-                res[i] = std::make_pair(replica_address, std::move(parts_ranges));
+                res[i].second = std::move(parts_ranges);
             }, Priority{});
         }
         else
@@ -303,7 +304,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
-                    res[i] = std::make_pair(replica_address, std::move(parts_ranges));
+                    res[i].second = std::move(parts_ranges);
                 }
                 catch (...)
                 {
