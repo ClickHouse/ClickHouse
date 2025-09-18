@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -692,6 +693,21 @@ class Utils:
                     strict=True,
                 )
         return path_out
+
+    @classmethod
+    def compress_files_gz(cls, files, archive_name):
+        for file in files:
+            assert Path(file).is_file(), f"File does not exist [{file}]"
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.write("\n".join(files).encode())
+            f.flush()
+            Shell.check(
+                f"tar -cf - -T {f.name} | gzip > {archive_name}",
+                verbose=True,
+                strict=True,
+            )
+        return archive_name
 
     @classmethod
     def compress_gz(cls, path):
