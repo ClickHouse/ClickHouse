@@ -58,7 +58,6 @@ struct MetadataFileWithInfo
 };
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
-Poco::Dynamic::Var getAvroType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

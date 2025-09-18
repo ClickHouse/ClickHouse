@@ -328,8 +328,7 @@ Chunk StorageObjectStorageSource::generate()
                  .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
                 read_context);
 
-
-#if USE_PARQUET
+#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
@@ -343,19 +342,11 @@ Chunk StorageObjectStorageSource::generate()
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
-#if USE_AWS_S3
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
                         }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
-                        }
-#endif
-                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
@@ -381,6 +372,7 @@ Chunk StorageObjectStorageSource::generate()
                                 }
                             }
                         }
+
                     }
                 }
             }
@@ -413,10 +405,7 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
-        format_settings,
-        read_context);
+        getUniqueStoragePathIdentifier(*configuration, object_info), configuration->format, format_settings, read_context);
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
@@ -492,7 +481,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
+            configuration->format,
             format_settings,
             context_);
 
@@ -562,7 +551,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }();
 
         auto input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().value_or(configuration->format),
+            configuration->format,
             *read_buf,
             initial_header,
             context_,

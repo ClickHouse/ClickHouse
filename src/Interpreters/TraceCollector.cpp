@@ -7,7 +7,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
@@ -100,8 +99,6 @@ TraceCollector::~TraceCollector()
 
 void TraceCollector::run()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
     setThreadName("TraceCollector");
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
