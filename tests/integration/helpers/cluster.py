@@ -4164,7 +4164,7 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
+        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses:rw" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4698,6 +4698,12 @@ class ClickHouseInstance:
     def rotate_logs(self):
         self.exec_in_container(
             ["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"],
+            user="root",
+        )
+
+    def give_user_files_permissions(self):
+        self.exec_in_container(
+            ["bash", "-c", f"chown -R {str(os.getuid())}:{str(os.getgid())} /var/lib/clickhouse/user_files"],
             user="root",
         )
 

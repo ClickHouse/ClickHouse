@@ -64,7 +64,6 @@ class BuzzHouseGenerator(Generator):
             f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
         )
         buzz_config["server_file_path"] = "/var/lib/clickhouse/user_files"
-        buzz_config["lakes_path"] = "/lakehouses"
         # Set available servers
         for entry in [
             ("remote_servers", "9000"),

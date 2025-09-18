@@ -257,7 +257,7 @@ public:
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
-                          lakes_path = std::filesystem::temp_directory_path() / "lakes";
+                          lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()
         : cb(nullptr)

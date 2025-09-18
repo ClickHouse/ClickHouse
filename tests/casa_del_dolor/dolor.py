@@ -425,6 +425,7 @@ for i in range(0, len(args.replica_values)):
         f"Server node{i} running on host {servers[i].hostname}, with IPv4 {servers[i].ip_address}, port 9000"
     )
 servers[len(servers) - 1].wait_start(8)
+servers[0].give_user_files_permissions()
 
 # Uploaders for object storage
 credentials_file = tempfile.NamedTemporaryFile()

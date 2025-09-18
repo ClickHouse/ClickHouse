@@ -49,7 +49,7 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 
 
 def get_local_base_path(catalog_name: str) -> str:
-    return f"/lakehouses/{catalog_name}"
+    return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
 
 
 Parameter = typing.Callable[[], int | float]
