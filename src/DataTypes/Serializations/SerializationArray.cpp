@@ -539,6 +539,16 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
     }
+    else
+    {
+        skipWhitespaceIfAny(istr);
+        if (istr.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
+            return ReturnType(false);
+        }
+    }
 
     auto on_error_no_throw = [&]()
     {

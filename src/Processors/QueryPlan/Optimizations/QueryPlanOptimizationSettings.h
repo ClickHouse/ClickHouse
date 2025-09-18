@@ -113,6 +113,9 @@ struct QueryPlanOptimizationSettings
     bool vector_search_with_rescoring;
     VectorSearchFilterStrategy vector_search_filter_strategy;
 
+    /// If full text search using index in payload is enabled.
+    bool direct_read_from_text_index;
+
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
