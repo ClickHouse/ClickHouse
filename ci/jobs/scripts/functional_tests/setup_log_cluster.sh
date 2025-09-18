@@ -76,6 +76,7 @@ function setup_logs_replication
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
+    check_logs_credentials
 
     echo "My hostname is ${HOSTNAME}"
 
