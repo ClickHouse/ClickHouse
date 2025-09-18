@@ -813,13 +813,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         mapping_mode = random.choice(["none", "name", "id"])
         properties["delta.columnMapping.mode"] = mapping_mode
 
-        # Min reader/writer version based on features
-        if mapping_mode != "none":
-            properties["delta.minReaderVersion"] = "2"
-            properties["delta.minWriterVersion"] = "5"
-        else:
-            properties["delta.minReaderVersion"] = "1"
-            properties["delta.minWriterVersion"] = random.choice(["2", "3", "4"])
+        # Set minimum versions for readers and writers
+        properties["delta.minReaderVersion"] = random.choice(
+            [f"{i}" for i in range(1, 4)]
+        )
+        properties["delta.minWriterVersion"] = random.choice(
+            [f"{i}" for i in range(1, 8)]
+        )
 
         return properties
 
