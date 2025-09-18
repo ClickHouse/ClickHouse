@@ -258,6 +258,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 }
 
 FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
