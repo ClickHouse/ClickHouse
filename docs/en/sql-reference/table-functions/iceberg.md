@@ -315,6 +315,7 @@ SET allow_experimental_insert_into_iceberg = 1;
 ### Creating table {#create-iceberg-table}
 
 To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
+Writes supports all data formats from iceberg specification, such as Parquet, Avro, ORC.
 
 ### Example {#example-iceberg-writes-create}
 
