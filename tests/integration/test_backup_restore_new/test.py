@@ -1664,6 +1664,7 @@ def test_backup_all(exclude_system_log_tables):
             "backup_log",
             "error_log",
             "blob_storage_log",
+            "aggregated_zookeeper_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
