@@ -357,7 +357,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 String stats_desc;
-                for (auto column_stats : stats)
+                for (const auto & column_stats : stats)
                 {
                     if (column_stats->columnName() == column.name)
                     {
