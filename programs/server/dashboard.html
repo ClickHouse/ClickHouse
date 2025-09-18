@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>ClickHouse Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6IzAwMH0ub3tmaWxsOiNmZjB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
@@ -553,7 +553,7 @@ let default_params = {
 let params = default_params;
 
 /// Palette generation for charts
-function generateColor(l, c, h) {
+function generatePalette(numColors) {
     // oklch() does not work in firefox<=125 inside <canvas> element so we convert it back to rgb for now.
     // Based on https://github.com/color-js/color.js/blob/main/src/spaces/oklch.js
     const multiplyMatrices = (A, B) => {
@@ -598,17 +598,13 @@ function generateColor(l, c, h) {
         ], xyz)
     }
 
-    const oklch2rgb = lch => srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
-
-    let rgb = oklch2rgb([l, c, h]);
-    return `rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`;
-}
-
-function generatePalette(numColors) {
+    const oklch2rgb = lch =>  srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
 
     palette = [];
     for (let i = 0; i < numColors; i++) {
-        palette.push(generateColor(theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors));
+        //palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
+        let rgb = oklch2rgb([theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors]);
+        palette.push(`rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`);
     }
     return palette;
 }
@@ -1071,9 +1067,7 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
         /// avoiding the borders of the chart.
         left -= legendEl.clientWidth * (left / u.width);
-        if (top >= legendEl.clientHeight) {
-            top -= legendEl.clientHeight;
-        }
+        top -= legendEl.clientHeight;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
 
         if (multiline) {
@@ -1150,15 +1144,6 @@ async function doFetch(query, url_params = '') {
     }
 
     return {reply, error};
-}
-
-function stringHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash = hash & hash;
-    }
-    return hash;
 }
 
 async function draw(idx, chart, url_params, query) {
@@ -1253,12 +1238,9 @@ async function draw(idx, chart, url_params, query) {
         title_div.style.display = 'block';
     }
 
-    const color_rotate = Math.abs(stringHash(query));
-
-    const line_color = theme != 'dark' ? generateColor(0.75, 0.14, (21 + color_rotate) % 360) : generateColor(0.53, 0.07, (56 + color_rotate) % 360);
-    const fill_color = theme != 'dark' ? generateColor(0.96, 0.02, (21 + color_rotate) % 360) : generateColor(0.36, 0.07, (56 + color_rotate) % 360);
-    const grid_color = theme != 'dark' ? "#eeeedd" : "#2c3235";
-    const axes_color = theme != 'dark' ? "#2c3235" : "#c7d0d9";
+    const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
+        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
+        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
 
     let sync = uPlot.sync("sync");
 
@@ -1318,7 +1300,7 @@ async function draw(idx, chart, url_params, query) {
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;
-        series.push({ label, stroke: palette[i - 1], fill, points: { size: 3, fill: palette[i - 1] }});
+        series.push({ label, stroke: palette[i - 1], fill });
         data.push(reply.data[label]);
         max_value = Math.max(max_value, ...reply.data[label]);
     }

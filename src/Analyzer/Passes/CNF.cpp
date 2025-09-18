@@ -254,7 +254,7 @@ private:
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isLogicalFunction(*function_node))
         {
-            or_group.insert(CNFAtomicFormula{false, std::move(node)});
+            or_group.insert(CNF::AtomicFormula{false, std::move(node)});
             return;
         }
 
@@ -281,13 +281,13 @@ private:
         {
             assert(name == "not");
             auto & arguments = function_node->getArguments().getNodes();
-            or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
+            or_group.insert(CNF::AtomicFormula{true, std::move(arguments[0])});
         }
     }
 };
 
-std::optional<CNFAtomicFormula> tryInvertFunction(
-    const CNFAtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
+std::optional<CNF::AtomicFormula> tryInvertFunction(
+    const CNF::AtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
 {
     auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -297,11 +297,24 @@ std::optional<CNFAtomicFormula> tryInvertFunction(
     {
         auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
         function_node->resolveAsFunction(inverse_function_resolver);
-        return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
+        return CNF::AtomicFormula{!atom.negative, atom.node_with_hash.node};
     }
 
     return std::nullopt;
 }
+}
+
+bool CNF::AtomicFormula::operator==(const AtomicFormula & rhs) const
+{
+    return negative == rhs.negative && node_with_hash == rhs.node_with_hash;
+}
+
+bool CNF::AtomicFormula::operator<(const AtomicFormula & rhs) const
+{
+    if (node_with_hash.hash > rhs.node_with_hash.hash)
+        return false;
+
+    return node_with_hash.hash < rhs.node_with_hash.hash || negative < rhs.negative;
 }
 
 std::string CNF::dump() const
@@ -345,7 +358,7 @@ CNF & CNF::transformGroups(std::function<OrGroup(const OrGroup &)> fn)
     return *this;
 }
 
-CNF & CNF::transformAtoms(std::function<CNFAtomicFormula(const CNFAtomicFormula &)> fn)
+CNF & CNF::transformAtoms(std::function<AtomicFormula(const AtomicFormula &)> fn)
 {
     transformGroups([fn](const OrGroup & group)
     {
@@ -365,7 +378,7 @@ CNF & CNF::transformAtoms(std::function<CNFAtomicFormula(const CNFAtomicFormula 
 
 CNF & CNF::pushNotIntoFunctions(const ContextPtr & context)
 {
-    transformAtoms([&](const CNFAtomicFormula & atom)
+    transformAtoms([&](const AtomicFormula & atom)
     {
         return pushNotIntoFunction(atom, context);
     });
@@ -373,7 +386,7 @@ CNF & CNF::pushNotIntoFunctions(const ContextPtr & context)
     return *this;
 }
 
-CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const ContextPtr & context)
+CNF::AtomicFormula CNF::pushNotIntoFunction(const AtomicFormula & atom, const ContextPtr & context)
 {
     if (!atom.negative)
         return atom;
@@ -402,7 +415,7 @@ CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const C
 
 CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
 {
-    transformAtoms([&](const CNFAtomicFormula & atom)
+    transformAtoms([&](const AtomicFormula & atom)
     {
         static const std::unordered_map<std::string, std::string> inverse_relations = {
             {"notEquals", "equals"},
@@ -436,7 +449,7 @@ CNF & CNF::filterAlwaysTrueGroups(std::function<bool(const OrGroup &)> predicate
     return *this;
 }
 
-CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const CNFAtomicFormula &)> predicate)
+CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> predicate)
 {
     AndGroup filtered;
     for (const auto & or_group : statements)
@@ -453,7 +466,7 @@ CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const CNFAtomicFormula &)> 
         else
         {
             filtered.clear();
-            filtered_group.insert(CNFAtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
+            filtered_group.insert(AtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
             filtered.insert(std::move(filtered_group));
             break;
         }
