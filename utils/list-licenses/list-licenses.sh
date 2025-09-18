@@ -106,7 +106,8 @@ done
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
     FOLDER=$(dirname "$dependency")
-    NAME=$(echo "$dependency" | awk -F'/' '{ print $(NF-1) }' | awk -F'-' '{ NF=(NF-1); print $0 }')
+    CRATE=$(basename "$FOLDER")
+    NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
     if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
     then
