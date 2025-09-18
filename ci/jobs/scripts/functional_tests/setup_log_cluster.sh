@@ -23,7 +23,7 @@ EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String
 EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
 
 
-function __set_connection_args
+function __set_connection_args()
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
@@ -34,7 +34,7 @@ function __set_connection_args
     )
 }
 
-function __shadow_credentials
+function __shadow_credentials()
 {
     # The function completely screws the output, it shouldn't be used in normal functions, only in ()
     # The only way to substitute the env as a plain text is using perl 's/\Qsomething\E/another/
@@ -45,8 +45,8 @@ function __shadow_credentials
     ')
 }
 
-function check_logs_credentials
-(
+function check_logs_credentials()
+{
     # The function connects with given credentials, and if it's unable to execute the simplest query, returns exit code
 
     set +x
@@ -60,10 +60,10 @@ function check_logs_credentials
         echo 'Failed to connect to CI Logs cluster'
         return $code
     fi
-)
+}
 
-function setup_logs_replication
-(
+function setup_logs_replication()
+{
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
@@ -158,9 +158,9 @@ function setup_logs_replication
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
-)
+}
 
-function stop_logs_replication
+function stop_logs_replication()
 {
     echo "Detach all logs replication"
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
