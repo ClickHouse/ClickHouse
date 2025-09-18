@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Common/FST.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -95,6 +96,14 @@ struct DictionaryBlock : public DictionaryBlockBase
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenInfo> token_infos_);
 
+    std::vector<TokenInfo> token_infos;
+};
+
+struct DictionaryBlockFST
+{
+    DictionaryBlockFST(std::unique_ptr<FST::FiniteStateTransducer> fst_, std::vector<TokenInfo> token_infos_);
+
+    std::unique_ptr<FST::FiniteStateTransducer> fst;
     std::vector<TokenInfo> token_infos;
 };
 
