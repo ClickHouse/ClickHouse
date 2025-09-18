@@ -108,6 +108,11 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
+    {
+        return connection_params;
+    }
+
 private:
     void removeObjectImpl(
         const StoredObject & object,

@@ -63,6 +63,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString request_token_path;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsString storage_class_name;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -564,10 +569,22 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
         }
     }
-    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columns_in_data_file)
-    else if (with_structure && count == 9)
+    /// with_structure == 1:
+    ///     s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columns_in_data_file)
+    /// with_structure == 0:
+    ///     s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, partition_columns_in_data_file, storage_class_name)
+    else if (count == 9)
     {
-        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}};
+        if (with_structure)
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}};
+        else
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}, {"storage_class_name", 8}};
+    }
+    /// with_structure == 1:
+    ///     s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columns_in_data_file, storage_class_name)
+    else if (count == 10 && with_structure)
+    {
+        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}, {"storage_class_name", 9}};
     }
 
     /// This argument is always the first
@@ -656,10 +673,19 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
     }
 
+    if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
+        storage_class_name.has_value())
+    {
+        s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
+    }
+
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 
     if (extra_credentials)
         args.push_back(extra_credentials);
+
+     if (context->getSettingsRef()[Setting::s3_validate_request_settings])
+        s3_settings->request_settings.validateUploadSettings();
 
     keys = {url.key};
 }
