@@ -1,11 +1,8 @@
 #pragma once
 #include "config.h"
-
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -17,6 +14,54 @@ class StorageS3Settings;
 class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
+
+struct AzureClusterDefinition
+{
+    static constexpr auto name = "azureBlobStorageCluster";
+    static constexpr auto storage_type_name = "AzureBlobStorageCluster";
+};
+
+struct S3ClusterDefinition
+{
+    static constexpr auto name = "s3Cluster";
+    static constexpr auto storage_type_name = "S3Cluster";
+};
+
+struct HDFSClusterDefinition
+{
+    static constexpr auto name = "hdfsCluster";
+    static constexpr auto storage_type_name = "HDFSCluster";
+};
+
+struct IcebergS3ClusterDefinition
+{
+    static constexpr auto name = "icebergS3Cluster";
+    static constexpr auto storage_type_name = "IcebergS3Cluster";
+};
+
+struct IcebergAzureClusterDefinition
+{
+    static constexpr auto name = "icebergAzureCluster";
+    static constexpr auto storage_type_name = "IcebergAzureCluster";
+};
+
+struct IcebergHDFSClusterDefinition
+{
+    static constexpr auto name = "icebergHDFSCluster";
+    static constexpr auto storage_type_name = "IcebergHDFSCluster";
+};
+
+struct DeltaLakeClusterDefinition
+{
+    static constexpr auto name = "deltaLakeCluster";
+    static constexpr auto storage_type_name = "DeltaLakeS3Cluster";
+};
+
+struct HudiClusterDefinition
+{
+    static constexpr auto name = "hudiCluster";
+    static constexpr auto storage_type_name = "HudiS3Cluster";
+};
 
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
@@ -44,18 +89,13 @@ protected:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
-    const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
-    bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
-    bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
+    const char * getStorageTypeName() const override { return Definition::storage_type_name; }
+
+    bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
+
+    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
+
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
-private:
-    static ContextPtr getQueryOrGlobalContext()
-    {
-        if (auto query_context = CurrentThread::getQueryContext(); query_context != nullptr)
-            return query_context;
-        return Context::getGlobalContextInstance();
-    }
 };
 
 #if USE_AWS_S3
@@ -72,7 +112,6 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 
 #if USE_AVRO && USE_AWS_S3
 using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE

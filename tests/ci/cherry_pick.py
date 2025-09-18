@@ -31,7 +31,6 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Iterable, List, Optional
 
-from cache_utils import GitHubCache
 from ci_buddy import CIBuddy
 from ci_config import Labels
 from ci_utils import Shell
@@ -46,7 +45,6 @@ from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from report import GITHUB_JOB_URL
-from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
 
@@ -611,9 +609,7 @@ class CherryPickPRs:
         self.repo = gh.get_repo(repo)
         self.dry_run = dry_run
         self.error = None  # type: Optional[Exception]
-
         self.release_prs = gh.get_release_pulls(repo)
-        logging.info(f"Release PRs: {self.release_prs}")
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """
@@ -772,10 +768,7 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token)
-    temp_path = Path(TEMP_PATH)
-    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
-    gh_cache.download()
+    gh = GitHub(token, create_cache_dir=False)
 
     # First, check if some cherry-pick PRs are reopened and original PRs are mared as
     # done
@@ -789,8 +782,6 @@ def main():
     bpp.update_local_release_branches()
     bpp.receive_prs_for_backport()
     bpp.process_backports()
-    gh_cache.upload()
-
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
         logging.error("Finished successfully, but errors occurred!")

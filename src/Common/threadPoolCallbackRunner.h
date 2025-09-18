@@ -279,8 +279,6 @@ public:
     bool isDisabled() const { return mode == Mode::Disabled; }
     bool isManual() const { return mode == Mode::Manual; }
 
-    bool isIdle() const { return active_tasks.load(std::memory_order_relaxed) == 0; }
-
 private:
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
@@ -294,13 +292,6 @@ private:
     std::condition_variable shutdown_cv;
 
     std::deque<std::function<void()>> queue;
-
-    /// Queue size + busy threads. If zero, the thread pool is idle.
-    /// In particular, consider a self-sustaining graph of tasks: some initial tasks are scheduled
-    /// from the outside, then all new tasks are scheduled only from other tasks (running in this
-    /// same ThreadPoolCallbackRunnerFast). If active_tasks becomes zero, it's guaranteed that the
-    /// whole graph is complete, and no new tasks will appear unless scheduled from the outside.
-    std::atomic<size_t> active_tasks;
 
 #ifdef OS_LINUX
     /// Use futex when available. It's faster than condition_variable, especially on the enqueue side.
@@ -329,9 +320,7 @@ private:
 ///
 ///     void someBackgroundTask(std::shared_ptr<ShutdownHelper> shutdown_)
 ///     {
-///         // Using a copy of the shared_ptr, can't use this->shutdown here as `this` might already
-///         // be destroyed.
-///         std::shared_lock shutdown_lock(*shutdown_, std::try_to_lock);
+///         std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
 ///         if (!shutdown_lock.owns_lock())
 ///             return; // shutdown was requested, `this` may be destroyed
 ///

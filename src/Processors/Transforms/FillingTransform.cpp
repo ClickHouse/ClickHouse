@@ -106,7 +106,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, field_decimal.getScale()); \
-                        field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
+                        field = DecimalField(res, field_decimal.getScale()); \
                     }; \
                     break;
 

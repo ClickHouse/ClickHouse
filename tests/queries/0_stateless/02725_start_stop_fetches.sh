@@ -17,16 +17,14 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 function thread {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "INSERT INTO r$REPLICA SELECT rand()"
     done
 }
 
 function nemesis_thread1 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "SYSTEM STOP REPLICATED SENDS r$REPLICA"
         sleep 0.5
@@ -35,8 +33,7 @@ function nemesis_thread1 {
 }
 
 function nemesis_thread2 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "SYSTEM STOP FETCHES r$REPLICA"
         sleep 0.5
@@ -46,17 +43,21 @@ function nemesis_thread2 {
 
 
 
+export -f thread
+export -f nemesis_thread1
+export -f nemesis_thread2
+
 TIMEOUT=20
 
-thread 2>/dev/null &
-thread 2>/dev/null &
-thread 2>/dev/null &
-nemesis_thread1 2>/dev/null &
-nemesis_thread1 2>/dev/null &
-nemesis_thread1 2>/dev/null &
-nemesis_thread2 2>/dev/null &
-nemesis_thread2 2>/dev/null &
-nemesis_thread2 2>/dev/null &
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
 
 wait
 

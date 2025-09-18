@@ -11,7 +11,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -25,7 +24,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -39,7 +37,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -53,7 +50,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -67,7 +63,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -81,7 +76,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -95,7 +89,6 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
 CreatingSets
   Expression
     Expression
@@ -109,4 +102,3 @@ CreatingSets
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
-          Ranges: 1
