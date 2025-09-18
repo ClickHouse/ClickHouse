@@ -33,6 +33,11 @@ namespace ErrorCodes
 extern const int CANNOT_CLOCK_GETTIME;
 }
 
+namespace Setting
+{
+extern const SettingsBool delta_log_metadata;
+}
+
 namespace
 {
 
@@ -71,6 +76,9 @@ void insertDeltaRowToLogTable(
     const String & file_path,
     std::optional<UInt64> row_in_file)
 {
+    if (!local_context->getSettingsRef()[Setting::delta_log_metadata].value)
+        return;
+
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
