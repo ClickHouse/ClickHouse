@@ -1,5 +1,4 @@
 #include <IO/S3/copyS3File.h>
-#include <Common/UniqueLock.h>
 
 #if USE_AWS_S3
 
