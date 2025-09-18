@@ -36,6 +36,7 @@
 #include <Common/randomSeed.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Columns/IColumn.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
@@ -227,7 +228,12 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_)
+FileNamesGenerator::FileNamesGenerator(
+    const String & table_dir_,
+    const String & storage_dir_,
+    bool use_uuid_in_metadata_,
+    CompressionMethod compression_method_,
+    const String & format_name_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
@@ -236,6 +242,7 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String &
     , storage_metadata_dir(storage_dir + "metadata/")
     , use_uuid_in_metadata(use_uuid_in_metadata_)
     , compression_method(compression_method_)
+    , format_name(boost::to_lower_copy(format_name_))
 {
 }
 
@@ -268,6 +275,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 
     return *this;
 }
@@ -277,8 +285,8 @@ FileNamesGenerator::Result FileNamesGenerator::generateDataFileName()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}data-{}.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}data-{}.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}data-{}.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}data-{}.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
@@ -341,8 +349,8 @@ FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}{}-deletes.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}{}-deletes.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}{}-deletes.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}{}-deletes.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
@@ -1324,14 +1332,14 @@ IcebergStorageSink::IcebergStorageSink(
 
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
 
     filename_generator.setVersion(last_version + 1);
