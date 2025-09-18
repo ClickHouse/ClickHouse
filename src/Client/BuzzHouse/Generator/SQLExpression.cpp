@@ -1,3 +1,5 @@
+#include <Common/StringUtils.h>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
