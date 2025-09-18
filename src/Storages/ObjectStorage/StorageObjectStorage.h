@@ -16,6 +16,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Disks/ObjectStorages/IObjectStorageIterator.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <memory>
 
