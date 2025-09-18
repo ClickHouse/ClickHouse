@@ -233,6 +233,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"remove_unused_patch_parts", trueOrFalseSetting},
        {"replace_long_file_name_to_hash", trueOrFalseSetting},
        {"replicated_can_become_leader", trueOrFalseSetting},
+       {"replicated_deduplication_window",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
        {"replicated_max_mutations_in_one_entry",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); }, {}, false)},
        {"replicated_max_ratio_of_wrong_parts", probRangeSetting},
@@ -274,6 +276,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        /// ClickHouse cloud setting
        {"shared_merge_tree_max_suspicious_broken_parts_bytes", bytesRangeSetting},
        /// ClickHouse cloud setting
+       {"shared_merge_tree_outdated_parts_group_size", rowsRangeSetting},
+       /// ClickHouse cloud setting
        {"shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations", probRangeSetting},
        /// ClickHouse cloud setting
        {"shared_merge_tree_parts_load_batch_size",
@@ -309,6 +313,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"vertical_merge_algorithm_min_columns_to_activate",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 16)); }, {}, false)},
        {"vertical_merge_algorithm_min_rows_to_activate", rowsRangeSetting},
+       {"vertical_merge_optimize_lightweight_delete", trueOrFalseSetting},
        {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
        {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
        {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},
