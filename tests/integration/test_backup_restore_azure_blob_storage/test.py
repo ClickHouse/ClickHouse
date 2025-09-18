@@ -196,6 +196,7 @@ def test_backup_restore(cluster):
         f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}",
     )
     print(get_azure_file_content(f"{backup_name}/.backup", port))
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
@@ -223,6 +224,7 @@ def test_backup_restore_diff_container(cluster):
         node,
         f"BACKUP TABLE test_simple_write_connection_string_cont1 TO {backup_destination}",
     )
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored_cont1")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_write_connection_string_cont1 AS test_simple_write_connection_string_restored_cont1 FROM {backup_destination};",
@@ -254,6 +256,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         f"BACKUP TABLE test_write_connection_string TO {backup_destination}",
     )
     print(get_azure_file_content(f"{backup_name}/.backup", port))
+    azure_query(node, "DROP TABLE IF EXISTS test_write_connection_string_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_write_connection_string AS test_write_connection_string_restored FROM {backup_destination};",
@@ -285,6 +288,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         f"BACKUP TABLE test_write_connection_string_2 TO {backup_destination}",
     )
     print(get_azure_file_content(f"{backup_name}/.backup", port))
+    azure_query(node, "DROP TABLE IF EXISTS test_write_connection_string_restored_2")
     azure_query(
         node,
         f"RESTORE TABLE test_write_connection_string_2 AS test_write_connection_string_restored_2 FROM {backup_destination};",
@@ -312,6 +316,7 @@ def test_backup_restore_on_merge_tree(cluster):
         node,
         f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
     )
+    azure_query(node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
@@ -395,6 +400,7 @@ def test_backup_restore_correct_block_ids(cluster):
             else:
                 assert block.get("size") < expected_block_size
 
+        azure_query(node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored_{max_blocks}")
         azure_query(
             node,
             f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored_{max_blocks} FROM {backup_destination};",
