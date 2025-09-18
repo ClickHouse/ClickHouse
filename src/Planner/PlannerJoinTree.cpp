@@ -461,10 +461,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     if (!table_expression_query_info.prewhere_info)
         return;
 
-    if (!table_expression_query_info.prewhere_info->prewhere_actions)
-        return;
-
-    auto & prewhere_actions = *table_expression_query_info.prewhere_info->prewhere_actions;
+    auto & prewhere_actions = table_expression_query_info.prewhere_info->prewhere_actions;
 
     NameSet required_columns;
     if (column_names.size() == 1)
@@ -873,6 +870,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (!select_query_options.only_analyze)
             {
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
+                auto & row_level_filter = table_expression_query_info.row_level_filter;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
                 const auto & columns_names = table_expression_data.getColumnNames();
 
@@ -902,46 +900,39 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description, bool is_row_policy = false)
                 {
-                    bool is_final = table_expression_query_info.table_expression_modifiers
-                        && table_expression_query_info.table_expression_modifiers->hasFinal();
-                    bool optimize_move_to_prewhere
-                        = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
+                    // bool is_final = table_expression_query_info.table_expression_modifiers
+                    //     && table_expression_query_info.table_expression_modifiers->hasFinal();
+                    // bool optimize_move_to_prewhere
+                    //     = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
-                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    bool has_table_virtual_column =
-                        filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
-                    if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
-                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
-                        && !has_table_virtual_column)
-                    {
-                        if (!prewhere_info)
-                        {
-                            prewhere_info = std::make_shared<PrewhereInfo>();
-                        }
-
+                    // auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    // bool has_table_virtual_column =
+                    //     filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
+                    // if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
+                    //     && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
+                    //     && !has_table_virtual_column)
+                    // {
                         if (is_row_policy)
                         {
-                            prewhere_info->row_level_filter = std::move(filter_info.actions);
-                            prewhere_info->row_level_column_name = filter_info.column_name;
-                            prewhere_info->need_filter = true;
+                            row_level_filter = std::make_shared<FilterDAGInfo>(std::move(filter_info));
                         }
-                        else if (!prewhere_info->prewhere_actions)
-                        {
-                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
-                            prewhere_info->prewhere_column_name = filter_info.column_name;
-                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
-                            prewhere_info->need_filter = true;
-                        }
+                        // else if (!prewhere_info)
+                        // {
+                        //     prewhere_info = std::make_shared<PrewhereInfo>();
+                        //     prewhere_info->prewhere_actions = std::move(filter_info.actions);
+                        //     prewhere_info->prewhere_column_name = filter_info.column_name;
+                        //     prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
+                        //     prewhere_info->need_filter = true;
+                        // }
                         else
                         {
                             where_filters.emplace_back(std::move(filter_info), std::move(description));
                         }
-
-                    }
-                    else
-                    {
-                        where_filters.emplace_back(std::move(filter_info), std::move(description));
-                    }
+                    // }
+                    // else
+                    // {
+                    //     where_filters.emplace_back(std::move(filter_info), std::move(description));
+                    // }
                 };
 
                 auto row_policy_filter_info

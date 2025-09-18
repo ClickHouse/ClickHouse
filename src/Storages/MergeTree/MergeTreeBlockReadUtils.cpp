@@ -348,6 +348,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
     const ExpressionActionsSettings & actions_settings,
@@ -421,9 +422,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     for (const auto & step : mutation_steps)
         add_step(*step);
 
-    if (prewhere_info)
+    if (prewhere_info || row_level_filter)
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            row_level_filter,
             prewhere_info,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps, reader_settings.force_short_circuit_execution);
@@ -454,6 +456,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
+        /*row_level_filter=*/ nullptr,
         /*prewhere_info=*/ nullptr,
         mutation_steps,
         /*actions_settings=*/ {},

@@ -348,20 +348,25 @@ void StorageBuffer::read(
                 auto src_table_query_info = query_info;
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
+                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             header_after_adding_defaults.getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    if (src_table_query_info.prewhere_info->row_level_filter)
+                    if (src_table_query_info.row_level_filter)
                     {
-                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            actions_dag.clone(),
-                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
+                        auto row_level_filter = std::make_shared<FilterDAGInfo>();
+                        row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
+                        row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
 
-                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
+                        row_level_filter->actions = ActionsDAG::merge(
+                            actions_dag.clone(),
+                            src_table_query_info.row_level_filter->actions.clone());
+
+                        row_level_filter->actions.removeUnusedActions();
+                        src_table_query_info.row_level_filter = std::move(row_level_filter);
                     }
 
                     {
@@ -471,23 +476,23 @@ void StorageBuffer::read(
     }
     else
     {
+        if (query_info.row_level_filter)
+        {
+            ExpressionActionsSettings actions_settings(local_context);
+            auto actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone(), actions_settings);
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        actions,
+                        query_info.row_level_filter->column_name,
+                        query_info.row_level_filter->do_remove_column);
+            });
+        }
+
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
-
-            if (query_info.prewhere_info->row_level_filter)
-            {
-                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
-                pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                            header,
-                            actions,
-                            query_info.prewhere_info->row_level_column_name,
-                            false);
-                });
-            }
-
             auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {

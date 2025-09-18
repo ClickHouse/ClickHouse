@@ -41,7 +41,7 @@ Positions: 0 2
                FUNCTION greater(a : 0, 0_UInt8 :: 1) -> greater(__table1.a, 0_UInt8) UInt8 : 2
       Positions: 0 2
       Row level filter
-      Row level filter column: equals(b, 2_UInt8)
+      Row level filter column: equals(b, 2_UInt8) (removed)
       Actions: INPUT : 0 -> b Int32 : 0
                COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
                FUNCTION equals(b : 0, 2_UInt8 :: 1) -> equals(b, 2_UInt8) UInt8 : 2
@@ -55,7 +55,7 @@ Actions: INPUT : 0 -> __table1.a Int32 : 0
          ALIAS __table1.a :: 0 -> a Int32 : 2
          ALIAS __table1.b :: 1 -> b Int32 : 0
 Positions: 2 0
-  Expression ((WHERE + Change column names to column identifiers))
+  Expression (((WHERE + Change column names to column identifiers) + additional filter))
   Actions: INPUT : 1 -> b Int32 : 0
            INPUT : 0 -> a Int32 : 1
            ALIAS b :: 0 -> __table1.b Int32 : 2
@@ -70,15 +70,14 @@ Positions: 2 0
       Prewhere filter
       Prewhere filter column: and(equals(a, 3_UInt8), greater(__table1.a, 0_UInt8)) (removed)
       Actions: INPUT : 0 -> a Int32 : 0
-               COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-               INPUT :: 0 -> a Int32 : 2
-               COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 3
-               FUNCTION greater(a : 0, 0_UInt8 :: 1) -> greater(__table1.a, 0_UInt8) UInt8 : 4
-               FUNCTION equals(a : 0, 3_UInt8 :: 3) -> equals(a, 3_UInt8) UInt8 : 1
-               FUNCTION and(equals(a, 3_UInt8) : 1, greater(__table1.a, 0_UInt8) :: 4) -> and(equals(a, 3_UInt8), greater(__table1.a, 0_UInt8)) UInt8 : 3
-      Positions: 1 0 3
+               COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+               COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 2
+               FUNCTION equals(a : 0, 3_UInt8 :: 1) -> equals(a, 3_UInt8) UInt8 : 3
+               FUNCTION greater(a : 0, 0_UInt8 :: 2) -> greater(__table1.a, 0_UInt8) UInt8 : 1
+               FUNCTION and(equals(a, 3_UInt8) :: 3, greater(__table1.a, 0_UInt8) :: 1) -> and(equals(a, 3_UInt8), greater(__table1.a, 0_UInt8)) UInt8 : 2
+      Positions: 0 2
       Row level filter
-      Row level filter column: equals(b, 2_UInt8)
+      Row level filter column: equals(b, 2_UInt8) (removed)
       Actions: INPUT : 0 -> b Int32 : 0
                COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
                FUNCTION equals(b : 0, 2_UInt8 :: 1) -> equals(b, 2_UInt8) UInt8 : 2

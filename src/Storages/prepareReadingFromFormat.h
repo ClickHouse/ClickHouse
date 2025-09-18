@@ -10,6 +10,9 @@ namespace DB
     struct PrewhereInfo;
     using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+    struct FilterDAGInfo;
+    using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -40,6 +43,7 @@ namespace DB
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         PrewhereInfoPtr prewhere_info;
+        FilterDAGInfoPtr row_level_filter;
     };
 
     struct PrepareReadingFromFormatHiveParams
@@ -70,7 +74,7 @@ namespace DB
         bool supports_tuple_elements = false,
         const PrepareReadingFromFormatHiveParams & hive_parameters = {});
 
-    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
+    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

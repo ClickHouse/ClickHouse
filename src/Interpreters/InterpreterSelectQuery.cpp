@@ -1062,8 +1062,6 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
 
-    /// Apply filters to prewhere and add them to the query_info so we can filter out parts efficiently during row estimation
-    applyFiltersToPrewhereInAnalysis(analysis_copy);
     if (analysis_copy.prewhere_info)
     {
         query_info_copy.prewhere_info = analysis_copy.prewhere_info;
@@ -1079,13 +1077,13 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
                 = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
             added_filter_nodes.nodes.push_back(&node);
         }
+    }
 
-        if (query_info_copy.prewhere_info->row_level_filter)
-        {
-            const auto & node
-                = query_info_copy.prewhere_info->row_level_filter->findInOutputs(query_info_copy.prewhere_info->row_level_column_name);
-            added_filter_nodes.nodes.push_back(&node);
-        }
+    if (query_info_copy.row_level_filter)
+    {
+        const auto & node
+            = query_info_copy.row_level_filter->actions.findInOutputs(query_info_copy.row_level_filter->column_name);
+        added_filter_nodes.nodes.push_back(&node);
     }
 
     if (auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes))
@@ -1645,18 +1643,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.prewhere_info)
         {
-            if (expressions.prewhere_info->row_level_filter)
-            {
-                auto row_level_filter_step = std::make_unique<FilterStep>(
-                    query_plan.getCurrentHeader(),
-                    expressions.prewhere_info->row_level_filter->clone(),
-                    expressions.prewhere_info->row_level_column_name,
-                    true);
-
-                row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
-                query_plan.addStep(std::move(row_level_filter_step));
-            }
-
             auto prewhere_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
                 expressions.prewhere_info->prewhere_actions.clone(),
@@ -2204,21 +2190,21 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 {
     Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
 
+    if (query_info.row_level_filter)
+    {
+        auto row_level_actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<FilterTransform>(header,
+                row_level_actions,
+                query_info.row_level_filter->column_name,
+                query_info.row_level_filter->do_remove_column);
+        });
+    }
+
     if (query_info.prewhere_info)
     {
         auto & prewhere_info = *query_info.prewhere_info;
-
-        if (prewhere_info.row_level_filter)
-        {
-            auto row_level_actions = std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone());
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(header,
-                    row_level_actions,
-                    prewhere_info.row_level_column_name, true);
-            });
-        }
-
         auto filter_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone());
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
@@ -2257,38 +2243,9 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
-/// Note that this is const and accepts the analysis ref to be able to use it to do analysis for parallel replicas
-/// without affecting the final analysis multiple times
-void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const
-{
-    if (!analysis.filter_info)
-        return;
-
-    if (!analysis.prewhere_info)
-    {
-        const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
-        if (does_storage_support_prewhere && shouldMoveToPrewhere())
-        {
-            /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-            analysis.prewhere_info = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), analysis.filter_info->column_name);
-            analysis.prewhere_info->remove_prewhere_column = std::move(analysis.filter_info->do_remove_column);
-            analysis.prewhere_info->need_filter = true;
-            analysis.filter_info = nullptr;
-        }
-    }
-    else
-    {
-        /// Add row level security actions to prewhere.
-        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
-        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
-        analysis.filter_info = nullptr;
-    }
-}
-
-
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
-    applyFiltersToPrewhereInAnalysis(analysis_result);
+    auto & row_level_filter = analysis_result.filter_info;
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
@@ -2315,12 +2272,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             /// Get some columns directly from PREWHERE expression actions
             auto prewhere_required_columns = prewhere_info->prewhere_actions.getRequiredColumns().getNames();
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+        }
 
-            if (prewhere_info->row_level_filter)
-            {
-                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
-                columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
-            }
+        if (row_level_filter)
+        {
+            auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
+            columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
         }
 
         return columns;
@@ -2478,13 +2435,15 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
 
     // It's possible to optimize count() given only partition predicates
     ActionsDAG::NodeRawConstPtrs filter_nodes;
+    if (analysis_result.hasFilter())
+    {
+        auto & row_level_filter = analysis_result.filter_info;
+        filter_nodes.push_back(&row_level_filter->actions.findInOutputs(row_level_filter->column_name));
+    }
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
         filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
-
-        if (prewhere_info->row_level_filter)
-            filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
     }
     if (analysis_result.hasWhere())
     {
