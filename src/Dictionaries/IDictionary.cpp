@@ -6,13 +6,13 @@
 namespace DB
 {
 
-std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictionary::createLoadQueryScope(ContextPtr dictionary_context)
+std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictionary::createThreadGroupIfNeeded(ContextPtr context)
 {
     auto thread_group = CurrentThread::getGroup();
 
     if (!thread_group)
     {
-        ContextMutablePtr result_context = Context::createCopy(dictionary_context);
+        ContextMutablePtr result_context = Context::createCopy(context);
         result_context->makeQueryContext();
         result_context->setCurrentQueryId("");
         return {std::make_unique<CurrentThread::QueryScope>(result_context), std::move(result_context)};
@@ -26,7 +26,9 @@ std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> IDictio
         return {nullptr, std::move(result_context)};
     }
 
-    ContextMutablePtr result = Context::createCopy(dictionary_context);
+    /// TODO(mstetsyuk): try and make it UNREACHABLE
+
+    ContextMutablePtr result = Context::createCopy(context);
     result->makeQueryContext();
     result->setCurrentQueryId("");
     return {nullptr, std::move(result)};

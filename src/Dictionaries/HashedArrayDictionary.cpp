@@ -980,7 +980,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
-    auto [query_scope, query_context] = createLoadQueryScope(context);
+    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;

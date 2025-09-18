@@ -216,7 +216,8 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    return readInvalidateQuery(QueryPipeline(loadFromQuery(invalidate_url, invalidate_sample_block, request)));
+    QueryPipeline pipeline = loadFromQuery(invalidate_url, invalidate_sample_block, request);
+    return readInvalidateQuery(pipeline);
 }
 
 

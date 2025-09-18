@@ -501,7 +501,7 @@ void FlatDictionary::updateData(ContextMutablePtr query_context)
 
 void FlatDictionary::loadData()
 {
-    auto [query_scope, query_context] = createLoadQueryScope(context);
+    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         BlockIO io = source_ptr->loadAll(std::move(query_context));

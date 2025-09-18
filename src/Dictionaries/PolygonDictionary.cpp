@@ -292,7 +292,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    auto [query_scope, query_context] = createLoadQueryScope(context);
+    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
     BlockIO io = source_ptr->loadAll(std::move(query_context));
 
     DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);

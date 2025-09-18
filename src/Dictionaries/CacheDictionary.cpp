@@ -630,7 +630,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     const auto now = std::chrono::system_clock::now();
 
-    auto [query_scope, query_context] = createLoadQueryScope(context);
+    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
     auto current_source_ptr = getSourceAndUpdateIfNeeded();
     BlockIO io;
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)

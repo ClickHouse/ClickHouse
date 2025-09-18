@@ -18,6 +18,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+#include <Dictionaries/IDictionary.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -202,21 +203,28 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 {
     LOG_TRACE(log, "Performing invalidate query");
 
+    if (configuration.is_local)
+    {
+        auto [query_scope, query_context] = IDictionary::createThreadGroupIfNeeded(context);
+        BlockIO io = executeQuery(request, std::move(query_context), QueryFlags{ .internal = true }).second;
+        std::string result;
+        io.executeWithCallbacks([&]()
+        {
+            result = readInvalidateQuery(io.pipeline);
+        });
+        return result;
+    }
+
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
     context_copy->setCurrentQueryId("");
 
-    if (configuration.is_local)
-    {
-        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
-    }
-
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
     auto invalidate_sample_block = std::make_shared<const Block>(Block{});
     QueryPipeline pipeline(std::make_shared<RemoteSource>(
         std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
-    return readInvalidateQuery(std::move(pipeline));
+    return readInvalidateQuery(pipeline);
 }
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
