@@ -18,4 +18,4 @@ def test_graceful_not_configured_iceberg_metadata_log(started_cluster_iceberg_no
     create_iceberg_table("s3", instance, TABLE_NAME, started_cluster_iceberg_no_spark, "(c0 Int)")
     error_message = instance.query_and_get_error(f"SELECT 1 FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level": 'metadata'})
 
-    assert "UNSUPPORTED_METHOD" in error_message, f"Unexpected error message: {error_message}"
+    assert "BAD_ARGUMENTS" in error_message, f"Unexpected error message: {error_message}"

@@ -37,6 +37,7 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 namespace ErrorCodes
 {
 extern const int CANNOT_CLOCK_GETTIME;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -99,7 +100,7 @@ void insertRowToLogTable(
 
     if (!iceberg_metadata_log)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Iceberg metadata log table is not configured");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
     iceberg_metadata_log->add(
