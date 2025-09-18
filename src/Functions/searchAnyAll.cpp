@@ -39,7 +39,7 @@ FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilter::Parameters & params)
+void FunctionSearchImpl<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
@@ -47,28 +47,11 @@ void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilter
     if (token_extractor != nullptr)
         return;
 
-    if (params.tokenizer == DefaultTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (params.tokenizer == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = params.ngram_size.value_or(DEFAULT_NGRAM_SIZE);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    else if (params.tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        const auto & separators = params.separators.value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
-    }
-    else if (params.tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+    token_extractor = std::move(new_token_extractor_);
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::trySetSearchTokens(const std::vector<String> & tokens)
+void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
 {
     static constexpr size_t supported_number_of_needles = 64;
 
