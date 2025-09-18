@@ -39,8 +39,8 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
-#include <Disks/ObjectStorages/IObjectStorageIterator.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/ObjectStorage.h>
 
 #include <Poco/Logger.h>
 
