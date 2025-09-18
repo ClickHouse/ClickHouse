@@ -154,8 +154,8 @@ String FunctionDocumentation::argumentsAsString() const
 String FunctionDocumentation::parametersAsString() const
 {
     /// TODO Replace dummy parameters by actual parameters
-   Parameters dummy_parameters;
-   return argumentsOrParametersAsString(dummy_parameters, syntax);
+    Parameters dummy_parameters;
+    return argumentsOrParametersAsString(dummy_parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
