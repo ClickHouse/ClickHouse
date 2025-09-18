@@ -960,10 +960,10 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
     DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
-Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in ORDER BY keys.
+Allows or restricts using not comparable types (like JSON/AggregateFunction) in ORDER BY keys.
 )", 0) \
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
-Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
+Allows or restricts using not comparable types (like JSON/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
@@ -4829,9 +4829,6 @@ Possible values:
 - 0 — Inserting `NULL` into a not nullable column causes an exception.
 - 1 — Default column value is inserted instead of `NULL`.
 )", 0) \
-    DECLARE(Bool, describe_extend_object_types, false, R"(
-Deduce concrete type of columns of type Object in DESCRIBE query
-)", 0) \
     DECLARE(Bool, describe_include_subcolumns, false, R"(
 Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](/sql-reference/data-types/map#reading-subcolumns-of-map), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
 
@@ -6408,9 +6405,6 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
-    DECLARE(Bool, use_json_alias_for_old_object_type, false, R"(
-When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
-)", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 )", 0) \
@@ -6928,9 +6922,6 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow the obsolete Object data type
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
@@ -7200,6 +7191,9 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
+    MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
+    MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
