@@ -30,8 +30,8 @@ function __set_connection_args
     # That's why we must stick to the generated option
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
-        --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}"
-        --password "${CLICKHOUSE_CI_LOGS_PASSWORD}"
+        --user "${CLICKHOUSE_CI_LOGS_USER:?}" --host "${CLICKHOUSE_CI_LOGS_HOST:?}"
+        --password "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
     )
 }
 
@@ -53,18 +53,11 @@ function check_logs_credentials
     # First check, if all necessary parameters are set
     set +x
     echo "Check CI Log cluster..."
-    for parameter in CLICKHOUSE_CI_LOGS_HOST CLICKHOUSE_CI_LOGS_USER CLICKHOUSE_CI_LOGS_PASSWORD; do
-      export -p | grep -q "$parameter" || {
-        echo "Credentials parameter $parameter is unset"
-        return 1
-      }
-    done
-
     __shadow_credentials
     __set_connection_args
     local code
     # Catch both success and error to not fail on `set -e`
-    clickhouse-client "${CONNECTION_ARGS[@]}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
+    clickhouse-client "${CONNECTION_ARGS[@]:?}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
     if [ "$code" != 0 ]; then
         echo 'Failed to connect to CI Logs cluster'
         return $code
@@ -143,7 +136,7 @@ function setup_logs_replication
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
-            "${CONNECTION_ARGS[@]}" || continue
+            "${CONNECTION_ARGS[@]:?}" || continue
 
         echo "Creating table system.${table}_sender" >&2
 
