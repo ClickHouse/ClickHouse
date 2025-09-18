@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_CLOCK_GETTIME;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
