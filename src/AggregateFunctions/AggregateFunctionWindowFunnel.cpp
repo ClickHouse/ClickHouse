@@ -291,7 +291,7 @@ private:
     bool strict_increase;
 
     /// Allow reentry to previously completed steps while maintaining strict order
-    /// E.g. in the case of 'A->B->A->C', it allows finding 'A->B->C' by treating the second 'A' as reentry
+    /// Only works with strict_order. E.g. 'A->B->A->C' reaches level 3 instead of stopping at 2.
     bool allow_reentry;
 
     /// Loop through the entire events_list, update the event timestamp value
@@ -315,6 +315,28 @@ private:
             }
             if (event_idx == 0)
             {
+                if (strict_order && first_event && !allow_reentry)
+                {
+                    /// Check if this is a reentry (not just a duplicate)
+                    bool is_reentry = false;
+                    for (size_t j = 1; j < events_timestamp.size(); ++j)
+                    {
+                        if (events_timestamp[j].has_value())
+                        {
+                            is_reentry = true;
+                            break;
+                        }
+                    }
+                    
+                    if (is_reentry)
+                    {
+                        for (size_t event = 0; event < events_timestamp.size(); ++event)
+                        {
+                            if (!events_timestamp[event].has_value())
+                                return event;
+                        }
+                    }
+                }
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
@@ -322,11 +344,10 @@ private:
             {
                 return events_list[i - 1].second;
             }
-            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
+            else if (strict_order && first_event && event_idx > 0 && !events_timestamp[event_idx - 1].has_value())
             {
                 if (!allow_reentry)
                 {
-                    /// Original strict_order behavior: stop at first out-of-order event
                     for (size_t event = 0; event < events_timestamp.size(); ++event)
                     {
                         if (!events_timestamp[event].has_value())
@@ -335,18 +356,17 @@ private:
                 }
                 else
                 {
-                    /// Allow reentry: check if this is a reentry to a previously completed step
+                    /// Allow reentry to previously completed step
                     if (events_timestamp[event_idx].has_value())
                     {
-                        for (size_t j = event_idx; j < events_timestamp.size(); ++j)
+                        /// Reset subsequent steps
+                        for (size_t j = event_idx + 1; j < events_timestamp.size(); ++j)
                             events_timestamp[j].reset();
 
-                        /// Set this as the new starting point for this level
                         events_timestamp[event_idx] = std::make_pair(timestamp, timestamp);
                     }
                     else
                     {
-                        /// This is a jump to an unvisited step, still not allowed in strict_order
                         for (size_t event = 0; event < events_timestamp.size(); ++event)
                         {
                             if (!events_timestamp[event].has_value())
@@ -416,6 +436,28 @@ private:
             }
             else if (event_idx == 0)
             {
+                if (strict_order && has_first_event && !allow_reentry)
+                {
+                    /// Check if this is a reentry (not just a duplicate)
+                    bool is_reentry = false;
+                    for (size_t j = 1; j < event_sequences.size(); ++j)
+                    {
+                        if (!event_sequences[j].empty())
+                        {
+                            is_reentry = true;
+                            break;
+                        }
+                    }
+                    
+                    if (is_reentry)
+                    {
+                        for (size_t event = 0; event < event_sequences.size(); ++event)
+                        {
+                            if (event_sequences[event].empty())
+                                return event;
+                        }
+                    }
+                }
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
@@ -424,11 +466,10 @@ private:
             {
                 return events_list[i - 1].event_type;
             }
-            else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
+            else if (strict_order && has_first_event && event_idx > 0 && event_sequences[event_idx - 1].empty())
             {
                 if (!allow_reentry)
                 {
-                    /// Original strict_order behavior: stop at first out-of-order event
                     for (size_t event = 0; event < event_sequences.size(); ++event)
                     {
                         if (event_sequences[event].empty())
@@ -437,19 +478,18 @@ private:
                 }
                 else
                 {
-                    /// Allow reentry: check if this is a reentry to a previously completed step
+                    /// Allow reentry to previously completed step
                     if (!event_sequences[event_idx].empty())
                     {
-                        for (size_t j = event_idx; j < event_sequences.size(); ++j)
+                        /// Reset subsequent steps
+                        for (size_t j = event_idx + 1; j < event_sequences.size(); ++j)
                             event_sequences[j].clear();
 
-                        /// Create new sequence for this reentry
                         auto & event_seq = event_sequences[event_idx].emplace_back(timestamp, timestamp);
                         event_seq.event_path[event_idx] = unique_id;
                     }
                     else
                     {
-                        /// This is a jump to an unvisited step, still not allowed in strict_order
                         for (size_t event = 0; event < event_sequences.size(); ++event)
                         {
                             if (event_sequences[event].empty())
@@ -558,6 +598,12 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
+        }
+        
+        /// Validate option combinations
+        if (allow_reentry && !strict_order)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "allow_reentry option requires strict_order to be enabled in Aggregate function {}", getName());
         }
     }
 
