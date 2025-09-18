@@ -256,6 +256,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked
@@ -1390,6 +1391,7 @@ Jemalloc
 jeprof
 Jepsen
 JetBrains
+JetStream
 Jitter
 joda
 Joda

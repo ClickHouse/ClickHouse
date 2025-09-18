@@ -211,7 +211,7 @@ class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectio
 private:
     std::string root_path;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
-    mutable zkutil::EventPtr wait_event;
+    mutable Coordination::EventPtr wait_event;
     mutable Int32 collections_node_cversion = 0;
 
 public:
