@@ -32,7 +32,8 @@ constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
-constexpr auto KEY_STRING_WITH_SIZE_STREAM = "string_with_size_stream";
+constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
+constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 
 }
 
@@ -196,10 +197,22 @@ ISerialization::Kind SerializationInfo::chooseKind(const Data & data, const Sett
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
+    /// Downgrade to DEFAULT version if `string_serialization_version` is DEFAULT.
+    ///
+    /// Rationale:
+    /// - `DEFAULT` means old serialization format (no per-type specialization).
+    /// - `WITH_TYPES` means new format that supports per-type serialization versions,
+    ///   where `string_serialization_version` is currently the only one specialization.
+    ///
+    /// If `string_serialization_version` is DEFAULT, there is no effective type specialization
+    /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
+    /// Falling back to `DEFAULT` keeps the output fully compatible with older servers.
+    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::DEFAULT)
+        settings.version = MergeTreeSerializationInfoVersion::DEFAULT;
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
-    : settings(settings_)
+    : SerializationInfoByName(settings_)
 {
     if (settings.isAlwaysDefault())
         return;
@@ -278,23 +291,14 @@ ISerialization::Kind SerializationInfoByName::getKind(const String & column_name
     return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
 }
 
-size_t SerializationInfoByName::getVersion() const
+MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 {
-    if (settings.string_with_size_stream)
-        return SERIALIZATION_STRING_WITH_SIZE_STREAM;
-
-    return DEFAULT_SERIALIZATION_INFO_VERSION;
+    return settings.version;
 }
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > DEFAULT_SERIALIZATION_INFO_VERSION;
-}
-
-void SerializationInfoByName::fallbackSettingsToVersion(size_t version)
-{
-    if (version < SERIALIZATION_STRING_WITH_SIZE_STREAM)
-        settings.string_with_size_stream = false;
+    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::DEFAULT;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -310,12 +314,16 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         column_infos.add(std::move(info_json)); /// NOLINT
     }
 
-    size_t max_version = getVersion();
-    object.set(KEY_VERSION, max_version);
+    auto version = getVersion();
+    object.set(KEY_VERSION, static_cast<uint8_t>(version));
     object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
 
-    if (max_version >= SERIALIZATION_STRING_WITH_SIZE_STREAM)
-        object.set(KEY_STRING_WITH_SIZE_STREAM, settings.string_with_size_stream);
+    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
+    {
+        Poco::JSON::Object type_versions_obj;
+        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+        object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+    }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -332,8 +340,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(
-    const NamesAndTypesList & columns, const Settings & settings, const std::string & json_str)
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -341,38 +348,79 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    size_t version = object->getValue<size_t>(KEY_VERSION);
-    if (version > MAX_SERIALIZATION_INFO_VERSION)
+    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::DEFAULT;
     {
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Unknown version of serialization infos ({}). Should be less or equal than {}",
-            version,
-            MAX_SERIALIZATION_INFO_VERSION);
+        size_t version_value = object->getValue<size_t>(KEY_VERSION);
+        auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
+        if (!maybe_enum)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
+        version = *maybe_enum;
     }
+
+    Poco::JSON::Array::Ptr columns_array;
+    Poco::JSON::Object::Ptr type_versions_obj;
+    for (const auto & [key, value] : *object)
+    {
+        if (key == KEY_VERSION)
+        {
+            continue;
+        }
+        else if (key == KEY_COLUMNS)
+        {
+            columns_array = value.extract<Poco::JSON::Array::Ptr>();
+        }
+        else if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && key == KEY_TYPES_SERIALIZATION_VERSIONS)
+        {
+            type_versions_obj = value.extract<Poco::JSON::Object::Ptr>();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
+        }
+    }
+
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
+    {
+        /// types_serialization_versions is mandatory in WITH_TYPES mode
+        if (!type_versions_obj)
+        {
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Missing mandatory field 'types_serialization_versions' in MergeTreeSerializationInfo (version WITH_TYPES)");
+        }
+
+        for (const auto & [type_name, value] : *type_versions_obj)
+        {
+            size_t version_value = value.extract<size_t>();
+            if (type_name == KEY_STRING_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                string_serialization_version = *maybe_enum;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
+            }
+        }
+    }
+
+    SerializationInfoSettings settings(
+        1.0 /* Doesn't matter when constructing from JSON */,
+        false /* Cannot choose kind when constructing from JSON */,
+        version,
+        string_serialization_version);
 
     SerializationInfoByName infos(settings);
-    if (version >= SERIALIZATION_STRING_WITH_SIZE_STREAM)
-    {
-        if (!object->has(KEY_STRING_WITH_SIZE_STREAM))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_STRING_WITH_SIZE_STREAM);
-
-        infos.settings.string_with_size_stream = object->getValue<bool>(KEY_STRING_WITH_SIZE_STREAM);
-    }
-    else
-    {
-        /// Compatibility with old parts: reset to false.
-        infos.settings.string_with_size_stream = false;
-    }
-
-    if (object->has(KEY_COLUMNS))
+    if (columns_array)
     {
         std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
         for (const auto & [name, type] : columns)
             column_type_by_name.emplace(name, type.get());
 
-        auto array = object->getArray(KEY_COLUMNS);
-        for (const auto & elem : *array)
+        for (const auto & elem : *columns_array)
         {
             const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
 
@@ -396,13 +444,11 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
     return infos;
 }
 
-
-SerializationInfoByName SerializationInfoByName::readJSON(
-    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesList & columns, ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
-    return readJSONFromString(columns, settings, json_str);
+    return readJSONFromString(columns, json_str);
 }
 
 }

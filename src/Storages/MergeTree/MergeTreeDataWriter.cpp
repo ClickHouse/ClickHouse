@@ -81,7 +81,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -820,10 +821,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{
+    SerializationInfo::Settings settings
+    {
         (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         true,
-        (*data_settings)[MergeTreeSetting::serialize_string_with_size_stream]};
+        (*data_settings)[MergeTreeSetting::serialization_info_version],
+        (*data_settings)[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -974,10 +978,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{
+    SerializationInfo::Settings settings
+    {
         (*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         true,
-        (*data.getSettings())[MergeTreeSetting::serialize_string_with_size_stream]};
+        (*data.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*data.getSettings())[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

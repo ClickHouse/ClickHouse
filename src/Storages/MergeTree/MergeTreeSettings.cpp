@@ -194,21 +194,6 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
-    DECLARE(Bool, serialize_string_with_size_stream, true, R"(
-    Enables using a separate size stream when serializing top-level `String` columns.
-
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn that stores string lengths in its own stream instead of inline. This
-    enables real `.size` subcolumns and can improve compression efficiency.
-
-    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
-    are not affected, except when they appear in a `Tuple`.
-
-    Possible values:
-
-    - 1 — `String` columns use a separate size stream during serialization.
-    - 0 — `String` columns use the standard serialization format with inline sizes.
-    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
@@ -261,6 +246,37 @@ namespace ErrorCodes
     data type.
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
+    )", 0) \
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
+    Serialization info version used when writing `serialization.json`.
+    This setting is required for compatibility during cluster upgrades.
+
+    Possible values:
+    - `DEFAULT`
+
+    - `WITH_TYPES`
+      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
+      This makes settings like `string_serialization_version` effective.
+
+    During rolling upgrades, set this to `DEFAULT` so that new servers produce
+    data parts compatible with old servers. After the upgrade completes,
+    switch to `WITH_TYPES` to enable per-type serialization versions.
+    )", 0) \
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
+    Controls the serialization format for top-level `String` columns.
+
+    This setting is only effective when `serialization_info_version` is set to "with_types".
+    When enabled, top-level `String` columns are serialized with a separate `.size`
+    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    subcolumns and can improve compression efficiency.
+
+    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
+    are not affected, except when they appear in a `Tuple`.
+
+    Possible values:
+
+    - `DEFAULT` — Use the standard serialization format with inline sizes.
+    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.

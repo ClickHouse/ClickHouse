@@ -10,7 +10,8 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -25,9 +26,10 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , reset_columns(reset_columns_)
     , info_settings
     {
-        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false,
-        .string_with_size_stream = (*storage_settings)[MergeTreeSetting::serialize_string_with_size_stream],
+        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*storage_settings)[MergeTreeSetting::serialization_info_version],
+        (*storage_settings)[MergeTreeSetting::string_serialization_version],
     }
     , new_serialization_infos(info_settings)
 {

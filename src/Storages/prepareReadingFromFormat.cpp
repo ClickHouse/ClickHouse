@@ -359,7 +359,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
 
     ctx.in >> "\n";
 

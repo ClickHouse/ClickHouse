@@ -882,7 +882,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
             {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
-            {"serialize_string_with_size_stream", false, false, "New setting"},
+            {"serialization_info_version", "default", "default", "New setting"},
+            {"string_serialization_version", "default", "default", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {

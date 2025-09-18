@@ -40,7 +40,7 @@ SerializationPtr DataTypeString::doGetDefaultSerialization() const
 
 SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
 {
-    if (info.getSettings().string_with_size_stream)
+    if (info.getSettings().string_serialization_version == MergeTreeStringSerializationVersion::WITH_SIZE_STREAM)
         return IDataType::getSerialization(info.getKind(), std::make_shared<SerializationString>(true));
     return IDataType::getSerialization(info);
 }

@@ -18,11 +18,6 @@ class WriteBuffer;
 class NamesAndTypesList;
 class Block;
 
-static constexpr auto DEFAULT_SERIALIZATION_INFO_VERSION = 0;
-static constexpr auto SERIALIZATION_STRING_WITH_SIZE_STREAM = 1;
-
-static constexpr auto MAX_SERIALIZATION_INFO_VERSION = 1;
-
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
  *  that helps to choose kind of serialization of column.
@@ -126,25 +121,19 @@ public:
 
     const Settings & getSettings() const { return settings; }
 
-    size_t getVersion() const;
+    MergeTreeSerializationInfoVersion getVersion() const;
 
     bool needsPersistence() const;
 
-    void fallbackSettingsToVersion(size_t version);
+    static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
-
-    static SerializationInfoByName readJSONFromString(
-        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
+    static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
 
 private:
     /// This field stores all configuration options that are not tied to a
     /// specific column entry in `SerializationInfoByName`. For example:
-    /// - Whether String columns should be serialized using a separate
-    ///   "size stream".
-    /// - Other defaults that affect how `SerializationInfo` instances
-    ///   are constructed when no explicit entry exists.
+    /// - Per-type serialization versions (`types_serialization_versions`), e.g.,
+    ///   specifying different versions for `String` or other types.
     ///
     /// Design notes:
     /// - We intentionally keep such options out of `SerializationInfo::Data`,
