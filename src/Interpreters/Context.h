@@ -124,6 +124,7 @@ class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
 class IcebergMetadataLog;
+class DeltaMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -1378,6 +1379,7 @@ public:
     std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
+    std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 

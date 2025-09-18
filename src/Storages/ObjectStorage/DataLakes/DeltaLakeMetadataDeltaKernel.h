@@ -80,6 +80,9 @@ private:
     const DeltaLake::KernelHelperPtr kernel_helper;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     mutable std::mutex table_snapshot_mutex;
+
+    StorageObjectStorageConfigurationWeakPtr configuration_common;
+    void logMetadataFiles(ObjectStoragePtr object_storage, ContextPtr context) const;
 };
 
 }

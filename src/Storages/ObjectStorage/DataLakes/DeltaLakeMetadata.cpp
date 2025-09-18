@@ -2,6 +2,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/JSON.h>
+#include "Interpreters/DeltaMetadataLog.h"
+#include "Storages/ObjectStorage/StorageObjectStorageConfiguration.h"
 #include "config.h"
 
 #if USE_PARQUET
@@ -170,6 +172,7 @@ struct DeltaLakeMetadataImpl
         DeltaLakePartitionColumns current_partition_columns;
         const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
 
+        size_t file_index = 0;
         if (checkpoint_version)
         {
             auto current_version = checkpoint_version;
@@ -181,7 +184,7 @@ struct DeltaLakeMetadataImpl
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, current_schema, current_partition_columns, result_files);
+                processMetadataFile(file_path, current_schema, current_partition_columns, result_files, file_index++);
             }
 
             LOG_TRACE(
@@ -192,7 +195,7 @@ struct DeltaLakeMetadataImpl
         {
             const auto keys = listFiles(*object_storage, *configuration_ptr, deltalake_metadata_directory, metadata_file_suffix);
             for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files);
+                processMetadataFile(key, current_schema, current_partition_columns, result_files, file_index++);
         }
 
         return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
@@ -237,13 +240,15 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result) const
+        std::set<String> & result,
+        size_t file_index) const
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
+        String sum_json;
         while (!buf->eof())
         {
             /// May be some invalid characters before json.
@@ -259,6 +264,7 @@ struct DeltaLakeMetadataImpl
             if (json_str.empty())
                 continue;
 
+            sum_json += json_str;
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
@@ -299,7 +305,6 @@ struct DeltaLakeMetadataImpl
                                     file_schema.toString(), current_schema.toString());
                 }
             }
-
             auto configuration_ptr = configuration.lock();
             const auto read_path_string = configuration_ptr->getPathForRead().path;
 
@@ -358,6 +363,8 @@ struct DeltaLakeMetadataImpl
                 result.erase(fs::path(read_path_string) / path);
             }
         }
+        auto configuration_ptr = configuration.lock();
+        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path, file_index);
     }
 
     NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const

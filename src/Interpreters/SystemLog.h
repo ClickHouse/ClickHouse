@@ -36,6 +36,7 @@
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
     M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
     M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
+    M(DeltaMetadataLog,    delta_metadata_log, "Contains content of Delta metadata files.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \

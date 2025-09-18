@@ -459,6 +459,7 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
 
 bool TableSnapshot::update(const DB::ContextPtr & context)
 {
+    
     updateSettings(context);
     if (!kernel_snapshot_state)
     {
