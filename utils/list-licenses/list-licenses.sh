@@ -106,8 +106,11 @@ done
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
     FOLDER=$(dirname "$dependency")
+
+    # Crate names follow `some-crate-name-1.0.0` pattern.
     CRATE=$(basename "$FOLDER")
     NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
+
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
     if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
     then
