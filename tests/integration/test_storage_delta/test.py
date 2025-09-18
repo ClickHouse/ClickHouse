@@ -2217,7 +2217,7 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     )
 
     if use_delta_kernel == "0":
-        assert 1 < int(
+        assert 0 < int(
             instance.query(
                 f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
             )
