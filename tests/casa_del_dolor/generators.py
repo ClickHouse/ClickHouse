@@ -11,7 +11,6 @@ from environment import set_environment_variables
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
 from integration.helpers.config_cluster import (
-    minio_secret_key,
     pg_pass,
     mysql_pass,
     mongo_pass,
@@ -84,7 +83,7 @@ class BuzzHouseGenerator(Generator):
                 "client_hostname": cluster.minio_ip,
                 "port": cluster.minio_port,
                 "user": "minio",
-                "password": minio_secret_key,
+                "password": cluster.minio_secret_key,
                 "named_collection": "s3",
             }
         if args.with_postgresql:

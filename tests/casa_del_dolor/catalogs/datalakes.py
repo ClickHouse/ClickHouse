@@ -20,7 +20,6 @@ from .tablegenerator import LakeTableGenerator
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
@@ -228,11 +227,11 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", cluster.minio_access_key
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_secret_key,
+                cluster.minio_secret_key,
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
@@ -276,11 +275,11 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", cluster.minio_access_key
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_secret_key,
+                cluster.minio_secret_key,
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
@@ -327,8 +326,8 @@ def get_spark(
             )
             builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
             builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-            builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
-            builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
+            builder.config("spark.hadoop.fs.s3a.access.key", cluster.minio_access_key)
+            builder.config("spark.hadoop.fs.s3a.secret.key", cluster.minio_secret_key)
             builder.config(
                 "spark.hadoop.fs.s3a.aws.credentials.provider",
                 "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
@@ -444,13 +443,13 @@ def wait_for_port(host, port, timeout=90):
 
 
 class SparkHandler:
-    def __init__(self, cluster, args, env: dict[str, str]):
+    def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
-        if args.with_unity is not None:
-            self.uc_server_dir = args.with_unity
+        if with_unity is not None:
+            self.uc_server_dir = with_unity
             self.uc_server_run_dir = Path(cluster.instances_dir) / "ucserver"
 
         self.spark_log_dir = Path(cluster.instances_dir) / "spark"
@@ -626,8 +625,8 @@ logger.jetty.level = warn
                     kwargs.update(
                         {
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",
@@ -662,11 +661,11 @@ logger.jetty.level = warn
                             "type": "glue",
                             "glue.endpoint": "http://localhost:3000",
                             "glue.region": "us-east-1",
-                            "glue.access-key-id": minio_access_key,
-                            "glue.secret-access-key": minio_secret_key,
+                            "glue.access-key-id": cluster.minio_access_key,
+                            "glue.secret-access-key": cluster.minio_secret_key,
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",
@@ -683,8 +682,8 @@ logger.jetty.level = warn
                             "uri": "thrift://0.0.0.0:9083",
                             "type": "hive",
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",

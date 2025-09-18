@@ -8,7 +8,6 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
-from integration.helpers.config_cluster import minio_secret_key
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -605,7 +604,7 @@ def add_single_disk(
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = minio_secret_key
+            secret_access_key_xml.text = cluster.minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
@@ -1053,7 +1052,7 @@ def modify_server_settings(
             access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
-            secret_access_key_xml.text = minio_secret_key
+            secret_access_key_xml.text = cluster.minio_secret_key
         if args.with_azurite:
             azure_xml = ET.SubElement(named_collections_xml, "azure")
             account_name_xml = ET.SubElement(azure_xml, "account_name")

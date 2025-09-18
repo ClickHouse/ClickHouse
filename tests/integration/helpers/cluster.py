@@ -652,6 +652,9 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
+        # Make it cleaner
+        self.minio_access_key = minio_access_key
+        self.minio_secret_key = minio_secret_key
 
         self.spark_session = None
         self.with_iceberg_catalog = False
