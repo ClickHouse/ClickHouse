@@ -138,7 +138,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         String next_bucket_path;
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (getLakeCatalog() != LakeCatalog::None || (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
+        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
