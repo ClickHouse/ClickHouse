@@ -3,6 +3,7 @@
 import json
 import os
 import socket
+import sys
 import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
@@ -237,16 +238,17 @@ def readException(s):
 
 
 def main():
+    query = sys.argv[1]
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
-        # For 1 second sleep and 1000ms of interactive_delay we definitelly should have non zero progress packet.
-        # NOTE: interactive_delay=0 cannot be used since in this case CompletedPipelineExecutor will not call cancelled callback.
+
         sendQuery(
             s,
-            "insert into function null('_ Int') select sleep(1) from numbers(2) settings max_block_size=1, interactive_delay=1000",
+            query,
         )
 
         # external tables
