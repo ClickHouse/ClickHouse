@@ -13,6 +13,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -43,6 +46,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool inject_random_order_for_select_without_order_by;
 }
 
 namespace ErrorCodes
@@ -71,6 +75,43 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No children in ASTSelectWithUnionQuery");
+
+    /// Test-only feature: inject `ORDER BY rand()` at top level (subquery_depth == 0) when the setting is enabled,
+    /// so queries without ORDER BY produce nondeterministic row order and flaky tests are exposed.
+    if (options.subquery_depth == 0 && settings[Setting::inject_random_order_for_select_without_order_by])
+    {
+        for (auto & child : ast->list_of_selects->children)
+        {
+            if (auto * select = child->as<ASTSelectQuery>())
+            {
+                if (!select->orderBy())
+                {
+                    // Build rand() with proper AST shape
+                    auto func = std::make_shared<ASTFunction>();
+                    func->name = "rand";
+                    func->arguments = std::make_shared<ASTExpressionList>();
+                    func->children.clear();
+                    func->children.push_back(func->arguments);
+    
+                    // ORDER BY element
+                    auto elem = std::make_shared<ASTOrderByElement>();
+                    elem->direction = 1;
+                    elem->nulls_direction = 1;
+                    elem->with_fill = false;
+                    elem->children.clear();
+                    elem->children.push_back(func);
+    
+                    // ORDER BY list
+                    auto list = std::make_shared<ASTExpressionList>();
+                    list->children.clear();
+                    list->children.push_back(elem);
+    
+                    // Attach to the child SELECT
+                    select->setExpression(ASTSelectQuery::Expression::ORDER_BY, list);
+                }
+            }
+        }
+    }
 
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
