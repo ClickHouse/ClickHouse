@@ -17,35 +17,37 @@ Positions: 0
                FUNCTION divide(1_UInt8 : 1, __table3.age :: 0) -> divide(1_UInt8, __table3.age) Float64 : 2
                FUNCTION greater(divide(1_UInt8, __table3.age) :: 2, 1_UInt8 :: 1) -> greater(divide(1_UInt8, __table3.age), 1_UInt8) UInt8 : 0
       Positions: 0
-        Expression (Post Join Actions)
-        Actions: INPUT :: 0 -> __table3.age Int16 : 0
-        Positions: 0
-          Join
-          Type: LEFT
-          Strictness: ANY
-          Algorithm: HashJoin
-          Clauses: [(__table1.uid) = (__table3.uid)]
-            Expression (Left Pre Join Actions)
-            Actions: INPUT :: 0 -> __table1.uid Int16 : 0
-            Positions: 0
-              Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       ALIAS uid :: 0 -> __table2.uid Int16 : 1
-                       ALIAS __table2.uid :: 1 -> uid Int16 : 0
-                       ALIAS uid :: 0 -> __table1.uid Int16 : 1
-              Positions: 1
-                ReadFromMemoryStorage
-            Expression (Right Pre Join Actions)
-            Actions: INPUT :: 0 -> __table3.uid Int16 : 0
-                     INPUT :: 1 -> __table3.age Int16 : 1
-            Positions: 0 1
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       INPUT : 1 -> age Int16 : 1
-                       ALIAS uid :: 0 -> __table3.uid Int16 : 2
-                       ALIAS age :: 1 -> __table3.age Int16 : 0
-              Positions: 2 0
-                ReadFromMemoryStorage
+        JoinLogical
+        Join: u1[100000] ⟕ u2[1000]
+        ResultRows: 100000
+        Type: LEFT
+        Strictness: ANY
+        Locality: UNSPECIFIED
+        Expression: equals(__table1.uid, __table3.uid)
+        Expression:
+        Actions: INPUT : 0 -> __table1.uid Int16 : 0
+                 INPUT : 1 -> __table3.uid Int16 : 1
+                 INPUT :: 2 -> __table3.age Int16 : 2
+                 FUNCTION equals(__table1.uid :: 0, __table3.uid :: 1) -> equals(__table1.uid, __table3.uid) UInt8 : 3
+        Positions: 2
+        Expression Sources:
+        __table1.uid: {0}
+        __table3.uid: {1}
+        __table3.age: {1}
+          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+          Actions: INPUT : 0 -> uid Int16 : 0
+                   ALIAS uid :: 0 -> __table2.uid Int16 : 1
+                   ALIAS __table2.uid :: 1 -> uid Int16 : 0
+                   ALIAS uid :: 0 -> __table1.uid Int16 : 1
+          Positions: 1
+            ReadFromMemoryStorage
+          Expression (Change column names to column identifiers)
+          Actions: INPUT : 0 -> uid Int16 : 0
+                   INPUT : 1 -> age Int16 : 1
+                   ALIAS uid :: 0 -> __table3.uid Int16 : 2
+                   ALIAS age :: 1 -> __table3.age Int16 : 0
+          Positions: 2 0
+            ReadFromMemoryStorage
 Expression ((Project names + Projection))
 Actions: INPUT :: 0 -> count() UInt64 : 0
 Positions: 0
@@ -64,32 +66,34 @@ Positions: 0
                COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
                FUNCTION greater(__table3.age :: 0, 1_UInt8 :: 1) -> greater(__table3.age, 1_UInt8) UInt8 : 2
       Positions: 2
-        Expression (Post Join Actions)
-        Actions: INPUT :: 0 -> __table3.age Int16 : 0
-        Positions: 0
-          Join
-          Type: LEFT
-          Strictness: SEMI
-          Algorithm: ConcurrentHashJoin
-          Clauses: [(__table1.uid) = (__table3.uid)]
-            Expression (Left Pre Join Actions)
-            Actions: INPUT :: 0 -> __table1.uid Int16 : 0
-            Positions: 0
-              Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       ALIAS uid :: 0 -> __table2.uid Int16 : 1
-                       ALIAS __table2.uid :: 1 -> uid Int16 : 0
-                       ALIAS uid :: 0 -> __table1.uid Int16 : 1
-              Positions: 1
-                ReadFromMemoryStorage
-            Expression (Right Pre Join Actions)
-            Actions: INPUT :: 0 -> __table3.uid Int16 : 0
-                     INPUT :: 1 -> __table3.age Int16 : 1
-            Positions: 0 1
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       INPUT : 1 -> age Int16 : 1
-                       ALIAS uid :: 0 -> __table3.uid Int16 : 2
-                       ALIAS age :: 1 -> __table3.age Int16 : 0
-              Positions: 2 0
-                ReadFromMemoryStorage
+        JoinLogical
+        Join: u1 ⋉ u2
+        ResultRows: unknown
+        Type: LEFT
+        Strictness: SEMI
+        Locality: UNSPECIFIED
+        Expression: equals(__table1.uid, __table3.uid)
+        Expression:
+        Actions: INPUT : 0 -> __table1.uid Int16 : 0
+                 INPUT : 1 -> __table3.uid Int16 : 1
+                 INPUT :: 2 -> __table3.age Int16 : 2
+                 FUNCTION equals(__table1.uid :: 0, __table3.uid :: 1) -> equals(__table1.uid, __table3.uid) UInt8 : 3
+        Positions: 2
+        Expression Sources:
+        __table1.uid: {0}
+        __table3.uid: {1}
+        __table3.age: {1}
+          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+          Actions: INPUT : 0 -> uid Int16 : 0
+                   ALIAS uid :: 0 -> __table2.uid Int16 : 1
+                   ALIAS __table2.uid :: 1 -> uid Int16 : 0
+                   ALIAS uid :: 0 -> __table1.uid Int16 : 1
+          Positions: 1
+            ReadFromMemoryStorage
+          Expression (Change column names to column identifiers)
+          Actions: INPUT : 0 -> uid Int16 : 0
+                   INPUT : 1 -> age Int16 : 1
+                   ALIAS uid :: 0 -> __table3.uid Int16 : 2
+                   ALIAS age :: 1 -> __table3.age Int16 : 0
+          Positions: 2 0
+            ReadFromMemoryStorage
