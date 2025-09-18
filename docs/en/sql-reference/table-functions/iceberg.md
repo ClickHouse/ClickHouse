@@ -354,7 +354,7 @@ x: Ivanov
 y: 993
 ```
 
-### DELETE {#example-iceberg-writes-delete}
+### DELETE {#iceberg-writes-delete}
 
 Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
 This query will create a new snapshot with position delete files.
