@@ -91,9 +91,6 @@ struct AnalysisTableExpressionData
 
     std::optional<ColumnAndSubcolumnInfo> tryGetColumnAndSubcolumn(std::string_view full_identifier_name) const
     {
-        if (!supports_subcolumns)
-            return std::nullopt;
-
         size_t bind_size = 0;
         for (auto [column, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
