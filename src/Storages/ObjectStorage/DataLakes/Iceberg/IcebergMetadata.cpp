@@ -129,12 +129,12 @@ using namespace Iceberg;
 
 namespace
 {
-Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(StorageSnapshotPtr storage_snapshot)
+Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(StorageMetadataPtr storage_metadata)
 {
-    if (!storage_snapshot || !storage_snapshot->metadata)
+    if (!storage_metadata)
         return nullptr;
-    return storage_snapshot->metadata->iceberg_table_state.has_value()
-        ? std::make_shared<TableStateSnapshot>(storage_snapshot->metadata->iceberg_table_state.value())
+    return storage_metadata->iceberg_table_state.has_value()
+        ? std::make_shared<TableStateSnapshot>(storage_metadata->iceberg_table_state.value())
         : nullptr;
 }
 }
@@ -824,10 +824,10 @@ ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
-    StorageSnapshotPtr storage_snapshot,
+    StorageMetadataPtr storage_metadata,
     ContextPtr local_context) const
 {
-    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_snapshot);
+    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata);
     if (iceberg_table_state == nullptr)
     {
         throw Exception(
@@ -1028,11 +1028,11 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
 }
 
-ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const
+ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
     if (Poco::toLower(getConfiguration()->format) != "parquet")
         return nullptr;
-    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_snapshot);
+    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
     if (!iceberg_table_state)
     {

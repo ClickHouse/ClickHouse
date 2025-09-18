@@ -99,7 +99,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t list_batch_size,
-    StorageSnapshotPtr /*storage_snapshot*/,
+    StorageMetadataPtr /*storage_metadata_snapshot*/,
     ContextPtr /* context  */) const
 {
     std::lock_guard lock(table_snapshot_mutex);

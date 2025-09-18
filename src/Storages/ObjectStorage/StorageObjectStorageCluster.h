@@ -27,7 +27,7 @@ public:
         const ActionsDAG * filter,
         const ContextPtr & context,
         ClusterPtr cluster,
-        StorageSnapshotPtr storage_snapshot) const override;
+        StorageMetadataPtr storage_metadata_snapshot) const override;
 
     String getPathSample(ContextPtr context);
 

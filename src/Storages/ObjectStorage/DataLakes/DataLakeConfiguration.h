@@ -228,11 +228,11 @@ public:
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
-        StorageSnapshotPtr storage_snapshot,
+        StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
 #if USE_PARQUET
@@ -262,10 +262,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot, context);
+        return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
     void drop(ContextPtr local_context) override

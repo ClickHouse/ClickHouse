@@ -48,7 +48,7 @@ public:
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
-        StorageSnapshotPtr storage_snapshot,
+        StorageMetadataPtr storage_metadata,
         ContextPtr context) const
         = 0;
 
@@ -85,7 +85,7 @@ public:
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr, ContextPtr) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,

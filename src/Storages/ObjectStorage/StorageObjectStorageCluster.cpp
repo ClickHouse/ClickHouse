@@ -201,13 +201,13 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG * filter,
     const ContextPtr & local_context,
     ClusterPtr cluster,
-    StorageSnapshotPtr storage_snapshot) const
+    StorageMetadataPtr storage_metadata_snapshot) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        storage_snapshot,
+        storage_metadata_snapshot,
         /* distributed_processing */ false,
         local_context,
         predicate,

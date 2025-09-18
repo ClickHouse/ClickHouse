@@ -36,7 +36,7 @@ public:
         const ActionsDAG * /* filter */,
         const ContextPtr & context,
         ClusterPtr,
-        StorageSnapshotPtr) const override;
+        StorageMetadataPtr) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;

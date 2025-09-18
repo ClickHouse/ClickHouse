@@ -75,7 +75,7 @@ protected:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
-        StorageSnapshotPtr /*storage_snapshot*/,
+        StorageMetadataPtr storage_metadata_snapshot,
         ContextPtr context) const override;
 
 private:

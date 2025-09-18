@@ -88,7 +88,8 @@ public:
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const override;
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
@@ -119,7 +120,7 @@ public:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
-        StorageSnapshotPtr storage_snapshot,
+        StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
     void drop(ContextPtr context) override;
