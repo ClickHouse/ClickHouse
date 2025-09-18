@@ -53,8 +53,9 @@ struct FunctionDocumentation
         std::vector<String> types = {};  /// E.g. {"(U)Int*", "Float*"}
                                          /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
-    using Arguments = std::vector<Argument>;
-    using Parameters = std::vector<Argument>;
+
+    using Arguments = std::vector<Argument>;  /// For all functions
+    using Parameters = std::vector<Argument>; /// For aggregate functions
 
     struct ReturnedValue
     {
@@ -144,7 +145,7 @@ struct FunctionDocumentation
 
     String syntaxAsString() const;
     String argumentsAsString() const;
-    /// String parametersAsString() const;
+    String parametersAsString() const;
     String returnedValueAsString() const;
     String examplesAsString() const;
     String introducedInAsString() const;

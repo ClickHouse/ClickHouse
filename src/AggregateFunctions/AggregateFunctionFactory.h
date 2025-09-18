@@ -2,8 +2,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/NullsAction.h>
-#include <Common/IFactoryWithAliases.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/IFactoryWithAliases.h>
 
 #include <functional>
 #include <memory>
@@ -36,7 +36,7 @@ struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
     AggregateFunctionProperties properties;
-    FunctionDocumentation documentation = {};
+    FunctionDocumentation documentation = {}; /// TODO remove default initialization ... all aggregate functions should have documentation
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
