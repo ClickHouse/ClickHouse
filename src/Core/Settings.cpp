@@ -1513,12 +1513,14 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored during merges or by explicit MATERIALIZE INDEX.
+
+See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
 )", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
 Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored during merges (see [materialize_skip_indexes_on_merge](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit MATERIALIZE INDEX query.
 
-Has no effect if materialize_skip_indexes_on_insert is false.
+Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
 
 Example:
 
@@ -1533,20 +1535,14 @@ CREATE TABLE t_skip_index_insert
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
---SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index will be updated on insert
-
-SYSTEM STOP MERGES t_skip_index_insert; -- note that merges are not affected by this parameter, so we stop them for the example
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
 
 INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
 
 -- since it is a session setting it can be set on a per-query level
 INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
 
--- these queries will update all indexes regardless of exclude_materialize_skip_indexes_on_insert setting
-SYSTEM START MERGES t_skip_index_insert;
-OPTIMIZE TABLE t_skip_index_insert FINAL;
-
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can also be used to explicitly materialize the index
+ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
 
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```

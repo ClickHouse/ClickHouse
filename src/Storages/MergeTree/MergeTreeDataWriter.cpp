@@ -697,18 +697,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
+    /// Create skip indexes if setting materialize_skip_indexes_on_insert = true
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
     {
         const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
-        const auto & exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
+        auto exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
 
-        if (exclude_indexes_string != "")
+        /// Check if user specified list of indexes to exclude from materialize on INSERT
+        if (!exclude_indexes_string.empty())
         {
-            const auto & exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+            std::unordered_set<String> exclude_index_names
+                = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+
             for (const auto & index : index_descriptions)
                 if (!exclude_index_names.contains(index.name))
                     indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
         }
+        else /// All indexes will be materialized on INSERT
+            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
 
 
