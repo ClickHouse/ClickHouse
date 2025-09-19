@@ -80,7 +80,6 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the compressed data for each subcolumn, in bytes"},
         {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the decompressed data for each subcolumn, in bytes"},
         {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the marks for each subcolumn of a column, in bytes"},
-        {"statistics",                                 std::make_shared<DataTypeString>(), "Description of statistics in this part"},
     }
     )
 {
@@ -129,6 +128,7 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
         std::optional<Estimates> estimates;
 
+        /// Lazy initialize statistics estimates if they are queried.
         auto find_estimate = [&](const auto & column_name)
         {
             if (!estimates.has_value())
@@ -139,7 +139,6 @@ void StorageSystemPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
-        auto stats = part->loadStatistics();
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
         {
@@ -410,19 +409,6 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(subcolumn_data_uncompressed_bytes);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_marks_bytes);
-            if (columns_mask[src_index++])
-            {
-                String stats_desc;
-                for (const auto & column_stats : stats)
-                {
-                    if (column_stats->columnName() == column.name)
-                    {
-                        stats_desc = column_stats->getNameForLogs();
-                        break;
-                    }
-                }
-                columns[res_index++]->insert(stats_desc);
-            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
