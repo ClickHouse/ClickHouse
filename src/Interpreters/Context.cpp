@@ -5283,6 +5283,16 @@ std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
     return shared->system_logs->iceberg_metadata_log;
 }
 
+std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->delta_lake_metadata_log;
+}
+
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
 {
     SharedLockGuard lock(shared->mutex);

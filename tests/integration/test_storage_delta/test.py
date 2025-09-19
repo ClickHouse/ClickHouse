@@ -99,6 +99,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -115,6 +116,7 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -132,6 +134,7 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/use_environment_credentials.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             env_variables={
                 "AWS_ACCESS_KEY_ID": minio_access_key,
@@ -145,6 +148,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
@@ -161,6 +165,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -3703,3 +3708,43 @@ def test_type_from_storage_def(started_cluster, column_mapping):
         "2000-11-11 00:00:00"
         == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
     )
+
+@pytest.mark.parametrize("use_delta_kernel", ["0", "1"])
+def test_system_table(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_multiple_log_files")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 2  # 1 metadata files + 1 data file
+
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"{TABLE_NAME}/_delta_log/", recursive=True)
+    )
+    assert len(s3_objects) == 1
+
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 100
+
+    write_delta_from_df(
+        spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 4  # 2 metadata files + 2 data files
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 200
+
+    instance.query("SYSTEM FLUSH LOGS delta_lake_metadata_log")
+
+    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log")) == 2
+    contents = instance.query("SELECT content FROM system.delta_lake_metadata_log").split('\n')
+    for content in contents:
+        if len(content) == 0:
+            continue
+        assert 'commitInfo' in content
+        assert '.parquet' in content
+    instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")
