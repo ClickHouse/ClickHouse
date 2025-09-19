@@ -80,7 +80,7 @@ digraph
     n4[label="MaterializingTransform_4"];
     n5[label="PlanSquashingTransform_5"];
     n6[label="DeduplicationToken::AddTokenInfoTransform_6"];
-    n7[label="ApplySquashingTransform_19"];
+    n7[label="ApplySquashingTransform_20"];
     n8[label="ConvertingTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
     n10[label="MergeTreeSink_9"];
@@ -88,12 +88,13 @@ digraph
     n12[label="BeginingViewsTransform_10"];
     n13[label="ExecutingInnerQueryFromView_13"];
     n14[label="CountingTransform_12"];
-    n15[label="SquashingTransform_11"];
-    n16[label="NestedElementsValidationTransform_14"];
-    n17[label="RemovingSparseTransform_15"];
-    n18[label="LogSink_16"];
-    n19[label="FinalizingViewsTransform_18"];
-    n20[label="EmptySink_20"];
+    n15[label="PlanSquashingTransform_19"];
+    n16[label="ApplySquashingTransform_11"];
+    n17[label="NestedElementsValidationTransform_14"];
+    n18[label="RemovingSparseTransform_15"];
+    n19[label="LogSink_16"];
+    n20[label="FinalizingViewsTransform_18"];
+    n21[label="EmptySink_21"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -115,6 +116,7 @@ digraph
   n17 -> n18;
   n18 -> n19;
   n19 -> n20;
+  n20 -> n21;
 }
 drop table mv;
 -- Log does not support sparse columns - RemovingSparseTransform added
@@ -131,7 +133,7 @@ digraph
     n4[label="MaterializingTransform_4"];
     n5[label="PlanSquashingTransform_5"];
     n6[label="DeduplicationToken::AddTokenInfoTransform_6"];
-    n7[label="ApplySquashingTransform_19"];
+    n7[label="ApplySquashingTransform_20"];
     n8[label="ConvertingTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
     n10[label="RemovingSparseTransform_9"];
@@ -140,11 +142,12 @@ digraph
     n13[label="BeginingViewsTransform_11"];
     n14[label="ExecutingInnerQueryFromView_14"];
     n15[label="CountingTransform_13"];
-    n16[label="SquashingTransform_12"];
-    n17[label="NestedElementsValidationTransform_15"];
-    n18[label="MergeTreeSink_16"];
-    n19[label="FinalizingViewsTransform_18"];
-    n20[label="EmptySink_20"];
+    n16[label="PlanSquashingTransform_19"];
+    n17[label="ApplySquashingTransform_12"];
+    n18[label="NestedElementsValidationTransform_15"];
+    n19[label="MergeTreeSink_16"];
+    n20[label="FinalizingViewsTransform_18"];
+    n21[label="EmptySink_21"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -166,4 +169,5 @@ digraph
   n17 -> n18;
   n18 -> n19;
   n19 -> n20;
+  n20 -> n21;
 }

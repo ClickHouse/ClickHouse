@@ -692,7 +692,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         query_sample_block,
         async_insert,
         /*skip_destination_table*/ no_destination,
-        /*sink_stream_size*/ 1,
+        /*max_insert_threads*/ 1,
         getContext());
 
     auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();

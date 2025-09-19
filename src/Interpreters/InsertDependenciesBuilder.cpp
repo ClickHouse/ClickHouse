@@ -876,7 +876,6 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                     connect(plan_squashing_transform->getOutputs().front(), expand_processor->getInputs().front());
                 }
 
-                squashing_context.squashing_transform_added = true;
                 squashing_context.output_it = squashing_processors_list.back()->getOutputs().begin();
                 squashing_context.input_it = squashing_processors_list.front()->getInputs().begin();
             }
@@ -890,8 +889,11 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                 connect(*squashing_context.output_it, (*apply_squashing_processor_it)->getInputs().front(), true);
                 ++squashing_context.output_it;
 
-                if (!squashing_processors_list.empty())
+                if (!std::exchange(squashing_context.squashing_transform_added, true))
+                {
+                    chassert(!squashing_processors_list.empty());
                     processor_list.splice(apply_squashing_processor_it, std::move(squashing_processors_list));
+                }
             }
         }
 
