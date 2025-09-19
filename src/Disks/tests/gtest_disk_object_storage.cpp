@@ -636,3 +636,98 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
 
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
+
+TEST_F(DiskObjectStorageTest, TruncateFileToZero)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+
+    disk->truncateFile(file_name, 0);
+    EXPECT_FALSE(disk->existsFile(file_name));
+
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    {
+        auto tx = disk->createTransaction();
+
+        tx->truncateFile(file_name, 0);
+
+        tx->commit();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), "");
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
+}
+
+TEST_F(DiskObjectStorageTest, TruncateFileToZeroInsideTx)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto tx = disk->createTransaction();
+
+        {
+            auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+            DB::writeText(file_content, *wb);
+            wb->finalize();
+        }
+
+        tx->truncateFile(file_name, 0);
+
+        tx->commit();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), "");
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
+}
+
+TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    std::string appended_file_content = getTestName() + "_rewritten_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        DB::writeText(appended_file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content + appended_file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 2);
+
+    disk->truncateFile(file_name, file_content.size());
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
