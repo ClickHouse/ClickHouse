@@ -4,6 +4,7 @@ description: 'System table containing information about mutations of MergeTree t
 keywords: ['system table', 'mutations']
 slug: /operations/system-tables/mutations
 title: 'system.mutations'
+doc_type: 'reference'
 ---
 
 # system.mutations
