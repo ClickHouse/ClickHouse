@@ -45,6 +45,9 @@ def setup_teardown():
     node1.query("DROP DATABASE test")
     node1.query("CREATE DATABASE test")
 
+def test_postgres_select_with_comment_after_semicolon(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("SELECT 1; /* some comment */")
 
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
