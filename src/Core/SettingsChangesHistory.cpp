@@ -39,6 +39,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.10",
+        {
+            {"enable_join_runtime_filters", false, false, "New setting"},
+            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
+            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+        });
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"datalake_disk_name", "", "", "New setting."},
@@ -54,9 +60,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
-            {"enable_join_runtime_filters", false, false, "New setting"},
-            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
-            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"query_plan_convert_any_join_to_semi_or_anti_join", true, true, "New setting."},
             {"text_index_use_bloom_filter", true, true, "New setting."},
             {"query_plan_direct_read_from_text_index", true, true, "New setting."},
