@@ -4403,6 +4403,16 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
+void Context::reconnectZooKeeper(const String & reason) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (shared->zookeeper)
+    {
+        shared->zookeeper->finalize(reason);
+        LOG_INFO(shared->log, "ZooKeeper connection closed: {}", reason);
+    }
+}
+
 void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 {
     std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;

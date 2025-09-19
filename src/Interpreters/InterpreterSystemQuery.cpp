@@ -687,6 +687,12 @@ BlockIO InterpreterSystemQuery::execute()
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
         }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
+            system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -1620,6 +1626,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
             break;
         }
         case Type::STOP_MERGES:

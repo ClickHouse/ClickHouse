@@ -122,6 +122,7 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
+        RECONNECT_ZOOKEEPER,
         END
     };
 
