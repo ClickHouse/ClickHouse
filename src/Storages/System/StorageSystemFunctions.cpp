@@ -61,7 +61,7 @@ namespace
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
         {
             if (factory.isAlias(name))
             {
@@ -72,6 +72,7 @@ namespace
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
                 res_columns[12]->insertDefault();
+                res_columns[13]->insertDefault();
             }
             else
             {
@@ -79,10 +80,11 @@ namespace
                 res_columns[6]->insert(documentation.description);
                 res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returnedValueAsString());
-                res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.introducedInAsString());
-                res_columns[12]->insert(documentation.categoryAsString());
+                res_columns[9]->insert(documentation.parametersAsString());
+                res_columns[10]->insert(documentation.returnedValueAsString());
+                res_columns[11]->insert(documentation.examplesAsString());
+                res_columns[12]->insert(documentation.introducedInAsString());
+                res_columns[13]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -94,6 +96,7 @@ namespace
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
             res_columns[12]->insertDefault();
+            res_columns[13]->insertDefault();
         }
     }
 }
@@ -121,6 +124,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
         {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
+        {"parameters", std::make_shared<DataTypeString>(), "What parameters does the function take, if it is an aggregate function."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},

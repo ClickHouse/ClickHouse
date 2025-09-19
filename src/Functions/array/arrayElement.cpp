@@ -2220,7 +2220,7 @@ Operator `[n]` provides the same functionality.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
 
@@ -2246,7 +2246,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, returned_value_null, examples_null, introduced_in_null, category_null};
+    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }

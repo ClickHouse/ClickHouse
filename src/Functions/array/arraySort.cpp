@@ -245,7 +245,7 @@ it returns an array sorted according to the logic of the provided lambda functio
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySort>(documentation);
 
@@ -274,7 +274,7 @@ it returns an array sorted according to the logic of the provided lambda functio
         {"Example 1", "SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;", "[5,3,4]"},
         {"Example 2", "SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;", "[4,3,5]"},
     };
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayReverseSort>(documentation);
 
@@ -304,7 +304,7 @@ in ascending order. The remaining elements `(limit..N]` are in an unspecified or
         {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2, 1, 0]"}
     };
     introduced_in = {23, 2};
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayPartialSort>(documentation);
 
@@ -327,7 +327,7 @@ in descending order. The remaining elements `(limit..N]` are in an unspecified o
         {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", "[1, 3, 5, 9]"},
         {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[0, 1, 2]"}
     };
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayPartialReverseSort>(documentation);
 }

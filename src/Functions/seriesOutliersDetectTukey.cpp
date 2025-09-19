@@ -225,7 +225,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesOutliersDetectTukey>(documentation);
 }

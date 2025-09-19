@@ -156,7 +156,7 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTimeToSnowflakeID = {24, 6};
     FunctionDocumentation::Category category_dateTimeToSnowflakeID = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTimeToSnowflakeID = {description_dateTimeToSnowflakeID, syntax_dateTimeToSnowflakeID, arguments_dateTimeToSnowflakeID, returned_value_dateTimeToSnowflakeID, examples_dateTimeToSnowflakeID, introduced_in_dateTimeToSnowflakeID, category_dateTimeToSnowflakeID};
+    FunctionDocumentation documentation_dateTimeToSnowflakeID = {description_dateTimeToSnowflakeID, syntax_dateTimeToSnowflakeID, arguments_dateTimeToSnowflakeID, {}, returned_value_dateTimeToSnowflakeID, examples_dateTimeToSnowflakeID, introduced_in_dateTimeToSnowflakeID, category_dateTimeToSnowflakeID};
 
     factory.registerFunction<FunctionDateTimeToSnowflakeID>(documentation_dateTimeToSnowflakeID);
 
@@ -187,7 +187,7 @@ SELECT toDateTime64('2025-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTi
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTime64ToSnowflakeID = {24, 6};
     FunctionDocumentation::Category category_dateTime64ToSnowflakeID = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTime64ToSnowflakeID = {description_dateTime64ToSnowflakeID, syntax_dateTime64ToSnowflakeID, arguments_dateTime64ToSnowflakeID, returned_value_dateTime64ToSnowflakeID, examples_dateTime64ToSnowflakeID, introduced_in_dateTime64ToSnowflakeID, category_dateTime64ToSnowflakeID};
+    FunctionDocumentation documentation_dateTime64ToSnowflakeID = {description_dateTime64ToSnowflakeID, syntax_dateTime64ToSnowflakeID, arguments_dateTime64ToSnowflakeID, {}, returned_value_dateTime64ToSnowflakeID, examples_dateTime64ToSnowflakeID, introduced_in_dateTime64ToSnowflakeID, category_dateTime64ToSnowflakeID};
 
     factory.registerFunction<FunctionDateTime64ToSnowflakeID>(documentation_dateTime64ToSnowflakeID);
 }

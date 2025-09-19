@@ -27,7 +27,7 @@ For a complete example see: [`NULL` values in `JOIN` keys](/sql-reference/statem
     FunctionDocumentation::Examples examples = {};
     FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
 }

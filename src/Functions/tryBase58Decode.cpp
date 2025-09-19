@@ -37,7 +37,7 @@ Like [`base58Decode`](#base58Decode), but returns an empty string in case of err
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTryBase58Decode>(documentation);
 }

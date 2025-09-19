@@ -81,7 +81,7 @@ SELECT errorCodeToName(252);
     };
     FunctionDocumentation::IntroducedIn introduced_in_errorCodeToName = {20, 12};
     FunctionDocumentation::Category category_errorCodeToName = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_errorCodeToName = {description_errorCodeToName, syntax_errorCodeToName, arguments_errorCodeToName, returned_value_errorCodeToName, examples_errorCodeToName, introduced_in_errorCodeToName, category_errorCodeToName};
+    FunctionDocumentation documentation_errorCodeToName = {description_errorCodeToName, syntax_errorCodeToName, arguments_errorCodeToName, {}, returned_value_errorCodeToName, examples_errorCodeToName, introduced_in_errorCodeToName, category_errorCodeToName};
 
     factory.registerFunction<FunctionErrorCodeToName>(documentation_errorCodeToName);
 }

@@ -274,7 +274,7 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes, parse
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSize = {24, 6};
 FunctionDocumentation::Category category_parseReadableSize = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSize_documentation = {description_parseReadableSize, syntax_parseReadableSize, arguments_parseReadableSize, returned_value_parseReadableSize, examples_parseReadableSize, introduced_in_parseReadableSize, category_parseReadableSize};
+FunctionDocumentation parseReadableSize_documentation = {description_parseReadableSize, syntax_parseReadableSize, arguments_parseReadableSize, {}, returned_value_parseReadableSize, examples_parseReadableSize, introduced_in_parseReadableSize, category_parseReadableSize};
 
 FunctionDocumentation::Description description_parseReadableSizeOrNull = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
@@ -306,7 +306,7 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_s
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrNull = {24, 6};
 FunctionDocumentation::Category category_parseReadableSizeOrNull = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSizeOrNull_documentation = {description_parseReadableSizeOrNull, syntax_parseReadableSizeOrNull, arguments_parseReadableSizeOrNull, returned_value_parseReadableSizeOrNull, examples_parseReadableSizeOrNull, introduced_in_parseReadableSizeOrNull, category_parseReadableSizeOrNull};
+FunctionDocumentation parseReadableSizeOrNull_documentation = {description_parseReadableSizeOrNull, syntax_parseReadableSizeOrNull, arguments_parseReadableSizeOrNull, {}, returned_value_parseReadableSizeOrNull, examples_parseReadableSizeOrNull, introduced_in_parseReadableSizeOrNull, category_parseReadableSizeOrNull};
 
 FunctionDocumentation::Description description_parseReadableSizeOrZero = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
@@ -338,7 +338,7 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_s
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrZero = {24, 6};
 FunctionDocumentation::Category category_parseReadableSizeOrZero = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSizeOrZero_documentation = {description_parseReadableSizeOrZero, syntax_parseReadableSizeOrZero, arguments_parseReadableSizeOrZero, returned_value_parseReadableSizeOrZero, examples_parseReadableSizeOrZero, introduced_in_parseReadableSizeOrZero, category_parseReadableSizeOrZero};
+FunctionDocumentation parseReadableSizeOrZero_documentation = {description_parseReadableSizeOrZero, syntax_parseReadableSizeOrZero, arguments_parseReadableSizeOrZero, {}, returned_value_parseReadableSizeOrZero, examples_parseReadableSizeOrZero, introduced_in_parseReadableSizeOrZero, category_parseReadableSizeOrZero};
 
 REGISTER_FUNCTION(ParseReadableSize)
 {
