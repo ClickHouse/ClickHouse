@@ -1,3 +1,4 @@
+#include <exception>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -154,7 +155,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
 
 StorageObjectStorageSink::~StorageObjectStorageSink()
 {
-    if (isCancelled())
+    if (isCancelled() || std::uncaught_exceptions() > 0)
         cancelBuffers();
 }
 
