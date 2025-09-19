@@ -6891,6 +6891,11 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, enable_function_early_short_circuit, false, R"(
+Enable early short-circuit constant folding for functions during query analysis.
+When enabled the analyser replaces the whole expression with a decisive constant before the remaining arguments are analysed, so scalar sub-queries inside those arguments are not executed.
+If this optimization takes place, the scalar subquery is never analyzed (it may allow execution for cases when subqueries are invalid).
+)", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler.
     )", 0) \
