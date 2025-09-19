@@ -38,7 +38,7 @@ enum class YTsaurusNodeType : uint8_t
 class YTsaurusClient : private boost::noncopyable
 {
 public:
-
+    using URI = Poco::URI;
     static const uint16_t HTTP_PROXY_DEFAULT_PORT = 80;
 
     struct ConnectionInfo
@@ -73,10 +73,14 @@ private:
     Poco::Dynamic::Var getMetadata(const String & path);
 
 
-    ReadBufferPtr createQueryRWBuffer(YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback = nullptr);
+    ReadBufferPtr createQueryRWBuffer(const URI& uri,  const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
+    ReadBufferPtr executeQuery(YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
+
+    URI getHeavyProxyURI(const URI& uri);
+
     ContextPtr context;
 
-    ConnectionInfo connection_info;
+    const ConnectionInfo connection_info;
     LoggerPtr log;
     size_t recently_used_url_index = 0;
 };
