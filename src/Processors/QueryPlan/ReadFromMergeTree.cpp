@@ -2087,7 +2087,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->total_offset_condition,
             indexes->rpn_template_condition,
             indexes->rpn_template_for_eval_result,
-            indexes->filter_type,
+            indexes->condition_type,
             indexes->skip_indexes,
             reader_settings,
             log,

@@ -146,7 +146,8 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        bool was_primary_index_useful = false;
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, was_primary_index_useful, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -675,7 +676,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & total_offset_condition,
     const std::optional<KeyCondition> & rpn_template_condition,
     const KeyCondition::RPN & rpn_template_for_eval_result,
-    KeyCondition::ConditionType filter_type,
+    KeyCondition::ConditionType condition_type,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
@@ -750,6 +751,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+    
+    std::atomic<size_t> sum_marks_finalized = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
@@ -777,6 +780,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             auto & ranges = parts_with_ranges[part_index];
 	    MarkRanges initial_ranges = ranges.ranges;
+	    bool was_primary_index_useful = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -794,6 +798,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
+                    was_primary_index_useful,
                     log);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
@@ -849,10 +854,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
                 /// To support mixed AND and OR conditions, we track ranges selected by each index.
-                std::vector<MarkRanges> skip_index_selected_ranges;
-                if (filter_type != KeyCondition::OnlyConjuncts)
+                /// Let us start with the ranges selected by PK or _part_offsets
+                std::vector<MarkRanges> selected_ranges_by_index;
+                if (condition_type != KeyCondition::OnlyConjuncts)
                 {
-                    skip_index_selected_ranges.emplace_back(std::move(ranges.ranges));
+                    if (was_primary_index_useful)
+                    {
+                        selected_ranges_by_index.push_back(ranges.ranges);
+                    }
+                    else
+                    {
+                        selected_ranges_by_index.push_back(MarkRanges{});
+                    }
                     ranges.ranges = initial_ranges;
                 }
 
@@ -884,7 +897,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     std::optional<MarkRanges> rejected_ranges;
-                    if (filter_type != KeyCondition::OnlyConjuncts)
+                    if (condition_type != KeyCondition::OnlyConjuncts)
                         rejected_ranges = MarkRanges{};
 
                     MarkRanges selected_ranges;
@@ -903,21 +916,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             vector_similarity_index_cache.get(), rejected_ranges,
                             log);
                     }
-                    if (filter_type == KeyCondition::OnlyConjuncts)
+                    stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    if (condition_type == KeyCondition::OnlyConjuncts)
                     {
-                        ranges.ranges = std::move(selected_ranges);
-                        stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                    }
-                    else if (filter_type == KeyCondition::OnlyDisjuncts)
-                    {
-                        stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                        skip_index_selected_ranges.emplace_back(selected_ranges);
-                        ranges.ranges = std::move(rejected_ranges.value());
+                        ranges.ranges = std::move(selected_ranges); /// INTERSECTION approach
                     }
                     else
                     {
-                        stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                        skip_index_selected_ranges.emplace_back(selected_ranges);
+                        selected_ranges_by_index.emplace_back(selected_ranges);
+                        if (condition_type == KeyCondition::OnlyDisjuncts)
+                            ranges.ranges = std::move(rejected_ranges.value()); /// UNION optimization
                     }
 
                     if (ranges.ranges.empty())
@@ -927,20 +935,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (settings[Setting::use_skip_indexes_on_disjuncts] && filter_type != KeyCondition::OnlyConjuncts)
+                /// Finalize ranges if condition was only ORs or mixed AND / OR
+                if (condition_type != KeyCondition::OnlyConjuncts)
                 {
-                    if (filter_type == KeyCondition::OnlyDisjuncts)
-                    {
-                        /// UNION of all individual skip index selected ranges
-                        ranges.ranges = {};
-                        for (auto mr : skip_index_selected_ranges)
-                            ranges.ranges.insert(ranges.ranges.end(), mr.begin(), mr.end());
-                        std::sort(ranges.ranges.begin(), ranges.ranges.end());
-                    }
-                    else
-                    {
-                        ranges.ranges = finalSetOfRangesForFilterWithMixedAndOr(ranges.data_part, rpn_template_condition, rpn_template_for_eval_result, skip_index_selected_ranges);
-                    }
+                    ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
+                                        rpn_template_condition, condition_type,
+                                        rpn_template_for_eval_result, selected_ranges_by_index);
+                    sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -1087,6 +1088,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
+        }
+        if (condition_type != KeyCondition::OnlyConjuncts)
+        {
+            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                .type = ReadFromMergeTree::IndexType::Skip,
+                .name = "<Final>",
+                .description = "Final list of ranges after AND/OR processing",
+                .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+                .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
         }
     }
 
@@ -1432,6 +1442,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
     const Settings & settings,
+    bool & was_index_useful,
     LoggerPtr log)
 {
     const auto & part = part_with_ranges.data_part;
@@ -1455,8 +1466,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         else
             res.push_back(MarkRange(0, marks_count));
 
+        was_index_useful = false;
         return res;
     }
+
+    was_index_useful = true; /// either of PK / part_offset / total_offset
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -2282,7 +2296,7 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
 
     if (only_conjuncts)
     {
-        indexes->filter_type = KeyCondition::OnlyConjuncts;
+        indexes->condition_type = KeyCondition::OnlyConjuncts;
         return;
     }
 
@@ -2340,30 +2354,54 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     {
         if (some_unknowns)
         {
-            indexes->filter_type = KeyCondition::OnlyDisjunctsFullScan;
+            indexes->condition_type = KeyCondition::OnlyDisjunctsFullScan;
+            return;
         }
         else
         {
-            indexes->filter_type = KeyCondition::OnlyDisjuncts;
+            indexes->condition_type = KeyCondition::OnlyDisjuncts;
         }
-        return;
+    }
+    else
+    {
+        indexes->condition_type = KeyCondition::Mixed;
     }
 
     //. We have mixed ANDs and ORs. Let us transform all to disjuncts
+    if (indexes->key_condition.getUsedColumns().size() > 0)
+        indexes->key_condition.transformToDisjuncts();
+    if (indexes->part_offset_condition)
+        indexes->part_offset_condition->transformToDisjuncts();
+    if (indexes->total_offset_condition)
+        indexes->total_offset_condition->transformToDisjuncts();
     for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
     {
         auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
         index_and_condition.condition->transformToDisjuncts();
+	LOG_TRACE(getLogger(""), "Modified index condition  {}  to disjunct", idx);
     }
-    indexes->filter_type = KeyCondition::Mixed;
     return;
 }
 
-MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
+MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MergeTreeData::DataPartPtr part,
     const std::optional<KeyCondition> &,
+    KeyCondition::ConditionType condition_type,
     const KeyCondition::RPN & rpn_template_for_eval_result, const std::vector<MarkRanges> & skip_index_results)
 {
+    MarkRanges res;
+
+    /// Optimization first
+    if(condition_type == KeyCondition::OnlyDisjuncts)
+    {
+        for (auto mr : skip_index_results)
+        {
+            res.insert(res.end(), mr.begin(), mr.end());
+        }
+        std::sort(res.begin(), res.end());
+        return res;
+    }
+
     /// TODO - below is just something quick, not optimal
     std::vector< std::unordered_set<size_t> > index_results;
     size_t i = 0;
@@ -2380,13 +2418,12 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
 
     auto isRangeSelectedByIndex = [&](size_t idx, size_t range_begin)
     {
-        if (idx <= skip_index_results.size())
+        if (idx < skip_index_results.size())
             return index_results[idx].find(range_begin) != index_results[idx].end();
         else
             return true; /// UNKNOWN
     };
 
-    MarkRanges res;
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
     /// Evaluate the RPN over all the ranges.
@@ -2397,7 +2434,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
         {
             if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
             {
-                rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column - 1, range_begin));
+                rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column, range_begin));
             }
             else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
             {
@@ -2426,11 +2463,11 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForFilterWithMixedAndOr(
                 rpn_stack.emplace_back(false);
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForFilterWithMixedAndOr()", element.function);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForConditionWithORs()", element.function);
         }
 
         if (rpn_stack.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForFilterWithMixedAndOr()", rpn_stack.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForConditionWithORs()", rpn_stack.size());
 
         if (rpn_stack[0])
             res.push_back({range_begin, range_begin + 1}); /// TODO - range coalesce

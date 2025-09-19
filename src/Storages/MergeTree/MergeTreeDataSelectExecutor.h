@@ -72,6 +72,7 @@ public:
         const std::optional<KeyCondition> & total_offset_condition,
         MarkRanges * exact_ranges,
         const Settings & settings,
+        bool & was_index_useful,
         LoggerPtr log);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
@@ -202,7 +203,7 @@ public:
         const std::optional<KeyCondition> & total_offset_condition,
         const std::optional<KeyCondition> & rpn_template_condition,
 	const KeyCondition::RPN & finalSetOfRangesForFilterWithMixedAndOr,
-        KeyCondition::ConditionType filter_type,
+        KeyCondition::ConditionType condition_type,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
@@ -244,9 +245,10 @@ public:
     static void prepareIndexConditionsForDisjuncts(
         std::optional<ReadFromMergeTree::Indexes> & indexes);
 
-    static MarkRanges finalSetOfRangesForFilterWithMixedAndOr(
+    static MarkRanges finalSetOfRangesForConditionWithORs(
         MergeTreeData::DataPartPtr part,
         const std::optional<KeyCondition> & rpn_template_condition,
+        KeyCondition::ConditionType condition_type,
 	const KeyCondition::RPN & finalSetOfRangesForFilterWithMixedAndOr,
         const std::vector<MarkRanges> & skip_index_results);
 };

@@ -199,7 +199,7 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
-        KeyCondition::ConditionType filter_type{KeyCondition::OnlyConjuncts};
+        KeyCondition::ConditionType condition_type{KeyCondition::OnlyConjuncts};
     };
 
     static AnalysisResultPtr selectRangesToRead(

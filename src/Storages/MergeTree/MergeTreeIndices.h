@@ -188,12 +188,12 @@ public:
     /// Few MergeTreeIndexConditionXXXX use KeyCondition, some don't, hence abstract method.
     virtual void transformToDisjuncts()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support transform to disjuncts");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support AND/OR transform, rerun with use_skip_indexes_on_disjuncts=0");
     }
 
     virtual std::vector<size_t> getResolvedPositions() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support get resolved positions");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support AND/OR transform, rerun with use_skip_indexes_on_disjuncts=0");
     }
 
     template <typename RPNElement>
