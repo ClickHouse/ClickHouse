@@ -5,6 +5,7 @@ sidebar_label: 'Date32'
 sidebar_position: 14
 slug: /sql-reference/data-types/date32
 title: 'Date32'
+doc_type: 'reference'
 ---
 
 # Date32
