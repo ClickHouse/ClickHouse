@@ -1077,14 +1077,7 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
                 getLogger("DiskObjectStorageTransaction"),
                 fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
-            try
-            {
-                undo();
-            }
-            catch (...) /// NOLINT(bugprone-empty-catch)
-            {
-                // undo call logs all exceptions already, do not log again
-            }
+            undo();
 
             throw;
         }
@@ -1101,28 +1094,41 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
     }
     catch (...)
     {
-        try
-        {
-            if (needRollbackBlobs(options))
-                undo();
-        }
-        catch (...) /// NOLINT(bugprone-empty-catch)
-        {
-            // undo call logs all exceptions already, do not log again
-        }
+        if (needRollbackBlobs(options))
+            undo();
 
         throw;
     }
 
     StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
-        operation->finalize(objects_to_remove);
+    {
+        try
+        {
+            operation->finalize(objects_to_remove);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__,
+                fmt::format("An error occurred while finalizing transaction's operation ({})", operation->getInfoForLog()));
+        }
+    }
 
-    object_storage.removeObjectsIfExist(objects_to_remove);
+    try
+    {
+        object_storage.removeObjectsIfExist(objects_to_remove);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            "An error occurred while removing objects during finalizing transaction");
+    }
+
     operations_to_execute.clear();
-
-    LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
     is_committed = true;
+    LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
 }
 
 
@@ -1175,39 +1181,31 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     if (std::get_if<MetaInKeeperCommitOutcome>(&outcome) == nullptr)
         outcome = metadata_transaction->tryCommit(options);
 
-    try
+
+    // smt_insert_fake_hardware_error injects a fake hardware error after the commit attempt
+    fiu_do_on(FailPoints::smt_insert_fake_hardware_error,
     {
-        // smt_insert_fake_hardware_error injects a fake hardware error after the commit attempt
-        fiu_do_on(FailPoints::smt_insert_fake_hardware_error,
+        auto * result = std::get_if<MetaInKeeperCommitOutcome>(&outcome);
+        result->code = Coordination::Error::ZOPERATIONTIMEOUT;
+    });
+
+    if (!isSuccessfulOutcome(outcome))
+    {
+        /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
+        metadata_transaction = metadata_storage.createTransaction();
+
+        if (canRollbackBlobs(options, outcome))
         {
-            auto * result = std::get_if<MetaInKeeperCommitOutcome>(&outcome);
-            result->code = Coordination::Error::ZOPERATIONTIMEOUT;
-        });
-
-        if (!isSuccessfulOutcome(outcome))
-        {
-            /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
-            metadata_transaction = metadata_storage.createTransaction();
-
-            if (canRollbackBlobs(options, outcome))
-            {
-                undo();
-            }
-            else
-            {
-                LOG_DEBUG(getLogger("DiskObjectStorageTransaction"),
-                    "Commit failed, but rollback of blobs is not needed. "
-                    "Transaction will be retried without rolling back blobs.");
-            }
-
-            return outcome;
+            undo();
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        undo();
-        throw;
+        else
+        {
+            LOG_DEBUG(getLogger("DiskObjectStorageTransaction"),
+                "Commit failed, but rollback of blobs is not needed. "
+                "Transaction will be retried without rolling back blobs.");
+        }
+
+        return outcome;
     }
 
     /// after successful commit of metadata transaction we can not rollback transaction
@@ -1240,10 +1238,12 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
     operations_to_execute.clear();
     is_committed = true;
+    LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
+
     return outcome;
 }
 
-void DiskObjectStorageTransaction::undo()
+void DiskObjectStorageTransaction::undo() noexcept
 {
     if (is_committed)
     {
@@ -1251,7 +1251,6 @@ void DiskObjectStorageTransaction::undo()
         return;
     }
 
-    std::exception_ptr first_exception = nullptr;
     for (const auto & operation : operations_to_execute | std::views::reverse)
     {
         try
@@ -1263,16 +1262,10 @@ void DiskObjectStorageTransaction::undo()
             tryLogCurrentException(
                         getLogger("DiskObjectStorageTransaction"),
                         fmt::format("An error occurred while undoing transaction's operation #({})", operation->getInfoForLog()));
-
-            if (!first_exception)
-                first_exception = std::current_exception();
         }
     }
 
     operations_to_execute.clear();
-
-    if (first_exception)
-        std::rethrow_exception(first_exception);
 }
 
 }

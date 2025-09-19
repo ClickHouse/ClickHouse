@@ -25,6 +25,9 @@ public:
     /// Execute operation and something to metadata transaction
     virtual void execute(MetadataTransactionPtr transaction) = 0;
     /// Revert operation if possible
+    /// It is called if something went wrong before commit of metadata transaction
+    /// It is called in reverse order of execution of operations for all operations
+    /// even if they were not executed at all
     virtual void undo() = 0;
     /// Action to execute after metadata transaction successfully committed.
     /// Useful when it's impossible to revert operation
@@ -75,7 +78,7 @@ public:
 
     void commit(const TransactionCommitOptionsVariant & options) override;
     void commit() override { commit(NoCommitOptions{}); }
-    void undo() override;
+    void undo() noexcept override;
 
     void createDirectory(const std::string & path) override;
 

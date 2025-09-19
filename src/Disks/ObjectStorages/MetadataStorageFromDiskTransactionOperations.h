@@ -349,13 +349,11 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
         const std::string & path_,
         size_t size_,
         const MetadataStorageFromDisk & metadata_storage_,
-        IDisk & disk_,
-        MetadataStorageFromDiskTransaction & metadata_tx_)
+        IDisk & disk_)
         : path(path_)
         , size(size_)
         , metadata_storage(metadata_storage_)
         , disk(disk_)
-        , metadata_tx(metadata_tx_)
     {
     }
 
@@ -369,7 +367,6 @@ private:
 
     const MetadataStorageFromDisk & metadata_storage;
     IDisk & disk;
-    MetadataStorageFromDiskTransaction & metadata_tx;
 
     std::unique_ptr<WriteFileOperation> write_operation;
 };

@@ -74,7 +74,6 @@ public:
     DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-    static StoredObjects getStorageObjects(DiskObjectStorageMetadataPtr metadata, const std::string & path);
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
@@ -141,8 +140,6 @@ public:
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override;
-
-    DiskObjectStorageMetadataPtr tryGetFileMetadataFromTransactionIfExists(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };

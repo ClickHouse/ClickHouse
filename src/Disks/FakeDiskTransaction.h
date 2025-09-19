@@ -26,7 +26,7 @@ public:
     }
 
     void commit(const TransactionCommitOptionsVariant &) override {}
-    void undo() override {}
+    void undo() noexcept override {}
 
     void createDirectory(const std::string & path) override
     {

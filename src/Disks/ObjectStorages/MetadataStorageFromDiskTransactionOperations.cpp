@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 static std::string getTempFileName(const std::string & dir)
@@ -389,23 +390,22 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
-    DiskObjectStorageMetadataPtr metadata = metadata_tx.tryGetFileMetadataFromTransactionIfExists(path, metadata_lock);
-    if (!metadata && metadata_storage.existsFile(path))
-        metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+    if (!metadata_storage.existsFile(path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, can't truncate", path);
 
-    if (metadata)
+    DiskObjectStorageMetadataPtr metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+    chassert(metadata);
+
+    while (metadata->getTotalSizeBytes() > size)
     {
-        while (metadata->getTotalSizeBytes() > size)
-        {
-            auto object_key_with_metadata = metadata->popLastObject();
-            outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
-        }
-        if (metadata->getTotalSizeBytes() != size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, size);
-
-        write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
-        write_operation->execute(metadata_lock);
+        auto object_key_with_metadata = metadata->popLastObject();
+        outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
     }
+    if (metadata->getTotalSizeBytes() != size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, size);
+
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+    write_operation->execute(metadata_lock);
 }
 
 void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)

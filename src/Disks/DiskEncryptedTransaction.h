@@ -63,7 +63,7 @@ public:
     }
     void commit() override { commit(NoCommitOptions{}); }
 
-    void undo() override
+    void undo() noexcept override
     {
         delegate_transaction->undo();
     }

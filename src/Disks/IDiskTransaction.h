@@ -39,7 +39,7 @@ public:
     virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
     virtual void commit() { commit(NoCommitOptions{}); }
 
-    virtual void undo() = 0;
+    virtual void undo() noexcept = 0;
 
     virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
