@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.10",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"datalake_disk_name", "", "", "New setting."},
@@ -877,6 +881,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
