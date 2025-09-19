@@ -29,6 +29,18 @@ def test_table_function():
     )
 
 
+def test_table_function_old_name():
+    # "arrowflight" is an obsolete name.
+    result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
+    assert result == TSV(
+        [
+            ["test_value_1", "data1"],
+            ["abcadbc", "text_text_text"],
+            ["123456789", "data3"],
+        ]
+    )
+
+
 def test_table_function_with_auth():
     result = node.query(
         f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', '{arrowflight_pass}')"
