@@ -26,8 +26,6 @@
 #include <Core/Settings.h>
 
 #include <stack>
-#include <fmt/ranges.h>
-
 namespace DB
 {
 namespace Setting
