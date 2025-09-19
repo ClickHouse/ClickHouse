@@ -3081,8 +3081,10 @@ toJSONString
 tokenbf
 tokenization
 tokenize
+tokenizes
 tokenized
 tokenizer
+tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

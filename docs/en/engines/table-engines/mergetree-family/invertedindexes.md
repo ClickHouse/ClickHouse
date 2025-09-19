@@ -100,7 +100,7 @@ Advanced users can specify a different index granularity (we do not recommend th
 
 <summary>Advanced parameters</summary>
 
-The default values of the following advanced paramters will work well in virtually all situations.
+The default values of the following advanced parameters will work well in virtually all situations.
 We do not recommend changing them.
 
 Optional parameter `dictionary_block_size` (default: 128) specifies the size of dictionary blocks in rows.
@@ -275,7 +275,7 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-Supported functions: TODO
+#### Supported functions
 
 ## Example: Hackernews dataset {#full-text-search-of-the-hacker-news-dataset}
 
