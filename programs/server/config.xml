@@ -1421,6 +1421,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
+    <!-- Aggregated ZooKeeper log.
+    -->
+    <aggregated_zookeeper_log>
+        <database>system</database>
+        <table>aggregated_zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </aggregated_zookeeper_log>
+
     <!-- Configure system.dashboards for dashboard.html.
 
          Could have any query parameters, for which there will be an input on the page.
@@ -1587,6 +1597,17 @@
     <cpu_slot_preemption>true</cpu_slot_preemption>
     <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    -->
+
+    <!-- Settings to tune cpu and memory overload warnings for system.warnings.
+    <resource_overload_warnings>
+        <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
+        <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
+        <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
+        <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+        <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
+        <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
+    </resource_overload_warnings>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
