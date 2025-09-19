@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+            {"query_plan_convert_any_join_to_semi_or_anti_join", true, true, "New setting."},
             {"text_index_use_bloom_filter", true, true, "New setting."},
             {"query_plan_direct_read_from_text_index", true, true, "New setting."},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
