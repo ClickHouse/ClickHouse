@@ -10,11 +10,11 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # system.delta_lake_metadata_log
 
-The `system.delta_lake_metadata_log` table records metadata access and parsing events for Delta Lake tables read by ClickHouse. It provides detailed information about each metadata file or entry processed, which is useful for debugging, auditing, and understanding Delta table structure evolution.
+The `system.delta_lake_metadata_log` table records metadata access and parsing events for Delta Lake tables read by ClickHouse. It provides detailed information about each metadata file, which is useful for debugging, auditing, and understanding Delta table structure evolution.
 
 ## Purpose {#purpose}
 
-This table logs every metadata file and entry read from Delta Lake tables. It helps users trace how ClickHouse interprets Delta table metadata and diagnose issues related to schema evolution, snapshot resolution, or query planning.
+This table logs every metadata file read from Delta Lake tables. It helps users trace how ClickHouse interprets Delta table metadata and diagnose issues related to schema evolution, snapshot resolution, or query planning.
 
 :::note
 This table is primarily intended for debugging purposes.
@@ -23,7 +23,7 @@ This table is primarily intended for debugging purposes.
 ## Columns {#columns}
 | Name           | Type      | Description                                                                                   |
 |----------------|-----------|----------------------------------------------------------------------------------------------|
-| `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log entry.                                                                       |
+| `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log file.                                                                       |
 | `event_time`   | [DateTime](../../sql-reference/data-types/datetime.md)  | Timestamp of the event.                                                                      |
 | `query_id`     | [String](../../sql-reference/data-types/string.md)    | Query ID that triggered the metadata read.                                                   |
 | `table_path`   | [String](../../sql-reference/data-types/string.md)    | Path to the Delta Lake table.                                                                |
