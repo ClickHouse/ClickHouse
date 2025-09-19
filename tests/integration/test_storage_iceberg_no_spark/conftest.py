@@ -37,19 +37,7 @@ def started_cluster_iceberg_no_spark():
                 "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
+                "configs/config.d/no_metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,

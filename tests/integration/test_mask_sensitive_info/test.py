@@ -289,6 +289,8 @@ def test_create_table():
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
+        f"ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
+        f"ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
     ]
 
     def make_test_case(i):
@@ -368,6 +370,8 @@ def test_create_table():
             "CREATE TABLE table33 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'",
             "CREATE TABLE table34 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'",
             "CREATE TABLE table35 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')",
+            "CREATE TABLE table36 (`x` int) ENGINE = ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
+            "CREATE TABLE table37 (`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -487,6 +491,8 @@ def test_table_functions():
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
+        f"arrowflight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
+        f"arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
     ]
 
     def make_test_case(i):
@@ -572,6 +578,8 @@ def test_table_functions():
             f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc45 (`x` int) AS arrowflight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
+            "CREATE TABLE tablefunc46 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )

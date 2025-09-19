@@ -4,6 +4,7 @@ keywords: ['full-text search', 'text index', 'index', 'indices']
 sidebar_label: 'Full-text Search using Text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
 title: 'Full-text Search using Text Indexes'
+doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

@@ -4,6 +4,7 @@ description: 'System table containing a history of memory and metric values from
 keywords: ['system table', 'query_metric_log']
 slug: /operations/system-tables/query_metric_log
 title: 'system.query_metric_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

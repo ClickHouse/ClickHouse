@@ -3,6 +3,7 @@ description: 'System table containing information about projection parts for tab
 keywords: ['system table', 'projection parts']
 slug: /operations/system-tables/projections-parts
 title: 'system.projection_parts'
+doc_type: 'reference'
 ---
 
 # system.projection_parts

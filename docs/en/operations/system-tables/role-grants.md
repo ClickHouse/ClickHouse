@@ -3,6 +3,7 @@ description: 'System table containing the role grants for users and roles.'
 keywords: ['system table', 'role_grants']
 slug: /operations/system-tables/role-grants
 title: 'system.role_grants'
+doc_type: 'reference'
 ---
 
 # system.role_grants

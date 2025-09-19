@@ -311,6 +311,7 @@ CREATE TABLE system.functions
     `description` String,
     `syntax` String,
     `arguments` String,
+    `parameters` String,
     `returned_value` String,
     `examples` String,
     `introduced_in` String,
@@ -607,6 +608,7 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_compressed_bytes` Array(UInt64),
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
+    `statistics` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name

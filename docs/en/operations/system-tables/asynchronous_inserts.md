@@ -4,6 +4,7 @@ description: 'System table containing information about pending asynchronous ins
 keywords: ['system table', 'asynchronous_inserts']
 slug: /operations/system-tables/asynchronous_inserts
 title: 'system.asynchronous_inserts'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -4,6 +4,7 @@ sidebar_label: 'Arrow Flight'
 sidebar_position: 186
 slug: /engines/table-engines/integrations/arrowflight
 title: 'Arrow Flight'
+doc_type: 'reference'
 ---
 
 # Arrow Flight
@@ -14,17 +15,18 @@ This integration allows ClickHouse to fetch data from external Flight-enabled se
 ## Creating a Table {#creating-a-table}
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name
-(
-    name1 [type1],
-    name2 [type2], ...
-) ENGINE = ArrowFlight('host:port', 'dataset_name');
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
 ```
 
 **Engine Parameters**
 
 * `host:port` — Address of the remote Arrow Flight server.
 * `dataset_name` — Identifier of the dataset on the Flight server.
+* `username` - Username to use with basic HTTP style authentication.
+* `password` - Password to use with basic HTTP style authentication.
+If `username` and `password` are not specified, it means that authentication is not used
+(that will work only if the Arrow Flight server allows it).
 
 ## Usage Example {#usage-example}
 

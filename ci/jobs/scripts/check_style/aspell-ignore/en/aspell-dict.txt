@@ -256,6 +256,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked

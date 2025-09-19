@@ -6,6 +6,7 @@ sidebar_label: 'Memory'
 sidebar_position: 110
 slug: /engines/table-engines/special/memory
 title: 'Memory Table Engine'
+doc_type: 'reference'
 ---
 
 # Memory table engine
