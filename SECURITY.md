@@ -74,4 +74,3 @@ Removal criteria:
 
 Notification process:
 ClickHouse will post notifications within our OSS Trust Center and notify subscribers. Subscribers must log in to the Trust Center to download the notification. The notification will include the timeframe for public disclosure.
-

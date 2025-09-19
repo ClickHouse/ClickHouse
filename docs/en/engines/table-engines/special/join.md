@@ -4,6 +4,7 @@ sidebar_label: 'Join'
 sidebar_position: 70
 slug: /engines/table-engines/special/join
 title: 'Join Table Engine'
+doc_type: 'reference'
 ---
 
 # `Join` table engine

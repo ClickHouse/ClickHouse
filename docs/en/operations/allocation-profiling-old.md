@@ -3,6 +3,7 @@ description: 'Page detailing allocation profiling in ClickHouse'
 sidebar_label: 'Allocation profiling for versions before 25.9'
 slug: /operations/allocation-profiling-old
 title: 'Allocation profiling for versions before 25.9'
+doc_type: 'reference'
 ---
 
 import Tabs from '@theme/Tabs';
