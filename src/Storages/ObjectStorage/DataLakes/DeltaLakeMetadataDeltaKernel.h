@@ -25,6 +25,8 @@ class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 public:
     static constexpr auto name = "DeltaLake";
 
+    const char * getName() const override { return name; }
+
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -36,7 +38,7 @@ public:
 
     bool update(const ContextPtr & context) override;
 
-    NamesAndTypesList getTableSchema() const override;
+    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
@@ -62,6 +64,8 @@ public:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
+        StorageMetadataPtr storage_metadata_snapshot,
+
         ContextPtr context) const override;
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }

@@ -99,13 +99,14 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t list_batch_size,
+    StorageMetadataPtr /*storage_metadata_snapshot*/,
     ContextPtr /* context  */) const
 {
     std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
-NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
+NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr /*local_context*/) const
 {
     std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getTableSchema();

@@ -3,12 +3,13 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/ColumnSize.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -55,6 +56,7 @@ struct StorageInMemoryMetadata
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
 
+
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
     std::optional<String> definer;
@@ -68,6 +70,9 @@ struct StorageInMemoryMetadata
     /// Version of metadata. Managed properly by ReplicatedMergeTree only
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
+
+    /// ICEBERG table state. Supported for Iceberg tables.
+    std::optional<Iceberg::TableStateSnapshot> iceberg_table_state;
 
     StorageInMemoryMetadata() = default;
 
@@ -119,6 +124,8 @@ struct StorageInMemoryMetadata
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
+
+    void setIcebergTableState(const Iceberg::TableStateSnapshot & iceberg_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

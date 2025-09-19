@@ -133,7 +133,7 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
