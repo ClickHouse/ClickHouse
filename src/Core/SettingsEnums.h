@@ -294,6 +294,7 @@ enum class Dialect : uint8_t
     clickhouse,
     kusto,
     prql,
+    promql,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -422,6 +423,33 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class MergeTreeObjectSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V3,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+
+enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
+{
+    MAP,
+    MAP_WITH_BUCKETS,
+    ADVANCED,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
+
+enum class MergeTreeDynamicSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V3,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+
 enum class SearchOrphanedPartsDisks : uint8_t
 {
     NONE,
@@ -433,10 +461,21 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
 enum class DecorrelationJoinKind : uint8_t
 {
-    LEFT,
+    LEFT = 0,
     RIGHT,
 };
 
 DECLARE_SETTING_ENUM(DecorrelationJoinKind)
 
+enum class IcebergMetadataLogLevel : uint8_t
+{
+    None = 0,
+    Metadata = 1,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
+};
+
+DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 }

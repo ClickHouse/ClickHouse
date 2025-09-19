@@ -31,6 +31,8 @@ struct Optimization
 {
     struct ExtraSettings
     {
+        size_t max_step_description_length;
+
         /// Vector-search-related settings
         size_t max_limit_for_vector_search_queries;
         bool vector_search_with_rescoring;
@@ -136,6 +138,7 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
@@ -148,15 +151,14 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, Query
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-void calculateHashTableCacheKeys(QueryPlan::Node & root);
+std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    std::optional<UInt64> rhs_size_estimation);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
-std::optional<UInt64> optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
@@ -166,12 +168,14 @@ std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support);
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool is_parallel_replicas_initiator_with_projection_support);
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

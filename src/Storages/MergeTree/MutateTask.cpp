@@ -790,15 +790,19 @@ static NameSet collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
-        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
-        files_to_skip.insert(index->getFileName() + mrk_extension);
+        auto index_substreams = index->getSubstreams();
+        for (const auto & index_substream : index_substreams)
+        {
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
+        }
 
         // Skip all text index files, for they will be rebuilt
         if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE);
+            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
@@ -882,7 +886,7 @@ static NameToNameVector collectFilesForRenames(
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
             static const std::array<String, 5> gin_suffixes = {
                 GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE,
-                GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE,
+                GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE,
                 GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE,
                 GinIndexStore::GIN_DICTIONARY_FILE_TYPE,
                 GinIndexStore::GIN_POSTINGS_FILE_TYPE,

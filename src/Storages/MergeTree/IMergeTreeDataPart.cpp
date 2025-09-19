@@ -1858,7 +1858,7 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
 {
     size_t file_size = part_storage.getFileSize(filename);
-    return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size, file_size);
+    return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
@@ -1958,7 +1958,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
         /// Avoid cannot allocated thread error. No need in threadpool read method here.
         read_settings.local_fs_method = LocalFSReadMethod::pread;
-        auto buf = getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size, std::nullopt);
+        auto buf = getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
         if (!buf)
             return false;
 
@@ -2067,7 +2067,7 @@ void IMergeTreeDataPart::remove()
     /// Projections should be never removed by themselves, they will be removed
     /// with by parent part.
     if (isProjectionPart() && !is_temp)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}", name, parent_part_name);
 
     GinIndexStoreFactory::instance().remove(getDataPartStoragePtr()->getRelativePath());
 
@@ -2386,29 +2386,33 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        ColumnSize index_size;
-
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = index_ptr->getFileName();
         auto index_name_escaped = escapeForFileName(index_name);
+        auto index_substreams = index_ptr->getSubstreams();
 
-        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
-
-        /// If part does not contain index
-        auto bin_checksum = checksums.files.find(index_file_name);
-        if (bin_checksum != checksums.files.end())
+        for (const auto & index_substream : index_substreams)
         {
-            index_size.data_compressed = bin_checksum->second.file_size;
-            index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            ColumnSize substream_size;
+
+            auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
+            auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
+
+            /// If part does not contain index
+            auto bin_checksum = checksums.files.find(index_file_name);
+            if (bin_checksum != checksums.files.end())
+            {
+                substream_size.data_compressed = bin_checksum->second.file_size;
+                substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            }
+
+            auto mrk_checksum = checksums.files.find(index_marks_file_name);
+            if (mrk_checksum != checksums.files.end())
+                substream_size.marks = mrk_checksum->second.file_size;
+
+            total_secondary_indices_size.add(substream_size);
+            secondary_index_sizes[index_description.name].add(substream_size);
         }
-
-        auto mrk_checksum = checksums.files.find(index_marks_file_name);
-        if (mrk_checksum != checksums.files.end())
-            index_size.marks = mrk_checksum->second.file_size;
-
-        total_secondary_indices_size.add(index_size);
-        secondary_index_sizes[index_description.name] = index_size;
     }
 }
 
@@ -2719,7 +2723,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     auto read_settings = getReadSettings().adjustBufferSize(size_hint);
     /// Default read method is pread_threadpool, but there is not much point in it here.
     read_settings.local_fs_method = LocalFSReadMethod::pread;
-    auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint, std::nullopt);
+    auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -2730,7 +2734,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
     constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint, std::nullopt))
+    if (auto res = getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

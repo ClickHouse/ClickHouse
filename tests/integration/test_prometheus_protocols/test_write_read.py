@@ -71,6 +71,13 @@ def execute_query_in_prometheus(query, timestamp):
     return r1
 
 
+# Executes a prometheus query in ClickHouse
+def execute_query_in_clickhouse(query, timestamp):
+    return node.query(
+        f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -89,6 +96,10 @@ def test_handle_normal_scrape():
     print(f"result={result}")
     pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
     assert re.match(pattern, result)
+    chresult = execute_query_in_clickhouse(query, evaluation_time)
+    print(f"chresult={chresult}")
+    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
+    assert re.match(chpattern, chresult)
 
 
 def test_remote_read_auth():

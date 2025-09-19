@@ -12,6 +12,9 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+
 
 namespace DataLake
 {
@@ -56,20 +59,11 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns);
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements);
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
-
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /* object_info */,
-        const SharedHeader & /* header */,
-        const std::optional<FormatSettings> & /* format_settings */,
-        ContextPtr /*context*/) const
-    {
-        return {};
-    }
 
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
@@ -87,7 +81,8 @@ public:
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
@@ -112,6 +107,11 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
+
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const {}
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+    virtual void drop(ContextPtr) {}
 
 protected:
     virtual ObjectIterator createKeysIterator(

@@ -62,6 +62,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -316,6 +317,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
@@ -339,6 +341,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
 namespace ErrorCodes
@@ -936,7 +939,11 @@ struct ContextSharedPart : boost::noncopyable
 
             /// Stop trace collector if any
             trace_collector.reset();
+        }
+
+        {
             /// Stop zookeeper connection
+            std::lock_guard lock(zookeeper_mutex);
             zookeeper.reset();
         }
 
@@ -1123,6 +1130,7 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -1462,7 +1470,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
 }
 
@@ -1502,8 +1510,21 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
+}
+
+void Context::setTemporaryStorageInDistributedCache([[maybe_unused]] size_t max_size)
+{
+#if ENABLE_DISTRIBUTED_CACHE
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    auto temp_data = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), DistributedCacheTag{});
+    std::lock_guard lock(shared->mutex);
+    shared->root_temp_data_on_disk = std::move(temp_data);
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache for temporary files is not supported");
+#endif
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1527,7 +1548,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
     shared->temporary_volume_legacy = volume;
 }
 
@@ -2268,6 +2289,25 @@ void Context::addQueryAccessInfo(
 {
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
+
+ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+{
+    {
+        SharedLockGuard lock(mutex);
+        if (time_series_tags_collector)
+            return *time_series_tags_collector;
+    }
+    std::lock_guard lock(mutex);
+    if (!time_series_tags_collector)
+        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
+    return *time_series_tags_collector;
+}
+
+const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+{
+    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
+}
+
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
@@ -3945,6 +3985,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -3986,9 +4027,12 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
+    size_t max_parallel_tasks_per_type = static_cast<size_t>(shared->server_settings[ServerSetting::background_schedule_pool_size]
+        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
     callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_schedule_pool_size],
+            max_parallel_tasks_per_type,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -4002,6 +4046,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -4015,6 +4060,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -4236,7 +4282,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (!shared->zookeeper)
     {
-        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+
+        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4336,35 +4385,24 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
-void Context::handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded()
+void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 {
-    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
-    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
-    /// instead of pointer to system table and it logs nothing. Furthermore, ZooKeeperConnectionLog will also miss
-    /// entries for connections that were established before initializeSystemLogs() was called.
-    /// This method explicitly sets correct pointer to system log after its initialization and also adds connected
-    /// entries for ZooKeeperConnectionLog.
-    /// TODO get rid of this if possible
-
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
     std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
     {
         SharedLockGuard lock(shared->mutex);
         if (!shared->system_logs)
             return;
 
-        zookeeper_log = shared->system_logs->zookeeper_log;
         zookeeper_connection_log = shared->system_logs->zookeeper_connection_log;
     }
 
-    if (!zookeeper_log && !zookeeper_connection_log)
+    if (!zookeeper_connection_log)
         return;
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
         if (shared->zookeeper)
         {
-            shared->zookeeper->setZooKeeperLog(zookeeper_log);
             if (zookeeper_connection_log)
                 zookeeper_connection_log->addConnected(
                     ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4375,7 +4413,6 @@ void Context::handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeede
         std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
         for (auto & zk : shared->auxiliary_zookeepers)
         {
-            zk.second->setZooKeeperLog(zookeeper_log);
             if (zookeeper_connection_log)
                 zookeeper_connection_log->addConnected(
                     zk.first, *zk.second, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4474,9 +4511,11 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 "config.xml",
                 name);
 
+        zkutil::ZooKeeperArgs args(config, config_name);
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4515,7 +4554,9 @@ static void reloadZooKeeperIfChangedImpl(
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
     std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
-    bool server_started)
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
+    bool server_started,
+    const Int32 send_receive_os_threads_nice_value)
 {
     static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
@@ -4525,7 +4566,9 @@ static void reloadZooKeeperIfChangedImpl(
 
         auto old_zk = zk;
 
-        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
+        zkutil::ZooKeeperArgs args(*config, config_name);
+        args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
+        zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
 
         if (zk_concection_log)
         {
@@ -4545,7 +4588,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -4572,7 +4615,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         else
         {
             LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, server_started);
+            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
             ++it;
         }
     }
@@ -5111,7 +5154,11 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
 
     if (!shared->system_logs)
         return {};
@@ -5213,6 +5260,16 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
+std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->iceberg_metadata_log;
+}
+
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5220,6 +5277,19 @@ std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
         return {};
 
     return shared->system_logs->dead_letter_queue;
+}
+
+std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() const
+{
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->aggregated_zookeeper_log;
 }
 
 SystemLogs Context::getSystemLogs() const
@@ -5239,6 +5309,7 @@ std::optional<Context::Dashboards> Context::getDashboards() const
         return {};
     return shared->dashboards;
 }
+
 
 namespace
 {
@@ -6315,6 +6386,12 @@ void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback
 }
 
 
+bool Context::hasClusterFunctionReadTaskCallback() const
+{
+    return next_task_callback.has_value();
+}
+
+
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
@@ -6728,6 +6805,16 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
+}
+
+void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
+{
+    storage_alias_behaviour = storage_alias_behaviour_;
+}
+
+uint8_t Context::getStorageAliasBehaviour() const
+{
+    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const

@@ -107,17 +107,19 @@ protected:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "s3Cluster")
+        else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
+                 (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
-        else if ((function->name() == "azureBlobStorage") || (function->name() == "icebergAzure"))
+        else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
+                 (function->name() == "icebergAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "azureBlobStorageCluster")
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -137,6 +139,14 @@ protected:
         else if (function->name() == "url")
         {
             findURLSecretArguments();
+        }
+        else if (function->name() == "ytsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
+        }
+        else if (function->name() == "arrowflight")
+        {
+            findArrowFlightSecretArguments();
         }
     }
 
@@ -203,6 +213,20 @@ protected:
             // Redis('host:port', 'db_index', 'password', 'pool_size')
             markSecretArgument(2, false);
             return;
+        }
+    }
+
+    void findArrowFlightSecretArguments()
+    {
+        if (isNamedCollectionName(0))
+        {
+            /// ArrowFlight(named_collection, ..., password = 'password')
+            findSecretNamedArgument("password", 1);
+        }
+        else
+        {
+            /// ArrowFlight('host:port', 'dataset', 'username', 'password')
+            markSecretArgument(3);
         }
     }
 
@@ -526,6 +550,14 @@ protected:
         {
             findRedisSecretArguments();
         }
+        else if (engine_name == "YTsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
+        }
+        else if (engine_name == "ArrowFlight")
+        {
+            findArrowFlightSecretArguments();
+        }
     }
 
     void findExternalDistributedTableEngineSecretArguments()
@@ -614,6 +646,12 @@ protected:
         /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
         if (url_arg_idx + 4 < count)
             markSecretArgument(url_arg_idx + 4);
+    }
+
+    void findYTsaurusStorageTableEngineSecretArguments()
+    {
+        // YTsaurus('base_uri', 'yt_path', 'auth_token')
+        markSecretArgument(2);
     }
 
     void findDatabaseEngineSecretArguments()

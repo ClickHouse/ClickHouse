@@ -96,6 +96,7 @@ extern const Event ParallelReplicasUsedCount;
 extern const Event ParallelReplicasUnavailableCount;
 
 extern const Event ParallelReplicasQueryCount;
+extern const Event ParallelReplicasNumRequests;
 }
 
 namespace DB
@@ -1106,6 +1107,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
     if (is_reading_completed)
@@ -1132,6 +1134,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
     ParallelReadResponse response;
