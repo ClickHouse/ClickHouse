@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int TOO_DEEP_RECURSION;
+    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 namespace
@@ -164,8 +165,7 @@ void UnlinkFileOperation::execute()
     /// Let's update hardlink count written in serialized DiskObjectStorageMetadata before the move
     tryUnlinkMetadataFile();
 
-    /// We need to move file to the random name in the same directory to prepare
-    /// for the possible undo and to save the fs hardlink count
+    /// We need to move file to the random name for the possible undo and to save the fs hardlink count
     auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
     tmp_file_path = tmp_path;
@@ -173,7 +173,6 @@ void UnlinkFileOperation::execute()
 
 void UnlinkFileOperation::undo()
 {
-    /// We need to execute operations in reverse order to be able to undo the write operation.
     if (tmp_file_path.has_value())
         disk.moveFile(tmp_file_path.value(), path);
 
@@ -303,7 +302,6 @@ void RemoveRecursiveOperation::execute()
 
 void RemoveRecursiveOperation::undo()
 {
-    /// We need to move directory or file for the previouse place to be able to undo writes.
     if (disk.existsFile(temp_path))
         disk.moveFile(temp_path, path);
     else if (disk.existsDirectory(temp_path))
