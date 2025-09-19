@@ -6,6 +6,7 @@ keywords: ['Avro']
 output_format: true
 slug: /interfaces/formats/Avro
 title: 'Avro'
+doc_type: 'reference'
 ---
 
 import DataTypeMapping from './_snippets/data-types-matching.md'

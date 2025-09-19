@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
+    extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
@@ -113,6 +114,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];

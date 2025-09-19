@@ -3,7 +3,6 @@
 #include <base/types.h>
 
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/GinFilter.h>
 
 
 namespace DB
