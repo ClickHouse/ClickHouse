@@ -104,7 +104,7 @@ For official integrations please see the [integrations page](/integrations).
 <summary>Logging</summary>
 
 - [rsyslog](https://www.rsyslog.com/)
-    - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
+  - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
 - [fluentd](https://www.fluentd.org)
   - [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
 - [logagent](https://www.sematext.com/logagent)
