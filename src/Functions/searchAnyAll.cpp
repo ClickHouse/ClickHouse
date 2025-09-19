@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -158,12 +157,12 @@ void execute(
     const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    switch (SearchTraits::search_mode)
+    switch (SearchTraits::mode)
     {
-        case GinSearchMode::Any:
+        case SearchAnyAllMode::Any:
             executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
-        case GinSearchMode::All:
+        case SearchAnyAllMode::All:
             executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
     }
