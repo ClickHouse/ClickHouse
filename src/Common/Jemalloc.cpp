@@ -68,7 +68,7 @@ void setProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const std::string & file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
@@ -77,7 +77,7 @@ std::string flushProfile(const std::string & file_prefix)
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
         mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
-        return std::string{getLastFlushProfileForThread()};
+        return getLastFlushProfileForThread();
     }
 
     static std::atomic<size_t> profile_counter{0};
@@ -85,7 +85,7 @@ std::string flushProfile(const std::string & file_prefix)
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
-    return std::string{getLastFlushProfileForThread()};
+    return getLastFlushProfileForThread();
 }
 
 void setBackgroundThreads(bool enabled)
