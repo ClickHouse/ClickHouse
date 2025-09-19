@@ -157,6 +157,7 @@ def test_named_collection(started_cluster):
     for i in range(10):
         node.query(f"DROP NAMED COLLECTION test_{i}")
     assert _get_number_of_collections() == 0
+    assert _get_warnings() == 0
     for i in range(10):
         node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
     assert _get_number_of_collections() == 10
