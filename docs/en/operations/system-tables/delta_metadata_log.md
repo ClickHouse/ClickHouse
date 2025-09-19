@@ -4,6 +4,7 @@ description: 'System table containing information about metadata files read from
 keywords: ['system table', 'delta_lake_metadata_log']
 slug: /operations/system-tables/delta_lake_metadata_log
 title: 'system.delta_lake_metadata_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
