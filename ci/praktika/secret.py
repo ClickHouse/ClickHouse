@@ -34,13 +34,18 @@ class Secret:
             if self.type == Secret.Type.AWS_SSM_SECRET:
                 if isinstance(self.name, list):
                     # add support for requesting all at once
-                    assert False, "TODO: Not supported"
+                    res = []
+                    for name in self.name:
+                        res.append(Secret.Config(name=name, type=self.type).get_value())
+                    return res
                 else:
                     return self.get_aws_ssm_secret()
             elif self.type in (Secret.Type.GH_SECRET, Secret.Type.GH_VAR):
                 if isinstance(self.name, list):
-                    # add support for requesting all at once
-                    assert False, "TODO: Not supported"
+                    res = []
+                    for name in self.name:
+                        res.append(Secret.Config(name=name, type=self.type).get_value())
+                    return res
                 else:
                     return self.get_gh_secret()
             else:
@@ -111,8 +116,9 @@ class Secret:
             """
             Join secrets of the same type and region, to allow requesting all at once and save on api calls if applicable
             """
-            assert (
-                self.type == other.type
+            assert self.type == other.type or all(
+                type_ in (Secret.Type.GH_SECRET, Secret.Type.GH_VAR)
+                for type_ in (self.type, other.type)
             ), f"Secrets must have the same type [{self.type}] and [{other.type}]"
             assert (
                 self.region == other.region

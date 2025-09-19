@@ -3,6 +3,7 @@ description: 'System table containing information about Kafka consumers.'
 keywords: ['system table', 'kafka_consumers']
 slug: /operations/system-tables/kafka_consumers
 title: 'system.kafka_consumers'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

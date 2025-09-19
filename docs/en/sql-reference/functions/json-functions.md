@@ -3,6 +3,7 @@ description: 'Documentation for Json Functions'
 sidebar_label: 'JSON'
 slug: /sql-reference/functions/json-functions
 title: 'JSON Functions'
+doc_type: 'reference'
 ---
 
 ## Types of JSON functions {#types-of-functions}

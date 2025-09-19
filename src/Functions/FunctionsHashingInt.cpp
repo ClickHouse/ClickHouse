@@ -40,7 +40,7 @@ The hash function is relatively fast but not cryptographic hash function.
     FunctionDocumentation::Description intHash64_description = R"(
 Calculates a 64-bit hash of an integer.
 
-The hash function is relatively fast (even faster than [`intHash32`](#inthash32)) but not a cryptographic hash function.
+The hash function is relatively fast (even faster than [`intHash32`](#intHash32)) but not a cryptographic hash function.
 )";
     FunctionDocumentation::Syntax intHash64_syntax = "intHash64(int)";
     FunctionDocumentation::Arguments intHash64_arguments = {
