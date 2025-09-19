@@ -19,7 +19,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+extern const SettingsBool enable_automatic_parallel_replicas;
 }
 
 namespace ErrorCodes
@@ -179,7 +179,7 @@ void tryEnableParallelReplicas(
     if (!optimization_settings.query_plan_builder)
         return;
 
-    if (optimization_settings.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 3)
+    if (!optimization_settings.context->getSettingsRef()[Setting::enable_automatic_parallel_replicas])
         return;
 
     auto dump = [&](const QueryPlan & plan)
