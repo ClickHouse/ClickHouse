@@ -892,7 +892,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```xml
     <validate_tcp_client_information>false</validate_tcp_client_information>
     ```)", 0) \
-    DECLARE(Bool, storage_metadata_write_full_object_key, false, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format)", 0) \
+    DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
     A limit on the number of materialized views attached to a table.
 
