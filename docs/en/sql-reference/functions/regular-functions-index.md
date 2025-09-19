@@ -2,6 +2,7 @@
 description: 'Landing page for Regular Functions'
 slug: /sql-reference/functions/regular-functions
 title: 'Regular functions'
+doc_type: 'landing-page'
 ---
 
 | Page                                             | Description                                                                                                                     |

@@ -546,6 +546,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
     mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
+    mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
+    mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -4174,6 +4177,16 @@ ThrottlerPtr Context::getMergesThrottler() const
     return shared->merges_throttler;
 }
 
+ThrottlerPtr Context::getDistributedCacheReadThrottler() const
+{
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
+{
+    return shared->distributed_cache_write_throttler;
+}
+
 void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
 {
     if (read_bandwidth)
@@ -5268,6 +5281,16 @@ std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
         return {};
 
     return shared->system_logs->iceberg_metadata_log;
+}
+
+std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->delta_lake_metadata_log;
 }
 
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
