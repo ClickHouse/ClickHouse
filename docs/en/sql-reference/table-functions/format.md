@@ -4,6 +4,7 @@ slug: /sql-reference/table-functions/format
 sidebar_position: 65
 sidebar_label: 'format'
 title: 'format'
+doc_type: 'reference'
 ---
 
 # format Table Function

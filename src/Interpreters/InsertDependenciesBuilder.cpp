@@ -893,6 +893,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                 {
                     chassert(!squashing_processors_list.empty());
                     processor_list.splice(apply_squashing_processor_it, std::move(squashing_processors_list));
+                    squashing_processors_list.clear();
                 }
             }
         }

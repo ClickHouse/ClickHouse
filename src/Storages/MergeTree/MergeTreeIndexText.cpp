@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnsNumber.h>
@@ -40,6 +42,7 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
 /// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
