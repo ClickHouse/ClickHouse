@@ -1,5 +1,6 @@
 import atexit
 import logging
+import os
 import random
 import signal
 import sys
@@ -83,6 +84,7 @@ if __name__ == "__main__":
         "instances_dir": "/var/lib/clickhouse/user_files",
     }
     cluster = SimpleNamespace(**cluster_settings)
+    os.makedirs(cluster.instances_dir, exist_ok=True)
     catalog_server = create_spark_http_server(cluster, False, {})
 
     def http_cleanup():

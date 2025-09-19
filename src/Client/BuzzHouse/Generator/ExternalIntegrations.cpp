@@ -1596,7 +1596,13 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         first = false;
     }
     buf += "]}";
+    fc.outf << "--External table " << buf << std::endl;
     return httpPut("/sparktable", buf);
+}
+
+bool DolorIntegration::reRunCreateTable(const String & body)
+{
+    return httpPut("/sparktable", body);
 }
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
@@ -1785,7 +1791,23 @@ bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const Int
             chassert(0);
             break;
     }
-    return next ? next->performExternalCommand(seed, cname, tname) : true;
+    return next ? next->performExternalCommand(seed, cname, tname) : false;
+}
+
+bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const String & body)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->reRunCreateTable(body) : false;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const

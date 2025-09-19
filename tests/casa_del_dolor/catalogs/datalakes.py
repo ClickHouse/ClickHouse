@@ -498,7 +498,7 @@ rootLogger.appenderRef.file.ref = file
 logger.jetty.name = org.eclipse.jetty
 logger.jetty.level = warn
 """
-        with open(self.spark_log_config, "w") as f:
+        with open(self.spark_log_config, "w+") as f:
             f.write(spark_log)
 
     def start_uc_server(self):
@@ -520,8 +520,8 @@ logger.jetty.level = warn
             uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
             os.makedirs(self.uc_server_run_dir, exist_ok=True)
             # Start the server
-            with open(self.uc_server_run_dir / "uc_server_bin.log", "w") as f1:
-                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w") as f2:
+            with open(self.uc_server_run_dir / "uc_server_bin.log", "w+") as f1:
+                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w+") as f2:
                     self.uc_server = subprocess.Popen(
                         [str(uc_server_bin)],
                         cwd=str(self.uc_server_run_dir),

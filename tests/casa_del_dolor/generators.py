@@ -180,7 +180,7 @@ class BuzzHouseGenerator(Generator):
                     "path": "/api/2.1/unity-catalog",
                 }
 
-        with open(self.temp.name, "w") as file2:
+        with open(self.temp.name, "w+") as file2:
             file2.write(json.dumps(buzz_config))
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:

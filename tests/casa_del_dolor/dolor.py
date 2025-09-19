@@ -310,7 +310,7 @@ if len(args.replica_values) != len(args.shard_values):
 
 logging.basicConfig(
     filename=args.log_path,
-    filemode="w",
+    filemode="w+",
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     force=True,
@@ -425,7 +425,7 @@ if args.with_minio:
     os.environ["AWS_ACCESS_KEY_ID"] = cluster.minio_access_key
     os.environ["AWS_SECRET_ACCESS_KEY"] = cluster.minio_secret_key
     os.environ["AWS_REGION"] = "us-east-1"
-    with open(credentials_file.name, "w") as file:
+    with open(credentials_file.name, "w+") as file:
         file.write(
             f"[default]\naws_access_key_id = {cluster.minio_access_key}\naws_secret_access_key = {cluster.minio_secret_key}\n"
         )

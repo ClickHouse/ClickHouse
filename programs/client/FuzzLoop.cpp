@@ -537,6 +537,8 @@ bool Client::buzzHouse()
     static const String & restart_cmd = "--Reconnecting client";
     static const String & external_cmd = "--External command with seed ";
     static const RE2 extern_re(R"((?i)^--External\s+command\s+with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
+    static const String & rerun_table = "--External table ";
+    static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -569,6 +571,12 @@ bool Client::buzzHouse()
 
                 UNUSED(x);
                 runExternalCommand(external_integrations, seed, schema, table);
+            }
+            else if (startsWith(full_query, rerun_table) && RE2::FullMatch(full_query, rerun_table_re, &table))
+            {
+                const auto x = external_integrations->reRunCreateTable(BuzzHouse::IntegrationCall::Dolor, table);
+
+                UNUSED(x);
             }
             else
             {
