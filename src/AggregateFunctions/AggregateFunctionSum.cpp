@@ -72,7 +72,50 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
 
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sum", createAggregateFunctionSum<AggregateFunctionSumSimple>, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Calculates the sum of numeric values.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+sum(num)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"num", "Column of numeric values.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the sum of the values.", {"(U)Int*", "Float*", "Decimal*"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing sum of employee salaries",
+        R"(
+CREATE TABLE employees
+(
+    id UInt32,
+    name String,
+    salary UInt32
+)
+ENGINE = Memory;
+
+INSERT INTO employees VALUES
+    (87432, 'John Smith', 45680),
+    (59018, 'Jane Smith', 72350),
+    (20376, 'Ivan Ivanovich', 58900),
+    (71245, 'Anastasia Ivanovna', 89210);
+
+SELECT sum(salary) FROM employees;
+        )",
+        R"(
+┌─sum(salary)─┐
+│      266140 │
+└─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, AggregateFunctionFactory::Case::Insensitive, documentation});
     factory.registerFunction("sumWithOverflow", createAggregateFunctionSum<AggregateFunctionSumWithOverflow>);
     factory.registerFunction("sumKahan", createAggregateFunctionSum<AggregateFunctionSumKahan>);
 }

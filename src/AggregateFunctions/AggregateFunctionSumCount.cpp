@@ -101,7 +101,42 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumCount", createAggregateFunctionSumCount);
+    FunctionDocumentation::Description description = R"(
+Calculates the sum of the numbers and counts the number of rows at the same time.
+The function is used by ClickHouse query optimizer: if there are multiple [`sum`](/sql-reference/aggregate-functions/reference/sum), [`count`](/sql-reference/aggregate-functions/reference/count) or [`avg`](/sql-reference/aggregate-functions/reference/avg) functions in a query, they can be replaced to single `sumCount` function to reuse the calculations.
+The function is rarely needed to use explicitly.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+sumCount(x)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Input value.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a tuple `(sum, count)`, where `sum` is the sum of numbers and `count` is the number of rows with non-NULL values.", {"Tuple(T, T)"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing sum and count simultaneously",
+        R"(
+CREATE TABLE s_table (x Int8) ENGINE = Memory;
+INSERT INTO s_table SELECT number FROM numbers(0, 20);
+INSERT INTO s_table VALUES (NULL);
+
+SELECT sumCount(x) FROM s_table;
+        )",
+        R"(
+┌─sumCount(x)──┐
+│ (190, 20)    │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, {}, documentation});
 }
 
 }

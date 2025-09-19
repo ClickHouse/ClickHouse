@@ -116,7 +116,51 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(
 
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation);
+    FunctionDocumentation::Description description = R"(
+Calculates [Spearman's rank correlation coefficient](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient).
+
+The value of the correlation coefficient ranges from -1 to +1:
+- A value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases.
+- A value close or equal to 0 denotes no relationship between the two random variables.
+- A value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+rankCorr(x, y)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Arbitrary value.", {"Float*"}},
+        {"y", "Arbitrary value.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Perfect positive correlation",
+        R"(
+SELECT rankCorr(number, number) FROM numbers(100);
+        )",
+        R"(
+┌─rankCorr(number, number)─┐
+│                        1 │
+└──────────────────────────┘
+        )"
+    },
+    {
+        "Computing correlation between exponential and sine functions",
+        R"(
+SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);
+        )",
+        R"(
+┌─roundBankers(rankCorr(exp(number), sin(number)), 3)─┐
+│                                              -0.037 │
+└─────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, {}, documentation});
 }
 
 }
