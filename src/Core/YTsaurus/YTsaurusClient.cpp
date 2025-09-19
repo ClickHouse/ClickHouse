@@ -100,7 +100,7 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
     {
         size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
         URI host_for_request(connection_info.http_proxy_urls[url_index].c_str());
-        if (query->isHeavyQuery())
+        if (connection_info.enable_heavy_proxy_redirection && query->isHeavyQuery())
             host_for_request = getHeavyProxyURI(host_for_request);
 
         try
