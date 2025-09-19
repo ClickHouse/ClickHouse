@@ -751,7 +751,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
-    
+
     std::atomic<size_t> sum_marks_finalized = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
@@ -779,8 +779,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-	    MarkRanges initial_ranges = ranges.ranges;
-	    bool was_primary_index_useful = false;
+            MarkRanges initial_ranges = ranges.ranges;
+            bool was_primary_index_useful = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -2305,7 +2305,7 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     /// key index (or _part_offset).
 
     std::unordered_map<size_t, size_t> resolved_positions;
-    
+
     auto v = indexes->key_condition.getResolvedPositions();
     for (auto i : v)
         resolved_positions[i] = 0; /// primary key index is index 0
@@ -2378,7 +2378,6 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     {
         auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
         index_and_condition.condition->transformToDisjuncts();
-	LOG_TRACE(getLogger(""), "Modified index condition  {}  to disjunct", idx);
     }
     return;
 }

@@ -303,7 +303,7 @@ public:
         OnlyDisjunctsFullScan, /// e.g age > 50 OR salary > 1000 OR nw > 1000000. If no index on 'nw', then full scan is only option
     };
 
-    /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE 
+    /// Replaces all AND's with OR's and replaces FUNCTION_UNKNOWN with ALWAYS_FALSE
     static void transformToDisjuncts(RPN & rpn);
 
     void transformToDisjuncts() { transformToDisjuncts(rpn); }
