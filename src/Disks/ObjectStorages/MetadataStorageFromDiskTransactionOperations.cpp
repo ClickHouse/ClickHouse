@@ -29,9 +29,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int TOO_DEEP_RECURSION;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 namespace
