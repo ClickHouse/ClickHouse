@@ -3,6 +3,7 @@ description: 'System table containing information about columns in projection pa
 keywords: ['system table', 'projection part columns']
 slug: /operations/system-tables/projections-part-columns
 title: 'system.projection_parts'
+doc_type: 'reference'
 ---
 
 # system.projection_parts_columns
