@@ -63,8 +63,6 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
-    active_tasks.fetch_add(1, std::memory_order_relaxed);
-
     {
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
@@ -72,6 +70,7 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
 
     if (mode == Mode::ThreadPool)
     {
+        active_tasks.fetch_add(1, std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(1, std::memory_order_release);
         if (prev_size < max_threads)
@@ -90,8 +89,6 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
-    active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
-
     {
         std::unique_lock lock(mutex);
         queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
@@ -99,6 +96,7 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
 
     if (mode == Mode::ThreadPool)
     {
+        active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
         if (prev_size < max_threads)
@@ -124,7 +122,6 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
         queue.pop_front();
     }
     f();
-    active_tasks.fetch_sub(1, std::memory_order_relaxed);
     return true;
 }
 

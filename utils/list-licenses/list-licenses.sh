@@ -130,9 +130,6 @@ do
       "LICENSE-MIT.txt"
       "LICENSE-MIT.md"
       "LICENSE.MIT"
-      "LICENSE_A2"
-      "LICENSE_CC0"
-      "LICENSE_A2LLVM"
     )
     for possible_path in "${arr[@]}"
     do

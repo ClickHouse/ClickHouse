@@ -275,7 +275,7 @@ const QueryNode * findQueryForParallelReplicas(
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
                 const auto * join_logical = typeid_cast<JoinStepLogical *>(step);
-                if (join_logical && typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get()))
+                if (join_logical && join_logical->hasPreparedJoinStorage())
                     /// JoinStepLogical with prepared storage is converted to FilledJoinStep, not regular JoinStep.
                     join_logical = nullptr;
 

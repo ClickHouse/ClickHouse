@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -146,7 +145,7 @@ static size_t addNewFilterStepOrThrow(
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-    node.step->setStepDescription(*filter);
+    node.step->setStepDescription(filter->getStepDescription());
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -157,11 +156,12 @@ static size_t addNewFilterStepOrThrow(
 
         if (!filter_node || filter_is_constant)
         {
+            auto filter_description = filter->getStepDescription();
+
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
-            auto new_step = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
-            new_step->setStepDescription(*filter);
-            parent = std::move(new_step);
+            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
+            parent->setStepDescription(std::move(filter_description));
         }
         else
         {
@@ -199,45 +199,30 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, bool step_ch
 }
 
 static void buildEquialentSetsForJoinStepLogical(
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> & equivalent_expressions,
-    const JoinOperator & join_operator)
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_column,
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_column,
+    const JoinInfo & join_info)
 {
-    for (const auto & predicate : join_operator.expression)
+    if (!join_info.expression.disjunctive_conditions.empty())
+        return;
+
+    for (const auto & predicate : join_info.expression.condition.predicates)
     {
-        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
-        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
-            continue;
+        auto left_column = predicate.left_node.getColumn();
+        auto right_column = predicate.right_node.getColumn();
 
-        if (lhs.fromRight() && rhs.fromLeft())
-            std::swap(lhs, rhs);
-        else if (!lhs.fromLeft() || !rhs.fromRight())
+        if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
             continue;
-
-        auto left_column = lhs.getColumn();
-        auto right_column = rhs.getColumn();
         if (!left_column.type->equals(*right_column.type))
             continue;
-        equivalent_expressions.emplace_back(lhs, rhs);
+        equivalent_left_column[left_column.name] = right_column;
+        equivalent_right_column[right_column.name] = left_column;
     }
 }
 
-static void projectDagInputs(ActionsDAG & actions_dag)
-{
-    auto & outputs = actions_dag.getOutputs();
-    auto existing_outputs = std::ranges::to<std::unordered_set>(outputs);
-
-    for (const auto * node : actions_dag.getInputs())
-    {
-        if (existing_outputs.contains(node))
-            continue;
-        outputs.push_back(node);
-    }
-}
-
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
+static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     auto & parent = parent_node->step;
-    QueryPlanStepPtr & child = child_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
 
     auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
@@ -279,12 +264,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
         return 0;
-    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Full)
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> equivalent_expressions;
 
     bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
@@ -308,7 +292,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join)
     {
-        buildEquialentSetsForJoinStepLogical(equivalent_expressions, logical_join->getJoinOperator());
+        buildEquialentSetsForJoinStepLogical(
+            equivalent_left_stream_column_to_right_stream_column,
+            equivalent_right_stream_column_to_left_stream_column,
+            logical_join->getJoinInfo());
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
@@ -344,9 +331,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
-    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left)
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Left)
         right_stream_filter_push_down_input_columns_available = false;
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
+    else if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
     /** We disable push down to right table in cases:
@@ -355,23 +342,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       */
     bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
     if (logical_join)
-    {
-        bool has_logical_lookup = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
-        allow_push_down_to_right = !has_logical_lookup && logical_join->getJoinOperator().strictness != JoinStrictness::Asof;
-    }
+        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
 
     if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;
 
     Names equivalent_columns_to_push_down;
-
-    for (const auto & [lhs, rhs] : equivalent_expressions)
-    {
-        auto lhs_column = lhs.getColumn();
-        auto rhs_column = rhs.getColumn();
-        equivalent_left_stream_column_to_right_stream_column[lhs_column.name] = rhs_column;
-        equivalent_right_stream_column_to_left_stream_column[rhs_column.name] = lhs_column;
-    }
 
     if (left_stream_filter_push_down_input_columns_available)
     {
@@ -405,15 +381,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /// 1. push filter/expression into JOIN (as post-filter)
     /// 2. move filter within JOIN step, potentially changing JoinKind
     /// 3. push filter/expression out of JOIN (from pre-filter)
-
-    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, ActionsDAG side_dag)
+    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, const ActionsDAG & side_dag)
     {
-        projectDagInputs(side_dag);
-        filter_dag = ActionsDAG::merge(std::move(side_dag), std::move(filter_dag));
+        filter_dag = ActionsDAG::merge(side_dag.clone(), std::move(filter_dag));
         auto & outputs = filter_dag.getOutputs();
         outputs.resize(1);
-
-        projectDagInputs(filter_dag);
+        outputs.insert(outputs.end(), filter_dag.getInputs().begin(), filter_dag.getInputs().end());
         filter_dag.removeUnusedActions();
         return filter_dag;
     };
@@ -422,9 +395,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (logical_join)
         {
-            auto side_dag = JoinExpressionActions::getSubDAG(equivalent_expressions | std::views::transform([](const auto & pair) { return pair.first; }));
-            *join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
-                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down), std::move(side_dag));
+
+            join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().left_pre_join_actions
+            );
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
@@ -444,9 +419,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (logical_join)
         {
-            auto side_dag = JoinExpressionActions::getSubDAG(equivalent_expressions | std::views::transform([](const auto & pair) { return pair.second; }));
-            *join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
-                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down), std::move(side_dag));
+
+            join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().right_pre_join_actions
+            );
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
@@ -630,7 +607,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
         return updated_steps;
 
     /// TODO.

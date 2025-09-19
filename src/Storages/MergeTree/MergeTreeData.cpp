@@ -781,22 +781,24 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
     return results;
 }
 
-ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimatorByPredicate(
+ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
-        return nullptr;
+        return {};
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
-    if (parts.empty())
+    if (parts.empty() || !filter_dag)
         return {};
 
     ASTPtr expression_ast;
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimator estimator;
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
 
-    auto build_estimator_all_partitions = [&]()
+    if (partition_pruner.isUseless())
     {
         /// Read all partitions.
         for (const auto & part : parts)
@@ -804,28 +806,14 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         {
             auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            estimator_builder.incrementRowCount(part.data_part->rows_count);
+            estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+                estimator.addStatistics(stat);
         }
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
         }
-    };
-
-    if (filter_dag == nullptr)
-    {
-        build_estimator_all_partitions();
-        return estimator_builder.getEstimator();
-    }
-
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
-    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
-
-    if (partition_pruner.isUseless())
-    {
-        build_estimator_all_partitions();
     }
     else
     {
@@ -835,9 +823,9 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             if (!partition_pruner.canBePruned(*part.data_part))
             {
                 auto stats = part.data_part->loadStatistics();
-                estimator_builder.incrementRowCount(part.data_part->rows_count);
+                estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator_builder.addStatistics(stat);
+                    estimator.addStatistics(stat);
             }
         }
         catch (...)
@@ -846,7 +834,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         }
     }
 
-    return estimator_builder.getEstimator();
+    return estimator;
 }
 
 bool MergeTreeData::supportsFinal() const

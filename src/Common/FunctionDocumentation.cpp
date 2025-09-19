@@ -1,7 +1,6 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Common/Exception.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
@@ -57,10 +56,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/datetime)";
         else if (type.starts_with("DateTime64")) /// "DateTime64(P)", "DateTime64(3)", "DateTime64(6)", ...
             result += "`](/sql-reference/data-types/datetime64)";
-        else if (type == "Time")
-            result += "`](/sql-reference/data-types/time)";
-        else if (type.starts_with("Time64")) //// "Time64(P)", "Time64(3)", ...
-            result += "`](/sql-reference/data-types/time64)";
         else if (type == "Enum")
             result += "`](/sql-reference/data-types/enum)";
         else if (type == "UUID")
@@ -101,8 +96,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
             result += "`](/sql-reference/data-types/geo#multipolygon)";
-        else if (type == "numericIndexedVector")
-            result += "`](/sql-reference/functions/#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
             result += "`](/sql-reference/data-types/special-data-types/expression)";
         else if (type == "Set")
@@ -154,17 +147,7 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::syntaxAsString() const
 {
-    String trimmed_syntax = boost::algorithm::trim_copy(syntax);
-
-    /// It is tempting to write 'SELECT someFunction(arg1, arg2)' in the syntax field but we
-    /// really want 'someFunction(arg1, arg2)'.
-    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT "))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not start with 'SELECT': {}", syntax);
-
-    if (syntax.ends_with(";"))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not end with ';': {}", syntax);
-
-    return trimmed_syntax;
+    return boost::algorithm::trim_copy(syntax);
 }
 
 String FunctionDocumentation::returnedValueAsString() const
@@ -215,13 +198,13 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Comparison, "Comparison"},
         {Category::Conditional, "Conditional"},
         {Category::DateAndTime, "Dates and Times"},
-        {Category::Decimal, "Decimal"},
         {Category::Dictionary, "Dictionary"},
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
+        {Category::File, "File"},
         {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},

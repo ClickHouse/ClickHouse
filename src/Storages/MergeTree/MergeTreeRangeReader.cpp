@@ -972,13 +972,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 current_mark = stream.current_mark;
             }
 
-            if (merge_tree_reader->canSkipMark(currentMark()))
-            {
-                result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
-                stream.toNextMark();
-                continue;
-            }
-
             size_t current_space = space_left;
 
             /// If reader can't read part of granule, we have to increase number of reading rows

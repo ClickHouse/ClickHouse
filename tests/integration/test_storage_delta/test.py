@@ -59,7 +59,7 @@ from helpers.s3_tools import (
 )
 from helpers.test_tools import TSV
 
-SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
 S3_DATA = [
@@ -75,7 +75,6 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files")
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .master("local")
@@ -205,7 +204,7 @@ def started_cluster():
             cluster.minio_client.fput_object(
                 bucket_name=cluster.minio_bucket,
                 object_name=file,
-                file_path=os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))), file),
+                file_path=os.path.join(SCRIPT_DIR, file),
             )
 
         yield cluster
@@ -282,8 +281,14 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
+    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
+    allow_dynamic_metadata_for_datalakes_suffix = (
+        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
+        if allow_dynamic_metadata_for_data_lakes
+        else ""
+    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -297,6 +302,7 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
+            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
@@ -306,6 +312,7 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
+            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
@@ -357,7 +364,7 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        os.path.join(os.path.dirname(os.path.realpath(__file__))), f"{cluster.instances_dir_name}/{node_name}/database/user_files"
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/{node_name}/database/user_files"
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
@@ -853,50 +860,69 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["b", "c", "d", "e", "f", "g"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "INT")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
+        .partitionedBy(partition_columns)
+        .execute()
+    )
     num_rows = 9
 
-    schema = pa.schema(
+    schema = StructType(
         [
-            pa.field("a", pa.int32(), nullable=True),
-            pa.field("b", pa.string(), nullable=True),
-            pa.field("c", pa.date32(), nullable=True),
-            pa.field("d", pa.int32(), nullable=True),
-            pa.field("e", pa.timestamp("us"), nullable=True),
-            pa.field("f", pa.bool_(), nullable=True),
-            pa.field("g", pa.decimal128(10, 2), nullable=True),
-            pa.field("h", pa.bool_(), nullable=True),
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
         ]
     )
 
     now = datetime.now()
     for i in range(1, num_rows + 1):
-        data = {
-            "a": [i],
-            "b": [f"test{i}"],
-            "c": [datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d").date()],
-            "d": [i],
-            "e": [
+        data = [
+            (
+                i,
+                "test" + str(i),
+                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i,
                 (
                     now
                     if i % 2 == 0
                     else datetime.strptime(
                         f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
                     )
-                )
-            ],
-            "f": [True if i % 2 == 0 else False],
-            "g": [Decimal(f"{i * 1.11:.2f}")],
-            "h": [False if i % 2 == 0 else True],
-        }
-        write_deltalake(
-            f"s3://{bucket}/{result_file}",
-            pa.Table.from_pydict(data, schema=schema),
-            storage_options=get_storage_options(started_cluster),
-            partition_by=partition_columns,
-            mode="append",
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
         )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
 
     if cluster:
         table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -1013,51 +1039,40 @@ test9	2000-01-09	9"""
         == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
     )
 
-    num_commits = 100  # to create a checkpoint
-    for i in range(num_rows + 1, num_rows + 1 + num_commits):
-        data = {
-            "a": [i],
-            "b": [f"test{i}"],
-            "c": [
-                datetime.strptime(
-                    f"2000-01-{i%30 if i%30 != 0 else 1}", "%Y-%m-%d"
-                ).date()
-            ],
-            "d": [i],
-            "e": [
+    for i in range(num_rows + 1, 2 * num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i),
+                datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
+                i,
                 (
                     now
                     if i % 2 == 0
                     else datetime.strptime(
-                        f"2012-01-{i%30 if i%30 != 0 else 1} 12:34:56.789123",
-                        "%Y-%m-%d %H:%M:%S.%f",
+                        f"2012-01-{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
                     )
-                )
-            ],
-            "f": [True if i % 2 == 0 else False],
-            "g": [Decimal(f"{i * 1.1:.2f}")],
-            "h": [False if i % 2 == 0 else True],
-        }
-        write_deltalake(
-            f"s3://{bucket}/{result_file}",
-            pa.Table.from_pydict(data, schema=schema),
-            storage_options=get_storage_options(started_cluster),
-            partition_by=partition_columns,
-            mode="append",
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.1:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
         )
 
-    files = [
-        obj.object_name
-        for obj in minio_client.list_objects(bucket, result_file, recursive=True)
-    ]
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     ok = False
     for file in files:
         if file.endswith("last_checkpoint"):
             ok = True
-    assert ok, f"Files: {files}"
+    assert ok
 
     result = int(instance.query(f"SELECT count() FROM {table_function}"))
-    assert result == num_rows + num_commits
+    assert result == num_rows * 2
 
     assert (
         f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
@@ -1078,12 +1093,12 @@ test9	2000-01-09	9"""
 16	test16	2000-01-16	16	{now}	true	17.6	false
 17	test17	2000-01-17	17	2012-01-17 12:34:56.789123	false	18.7	true
 18	test18	2000-01-18	18	{now}	true	19.8	false"""
-        == instance.query(f"SELECT * FROM {table_function} ORDER BY a LIMIT 18").strip()
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY c").strip()
     )
     assert (
         int(
             instance.query(
-                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/15') and d < 20"
+                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/15')"
             )
         )
         == 1
@@ -2089,37 +2104,38 @@ deltaLakeCluster(cluster_old,
 
 def test_partition_columns_3(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns_3")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 10
+    now = datetime.now()
+    data = [(i, f"name_{i}", 32, "US", "2025") for i in range(num_rows)]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    num_rows = 10
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
-    data = {
-        "id": list(range(num_rows)),
-        "name": [f"name_{i}" for i in range(num_rows)],
-        "age": [32] * num_rows,
-        "country": ["US"] * num_rows,
-        "year": ["2025"] * num_rows,
-    }
-
-    write_deltalake(
-        f"s3://root/{TABLE_NAME}",
-        pa.Table.from_pydict(data, schema=schema),
-        mode="append",
-        storage_options=get_storage_options(started_cluster),
-        partition_by=partition_columns
-    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
@@ -2144,36 +2160,38 @@ def test_partition_columns_3(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_filtering_by_virtual_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 10
+    now = datetime.now()
+    data = [(i, f"name_{i}", 32, "US", f"202{i}") for i in range(num_rows)]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    num_rows = 10
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
-    data = {
-        "id": list(range(num_rows)),
-        "name": [f"name_{i}" for i in range(num_rows)],
-        "age": [32] * num_rows,
-        "country": ["US"] * num_rows,
-        "year": [f"202{i}" for i in range(num_rows)],
-    }
-    write_deltalake(
-        f"s3://root/{TABLE_NAME}",
-        pa.Table.from_pydict(data, schema=schema),
-        mode="append",
-        storage_options=get_storage_options(started_cluster),
-        partition_by=partition_columns
-    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
@@ -2308,37 +2326,41 @@ def test_column_pruning(started_cluster):
 
 def test_concurrent_reads(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_concurrent_reads")
     result_file = f"{TABLE_NAME}"
     partition_columns = []
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    num_rows = 500000
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
-    data = {
-        "id": list(range(num_rows)),
-        "name": [f"name_{i}" for i in range(num_rows)],
-        "age": [32] * num_rows,
-        "country": ["a" * 100] * num_rows,
-        "year": ["2025"] * num_rows,
-    }
-    write_deltalake(
-        f"s3://{bucket}/{result_file}",
-        pa.Table.from_pydict(data, schema=schema),
-        storage_options=get_storage_options(started_cluster),
-        partition_by=partition_columns,
-        mode="append",
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
     )
 
+    num_rows = 500000
+    now = datetime.now()
+    data = [
+        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
+        for i in range(num_rows)
+    ]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
     instance.query(
         f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
@@ -2975,7 +2997,7 @@ def test_writes(started_cluster):
     table_name = randomize_table_name("test_writes")
     result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
@@ -3057,11 +3079,7 @@ def test_partitioned_writes(started_cluster):
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
-        [
-            ("id", pa.int32(), False),
-            ("name", pa.string(), False),
-            ("comment", pa.string(), False),
-        ]
+        [("id", pa.int32()), ("name", pa.string()), ("comment", pa.string())]
     )
     empty_arrays = [
         pa.array([], type=pa.int32()),
@@ -3182,7 +3200,7 @@ def test_concurrent_queries(started_cluster, partitioned):
     TABLE_NAME = randomize_table_name("test_concurrent_queries")
     result_file = f"{TABLE_NAME}"
 
-    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
@@ -3196,49 +3214,40 @@ def test_concurrent_queries(started_cluster, partitioned):
         f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    num_insert_threads = 15
-    num_select_threads = 5
-    errors = ["" for _ in range(num_insert_threads)]
-    success = [0 for _ in range(num_insert_threads)]
+    def select(_):
+        instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    def run_concurrent_queries():
-        def select(_):
-            instance.query(f"SELECT * FROM {TABLE_NAME}")
+    num_threads = 10
+    num_rows = 50
+    errors = ["" for _ in range(num_threads)]
+    success = [0 for _ in range(num_threads)]
 
-        def insert(i):
-            try:
-                instance.query(
-                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
-                )
-                success[i] += 1
-            except Exception as e:
-                errors[i] = str(e)
-
-        for _ in range(10):
-            insert(_)
-
-        select_pool = Pool(num_select_threads)
-        insert_pool = Pool(num_insert_threads)
-        sp = select_pool.map_async(select, range(num_select_threads))
-        ip = insert_pool.map_async(insert, range(num_insert_threads))
-        sp.wait()
-        ip.wait()
-
-        select(0)
-
-        num_rows = sum(success) * 50
-        assert num_rows == int(
+    def insert(i):
+        try:
             instance.query(
-                f"SELECT count() FROM {TABLE_NAME}",
+                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({num_rows})",
             )
+            success[i] += 1
+        except Exception as e:
+            errors[i] = str(e)
+
+    for _ in range(10):
+        insert(_)
+
+    select_pool = Pool(num_threads)
+    insert_pool = Pool(num_threads)
+    sp = select_pool.map_async(select, range(num_threads))
+    ip = insert_pool.map_async(insert, range(num_threads))
+    sp.wait()
+    ip.wait()
+
+    select(0)
+
+    assert sum(success) * num_rows == int(
+        instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
         )
-
-    for _ in range(3):
-        run_concurrent_queries()
-        if len([e for e in errors if e != ""]) > 0:
-            break
-        print("Did not catch commit conflict, will retry")
-
+    )
     non_empty_errors = [e for e in errors if e != ""]
     assert len(non_empty_errors) > 0
     for e in non_empty_errors:
@@ -3253,7 +3262,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         ):
             file_names.append(obj.object_name)
     if partitioned:
-        assert len(file_names) == sum(success) * 50
+        assert len(file_names) == sum(success) * num_rows
     else:
         assert len(file_names) == sum(success)
 
@@ -3264,7 +3273,7 @@ def test_writes_spark_compatibility(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_writes")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    result_file = f"{table_name}_data"
 
     schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
@@ -3274,9 +3283,9 @@ def test_writes_spark_compatibility(started_cluster):
         mode="overwrite",
     )
 
-    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
     files = (
-        instance.exec_in_container(["bash", "-c", f"ls {result_file}"])
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
         .strip()
         .split("\n")
     )
@@ -3287,23 +3296,23 @@ def test_writes_spark_compatibility(started_cluster):
     )
 
     instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
     )
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
     )
 
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+    LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
 
     files = (
-        instance.exec_in_container(["bash", "-c", f"ls {result_file}"])
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
         .strip()
         .split("\n")
     )
     assert len(files) == 2
     pfile = files[0] if files[0].endswith(".parquet") else files[1]
 
-    table = pq.read_table(f"{result_file}/{pfile}")
+    table = pq.read_table(f"/{result_file}/{pfile}")
     df = table.to_pandas()
     assert (
         "0   0    0\n1   1    1\n2   2    2\n3   3    3\n4   4    4\n5   5    5\n6   6    6\n7   7    7\n8   8    8\n9   9    9"
@@ -3311,7 +3320,7 @@ def test_writes_spark_compatibility(started_cluster):
     )
 
     spark = started_cluster.spark_session
-    df = spark.read.format("delta").load(f"{result_file}").collect()
+    df = spark.read.format("delta").load(f"/{result_file}").collect()
     assert (
         "[Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
         == str(df)
@@ -3320,15 +3329,15 @@ def test_writes_spark_compatibility(started_cluster):
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
     )
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+    LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
     files = (
-        instance.exec_in_container(["bash", "-c", f"ls {result_file}"])
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
         .strip()
         .split("\n")
     )
     assert len(files) == 3
 
-    df = spark.read.format("delta").load(f"{result_file}").collect()
+    df = spark.read.format("delta").load(f"/{result_file}").collect()
     assert (
         "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
         == str(df)
@@ -3342,17 +3351,17 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_limits")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
-        f"file://{result_file}",
+        f"file:///{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         mode="overwrite",
         partition_by=["id"] if partitioned else [],
     )
-    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
     files = (
         instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
         .strip()
@@ -3361,7 +3370,7 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     assert len(files) == 1
 
     instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
     )
 
     num_rows = 1000000
@@ -3371,9 +3380,7 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
         f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
     )
 
-    files = LocalDownloader(instance).download_directory(
-        f"{result_file}/", f"{result_file}/"
-    )
+    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
     data_files = [file for file in files if file.endswith(".parquet")]
     assert len(data_files) > 0, f"No data files: {files}"
 
@@ -3391,7 +3398,7 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
 
     spark = started_cluster.spark_session
-    df = spark.read.format("delta").load(f"{result_file}")
+    df = spark.read.format("delta").load(f"/{result_file}")
     assert df.count() == num_rows
 
 
@@ -3431,9 +3438,12 @@ deltaLake(
         '{minio_access_key}',
         '{minio_secret_key}')
     """
-    assert "1\t('Alice','Smith')\n2\t('Bob','Johnson')" ==  node.query(
-        f"SELECT * FROM {delta_function} ORDER BY all"
-    ).strip()
+    assert (
+        "Column mapping ID mode not supported"
+        in node.query_and_get_error(
+            f"SELECT * FROM {delta_function} ORDER BY all"
+        ).strip()
+    )
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
@@ -3443,7 +3453,7 @@ def test_subcolumns(started_cluster, column_mapping):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    path = f"{table_name}"
+    path = f"/{table_name}"
 
     data_file = "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet"
 
@@ -3465,7 +3475,7 @@ def test_subcolumns(started_cluster, column_mapping):
         "col_x2D6\tNullable(Int64)" == node.query(f"describe table {func}").strip()
     )
 
-    df = spark.read.parquet(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))), data_file))
+    df = spark.read.parquet(os.path.join(SCRIPT_DIR, data_file))
     write_delta_from_df(spark, df, path, mode="overwrite")
     default_upload_directory(started_cluster, "s3", path, "")
 
@@ -3523,80 +3533,6 @@ deltaLake(
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
         == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
     )
-    assert (
-        "100022\t2025-06-04 18:40:56.000000"
-        == node.query(
-            f"SELECT col_x2D2.col_x2D3, col_x2D2.col_x2D4 FROM {table_name} ORDER BY all"
-        ).strip()
-    )
-
-
-@pytest.mark.parametrize("column_mapping", ["", "name"])
-def test_subcolumns_2(started_cluster, column_mapping):
-    instance = started_cluster.instances["node1"]
-    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    table_name = randomize_table_name("test_write_column_order")
-    spark = started_cluster.spark_session
-    path = f"/var/lib/clickhouse/user_files/{table_name}"
-
-    if column_mapping == "name":
-        table_properties = "'delta.minReaderVersion' = '2', 'delta.minWriterVersion' = '5', 'delta.columnMapping.mode' = 'name'"
-    else:
-        table_properties = ""
-
-    create_query = f"""
-CREATE TABLE {table_name}
-    (c1 STRUCT<_2: ARRAY<INT>> NOT NULL)
-    USING DELTA
-    LOCATION '{path}'
-    """
-    if len(table_properties) > 0:
-        create_query += f" TBLPROPERTIES ({table_properties})"
-
-    spark.sql(create_query)
-    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
-
-    table_function = f"deltaLakeLocal('{path}')"
-    assert 0 == int(instance.query(f"SELECT count() FROM {table_function}"))
-    assert (
-        "c1\tTuple(\\n    _2 Array(Nullable(Int32)))"
-        == instance.query(f"DESCRIBE TABLE {table_function}").strip()
-    )
-
-    instance.query(
-        f"CREATE TABLE {table_name} ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'"
-    )
-    assert 0 == int(instance.query(f"SELECT count() FROM {table_name}"))
-    assert "" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}")
-
-    spark.sql(
-        f"""
-    INSERT INTO {table_name}
-    VALUES (named_struct('_2', array(1, NULL, 3))),
-        (named_struct('_2', array(4, 5)))
-    """
-    )
-    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
-
-    assert (
-        "([1,NULL,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
-    )
-    assert (
-        "[1,NULL,3]\n[4,5]"
-        == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
-    )
-    assert (
-        "3\n2"
-        == instance.query(
-            f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}"
-        ).strip()
-    )
-    assert (
-        "[0,1,0]\n[0,0]"
-        == instance.query(f"SELECT {table_name}.`c1._2`.null FROM {table_name}").strip()
-    )
 
 
 def test_write_column_order(started_cluster):
@@ -3604,8 +3540,8 @@ def test_write_column_order(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_column_order")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-    schema = pa.schema([("c1", pa.int32(), False), ("c0", pa.string(), False)])
+    result_file = f"{table_name}_data"
+    schema = pa.schema([("c1", pa.int32()), ("c0", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"file:///{result_file}",
@@ -3633,63 +3569,3 @@ def test_write_column_order(started_cluster):
     )
 
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
-
-
-@pytest.mark.parametrize("column_mapping", ["", "name"])
-def test_type_from_storage_def(started_cluster, column_mapping):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_types_2")
-    spark = started_cluster.spark_session
-    path = f"/var/lib/clickhouse/user_files/{table_name}"
-
-    spark_schema = StructType([
-        StructField("c0", IntegerType(), nullable=False),
-        StructField("c1", TimestampType(), nullable=False),
-        StructField("c2", StructType([
-            StructField("created_at", TimestampType(), nullable=True),
-            StructField("updated_at", TimestampType(), nullable=True),
-        ]), nullable=False),
-    ])
-    data = [
-        (
-            1,
-            datetime(2000, 10, 10, 0, 0, 0),
-            {
-                "created_at": datetime(2000, 11, 11, 0, 0, 0),
-                "updated_at": datetime(2000, 12, 12, 0, 0, 0),
-            }
-        )
-    ]
-
-    df = spark.createDataFrame(data, schema=spark_schema)
-    if len(column_mapping) > 0:
-        df.write.format("delta").option(
-            "delta.minReaderVersion", "2"
-        ).option("delta.minWriterVersion", "5").option(
-            "delta.columnMapping.mode", column_mapping
-        ).save(
-            path
-        )
-    else:
-        df.write.format("delta").save(path)
-
-    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
-
-    instance.query(
-        f"""CREATE TABLE {table_name}
-        (c0 Int32, c1 DateTime, c2 Tuple(created_at DateTime, updated_at DateTime))
-        ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'
-    """)
-
-    assert (
-        "('2000-11-11 00:00:00','2000-12-12 00:00:00')"
-        == instance.query(f"SELECT c2 FROM {table_name}").strip()
-    )
-    assert (
-        "2000-11-11 00:00:00"
-        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
-    )
-    assert (
-        "2000-11-11 00:00:00"
-        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
-    )
