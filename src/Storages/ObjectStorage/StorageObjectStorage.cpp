@@ -38,6 +38,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
