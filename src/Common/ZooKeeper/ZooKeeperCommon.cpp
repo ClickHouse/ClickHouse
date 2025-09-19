@@ -622,7 +622,10 @@ void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(version, out);
 
     if (getOpNum() == OpNum::CheckStat)
+    {
+        chassert(stat_to_check.has_value());
         Coordination::write(stat_to_check.value(), out);
+    }
 }
 
 size_t ZooKeeperCheckRequest::sizeImpl() const
