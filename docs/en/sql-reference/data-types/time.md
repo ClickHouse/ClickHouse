@@ -5,6 +5,7 @@ slug: /sql-reference/data-types/time
 sidebar_position: 15
 sidebar_label: 'Time'
 title: 'Time'
+doc_type: 'reference'
 ---
 
 # Time
