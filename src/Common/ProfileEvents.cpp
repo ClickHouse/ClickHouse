@@ -193,6 +193,10 @@
     M(QueryLocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryBackupThrottlerBytes, "Bytes passed through 'max_backup_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryBackupThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_backup_bandwidth' throttling.", ValueType::Microseconds) \
+    M(DistrCacheReadThrottlerBytes, "Bytes passed through 'max_distributed_cache_read_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(DistrCacheReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_distributed_cache_read_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(DistrCacheWriteThrottlerBytes, "Bytes passed through 'max_distributed_cache_write_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(DistrCacheWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_distributed_cache_write_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
     M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \

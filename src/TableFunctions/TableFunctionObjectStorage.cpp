@@ -415,6 +415,11 @@ template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageH
 
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+#endif
+
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
 #if USE_AWS_S3

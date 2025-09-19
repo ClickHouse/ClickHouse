@@ -17,7 +17,15 @@ Allows processing files from [Delta Lake](https://github.com/delta-io/delta) tab
 
 ```sql
 deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ```
+`deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3. 
 
 ## Arguments {#arguments}
 

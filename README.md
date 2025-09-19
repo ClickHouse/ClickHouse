@@ -75,7 +75,7 @@ Recent meetups
 * [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/310521318/) - September 4, 2025
 * [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26, 2025
-* [Manaila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
+* [Manila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
 * [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
 * [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025

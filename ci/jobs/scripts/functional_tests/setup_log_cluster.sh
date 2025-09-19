@@ -14,8 +14,9 @@ set -e
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
+[ -n "$EXTRA_COLUMNS_EXPRESSION" ] || { echo "ERROR: EXTRA_COLUMNS_EXPRESSION env must be defined"; exit 1; }
 EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
-echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
+echo "EXTRA_COLUMNS_EXPRESSION=$EXTRA_COLUMNS_EXPRESSION"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
@@ -23,18 +24,18 @@ EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String
 EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
 
 
-function __set_connection_args()
+function __set_connection_args
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
-        --user "${CLICKHOUSE_CI_LOGS_USER:?}" --host "${CLICKHOUSE_CI_LOGS_HOST:?}"
-        --password "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
+        --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}"
+        --password "${CLICKHOUSE_CI_LOGS_PASSWORD}"
     )
 }
 
-function __shadow_credentials()
+function __shadow_credentials
 {
     # The function completely screws the output, it shouldn't be used in normal functions, only in ()
     # The only way to substitute the env as a plain text is using perl 's/\Qsomething\E/another/
@@ -45,29 +46,36 @@ function __shadow_credentials()
     ')
 }
 
-function check_logs_credentials()
-{
+function check_logs_credentials
+(
     # The function connects with given credentials, and if it's unable to execute the simplest query, returns exit code
 
+    # First check, if all necessary parameters are set
     set +x
     echo "Check CI Log cluster..."
-    __set_connection_args
+    for parameter in CLICKHOUSE_CI_LOGS_HOST CLICKHOUSE_CI_LOGS_USER CLICKHOUSE_CI_LOGS_PASSWORD; do
+      export -p | grep -q "$parameter" || {
+        echo "Credentials parameter $parameter is unset"
+        return 1
+      }
+    done
+
     __shadow_credentials
+    __set_connection_args
     local code
     # Catch both success and error to not fail on `set -e`
-    clickhouse-client "${CONNECTION_ARGS[@]:?}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
+    clickhouse-client "${CONNECTION_ARGS[@]}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
     if [ "$code" != 0 ]; then
         echo 'Failed to connect to CI Logs cluster'
         return $code
     fi
-}
+)
 
-function setup_logs_replication()
-{
+function setup_logs_replication
+(
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
-    check_logs_credentials
 
     echo "My hostname is ${HOSTNAME}"
 
@@ -134,7 +142,7 @@ function setup_logs_replication()
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
-            "${CONNECTION_ARGS[@]:?}" || continue
+            "${CONNECTION_ARGS[@]}" || continue
 
         echo "Creating table system.${table}_sender" >&2
 
@@ -158,9 +166,9 @@ function setup_logs_replication()
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
-}
+)
 
-function stop_logs_replication()
+function stop_logs_replication
 {
     echo "Detach all logs replication"
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {

@@ -116,6 +116,8 @@ namespace DB
     DECLARE(UInt64, max_merges_bandwidth_for_server, 0, R"(The maximum read speed of all merges on server in bytes per second. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_replicated_fetches_network_bandwidth_for_server, 0, R"(The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_replicated_sends_network_bandwidth_for_server, 0, R"(The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited.)", 0) \
+    DECLARE(UInt64, max_distributed_cache_read_bandwidth_for_server, 0, R"(The maximum total read speed from distributed cache on server in bytes per second. Zero means unlimited.)", 0) \
+    DECLARE(UInt64, max_distributed_cache_write_bandwidth_for_server, 0, R"(The maximum total write speed to distributed cache on server in bytes per second. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_remote_read_network_bandwidth_for_server, 0, R"(
     The maximum speed of data exchange over the network in bytes per second for read.
 
@@ -1313,6 +1315,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_write_bandwidth_for_server",
              {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_distributed_cache_read_bandwidth_for_server",
+             {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_distributed_cache_write_bandwidth_for_server",
+             {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
