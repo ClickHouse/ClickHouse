@@ -81,8 +81,8 @@ private:
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     mutable std::mutex table_snapshot_mutex;
 
-    StorageObjectStorageConfigurationWeakPtr configuration_common;
-    void logMetadataFiles(ObjectStoragePtr object_storage, ContextPtr context) const;
+    ObjectStoragePtr object_storage_common;
+    void logMetadataFiles(ContextPtr context) const;
 };
 
 }

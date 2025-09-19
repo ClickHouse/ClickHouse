@@ -5280,7 +5280,7 @@ std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->delta_metadata_log;
+    return shared->system_logs->delta_lake_metadata_log;
 }
 
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const

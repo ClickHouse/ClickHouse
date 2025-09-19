@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool delta_log_metadata;
+    extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
 }
 
@@ -84,7 +84,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
             context,
             log))
 {
-    configuration_common = configuration_;
+    object_storage_common = object_storage;
 #ifdef DEBUG_OR_SANITIZER_BUILD
     //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 #endif
@@ -110,8 +110,8 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     size_t list_batch_size,
     ContextPtr context) const
 {
+    logMetadataFiles(context);
     std::lock_guard lock(table_snapshot_mutex);
-    logMetadataFiles(table_snapshot->getObjectStorage(), context);
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
@@ -369,23 +369,20 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         context, sample_block, format_settings);
 }
 
-void DeltaLakeMetadataDeltaKernel::logMetadataFiles(
-    ObjectStoragePtr object_storage,
-    ContextPtr context) const
+void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
 {
-    if (!context->getSettingsRef()[Setting::delta_log_metadata].value)
+    if (!context->getSettingsRef()[Setting::delta_lake_log_metadata].value)
         return;
 
-    auto configuration = configuration_common.lock();
-    const auto keys = listFiles(*object_storage, *configuration, deltalake_metadata_directory, metadata_file_suffix);
+    const auto keys = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
+    auto read_settings = context->getReadSettings();
     for (const String & key : keys)
     {
-        auto read_settings = context->getReadSettings();
         ObjectInfo object_info(key);
-        auto buf = createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage_common, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
-        insertDeltaRowToLogTable(context, json_str, configuration->getRawPath().path, key);
+        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
     }
 
 }

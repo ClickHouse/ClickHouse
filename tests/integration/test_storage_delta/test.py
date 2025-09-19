@@ -3719,22 +3719,22 @@ def test_system_table(started_cluster, use_delta_kernel):
     assert len(s3_objects) == 1
 
     create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_log_metadata":1})) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 100
 
     write_delta_from_df(
         spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 4  # 2 metadata files + 2 data files
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_log_metadata":1})) == 200
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 200
 
-    instance.query("SYSTEM FLUSH LOGS delta_metadata_log")
+    instance.query("SYSTEM FLUSH LOGS delta_lake_metadata_log")
 
-    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_metadata_log")) == 2
-    contents = instance.query("SELECT content FROM system.delta_metadata_log").split('\n')
+    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log")) == 2
+    contents = instance.query("SELECT content FROM system.delta_lake_metadata_log").split('\n')
     for content in contents:
         if len(content) == 0:
             continue
         assert 'commitInfo' in content
         assert '.parquet' in content
-    instance.query("TRUNCATE TABLE system.delta_metadata_log")
+    instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")
