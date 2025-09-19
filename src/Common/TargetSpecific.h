@@ -433,7 +433,9 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
 
 #else
 
+#ifndef USE_MULTITARGET_CODE
     #define USE_MULTITARGET_CODE 0
+#endif
 
 #endif
 
