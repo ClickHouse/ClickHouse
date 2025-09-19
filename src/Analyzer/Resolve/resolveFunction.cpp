@@ -769,28 +769,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     bool is_executable_udf = true;
 
-    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+    ResolvedFunctionsCache * function_cache = nullptr;
 
     if (!function)
     {
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// Function randConstant() would return the same value for the same arguments (in scope).
-        /// Also we want to use most outer scope for function deterministic in scope of query.
+        /// But we need to exclude getSetting() function because SETTINGS can change its result for every scope.
 
-        auto resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+        if (function_name != "getSetting")
+        {
+            auto hash = function_node_ptr->getTreeHash();
 
-        IdentifierResolveScope * function_scope = &scope;
-        if (resolver && resolver->isDeterministicInScopeOfQuery())
-            while (function_scope->parent_scope)
-                function_scope = function_scope->parent_scope;
+            function_cache = &functions_cache[hash];
+            if (!function_cache->resolver)
+                function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
 
-        auto hash = function_node_ptr->getTreeHash();
-
-        function_cache = &function_scope->functions_cache[hash];
-        if (!function_cache->resolver)
-            function_cache->resolver = resolver;
-
-        function = function_cache->resolver;
+            function = function_cache->resolver;
+        }
+        else
+            function = FunctionFactory::instance().tryGet(function_name, scope.context);
 
         is_executable_udf = false;
     }
