@@ -10926,6 +10926,8 @@ void StorageReplicatedMergeTree::getZeroCopyLockNodeCreateOps(
         requests.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
         if (!path_to_set_hardlinked_files.empty() && !hardlinked_files.empty())
         {
+            /// Node may be missing in rare cases when zero-copy is turned on for an existing table.
+            zookeeper->checkExistsAndGetCreateAncestorsOps(path_to_set_hardlinked_files + "/", requests);
             std::string data = boost::algorithm::join(hardlinked_files, "\n");
             /// List of files used to detect hardlinks. path_to_set_hardlinked_files --
             /// is a path to source part zero copy node. During part removal hardlinked
@@ -10938,6 +10940,8 @@ void StorageReplicatedMergeTree::getZeroCopyLockNodeCreateOps(
         Coordination::Requests ops;
         if (!path_to_set_hardlinked_files.empty() && !hardlinked_files.empty())
         {
+            /// Node may be missing in rare cases when zero-copy is turned on for an existing table.
+            zookeeper->checkExistsAndGetCreateAncestorsOps(path_to_set_hardlinked_files + "/", requests);
             std::string data = boost::algorithm::join(hardlinked_files, "\n");
             /// List of files used to detect hardlinks. path_to_set_hardlinked_files --
             /// is a path to source part zero copy node. During part removal hardlinked
