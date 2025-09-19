@@ -58,6 +58,7 @@ struct QueryPlanOptimizationSettings
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
     bool use_join_disjunctions_push_down;
+    bool convert_any_join_to_semi_or_anti_join;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -113,6 +114,9 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_vector_search_queries;
     bool vector_search_with_rescoring;
     VectorSearchFilterStrategy vector_search_filter_strategy;
+
+    /// If full text search using index in payload is enabled.
+    bool direct_read_from_text_index;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

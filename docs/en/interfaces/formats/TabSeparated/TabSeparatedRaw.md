@@ -6,6 +6,7 @@ keywords: ['TabSeparatedRaw']
 output_format: true
 slug: /interfaces/formats/TabSeparatedRaw
 title: 'TabSeparatedRaw'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias           |
