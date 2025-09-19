@@ -577,6 +577,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
+    const PrewhereInfoPtr & prewhere_info,
     PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -616,7 +617,13 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
         return {};
 
     table_expression_query_info.additional_filter_ast = additional_filter_ast;
-    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    if (prewhere_info)
+    {
+        for (const auto * input : filter_info.actions.getInputs())
+            prewhere_info->prewhere_actions.tryRestoreColumn(input->result_name);
+    }
+    return filter_info;
 }
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
@@ -941,7 +948,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"), true);
+                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"), storage->supportsPrewhere());
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -964,7 +971,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
-                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
+                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     add_filter(*additional_filters_info, makeDescription("additional filter"));

@@ -1761,7 +1761,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.filter_info)
+            if (expressions.filter_info && !(!input_pipe && storage && storage->supportsPrewhere()))
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -2651,10 +2651,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        auto & prewhere_info = analysis_result.prewhere_info;
+        if (analysis_result.filter_info && (!input_pipe && storage && storage->supportsPrewhere()))
+            query_info.row_level_filter = analysis_result.filter_info;
 
-        if (prewhere_info)
-            query_info.prewhere_info = prewhere_info;
+        if (analysis_result.prewhere_info)
+            query_info.prewhere_info = analysis_result.prewhere_info;
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;
         bool optimize_aggregation_in_order = analysis_result.optimize_read_in_order && !query_analyzer->useGroupingSetKey();

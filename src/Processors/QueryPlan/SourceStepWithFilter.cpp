@@ -96,6 +96,7 @@ void SourceStepWithFilter::updatePrewhereInfo(const FilterDAGInfoPtr & row_level
     query_info.row_level_filter = row_level_filter_value;
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
+    row_level_filter = row_level_filter_value;
     output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, row_level_filter, prewhere_info));
 }
 
