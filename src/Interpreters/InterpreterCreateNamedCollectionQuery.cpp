@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
-#include "Common/CurrentMetrics.h"
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Core/ServerSettings.h>
 
