@@ -1495,7 +1495,13 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
         catalog);
+    fc.outf << "--External database " << buf << std::endl;
     return httpPut("/sparkdatabase", buf);
+}
+
+bool DolorIntegration::reRunCreateDatabase(const String & body)
+{
+    return httpPut("/sparkdatabase", body);
 }
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
@@ -1778,7 +1784,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
     next->setTableEngineDetails(rg, t, te);
 }
 
-bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const IntegrationCall ic, const String & cname, const String & tname)
+bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const String & body)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1791,7 +1797,7 @@ bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const Int
             chassert(0);
             break;
     }
-    return next ? next->performExternalCommand(seed, cname, tname) : false;
+    return next ? next->reRunCreateDatabase(body) : false;
 }
 
 bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const String & body)
@@ -1808,6 +1814,22 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             break;
     }
     return next ? next->reRunCreateTable(body) : false;
+}
+
+bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const IntegrationCall ic, const String & cname, const String & tname)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->performExternalCommand(seed, cname, tname) : false;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const
