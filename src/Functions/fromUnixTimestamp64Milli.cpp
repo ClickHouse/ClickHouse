@@ -15,7 +15,7 @@ The input value is treated as a Unix timestamp with millisecond precision (numbe
     FunctionDocumentation::Syntax syntax_fromUnixTimestamp64Milli = "fromUnixTimestamp64Milli(value[, timezone])";
     FunctionDocumentation::Arguments arguments_fromUnixTimestamp64Milli = {
         {"value", "Unix timestamp in milliseconds.", {"Int64"}},
-        {"timezone", "Timezone for the returned value (optional).", {"String"}}
+        {"timezone", "Optional. Timezone for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp64Milli = {"A `DateTime64` value with millisecond precision.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_fromUnixTimestamp64Milli = {

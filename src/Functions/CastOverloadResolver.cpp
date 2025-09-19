@@ -171,7 +171,7 @@ REGISTER_FUNCTION(CastOverloadResolvers)
     FunctionDocumentation::Description CAST_description = R"(
 Converts a value to a specified data type. Unlike conversion functions, `CAST` allows conversions between a broader set of data type pairs, including potentially unsafe conversions that may result in data loss or exceptions.
 
-The cast can be performed to any target type. If the cast cannot be performed, an exception is thrown.
+The cast can be performed to any target type.
     )";
     FunctionDocumentation::Syntax CAST_syntax = R"(
 CAST(x, T) | CAST(x AS T) | x::T
@@ -265,7 +265,7 @@ SELECT accurateCast('123.45', 'Float64')
 Converts a value to a specified data type.
 Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
 
-This function combines the safety of `accurateCast` with graceful error handling.
+This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
     )";
     FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
     FunctionDocumentation::Arguments accurateCastOrNull_arguments = {

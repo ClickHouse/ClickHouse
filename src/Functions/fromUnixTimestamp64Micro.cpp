@@ -15,7 +15,7 @@ The input value is treated as a Unix timestamp with microsecond precision (numbe
     FunctionDocumentation::Syntax syntax_fromUnixTimestamp64Micro = "fromUnixTimestamp64Micro(value[, timezone])";
     FunctionDocumentation::Arguments arguments_fromUnixTimestamp64Micro = {
         {"value", "Unix timestamp in microseconds.", {"Int64"}},
-        {"timezone", "Timezone for the returned value (optional).", {"String"}}
+        {"timezone", "Optional. Timezone for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp64Micro = {"Returns a `DateTime64` value with microsecond precision.", {"DateTime64(6)"}};
     FunctionDocumentation::Examples examples_fromUnixTimestamp64Micro = {

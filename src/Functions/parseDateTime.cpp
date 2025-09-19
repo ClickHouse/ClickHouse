@@ -2460,7 +2460,7 @@ Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounte
     FunctionDocumentation::Arguments parseDateTimeOrZero_arguments = {
         {"time_string", "String to be parsed into DateTime.", {"String"}},
         {"format", "Format string specifying how to parse time_string.", {"String"}},
-        {"timezone", "Timezone. Optional.", {"String"}}
+        {"timezone", "Optional. Timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeOrZero_returned_value = {"Returns DateTime parsed from input string, or zero DateTime if parsing fails.", {"DateTime"}};
     FunctionDocumentation::Examples parseDateTimeOrZero_examples = {
@@ -2488,7 +2488,7 @@ Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters 
     FunctionDocumentation::Arguments parseDateTimeOrNull_arguments = {
         {"time_string", "String to be parsed into DateTime.", {"String"}},
         {"format", "Format string specifying how to parse time_string.", {"String"}},
-        {"timezone", "Timezone. Optional.", {"String"}}
+        {"timezone", "Optional. Timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeOrNull_returned_value = {"Returns DateTime parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime)"}};
     FunctionDocumentation::Examples parseDateTimeOrNull_examples = {
