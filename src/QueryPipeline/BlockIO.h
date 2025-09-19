@@ -37,21 +37,28 @@ struct BlockIO
     /// Needed to optionally detach from the thread group on destruction
     std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 
+    /// Needed in some cases to ensure that the query context is owned
+    /// for the duration of the query execution
+    ContextPtr context_holder;
+
     void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
     void onException(bool log_as_error=true);
     void onCancelOrConnectionLoss();
 
     template<typename Func>
     void executeWithCallbacks(Func && func)
-    try
     {
-        func();
+        try
+        {
+            func();
+        }
+        catch (...)
+        {
+            onException();
+            throw;
+        }
+
         onFinish();
-    }
-    catch (...)
-    {
-        onException();
-        throw;
     }
 
     /// Set is_all_data_sent in system.processes for this query.

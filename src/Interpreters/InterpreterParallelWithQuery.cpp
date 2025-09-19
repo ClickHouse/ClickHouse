@@ -151,7 +151,9 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
 
     chassert(pipeline.completed());
     std::lock_guard lock{mutex};
-    combined_pipeline.addCompletedPipeline(std::move(pipeline));
+    combined_pipeline.addCompletedPipeline(pipeline);
+
+    io_holders.push_back(std::move(query_io));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
 }
@@ -163,8 +165,23 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     if (!combined_pipeline.initialized())
         return; /// `combined_pipeline` is empty, skipping
 
-    CompletedPipelineExecutor executor(combined_pipeline);
-    executor.execute();
+    try
+    {
+        CompletedPipelineExecutor executor(combined_pipeline);
+        executor.execute();
+    }
+    catch (...)
+    {
+        for (auto & io : io_holders)
+        {
+            io.onException();
+        }
+    }
+
+    for (auto & io : io_holders)
+    {
+        io.onFinish();
+    }
 }
 
 
