@@ -310,7 +310,7 @@ if len(args.replica_values) != len(args.shard_values):
 
 logging.basicConfig(
     filename=args.log_path,
-    filemode="w+",
+    filemode="w",
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     force=True,
