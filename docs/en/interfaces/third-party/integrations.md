@@ -81,10 +81,10 @@ For official integrations please see the [integrations page](/integrations).
 <summary>Monitoring</summary>
 
 - [Graphite](https://graphiteapp.org)
-    - [graphouse](https://github.com/ClickHouse/graphouse)
-    - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
-    - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-    - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
+  - [graphouse](https://github.com/ClickHouse/graphouse)
+  - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+  - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+  - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
 - [Grafana](https://grafana.com/)
   - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
 - [Prometheus](https://prometheus.io/)
@@ -154,7 +154,7 @@ For official integrations please see the [integrations page](/integrations).
 <summary>Java</summary>
 
 - [Hadoop](http://hadoop.apache.org)
-    - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
+  - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
 </details>
   
 <details>
