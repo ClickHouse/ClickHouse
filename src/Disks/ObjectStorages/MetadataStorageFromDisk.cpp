@@ -179,7 +179,7 @@ void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    operations.addOperation(std::make_unique<WriteInlineDataOperation>(path, data, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<WriteInlineDataOperation>(path, data, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -194,12 +194,12 @@ void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
 
 void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path)
 {
-    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
-    auto op = std::make_unique<UnlinkFileOperation>(path, *metadata_storage.getDisk());
+    auto op = std::make_unique<UnlinkFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
     auto outcome = op->getOutcome();
     operations.addOperation(std::move(op));
     return outcome;
@@ -207,12 +207,12 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlink
 
 void MetadataStorageFromDiskTransaction::removeRecursive(const std::string & path)
 {
-    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
 void MetadataStorageFromDiskTransaction::createDirectory(const std::string & path)
@@ -242,32 +242,32 @@ void MetadataStorageFromDiskTransaction::moveDirectory(const std::string & path_
 
 void MetadataStorageFromDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 {
-    operations.addOperation(std::make_unique<SetReadonlyFileOperation>(path, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<SetReadonlyFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{}, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{}, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{{key, size_in_bytes}}, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{{key, size_in_bytes}}, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes)
 {
-    operations.addOperation(std::make_unique<AddBlobOperation>(path, std::move(key), size_in_bytes, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<AddBlobOperation>(path, std::move(key), size_in_bytes, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
 TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
 {
-    auto op = std::make_unique<TruncateMetadataFileOperation>(path, target_size, *metadata_storage.getDisk());
+    auto op = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
     auto outcome = op->getOutcome();
     operations.addOperation(std::move(op));
     return outcome;
@@ -277,6 +277,7 @@ std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFrom
 {
     if (metadata_storage.existsFileOrDirectory(path))
         return metadata_storage.getStorageObjects(path);
+
     return std::nullopt;
 }
 

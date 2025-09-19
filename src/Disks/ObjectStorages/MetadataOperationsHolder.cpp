@@ -20,11 +20,11 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         {
             operations[i]->undo();
         }
-        catch (Exception & undo_error)
+        catch (...)
         {
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
 
-            undo_error.addMessage(fmt::format("While rolling back operation #{}", i));
+            rollback_reason.addMessage(fmt::format("While rolling back operation #{}", i));
             rollback_reason.addMessage(getExceptionMessage(std::current_exception(), /*with_stacktrace=*/true));
 
             return;

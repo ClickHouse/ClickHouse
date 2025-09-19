@@ -36,18 +36,16 @@ namespace ErrorCodes
 namespace
 {
 
-std::string getTempFileName(const std::string & dir)
+std::optional<DiskObjectStorageMetadata> tryReadMetadataFile(const std::string & compatible_key_prefix, const std::string & path, const IDisk & disk)
 {
-    return fs::path(dir) / getRandomASCIIString(32);
-}
+    if (!disk.existsFile(path))
+        return std::nullopt;
 
-std::optional<DiskObjectStorageMetadata> tryReadMetadataFile(const std::string & path, const IDisk & disk)
-{
     std::string data;
     auto buf = disk.readFile(path, ReadSettings{});
     readStringUntilEOF(data, *buf);
 
-    DiskObjectStorageMetadata object_metadata(disk.getPath(), path);
+    DiskObjectStorageMetadata object_metadata(compatible_key_prefix, path);
     const bool is_metadata_file = object_metadata.tryDeserializeFromString(data);
     if (!is_metadata_file)
         return std::nullopt;
@@ -128,10 +126,9 @@ void WriteFileOperation::undo()
     }
 }
 
-UnlinkFileOperation::UnlinkFileOperation(
-    std::string path_,
-    IDisk & disk_)
+UnlinkFileOperation::UnlinkFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(std::move(path_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , outcome(std::make_shared<UnlinkMetadataFileOperationOutcome>())
 {
@@ -139,8 +136,8 @@ UnlinkFileOperation::UnlinkFileOperation(
 
 void UnlinkFileOperation::tryUnlinkMetadataFile()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk);
-    if (!object_metadata)
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
+    if (!object_metadata.has_value())
         return;
 
     uint32_t ref_count = object_metadata->getRefCount();
@@ -169,7 +166,7 @@ void UnlinkFileOperation::execute()
 
     /// We need to move file to the random name in the same directory to prepare
     /// for the possible undo and to save the fs hardlink count
-    auto tmp_path = getTempFileName(fs::path(path).parent_path());
+    auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
     tmp_file_path = tmp_path;
 }
@@ -242,32 +239,34 @@ RemoveDirectoryOperation::RemoveDirectoryOperation(std::string path_, IDisk & di
 void RemoveDirectoryOperation::execute()
 {
     disk.removeDirectory(path);
+    removed = true;
 }
 
 void RemoveDirectoryOperation::undo()
 {
-    if (!disk.existsDirectory(path))
+    if (removed)
         disk.createDirectory(path);
 }
 
-RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, IDisk & disk_)
+RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(path_)
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
-    , temp_path(getTempFileName(fs::path(path).parent_path()))
+    , temp_path(getRandomASCIIString(32))
 {
 }
 
 void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
 {
-    auto object_metadata = tryReadMetadataFile(leaf, disk);
-    if (!object_metadata)
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, leaf, disk);
+    if (!object_metadata.has_value())
         return;
 
     uint32_t ref_count = object_metadata->getRefCount();
     if (ref_count > 0)
     {
         object_metadata->decrementRefCount();
-        write_operations.push_back(std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk));
+        write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk));
         write_operations.back()->execute();
     }
 }
@@ -300,10 +299,6 @@ void RemoveRecursiveOperation::execute()
         traverseDirectory(path);
         disk.moveDirectory(path, temp_path);
     }
-    else
-    {
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Can't recursively remove path: {}", path);
-    }
 }
 
 void RemoveRecursiveOperation::undo()
@@ -324,16 +319,17 @@ void RemoveRecursiveOperation::finalize()
         disk.removeRecursive(temp_path);
 }
 
-CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, IDisk & disk_)
+CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
 
 void CreateHardlinkOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path_from, disk);
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path_from, disk);
     if (!object_metadata.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't create hardlink for file {}", path_from);
 
@@ -386,9 +382,10 @@ void MoveDirectoryOperation::undo()
     disk.moveDirectory(path_to, path_from);
 }
 
-ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, IDisk & disk_)
+ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path_from(path_from_)
     , path_to(path_to_)
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
@@ -397,7 +394,7 @@ void ReplaceFileOperation::execute()
 {
     if (disk.existsFile(path_to))
     {
-        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, disk);
+        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, compatible_key_prefix, disk);
         unlink_operation->execute();
     }
 
@@ -420,16 +417,17 @@ void ReplaceFileOperation::finalize()
         unlink_operation->finalize();
 }
 
-WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::string inline_data_, IDisk & disk_)
+WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::string inline_data_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(std::move(path_))
     , inline_data(std::move(inline_data_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
 
 void WriteInlineDataOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
     object_metadata.setInlineData(inline_data);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
@@ -442,16 +440,17 @@ void WriteInlineDataOperation::undo()
         write_operation->undo();
 }
 
-RewriteFileOperation::RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, IDisk & disk_)
+RewriteFileOperation::RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(path_)
     , objects(std::move(objects_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
 
 void RewriteFileOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
 
     object_metadata.resetData();
     for (const auto & [key, size_in_bytes] : objects)
@@ -467,17 +466,18 @@ void RewriteFileOperation::undo()
         write_operation->undo();
 }
 
-AddBlobOperation::AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, IDisk & disk_)
+AddBlobOperation::AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(path_)
     , key(std::move(key_))
     , size_in_bytes(size_in_bytes_)
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
 
 void AddBlobOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
     object_metadata.addObject(key, size_in_bytes);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
@@ -490,15 +490,16 @@ void AddBlobOperation::undo()
         write_operation->undo();
 }
 
-SetReadonlyFileOperation::SetReadonlyFileOperation(std::string path_, IDisk & disk_)
+SetReadonlyFileOperation::SetReadonlyFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(std::move(path_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
 
 void SetReadonlyFileOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk);
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
     if (!object_metadata.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't update readonly flag for file: {}", path);
 
@@ -514,9 +515,10 @@ void SetReadonlyFileOperation::undo()
         write_operation->undo();
 }
 
-TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, IDisk & disk_)
+TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(std::move(path_))
     , target_size(std::move(target_size_))
+    , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
 }
@@ -528,7 +530,7 @@ TruncateFileOperationOutcomePtr TruncateMetadataFileOperation::getOutcome()
 
 void TruncateMetadataFileOperation::execute()
 {
-    auto object_metadata = tryReadMetadataFile(path, disk);
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
     if (!object_metadata.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't truncate file: {}", path);
 

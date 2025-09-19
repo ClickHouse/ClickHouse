@@ -62,7 +62,7 @@ private:
 
 struct UnlinkFileOperation final : public IMetadataOperation
 {
-    UnlinkFileOperation(std::string path_, IDisk & disk_);
+    UnlinkFileOperation(std::string path_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void tryUnlinkMetadataFile();
     UnlinkMetadataFileOperationOutcomePtr getOutcome();
@@ -73,6 +73,7 @@ struct UnlinkFileOperation final : public IMetadataOperation
 
 private:
     const std::string path;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     UnlinkMetadataFileOperationOutcomePtr outcome;
@@ -117,11 +118,13 @@ struct RemoveDirectoryOperation final : public IMetadataOperation
 private:
     const std::string path;
     IDisk & disk;
+
+    bool removed = false;
 };
 
 struct RemoveRecursiveOperation final : public IMetadataOperation
 {
-    RemoveRecursiveOperation(std::string path_, IDisk & disk_);
+    RemoveRecursiveOperation(std::string path_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void traverseFile(const std::string & leaf);
     void traverseDirectory(const std::string & mid_path);
@@ -132,6 +135,7 @@ struct RemoveRecursiveOperation final : public IMetadataOperation
 
 private:
     const std::string path;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::string temp_path;
@@ -141,7 +145,7 @@ private:
 
 struct CreateHardlinkOperation final : public IMetadataOperation
 {
-    CreateHardlinkOperation(std::string path_from_, std::string path_to_, IDisk & disk_);
+    CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -149,6 +153,7 @@ struct CreateHardlinkOperation final : public IMetadataOperation
 private:
     const std::string path_from;
     const std::string path_to;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
@@ -182,7 +187,7 @@ private:
 
 struct ReplaceFileOperation final : public IMetadataOperation
 {
-    ReplaceFileOperation(std::string path_from_, std::string path_to_, IDisk & disk_);
+    ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -191,6 +196,7 @@ struct ReplaceFileOperation final : public IMetadataOperation
 private:
     const std::string path_from;
     const std::string path_to;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<UnlinkFileOperation> unlink_operation;
@@ -199,7 +205,7 @@ private:
 
 struct WriteInlineDataOperation final : public IMetadataOperation
 {
-    WriteInlineDataOperation(std::string path_, std::string inline_data_, IDisk & disk_);
+    WriteInlineDataOperation(std::string path_, std::string inline_data_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -207,6 +213,7 @@ struct WriteInlineDataOperation final : public IMetadataOperation
 private:
     const std::string path;
     const String inline_data;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
@@ -214,7 +221,7 @@ private:
 
 struct RewriteFileOperation final : public IMetadataOperation
 {
-    RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, IDisk & disk_);
+    RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -222,6 +229,7 @@ struct RewriteFileOperation final : public IMetadataOperation
 private:
     const std::string path;
     const std::vector<std::pair<ObjectStorageKey, uint64_t>> objects;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
@@ -229,7 +237,7 @@ private:
 
 struct AddBlobOperation final : public IMetadataOperation
 {
-    AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, IDisk & disk_);
+    AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -238,6 +246,7 @@ private:
     const std::string path;
     const ObjectStorageKey key;
     const uint64_t size_in_bytes;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
@@ -245,13 +254,14 @@ private:
 
 struct SetReadonlyFileOperation final : public IMetadataOperation
 {
-    SetReadonlyFileOperation(std::string path_, IDisk & disk_);
+    SetReadonlyFileOperation(std::string path_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
 
 private:
     const std::string path;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
@@ -259,7 +269,7 @@ private:
 
 struct TruncateMetadataFileOperation final : public IMetadataOperation
 {
-    TruncateMetadataFileOperation(std::string path_, size_t target_size_, IDisk & disk_);
+    TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix, IDisk & disk_);
     ~TruncateMetadataFileOperation() override = default;
 
     TruncateFileOperationOutcomePtr getOutcome();
@@ -270,6 +280,7 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
 private:
     const std::string path;
     const size_t target_size;
+    const std::string & compatible_key_prefix;
     IDisk & disk;
 
     TruncateFileOperationOutcomePtr outcome;

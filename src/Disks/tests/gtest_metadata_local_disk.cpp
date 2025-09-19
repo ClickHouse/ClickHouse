@@ -1086,10 +1086,6 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 2);
     EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 2);
 
-    /// MetadataStorageFromDiskTransaction::removeRecursive DOES NOT handle hardlinks count
-    /// only DiskObjectStorageTransaction::removeSharedRecursive handles it right
-    /// when MergeTreeDataPart is removed it uses DiskObjectStorageTransaction.
-
     /// Remove original dir and check hardlinks count again
     {
         auto rm_transaction = metadata->createTransaction();
@@ -1100,10 +1096,10 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/backup_all_0_0_0"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/all_0_0_0"));
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/all_0_0_0_1"));
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.bin"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.mrk2"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.bin"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.mrk2"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 1);
 
     /// Remove backup dir and check hardlinks count again
     {
@@ -1115,10 +1111,10 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/backup_all_0_0_0"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/all_0_0_0"));
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/all_0_0_0_1"));
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.bin"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.mrk2"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/primary.idx"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/columns.txt"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.bin"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.mrk2"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/primary.idx"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/columns.txt"), 0);
 }
 
 
