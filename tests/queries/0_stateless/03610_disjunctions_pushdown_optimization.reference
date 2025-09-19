@@ -13,9 +13,9 @@
 3	30	200
 4	40	200
 --- CASE B: plan (enabled) ---
-2	1
+1	0
 --- CASE B: plan (disabled) ---
-0	1
+1	0
 --- CASE B: result (enabled) ---
 1	10	100
 2	20	100
@@ -27,9 +27,9 @@
 3	30	200
 4	40	200
 --- CASE C: plan (enabled) ---
-4	1
+2	0
 --- CASE C: plan (disabled) ---
-0	1
+2	0
 --- CASE C: result (enabled) ---
 1	10	100
 2	20	100
@@ -43,7 +43,7 @@
 --- Case D: plan (enabled) ---
 11	11
 --- Case D: plan (disabled) ---
-6	5
+6	6
 --- Case D: result (enabled) ---
 6	a6	6	b6
 7	a7	7	b7
@@ -70,3 +70,11 @@
 5	3
 5	4
 5	5
+--- Case F: plan (enabled) ---
+1	1
+--- Case F: plan (disabled) ---
+0	0
+--- Case F: plan (enabled) ---
+0	1
+--- Case F: plan (disabled) ---
+0	0

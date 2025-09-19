@@ -25,8 +25,13 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    -- Count Filters created and pushed into pre-join actions (generic 'Filter' nodes, not 'Prewhere' and not 'Filter (WHERE)')
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    -- Count top-level WHERE filter nodes if they remain after pushdown
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -42,8 +47,11 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -78,8 +86,11 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -95,8 +106,11 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -131,8 +145,11 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -148,8 +165,11 @@ WITH lines AS (
           ORDER BY t1.k)
 )
 SELECT
-    countIf(positionCaseInsensitive(explain, 'Prewhere filter') > 0) AS left_prewhere_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE')   > 0) AS filter_nodes_cnt
+    countIf(positionCaseInsensitive(explain, 'Filter') > 0
+            AND positionCaseInsensitive(explain, '(WHERE') = 0
+            AND positionCaseInsensitive(explain, 'Prewhere') = 0
+            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
+    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
 FROM lines
 FORMAT TSV;
 
@@ -266,4 +286,108 @@ SELECT n1.number, n2.number
 FROM numbers(6) AS n1, numbers(6) AS n2
 WHERE ((n1.number = 1 AND n2.number = 2) OR (n1.number = 3 AND n2.number = 4) OR (n1.number = 5))
 ORDER BY n1.number, n2.number
+FORMAT TSV;
+
+SELECT '--- Case F: plan (enabled) ---';
+SET use_join_disjunctions_push_down = 1;
+WITH lines AS (
+    SELECT explain
+    FROM (
+        EXPLAIN actions = 1
+        SELECT
+            n1.number,
+            n2.number,
+            n3.number
+        FROM numbers(3) AS n2, numbers(3) AS n3, numbers(3) AS n1
+        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
+           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
+    )
+)
+SELECT
+    -- plus() OR pushed to the (n2 x n3) side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
+    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
+            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
+            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
+            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
+FROM lines
+FORMAT TSV;
+
+SELECT '--- Case F: plan (disabled) ---';
+SET use_join_disjunctions_push_down = 0;
+WITH lines AS (
+    SELECT explain
+    FROM (
+        EXPLAIN actions = 1
+        SELECT
+            n1.number,
+            n2.number,
+            n3.number
+        FROM numbers(3) AS n2, numbers(3) AS n3, numbers(3) AS n1
+        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
+           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
+    )
+)
+SELECT
+    -- plus() OR pushed to the (n2 x n3) side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
+    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
+            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
+            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
+            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
+FROM lines
+FORMAT TSV;
+
+SELECT '--- Case F: plan (enabled) ---';
+SET use_join_disjunctions_push_down = 1;
+WITH lines AS (
+    SELECT explain
+    FROM (
+        EXPLAIN actions = 1
+        SELECT
+            n1.number,
+            n2.number,
+            n3.number
+        FROM numbers(3) AS n1, numbers(3) AS n2, numbers(3) AS n3
+        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
+           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
+    )
+)
+SELECT
+    -- plus() OR cannot be pushed until both n2 and n3 are present in this order
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
+    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
+            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
+            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
+            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
+FROM lines
+FORMAT TSV;
+
+SELECT '--- Case F: plan (disabled) ---';
+SET use_join_disjunctions_push_down = 0;
+WITH lines AS (
+    SELECT explain
+    FROM (
+        EXPLAIN actions = 1
+        SELECT
+            n1.number,
+            n2.number,
+            n3.number
+        FROM numbers(3) AS n1, numbers(3) AS n2, numbers(3) AS n3
+        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
+           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
+    )
+)
+SELECT
+    -- plus() OR cannot be pushed until both n2 and n3 are present in this order
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
+    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
+    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
+            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
+            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
+            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
+FROM lines
 FORMAT TSV;
