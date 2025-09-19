@@ -1606,7 +1606,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 
     create.setDatabase(getDatabaseName());
     create.setTable(unescapeForFileName(node_name));
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.attach = false;
+
+    /// In both cases we need to set attach = true to avoid creating inner table(s) twice.
+    if (create.is_materialized_view_with_inner_table())
+        create.attach = true;
+    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
+        create.attach = true;
 
     return ast;
 }
