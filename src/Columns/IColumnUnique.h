@@ -69,6 +69,7 @@ public:
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
+    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;

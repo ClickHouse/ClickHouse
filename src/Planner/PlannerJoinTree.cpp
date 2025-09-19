@@ -1074,7 +1074,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
+                    auto allow_parallel_replicas_for_table_expression
+                        = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
                     {
                         if (join_tree_node->as<CrossJoinNode>())
                             return false;
@@ -1085,9 +1086,37 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right
-                            || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+
+                        if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
+                        {
+
+                            const auto & left_table_expr = join_node->getLeftTableExpression();
+                            if (current_table_expression.get() == left_table_expr.get())
+                                // here current table expression is table or table function
+                                return true;
+
+                            // current table expression is right one
+                            // check if left one is not subquery
+                            return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN;
+                        }
+
+                        if (join_kind == JoinKind::Right)
+                        {
+                            // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
+                            const auto & left_table_expr = join_node->getLeftTableExpression();
+                            if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
+                                return false;
+
+                            const auto & right_table_expr = join_node->getRightTableExpression();
+                            if (right_table_expr->getNodeType() != QueryTreeNodeType::TABLE
+                                && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
+                                return false;
+
                             return true;
+                        }
 
                         return false;
                     };
@@ -1116,7 +1145,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && allow_parallel_replicas_for_table_expression(parent_join_tree))
+                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();

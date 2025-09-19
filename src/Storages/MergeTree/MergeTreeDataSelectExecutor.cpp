@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -65,6 +64,8 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -1112,9 +1113,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
             if (!matching_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            else
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
@@ -1852,10 +1856,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        GinPostingsListsCacheForStore postings_lists_cache_for_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            postings_lists_cache_for_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -1863,7 +1863,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                    reader.read(index_mark, granule);
+                {
+                    reader.read(index_mark, condition.get(), granule);
+                }
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
@@ -1901,13 +1903,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = postings_lists_cache_for_store.store
-                                    ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, postings_lists_cache_for_store)
-                                    : true;
-                    else
-                        result = condition->mayBeTrueOnGranule(granule);
+                    bool result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
                         continue;
@@ -2004,7 +2000,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(index_mark, granules[i]);
+                    readers[i]->read(index_mark, nullptr, granules[i]);
                     granules_filled = true;
                 }
             }

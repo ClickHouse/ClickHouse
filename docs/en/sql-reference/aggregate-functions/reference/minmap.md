@@ -4,6 +4,7 @@ description: 'Calculates the minimum from `value` array according to the keys sp
 sidebar_position: 169
 slug: /sql-reference/aggregate-functions/reference/minmap
 title: 'minMap'
+doc_type: 'reference'
 ---
 
 # minMap
