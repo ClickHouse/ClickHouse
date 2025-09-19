@@ -3,6 +3,7 @@ description: 'Documentation for Type Conversion Functions'
 sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
+doc_type: 'reference'
 ---
 
 # Type conversion functions
@@ -5377,6 +5378,45 @@ toTypeName(b): Decimal(76, 0)
 
 ## toString {#tostring}
 
+Converts values to their string representation.
+For DateTime arguments, the function can take a second String argument containing the name of the time zone.
+
+**Syntax**
+
+```sql
+toString(value[, timezone])
+```
+
+**Arguments**
+- `value`: Value to convert to string. [`Any`](/sql-reference/data-types).
+- `timezone`: Optional. Timezone name for `DateTime` conversion. [`String`](/sql-reference/data-types/string).
+
+**Returned value**
+- Returns a string representation of the input value. [`String`](/sql-reference/data-types/string).
+
+**Examples**
+
+**Usage example**
+
+```sql title="Query"
+SELECT
+    now() AS ts,
+    time_zone,
+    toString(ts, time_zone) AS str_tz_datetime
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10;
+```
+
+```response title="Response"
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
+│ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
+└─────────────────────┴───────────────────┴─────────────────────┘
+```
 
 ## toFixedString {#tofixedstring}
 

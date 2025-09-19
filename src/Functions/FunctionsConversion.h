@@ -5234,12 +5234,15 @@ private:
         return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
+                if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+                    return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, context);
+
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
             };
         }
@@ -5567,16 +5570,16 @@ private:
                     }
                 }
 
-                MutableColumnPtr variant_column;
+                ColumnPtr variant_column;
                 /// If there were no NULLs, we can just clone the column.
+                /// We use cloneWithDefaultOnNull to make the dictionary not-nullable in the result column.
                 if (variant_size_hint == col_lc.size())
-                    variant_column = IColumn::mutate(column);
+                    variant_column = col_lc.cloneWithDefaultOnNull();
                 /// Otherwise we should filter column.
                 else
-                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
+                    variant_column = assert_cast<const ColumnLowCardinality &>(*column->filter(filter, variant_size_hint)).cloneWithDefaultOnNull();
 
-                assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
+                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
             }
             else
             {
@@ -6434,7 +6437,7 @@ private:
             case TypeIndex::ObjectDeprecated:
                 return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             case TypeIndex::Interval:

@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with ULID'
 sidebar_label: 'ULID'
 slug: /sql-reference/functions/ulid-functions
 title: 'Functions for Working with ULID'
+doc_type: 'reference'
 ---
 
 # Functions for Working with ULID

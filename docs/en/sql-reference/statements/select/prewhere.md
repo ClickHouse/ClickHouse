@@ -3,6 +3,7 @@ description: 'Documentation for PREWHERE Clause'
 sidebar_label: 'PREWHERE'
 slug: /sql-reference/statements/select/prewhere
 title: 'PREWHERE Clause'
+doc_type: 'reference'
 ---
 
 # PREWHERE Clause

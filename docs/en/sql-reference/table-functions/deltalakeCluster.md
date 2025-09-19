@@ -4,6 +4,7 @@ sidebar_label: 'deltaLakeCluster'
 sidebar_position: 46
 slug: /sql-reference/table-functions/deltalakeCluster
 title: 'deltaLakeCluster'
+doc_type: 'reference'
 ---
 
 # deltaLakeCluster Table Function
