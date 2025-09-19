@@ -2300,7 +2300,7 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
         return;
     }
 
-    /// It get's a bit complex now. We need to figure out how the columns in the
+    /// It gets a bit complex now. We need to figure out how the columns in the
     /// condition have resolved to indexes. Indexes can be skip indexes or primary
     /// key index (or _part_offset).
 
@@ -2368,12 +2368,14 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     }
 
     //. We have mixed ANDs and ORs. Let us transform all to disjuncts
+#if 0
     if (indexes->key_condition.getUsedColumns().size() > 0)
         indexes->key_condition.transformToDisjuncts();
     if (indexes->part_offset_condition)
         indexes->part_offset_condition->transformToDisjuncts();
     if (indexes->total_offset_condition)
         indexes->total_offset_condition->transformToDisjuncts();
+#endif
     for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
     {
         auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
@@ -2391,7 +2393,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MarkRanges res;
 
     /// Optimization first
-    if(condition_type == KeyCondition::OnlyDisjuncts)
+    if (condition_type == KeyCondition::OnlyDisjuncts)
     {
         for (auto mr : skip_index_results)
         {

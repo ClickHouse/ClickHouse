@@ -61,7 +61,7 @@ public:
 
     void transformToDisjuncts() override;
 
-    virtual std::vector<size_t> getResolvedPositions() const override;
+    std::vector<size_t> getResolvedPositions() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
