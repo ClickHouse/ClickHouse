@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
