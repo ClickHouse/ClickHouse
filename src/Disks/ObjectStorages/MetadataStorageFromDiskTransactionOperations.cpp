@@ -391,7 +391,12 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     if (!metadata_storage.existsFile(path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, can't truncate", path);
+    {
+        if (size > 0)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, can't truncate", path);
+        else
+            return;
+    }
 
     DiskObjectStorageMetadataPtr metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
     chassert(metadata);
