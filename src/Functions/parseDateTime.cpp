@@ -2454,7 +2454,7 @@ SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
     /// parseDateTimeOrZero documentation
     FunctionDocumentation::Description parseDateTimeOrZero_description = R"(
-Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounters an unparseable date format.
+Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeOrZero_syntax = "parseDateTimeOrZero(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeOrZero_arguments = {
@@ -2482,7 +2482,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
     /// parseDateTimeOrNull documentation
     FunctionDocumentation::Description parseDateTimeOrNull_description = R"(
-Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters an unparseable date format.
+Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeOrNull_syntax = "parseDateTimeOrNull(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeOrNull_arguments = {
