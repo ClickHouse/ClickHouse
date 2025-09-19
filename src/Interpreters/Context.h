@@ -1681,6 +1681,9 @@ public:
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
 
+    ThrottlerPtr getDistributedCacheReadThrottler() const;
+    ThrottlerPtr getDistributedCacheWriteThrottler() const;
+
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
