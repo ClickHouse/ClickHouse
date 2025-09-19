@@ -227,7 +227,8 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", cluster.minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                cluster.minio_access_key,
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
@@ -275,7 +276,8 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", cluster.minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                cluster.minio_access_key,
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",

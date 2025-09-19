@@ -10,7 +10,9 @@ import time
 import signal
 import sys
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 sys.path.append("..")
 from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (

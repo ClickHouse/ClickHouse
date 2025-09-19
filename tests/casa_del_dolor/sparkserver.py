@@ -6,7 +6,9 @@ import signal
 import sys
 import time
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 sys.path.append("..")
 from integration.helpers.cluster import is_port_free
 from httpserver import DolorHTTPServer
@@ -67,9 +69,11 @@ def close_spark_http_server(catalog_server):
 
 
 if __name__ == "__main__":
+    # Start the whole Spark integration with the HTTP server, so issues can be reproduced outside a fuzzer run
     from types import SimpleNamespace
 
     # FIXME these should be parameters for the script
+    # So far I call `tests/docker_scripts/setup_minio.sh stateless` to start MinIO
     cluster_settings = {
         "minio_ip": "127.0.0.1",
         "minio_port": 11111,

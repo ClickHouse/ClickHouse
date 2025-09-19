@@ -26,7 +26,16 @@ class SparkAndClickHouseCheck:
                 dtype.elementType, ArrayType
             ) and self._check_type_valid_for_comparison(dtype.elementType)
         if isinstance(
-            dtype, (MapType, StructType, StringType, BinaryType, CharType, VarcharType, TimestampType)
+            dtype,
+            (
+                MapType,
+                StructType,
+                StringType,
+                BinaryType,
+                CharType,
+                VarcharType,
+                TimestampType,
+            ),
         ):
             # Map type is not comparable in Spark, Struct is complicated
             return False
