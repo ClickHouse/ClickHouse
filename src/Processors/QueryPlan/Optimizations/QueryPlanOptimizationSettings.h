@@ -5,6 +5,8 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+
 #include <cstddef>
 
 namespace DB
@@ -136,6 +138,9 @@ struct QueryPlanOptimizationSettings
     bool keep_logical_steps;
 
     bool is_explain;
+
+    std::function<QueryPlan()> query_plan_builder;
+    ContextPtr context;
 };
 
 }

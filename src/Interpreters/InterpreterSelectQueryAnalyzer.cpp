@@ -172,15 +172,21 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const ASTPtr & query_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
+    const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
+    , query_plan_builder(
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
+          {
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return plan;
+          })
 {
 }
 
@@ -195,18 +201,38 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
+    , query_plan_builder(
+          [ast = query_->clone(),
+           ctx = Context::createCopy(context_),
+           storage = storage_,
+           select_options = select_query_options_,
+           column_names]()
+          {
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return plan;
+          })
 {
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const QueryTreeNodePtr & query_tree_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
+    const QueryTreeNodePtr & query_tree_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
+    , query_plan_builder(
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
+          {
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return plan;
+          })
 {
 }
 
@@ -282,6 +308,9 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     auto & query_plan = planner.getQueryPlan();
 
     QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.query_plan_builder = query_plan_builder;
+    optimization_settings.context = context;
+
     BuildQueryPipelineSettings build_pipeline_settings(context);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);

@@ -1,15 +1,26 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Common/Exception.h>
+#include "IO/WriteBufferFromString.h"
+#include "Processors/QueryPlan/QueryPlan.h"
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
+#include <memory>
 #include <stack>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+}
 
 namespace ErrorCodes
 {
@@ -156,6 +167,32 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
 
         stack.pop_back();
     }
+}
+
+
+void tryEnableParallelReplicas(
+    [[maybe_unused]] const QueryPlanOptimizationSettings & optimization_settings,
+    [[maybe_unused]] QueryPlan::Node & root,
+    [[maybe_unused]] QueryPlan::Nodes & nodes,
+    [[maybe_unused]] QueryPlan & query_plan)
+{
+    if (!optimization_settings.query_plan_builder)
+        return;
+
+    if (optimization_settings.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 3)
+        return;
+
+    auto dump = [&](const QueryPlan & plan)
+    {
+        WriteBufferFromOwnString wb;
+        plan.explainPlan(wb, ExplainPlanOptions{});
+        LOG_DEBUG(&Poco::Logger::get("debug"), "wb.str()={}", wb.str());
+    };
+
+    auto plan_with_parallel_replicas = std::make_unique<QueryPlan>(optimization_settings.query_plan_builder());
+    dump(query_plan);
+    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+    dump(query_plan);
 }
 
 
@@ -405,6 +442,8 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    tryEnableParallelReplicas(optimization_settings, root, nodes, query_plan);
 }
 
 void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)

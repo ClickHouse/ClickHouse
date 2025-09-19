@@ -710,17 +710,17 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    const auto & header = node->step->getOutputHeader();
-    const auto & plan_header = plan->getCurrentHeader();
-
-    if (!blocksHaveEqualStructure(*header, *plan_header))
-    {
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-
-        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-        plan->addStep(std::move(expression));
-    }
+    // const auto & header = node->step->getOutputHeader();
+    // const auto & plan_header = plan->getCurrentHeader();
+    //
+    // if (!blocksHaveEqualStructure(*header, *plan_header))
+    // {
+    //     auto converting_dag = ActionsDAG::makeConvertingActions(
+    //         plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+    //
+    //     auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+    //     plan->addStep(std::move(expression));
+    // }
 
     nodes.splice(nodes.end(), std::move(plan->nodes));
 
