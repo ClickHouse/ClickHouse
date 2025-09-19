@@ -13,7 +13,6 @@ struct DeltaMetadataLogElement
     String table_path;
     String file_path;
     String metadata_content;
-    std::optional<UInt64> row_in_file;
 
     static std::string name() { return "DeltaMetadataLog"; }
 
@@ -26,8 +25,7 @@ void insertDeltaRowToLogTable(
     const ContextPtr & local_context,
     String row,
     const String & table_path,
-    const String & file_path,
-    std::optional<UInt64> row_in_file);
+    const String & file_path);
 
 class DeltaMetadataLog : public SystemLog<DeltaMetadataLogElement>
 {

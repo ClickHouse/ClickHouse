@@ -172,7 +172,6 @@ struct DeltaLakeMetadataImpl
         DeltaLakePartitionColumns current_partition_columns;
         const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
 
-        size_t file_index = 0;
         if (checkpoint_version)
         {
             auto current_version = checkpoint_version;
@@ -184,7 +183,7 @@ struct DeltaLakeMetadataImpl
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, current_schema, current_partition_columns, result_files, file_index++);
+                processMetadataFile(file_path, current_schema, current_partition_columns, result_files);
             }
 
             LOG_TRACE(
@@ -195,7 +194,7 @@ struct DeltaLakeMetadataImpl
         {
             const auto keys = listFiles(*object_storage, *configuration_ptr, deltalake_metadata_directory, metadata_file_suffix);
             for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files, file_index++);
+                processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
 
         return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
@@ -240,8 +239,7 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result,
-        size_t file_index) const
+        std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
@@ -364,7 +362,7 @@ struct DeltaLakeMetadataImpl
             }
         }
         auto configuration_ptr = configuration.lock();
-        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path, file_index);
+        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path);
     }
 
     NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const

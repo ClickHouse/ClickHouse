@@ -54,8 +54,7 @@ ColumnsDescription DeltaMetadataLogElement::getColumnsDescription()
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
         {"table_path", std::make_shared<DataTypeString>(), "Table path."},
         {"file_path", std::make_shared<DataTypeString>(), "File path."},
-        {"content", std::make_shared<DataTypeString>(), "Content in a JSON format."},
-        {"row_in_file", rowType, "Row in file."}};
+        {"content", std::make_shared<DataTypeString>(), "Content in a JSON format."}};
 }
 
 void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
@@ -67,15 +66,13 @@ void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(table_path);
     columns[column_index++]->insert(file_path);
     columns[column_index++]->insert(metadata_content);
-    columns[column_index++]->insert(row_in_file ? *row_in_file : rowType->getDefault());
 }
 
 void insertDeltaRowToLogTable(
     const ContextPtr & local_context,
     String row,
     const String & table_path,
-    const String & file_path,
-    std::optional<UInt64> row_in_file)
+    const String & file_path)
 {
     if (!local_context->getSettingsRef()[Setting::delta_log_metadata].value)
         return;
@@ -93,7 +90,6 @@ void insertDeltaRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .table_path = table_path,
             .file_path = file_path,
-            .metadata_content = row,
-            .row_in_file = row_in_file});
+            .metadata_content = row});
 }
 }

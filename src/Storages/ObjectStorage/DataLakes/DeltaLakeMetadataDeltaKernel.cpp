@@ -378,7 +378,6 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(
 
     auto configuration = configuration_common.lock();
     const auto keys = listFiles(*object_storage, *configuration, deltalake_metadata_directory, metadata_file_suffix);
-    size_t file_index = 0;
     for (const String & key : keys)
     {
         auto read_settings = context->getReadSettings();
@@ -386,7 +385,7 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(
         auto buf = createReadBuffer(object_info, object_storage, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
-        insertDeltaRowToLogTable(context, json_str, configuration->getRawPath().path, key, file_index++);
+        insertDeltaRowToLogTable(context, json_str, configuration->getRawPath().path, key);
     }
 
 }
