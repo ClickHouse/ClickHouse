@@ -3737,3 +3737,4 @@ def test_system_table(started_cluster, use_delta_kernel):
             continue
         assert 'commitInfo' in content
         assert '.parquet' in content
+    instance.query("TRUNCATE TABLE system.delta_metadata_log")

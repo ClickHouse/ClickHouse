@@ -85,7 +85,6 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
             log))
 {
     configuration_common = configuration_;
-    //logMetadataFiles(object_storage, context);
 #ifdef DEBUG_OR_SANITIZER_BUILD
     //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 #endif
