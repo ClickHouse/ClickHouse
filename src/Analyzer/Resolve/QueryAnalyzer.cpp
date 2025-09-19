@@ -737,7 +737,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
-            Block block;
+            Chunk chunk;
 
             if (!skip_execution_for_exists)
             {
@@ -746,12 +746,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (block.rows() == 0 && executor->pull(block))
+                while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
             }
 
-            if (block.rows() == 0)
+            if (chunk.getNumRows() == 0)
             {
                 DataTypePtr type;
                 if (execute_for_exists)
@@ -784,15 +784,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
             else
             {
-                if (block.rows() != 1)
+                if (chunk.getNumRows() != 1)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor->pull(tmp_block))
+                Chunk tmp_chunk;
+                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
                 {
                 }
 
-                if (tmp_block.rows() != 0)
+                if (tmp_chunk.getNumRows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 if (execute_for_exists)
@@ -804,6 +804,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
                 else
                 {
+                    auto block = executor->getHeader().cloneWithColumns(chunk.getColumns());
                     wrap_with_nullable_or_tuple(block);
                     scalar_block = std::move(block);
                 }
