@@ -5,7 +5,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <Functions/IFunction.h>
 
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -235,77 +234,25 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
+std::optional<ActionsDAG> tryToExtractPartialPredicate(
+    const ActionsDAG & original_dag,
+    const std::string & filter_name,
+    const Names & available_columns);
+
+void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
+
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
 {
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
-    bool has_or = filter->getExpression().containsOrUnderOutput(filter->getFilterColumnName());
 
     auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
     auto * join = typeid_cast<JoinStep *>(child.get());
     auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
 
-    const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
-
-    if (has_or && !disj_pushdown_enabled)
-    {
-        return 0;
-    }
-
     if (!join && !filled_join && !logical_join)
         return 0;
-
-    /// Add a function to check if filter contains special predicates
-    auto contains_special_predicates = [](const ActionsDAG & dag, const std::string & filter_col) -> bool
-    {
-        const auto * root = dag.tryFindInOutputs(filter_col);
-        if (!root) return false;
-
-        std::stack<const ActionsDAG::Node *> st;
-        st.push(root);
-        std::unordered_set<const ActionsDAG::Node *> seen;
-
-        while (!st.empty())
-        {
-            const auto * n = st.top(); st.pop();
-            if (!seen.insert(n).second) continue;
-
-            // Check for special inputs that indicate correlated predicates
-            if (n->type == ActionsDAG::ActionType::INPUT)
-            {
-                const auto & name = n->result_name;
-                if (name.find("exists(") != std::string::npos ||
-                    name.find("__exists") != std::string::npos ||
-                    name.find("__subquery") != std::string::npos ||
-                    name.find("__correlated") != std::string::npos)
-                    return true;
-            }
-
-            for (const auto * ch : n->children)
-                st.push(ch);
-        }
-        return false;
-    };
-
-    // If we have OR with special predicates, don't push down
-    if (has_or && contains_special_predicates(filter->getExpression(), filter->getFilterColumnName()))
-    {
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
-                  "Skipping OR pushdown due to special predicates (EXISTS, correlated subqueries)");
-        return 0;
-    }
-
-    /// Only suppress re-entry for the disjunction flow
-    if (has_or)
-    {
-        if ((join && join->isDisjunctionsOptimizationApplied()) ||
-            (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
-            (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
-        {
-            return 0;
-        }
-    }
 
     /** For equivalent JOIN with condition `ON lhs.x_1 = rhs.y_1 AND lhs.x_2 = rhs.y_2 ...`, we can build equivalent sets of columns and this
       * will allow to push conditions that only use columns from equivalent sets to both sides of JOIN, without considering JOIN type.
@@ -334,12 +281,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (filled_join)
         table_join_ptr = &filled_join->getJoin()->getTableJoin();
 
-    const auto & input_headers = child->getInputHeaders();
-    if (input_headers.empty())
-        return 0;
-
-    const auto & left_stream_input_header = input_headers.front();
-    const auto & right_stream_input_header = input_headers.back();
+    const auto & left_stream_input_header = child->getInputHeaders().front();
+    const auto & right_stream_input_header = child->getInputHeaders().back();
 
     if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
         return 0;
@@ -528,19 +471,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (updated_steps > 0)
     {
-        // Set the global flag to prevent this optimization from running again
-        if (has_or)
-        {
-            if (join)
-                join->setDisjunctionsOptimizationApplied(true);
-            if (logical_join)
-                logical_join->setDisjunctionsOptimizationApplied(true);
-            if (filled_join)
-                filled_join->setDisjunctionsOptimizationApplied(true);
-        }
-
-        // The JoinStep-specific flag was already set earlier in the function to prevent recursion
-
         const auto & filter_column_name = filter->getFilterColumnName();
         auto & filter_expression = filter->getExpression();
 
@@ -559,11 +489,58 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            filter = nullptr;
         }
         else
         {
             filter->updateInputHeader(child->getOutputHeader());
         }
+    }
+
+    const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
+    if (filter && disj_pushdown_enabled)
+    {
+        if ((join && join->isDisjunctionsOptimizationApplied()) ||
+            (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
+            (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
+        {
+            return updated_steps;
+        }
+
+        {
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
+            if (left_partial_filter_dag.has_value())
+            {
+                const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
+                ++updated_steps;
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+                    "Pushed down partial filter {} to the {} side of join",
+                    partial_predicate_column_name,
+                    JoinKind::Left);
+            }
+        }
+
+        {
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
+            if (right_partial_filter_dag.has_value())
+            {
+                const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
+                ++updated_steps;
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+                    "Pushed down partial filter {} to the {} side of join",
+                    partial_predicate_column_name,
+                    JoinKind::Right);
+            }
+        }
+
+        if (join)
+            join->setDisjunctionsOptimizationApplied(true);
+        if (logical_join)
+            logical_join->setDisjunctionsOptimizationApplied(true);
+        if (filled_join)
+            filled_join->setDisjunctionsOptimizationApplied(true);
     }
 
     return updated_steps;
