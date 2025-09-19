@@ -12,7 +12,7 @@ function test_copy()
 {
     disk_name="$1"
 
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir ${prefix}_hello; cd ${prefix}_hello; mkdir ${prefix}_world; cd ${prefix}_world; mkdir ${prefix}_Clickhouse;"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir ${prefix}_hello; cd ${prefix}_hello; mkdir ${prefix}_world; cd ${prefix}_world; mkdir ${prefix}_Clickhouse; mkdir ${prefix}_Cloud"
     printf "Test file can't be navigated" | clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; write ${prefix}_test_file.txt;"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; read ${prefix}_test_file.txt;"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; cd ${prefix}_test_file.txt;"  2>&1 | grep -o "BAD_ARGUMENTS"
@@ -21,7 +21,7 @@ function test_copy()
     echo "Test ls with implicit path"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; ls; ls --recursive;"
     echo "Test ls with explicit path"
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "ls ${prefix}_hello/${prefix}_world; ls --recursive ${prefix}_hello/${prefix}_world"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "ls ${prefix}_hello; ls --recursive ${prefix}_hello"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "rm -r /${prefix}_hello/"
 }
 
