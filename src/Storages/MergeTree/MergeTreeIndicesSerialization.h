@@ -9,8 +9,9 @@ namespace DB
 class IMergeTreeIndexCondition;
 
 /// Represents a substream of a merge tree index.
-/// By default skip indexes have on substream (skp_idx_name.idx),
+/// By default skip indexes have one substream (skp_idx_<name>.idx),
 /// but some indexes (e.g. text index) may have multiple substreams.
+/// Each substream has file with data and file with marks.
 struct MergeTreeIndexSubstream
 {
     enum class Type

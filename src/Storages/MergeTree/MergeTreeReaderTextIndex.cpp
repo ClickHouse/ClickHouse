@@ -123,6 +123,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
 
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule.granule);
         granule_text.resetAfterAnalysis();
+        analyzed_granules.add(index_mark);
     }
 
     return !it->second.may_be_true;
@@ -173,6 +174,11 @@ size_t MergeTreeReaderTextIndex::readRows(
         size_t index_mark = from_mark / granularity;
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
 
+        /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
+        /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
+        if (!analyzed_granules.contains(index_mark))
+            canSkipMark(from_mark, current_task_last_mark);
+
         auto it = granules.find(index_mark);
         if (it == granules.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule not found (mark: {}, index_mark: {})", from_mark, index_mark);
@@ -206,6 +212,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         read_rows += rows_to_read;
         current_row += rows_to_read;
 
+        /// If we read no all ranges for the index granule,
+        /// it may remain in the cache till the end of the query.
+        /// It can happen for granules at the borders of the ranges.
+        /// We consider this ok, because it is not a big overhead.
         if (remaining_marks.at(index_mark).decrement(granularity))
             granules.erase(index_mark);
     }
@@ -236,7 +246,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-            granule.postings.emplace(token, PostingsIteratorPair(postings.getEmbeddedPostings()));
+            granule.postings.emplace(token, &postings.getEmbeddedPostings());
             continue;
         }
 
@@ -251,21 +261,25 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         auto read_postings = PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
 
         auto & postings_holder = granule.postings_holders.emplace_back(std::move(read_postings));
-        granule.postings.emplace(token, PostingsIteratorPair(postings_holder));
+        granule.postings.emplace(token, &postings_holder);
     }
 
     granule.need_read_postings = false;
 }
 
+/// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
 void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
     const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
 {
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    PostingList union_posting;
+    PostingList range_posting;
+    range_posting.addRange(granule_offset, granule_offset + num_rows);
 
     for (const auto & token : search_tokens)
     {
@@ -273,25 +287,31 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        auto & [postings_it, postings_end] = it->second;
-        for (; postings_it != postings_end; ++postings_it)
-        {
-            size_t row = *postings_it;
-            if (row < granule_offset)
-                continue;
+        const PostingList & posting = *it->second;
+        union_posting |= (posting & range_posting);
+    }
 
-            size_t relative_row_number = row - granule_offset;
-            if (relative_row_number >= num_rows)
-                break;
+    const size_t cardinality = union_posting.cardinality();
+    if (cardinality == 0)
+        return;
 
-            column_data[column_offset + relative_row_number] = 1;
-        }
+    indices.resize(cardinality);
+    union_posting.toUint32Array(indices.data());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (size_t i = 0; i < cardinality; ++i)
+    {
+        size_t relative_row_number = indices[i] - granule_offset;
+        chassert(relative_row_number < num_rows);
+        column_data[column_offset + relative_row_number] = 1;
     }
 }
 
+/// Finds the intersection of the posting lists for range [granule_offset, granule_offset + num_rows)
 void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
     const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
@@ -300,8 +320,7 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    /// PostingsIteratorPair is 96 bytes, so avoid copying.
-    std::vector<PostingsIteratorPair *> token_iterators;
+    std::vector<const PostingList *> token_postings;
 
     for (const auto & token : search_tokens)
     {
@@ -309,34 +328,37 @@ void applyPostingsAll(
         if (it == postings_map.end())
             return;
 
-        token_iterators.push_back(&it->second);
+        token_postings.push_back(it->second);
     }
 
-    PaddedPODArray<UInt16> counters(num_rows, 0);
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    PostingList intersection_posting;
+    intersection_posting.addRange(granule_offset, granule_offset + num_rows);
 
-    for (auto & iters : token_iterators)
+    for (const PostingList * posting : token_postings)
     {
-        for (; iters->it != iters->end; ++iters->it)
-        {
-            size_t row = *iters->it;
-            if (row < granule_offset)
-                continue;
+        intersection_posting &= (*posting);
 
-            size_t relative_row_number = row - granule_offset;
-            if (relative_row_number >= num_rows)
-                break;
-
-            ++counters[relative_row_number];
-        }
+        if (intersection_posting.cardinality() == 0)
+            return;
     }
 
-    size_t total_tokens = token_iterators.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
+    const size_t cardinality = intersection_posting.cardinality();
+    if (cardinality == 0)
+        return;
+
+    indices.resize(cardinality);
+    intersection_posting.toUint32Array(indices.data());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (size_t i = 0; i < cardinality; ++i)
+    {
+        size_t relative_row_number = indices[i] - granule_offset;
+        chassert(relative_row_number < num_rows);
+        column_data[column_offset + relative_row_number] = 1;
+    }
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
@@ -351,9 +373,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, c
         return;
 
     if (search_query->mode == TextSearchMode::Any || granule.postings.size() == 1)
-        applyPostingsAny(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
+        applyPostingsAny(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
     else if (search_query->mode == TextSearchMode::All)
-        applyPostingsAll(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
+        applyPostingsAll(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->mode);
 }

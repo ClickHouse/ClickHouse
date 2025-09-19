@@ -2594,11 +2594,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (supportsSkipIndexesOnDataRead())
     {
-        /// Vector similarity indexes are not applicable on data reads.
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
 
         std::erase_if(applicable_skip_indexes.useful_indices, [this](const auto & idx)
         {
+            /// Vector similarity indexes are not applicable on data reads.
+            /// Indexes for which index read task is created use another mechanism to read index data.
             return idx.index->isVectorSimilarityIndex() || index_read_tasks.contains(idx.index->index.name);
         });
 
@@ -3094,6 +3095,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
         all_column_names.erase(it);
     }
 
+    /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
     auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
 
     for (const auto & [index_name, columns] : added_columns)

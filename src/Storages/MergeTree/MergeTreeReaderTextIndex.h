@@ -3,25 +3,22 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <roaring.hh>
 
 namespace DB
 {
 
-struct PostingsIteratorPair
-{
-    explicit PostingsIteratorPair(const PostingList & postings) : it(postings.begin()), end(postings.end()) {}
+using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
 
-    PostingList::const_iterator it;
-    PostingList::const_iterator end;
-};
-
-using PostingsMap = absl::flat_hash_map<StringRef, PostingsIteratorPair>;
-
+/// A part of "direct read from text index" optimization.
+/// This reader fills virtual columns for text search filters
+/// which were replaced from the text search functions using
+/// the posting lists read from the index.
+///
+/// E.g. `__text_index_<name>_hasToken` column created for `hasToken` function.
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
 public:
-    using MatchingMarks = std::vector<bool>;
-
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
@@ -53,7 +50,7 @@ private:
     void createEmptyColumns(Columns & columns) const;
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
-    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const;
+    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
 
     MergeTreeIndexWithCondition index;
     MarkRanges all_index_ranges;
@@ -77,6 +74,8 @@ private:
 
     std::map<size_t, Granule> granules;
     absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
+    PaddedPODArray<UInt32> indices_buffer;
+    roaring::Roaring analyzed_granules;
 };
 
 }

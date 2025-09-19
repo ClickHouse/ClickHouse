@@ -57,6 +57,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool convert_any_join_to_semi_or_anti_join;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -74,6 +75,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
+    double query_condition_cache_selectivity_threshold;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting

@@ -79,6 +79,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
 }
 
+/// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
 static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
 {
     if (index_read_tasks.empty())
@@ -116,7 +117,7 @@ static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTa
     if (!index_for_step.empty() && !non_index_column.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
 
-    return index_for_step.empty() ? nullptr : &index_read_tasks.at(String(index_for_step)).index;
+    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step).index;
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(

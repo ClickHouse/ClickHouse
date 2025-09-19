@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnsNumber.h>
@@ -30,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int CORRUPTED_DATA;
 }
 
 static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
@@ -39,13 +42,19 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
+/// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
+/// Rate of 0.1 gives 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
 static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
-/// 0.1 seems quite high, it 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
-/// The actual intention is to minimize the size of the bloom filter.
 
-UInt32 TokenInfo::getCardinality() const
+enum class TokensSerializationFormat : UInt64
+{
+    RawStrings = 0,
+};
+
+UInt32 TokenPostingsInfo::getCardinality() const
 {
     return std::visit([]<typename T>(const T & arg) -> UInt32
     {
@@ -111,7 +120,7 @@ UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
     return assert_cast<const ColumnUInt64 &>(*offsets_in_file).getData()[idx];
 }
 
-DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenInfo> token_infos_)
+DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
     : DictionaryBlockBase(std::move(tokens_))
     , token_infos(std::move(token_infos_))
 {
@@ -152,6 +161,7 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     size_t num_bytes;
     readVarUInt(num_bytes, istr);
 
+    /// If the posting list is completely in the buffer, avoid copying.
     if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
     {
         return PostingList::read(istr.position());
@@ -180,9 +190,9 @@ void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVe
 
 void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
 {
-    readVarUInt(bloom_filter_elements, istr);
+    readVarUInt(num_tokens, istr);
 
-    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, bloom_filter_elements);
+    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
     bloom_filter.resize(bytes_size);
     istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
 }
@@ -206,10 +216,16 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
+    UInt64 tokens_format;
+    readVarUInt(tokens_format, istr);
+
+    if (tokens_format != static_cast<UInt64>(TokensSerializationFormat::RawStrings))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
+
     auto tokens_column = deserializeTokens(istr);
     size_t num_tokens = tokens_column->size();
 
-    std::vector<TokenInfo> token_infos;
+    std::vector<TokenPostingsInfo> token_infos;
     token_infos.reserve(num_tokens);
 
     for (size_t i = 0; i < num_tokens; ++i)
@@ -229,7 +245,7 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
         {
             UInt64 offset_in_file;
             readVarUInt(offset_in_file, istr);
-            token_infos.emplace_back(TokenInfo::FuturePostings{header, cardinality, offset_in_file});
+            token_infos.emplace_back(TokenPostingsInfo::FuturePostings{header, cardinality, offset_in_file});
         }
     }
 
@@ -279,7 +295,8 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
         {
             if (bloom_filter.find(token.data(), token.size()))
             {
-                remaining_tokens.emplace(token, TokenInfo{});
+                /// Create empty postings info, it will be filled during the dictionary analysis.
+                remaining_tokens.emplace(token, TokenPostingsInfo{});
             }
             else
             {
@@ -296,7 +313,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     else
     {
         for (const auto & token : search_tokens)
-            remaining_tokens.emplace(token, TokenInfo{});
+            remaining_tokens.emplace(token, TokenPostingsInfo{});
     }
 }
 
@@ -355,6 +372,15 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     }
 }
 
+size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
+{
+    return sizeof(*this)
+        + bloom_filter.getFilterSizeBytes()
+        + sparse_index.tokens->allocatedBytes()
+        + sparse_index.offsets_in_file->allocatedBytes()
+        + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
+}
+
 bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
@@ -377,6 +403,8 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & qu
 
 void MergeTreeIndexGranuleText::resetAfterAnalysis()
 {
+    /// Reset data that is not needed after the analysis.
+    /// Keep only remaining tokens with postings lists.
     bloom_filter = BloomFilter(1, 1, 0);
     sparse_index = DictionarySparseIndex();
 }
@@ -416,11 +444,16 @@ DictionarySparseIndex serializeTokensAndPostings(
     auto & sparse_index_offsets_data = sparse_index_offsets->getData();
     sparse_index_offsets_data.reserve(num_blocks);
 
+    UInt64 tokens_format = static_cast<UInt64>(TokensSerializationFormat::RawStrings);
+
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * block_size;
         size_t block_end = std::min(block_begin + block_size, num_tokens);
 
+        /// Start a new compressed block because the dictionary blocks
+        /// are usually read with random reads and it is more efficient
+        /// to decompress only the needed data.
         dictionary_stream.compressed_hashing.next();
         auto current_mark = dictionary_stream.getCurrentMark();
         chassert(current_mark.offset_in_decompressed_block == 0);
@@ -430,10 +463,13 @@ DictionarySparseIndex serializeTokensAndPostings(
         sparse_index_str.insertData(first_token.data, first_token.size);
 
         size_t num_tokens_in_block = block_end - block_begin;
+        writeVarUInt(tokens_format, dictionary_stream.compressed_hashing);
         writeVarUInt(num_tokens_in_block, dictionary_stream.compressed_hashing);
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
+            /// Write tokens the same as in SerializationString::serializeBinaryBulk
+            /// to be able to read them later with SerializationString::deserializeBinaryBulk.
             const auto & token = tokens_and_postings[i].first;
             writeVarUInt(token.size, dictionary_stream.compressed_hashing);
             dictionary_stream.compressed_hashing.write(token.data, token.size);
@@ -463,6 +499,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             }
             else
             {
+                /// Start a new compressed block because of the same reason as above for dictionary block.
                 postings_stream.compressed_hashing.next();
                 auto postings_mark = postings_stream.getCurrentMark();
                 chassert(postings_mark.offset_in_decompressed_block == 0);
@@ -547,11 +584,16 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 
         ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
+        auto & [posting_list, bulk_context] = it->getMapped();
 
         if (inserted)
-            it->getMapped() = &posting_lists.emplace_back();
+        {
+            posting_list = &posting_lists.emplace_back();
+            bulk_context = roaring::BulkContext();
+        }
 
-        it->getMapped()->add(current_row);
+        /// Use addBulk to optimize consecutive insertions into the posting list.
+        posting_list->addBulk(bulk_context, current_row);
     }
 
     ++current_row;
@@ -567,7 +609,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, mapped);
+        sorted_values.emplace_back(key, mapped.first);
         bloom_filter.add(key.data, key.size);
     });
 

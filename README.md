@@ -19,6 +19,11 @@
 curl https://clickhouse.com/ | sh
 ```
 
+## Open House Conference, Oct 28 2025
+
+[<img width="1280" height="368" alt="Open House Conference in Amsterdam will be held on Oct 28 2025 at Artis Royal Zoo" src="https://github.com/user-attachments/assets/7ee3c1c6-ef81-4523-924b-7b55f9f6b975" />
+](https://clickhouse.com/openhouse/amsterdam)
+
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
@@ -34,9 +39,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Join us for the [ClickHouse **25.8** Community Call](https://clickhouse.com/company/events/v25-8-community-release-call) happening on August 28.
+Join us for the [ClickHouse **25.9** Community Call](https://clickhouse.com/company/events/v25-9-community-release-call) happening on September 25.
 
-ClickHouse **Release 25.7** is published! This release included [Lightweight Updates](https://clickhouse.com/docs/sql-reference/statements/update), Iceberg INSERT support, AI for clickhouse-client and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#257).
+ClickHouse **Release 25.8** is published! This release included a new Parquet reader, better Azure storage integration and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.8/), [Video](https://www.youtube.com/watch?v=HB_-vji9RB0), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#258).
 
 ## Upcoming Events
 
@@ -70,7 +75,7 @@ Recent meetups
 * [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/310521318/) - September 4, 2025
 * [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26, 2025
-* [Manaila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
+* [Manila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
 * [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
 * [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025

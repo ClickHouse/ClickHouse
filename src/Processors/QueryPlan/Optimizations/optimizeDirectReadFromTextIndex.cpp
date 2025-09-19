@@ -18,22 +18,20 @@ using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionTe
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
 /// 1, We need the result of index analysis.
 /// 2. We want to leverage the PREWHERE for virtual columns, because text index
-///    is usually created with high granularit and PREHERE with virtual columns
+///    is usually created with high granularity and PREWHERE with virtual columns
 ///    may significantly reduce the amount of data to read.
 ///
-/// For example, for a query like
+/// For example, for a query like:
 ///     SELECT count() FROM table WHERE hasToken(text_col, 'token')
-/// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an replaceable function (according to
-/// isReplaceableFunction), then this class replaces some nodes in the ActionsDAG (and references to them) to generate an
-/// equivalent query
+/// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an replaceable function,
+/// then this class replaces some nodes in the ActionsDAG (and references to them) to generate an equivalent query:
 ///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
 /// The supported functions can be found in MergeTreeIndexConditionText::isSupportedFunctionForDirectRead.
 ///
 /// This class is a (C++) friend of ActionsDAG and can therefore access its private members.
-///
-/// Some of the functions implemented here could be added to ActionsDAG directly, but this wrapper approach simplifies the work by avoiding
-/// conflicts and minimizing coupling between this optimization and ActionsDAG.
+/// Some of the functions implemented here could be added to ActionsDAG directly, but this wrapper approach
+/// simplifies the work by avoiding conflicts and minimizing coupling between this optimization and ActionsDAG.
 class FullTextMatchingFunctionDAGReplacer
 {
 public:
@@ -43,9 +41,8 @@ public:
     {
     }
 
-    /// This optimization replaces text-search functions by virtual columns.
+    /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
-    ///
     /// Returns a pair of (added columns by index name, removed columns)
     std::pair<IndexReadColumns, Names> replace()
     {
@@ -98,8 +95,7 @@ private:
         return false;
     }
 
-    /// Attempt to add a new node with the replacement function.
-    /// This also adds extra input columns if needed.
+    /// Attempts to add a new node with the replacement virtual column.
     /// Returns the pair of (index name, virtual column name) if the replacement is successful.
     std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
     {
@@ -125,7 +121,7 @@ private:
             return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
         });
 
-        /// Do not optimize if there are multiple text index set for the column.
+        /// Do not optimize if there are multiple text indexes set for the column.
         /// It is not clear which index to use.
         if (num_supported_conditions != 1)
             return std::nullopt;
@@ -156,12 +152,11 @@ private:
 ///     FROM tab
 ///     WHERE text_function(...), [...]
 /// where
-/// - text_function is a text-matching functions, e.g. 'hasToken',
-///   text-matching functions expect that the column on which the function is called has a text index
+/// - text_function is a text-matching functions, e.g. 'hasToken'
+/// - text-matching functions expect that the column on which the function is called has a text index
 ///
-/// This function replaces text function nodes from the user query (using semi-brute-force process) with internal virtual columns which use only
-/// the index information to bypass the normal column scan which can consume significant amount of the execution time.
-/// The optimization checks if the function's column node is a text column with a text index.
+/// This function replaces text function nodes from the user query (using semi-brute-force process) with internal virtual columns
+/// which use only the index information to bypass the normal column scan which can consume significant amount of the execution time.
 void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
 {
     if (stack.size() < 2)
@@ -196,6 +191,9 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     {
         if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
         {
+            /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
+            /// TODO: support partial read from text index with fallback to the brute-force
+            /// search for parts where index is not materialized.
             bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
             {
                 return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
@@ -211,6 +209,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
     auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+
     if (!filter_step)
         return;
 

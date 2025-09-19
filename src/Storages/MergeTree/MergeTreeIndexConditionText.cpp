@@ -76,7 +76,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     }
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
-    std::ranges::sort(all_search_tokens); /// technically not necessary but leads to nicer read patterns on sorted dictionary blocks
+    std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
 }
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
@@ -149,7 +149,6 @@ TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(c
     return it->second;
 }
 
-/// Keep in-sync with MergeTreeIndexConditionText::alwaysUnknownOrTrue
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
