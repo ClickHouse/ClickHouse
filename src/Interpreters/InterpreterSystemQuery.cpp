@@ -1200,7 +1200,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                                         "Please check the path in query. "
                                         "If you want to drop replica "
                                         "of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
+                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
                                         storage_replicated->getStorageID().getNameForLogs());
                 }
             }
