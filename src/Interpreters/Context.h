@@ -273,6 +273,10 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -533,6 +537,9 @@ protected:
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
+
+    /// Used at query runtime to save per-query runtime filters and find them by names
+    RuntimeFilterLookupPtr runtime_filter_lookup;
 
     /// indicates how the query operates storage alias:
     /// 0: operate on original storage
@@ -1595,6 +1602,9 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
+    RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
     void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
     uint8_t getStorageAliasBehaviour() const;

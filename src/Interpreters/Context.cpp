@@ -3123,6 +3123,7 @@ void Context::makeQueryContext()
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    runtime_filter_lookup = createRuntimeFilterLookup();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -6828,6 +6829,16 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
+}
+
+void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
+{
+    runtime_filter_lookup = filter_lookup;
+}
+
+RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
+{
+    return runtime_filter_lookup;
 }
 
 void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
