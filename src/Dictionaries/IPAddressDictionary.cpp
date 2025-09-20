@@ -414,7 +414,6 @@ void IPAddressDictionary::loadData()
     std::vector<IPRecord> ip_records;
     bool has_ipv6 = false;
     {
-        auto [query_scope, _] = createThreadGroupIfNeeded(context);
         BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);

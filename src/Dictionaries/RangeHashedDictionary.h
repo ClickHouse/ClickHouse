@@ -551,7 +551,6 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         BlockIO io = source_ptr->loadAll();

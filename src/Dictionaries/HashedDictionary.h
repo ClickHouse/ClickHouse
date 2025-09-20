@@ -1161,7 +1161,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 {
-    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;

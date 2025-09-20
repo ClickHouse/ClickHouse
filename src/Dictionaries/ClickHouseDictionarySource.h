@@ -45,9 +45,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextMutablePtr context_,
-        SettingsChanges settings_changes_,
-        std::optional<ClientInfo> client_info_);
+        ContextMutablePtr context_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -93,8 +91,6 @@ private:
     ConnectionPoolWithFailoverPtr pool;
     std::string load_all_query;
     LoggerPtr log = getLogger("ClickHouseDictionarySource");
-    SettingsChanges settings_changes;
-    std::optional<ClientInfo> client_info;
 
     /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
     /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.

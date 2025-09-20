@@ -88,7 +88,6 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     BlockIO io = loadKeys(requested_keys, key_columns);
 
     QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
@@ -262,7 +261,6 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     BlockIO io = loadKeys(requested_keys, key_columns);
 
     QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));

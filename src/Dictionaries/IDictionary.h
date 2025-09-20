@@ -464,13 +464,6 @@ public:
         dictionary_comment = new_dictionary_comment;
     }
 
-    /// Creates a query context and, optionally, a scoped thread group (QueryScope) for internal query execution in dictionary:
-    /// - If the current thread group is null, it indicates that the dictionary load was initiated by the dictionary itself.
-    ///   Copies the context. Creates a thread group.
-    /// - If the current thread group is non-null, it indicates that the dictionary load was initiated by some other query.
-    ///   Copies the other query's context from the query group (unless it's null). Does not create a thread group.
-    static std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> createThreadGroupIfNeeded(ContextPtr context);
-
 private:
     mutable std::mutex mutex;
     StorageID dictionary_id TSA_GUARDED_BY(mutex);
