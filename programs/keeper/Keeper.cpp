@@ -477,10 +477,10 @@ try
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-            
+
             Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
             tcp_params->setNoDelay(tcp_nodelay);
-            
+
             servers->emplace_back(
                 listen_host,
                 port_name,
@@ -499,10 +499,10 @@ try
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-            
+
             Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
             tcp_params->setNoDelay(tcp_nodelay);
-            
+
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
