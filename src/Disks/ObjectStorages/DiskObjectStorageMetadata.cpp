@@ -113,6 +113,18 @@ catch (Exception & e)
     throw;
 }
 
+bool DiskObjectStorageMetadata::tryDeserializeFromString(const std::string & data) noexcept
+try
+{
+    ReadBufferFromString buf(data);
+    deserialize(buf);
+    return true;
+}
+catch (...)
+{
+    return false;
+}
+
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
     /// These are the changes for backward compatibility

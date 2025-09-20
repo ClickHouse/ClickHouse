@@ -56,6 +56,7 @@ public:
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
+    bool tryDeserializeFromString(const std::string & data) noexcept;
     /// This method was deleted from public fork recently by Azat
     void createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
