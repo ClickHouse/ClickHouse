@@ -83,6 +83,9 @@ protected:
     /// Serialize `entities` stored in memory plus one optional `change` into multiline string
     String serializeAllEntities(std::optional<Event> change = {});
 
+    /// Shared parsing function for both keeper and config storage
+    static std::vector<std::pair<String, ASTPtr>> parseEntitiesFromString(const String & data, LoggerPtr log);
+
 private:
     /// Change state in memory
     void applyEvent(std::unique_lock<std::recursive_mutex> & lock, const Event & event);

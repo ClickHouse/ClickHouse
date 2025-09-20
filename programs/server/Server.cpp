@@ -2626,7 +2626,7 @@ try
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadEntities();
+        global_context->getWorkloadEntityStorage().loadEntities(*config);
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
