@@ -743,6 +743,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_min_inequality_conjunction_chain_length",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
     {"optimize_on_insert", trueOrFalseSetting},
+    {"optimize_or_has_any_chain", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_or_like_chain", trueOrFalseSetting},
     {"optimize_skip_unused_shards_limit",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(0, 30)); }, {"0", "1", "5", "10"}, false)},
