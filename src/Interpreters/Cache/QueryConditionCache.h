@@ -104,6 +104,10 @@ private:
         SharedMutex mutex;
         QueryConditionCache::Entry entry;
 
+        /// true means the result is inconsistent with the query condition cache and must be written to the cache in `finalize`.
+        /// false means the result is consistent with the query condition cache and no write to the cache is required in `finalize`.
+        bool updated;
+
         explicit CacheEntry(size_t marks_count);
         explicit CacheEntry(const QueryConditionCache::Entry & entry_);
     };

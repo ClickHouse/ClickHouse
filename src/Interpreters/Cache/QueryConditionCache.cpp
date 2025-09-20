@@ -119,7 +119,6 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
 {
     QueryConditionCache::Key key = {table_id, part_name, condition_hash, condition};
 
-    /// First, check if a cache entry is already registered for the key
     CacheEntryPtr cache_entry;
     {
         std::shared_lock new_entries_lock(mutex);
@@ -127,54 +126,73 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
         auto it = new_entries.find(key);
         if (it != new_entries.end())
             cache_entry = it->second;
-
-        /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
-        if (cache_entry)
-        {
-            std::shared_lock entry_lock(cache_entry->mutex);
-
-            auto & entry = cache_entry->entry;
-
-            bool need_not_update_marks = true;
-            for (const auto & mark_range : mark_ranges)
-            {
-                /// If the bits are already in the desired state (false), we don't need to update them.
-                need_not_update_marks = std::all_of(entry.begin() + mark_range.begin,
-                                                    entry.begin() + mark_range.end,
-                                                    [](auto b) { return b == false; });
-                if (!need_not_update_marks)
-                    break;
-            }
-
-            /// Do we either have no final mark or final mark is already in the desired state?
-            bool need_not_update_final_mark = !has_final_mark || entry[marks_count - 1] == false;
-
-            if (need_not_update_marks && need_not_update_final_mark)
-                return;
-        }
     }
 
     bool is_insert = false;
-
-    /// Create and insert an entry if not found
+    /// Create and insert an entry if not found.
     if (!cache_entry)
     {
-        std::lock_guard new_entries_lock(mutex); /// (*)
+        auto entry_ptr = query_condition_cache.read(table_id, part_name, condition_hash);
+        if (!entry_ptr)
+        {
+            std::lock_guard new_entries_lock(mutex); /// (*)
 
-        /// If another thread created the entry in the meantime, emplace will do nothing.
-        auto [it, inserted] = new_entries.emplace(
-            std::piecewise_construct,
-            std::forward_as_tuple(key),
-            std::forward_as_tuple(std::make_shared<CacheEntry>(marks_count))
-        );
+            /// If another thread created the entry in the meantime, emplace will do nothing.
+            auto [it, inserted] = new_entries.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(key),
+                std::forward_as_tuple(std::make_shared<CacheEntry>(marks_count))
+            );
+    
+            cache_entry = it->second;
 
-        cache_entry = it->second;
+        }
+        else
+        {
+            chassert(marks_count == entry_ptr->size());
+
+            std::lock_guard new_entries_lock(mutex); /// (*)
+
+            /// Copy entry in query condition cache.
+            auto [it, inserted] = new_entries.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(key),
+                std::forward_as_tuple(std::make_shared<CacheEntry>(*entry_ptr))
+            );
+
+            cache_entry = it->second;
+        }
         is_insert = true;
+    }
+
+    /// First, check if a cache entry is already registered for the key.
+    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    {
+        std::shared_lock entry_lock(cache_entry->mutex);
+
+        auto & entry = cache_entry->entry;
+
+        bool need_not_update_marks = true;
+        for (const auto & mark_range : mark_ranges)
+        {
+            /// If the bits are already in the desired state (false), we don't need to update them.
+            need_not_update_marks = std::all_of(entry.begin() + mark_range.begin,
+                                                entry.begin() + mark_range.end,
+                                                [](auto b) { return b == false; });
+            if (!need_not_update_marks)
+                break;
+        }
+
+        /// Do we either have no final mark or final mark is already in the desired state?
+        bool need_not_update_final_mark = !has_final_mark || entry[marks_count - 1] == false;
+
+        if (need_not_update_marks && need_not_update_final_mark)
+            return;
     }
 
     /// Finally update the entry
     {
-        std::lock_guard lock(cache_entry->mutex); /// (*)
+        std::lock_guard entry_lock(cache_entry->mutex); /// (*)
 
         auto & entry = cache_entry->entry;
 
@@ -188,6 +206,8 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
 
         if (has_final_mark)
             cache_entry->entry[marks_count - 1] = false;
+
+        cache_entry->updated = true;
     }
 
     LOG_TEST(
@@ -204,6 +224,7 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
 
 QueryConditionCacheWriter::CacheEntry::CacheEntry(const QueryConditionCache::Entry & entry_)
     : entry(entry_)
+    , updated(false)
 {
 }
 
@@ -214,16 +235,17 @@ QueryConditionCacheWriter::CacheEntry::CacheEntry(const QueryConditionCache::Ent
 /// Even if there is an exception, future scans will not skip them.
 QueryConditionCacheWriter::CacheEntry::CacheEntry(size_t marks_count)
     : entry(marks_count, true)
+    , updated(true)
 {
 }
 
 void QueryConditionCacheWriter::finalize()
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard new_entries_lock(mutex);
     for (const auto & [key, cache_entry] : new_entries)
     {
         auto & entry = cache_entry->entry;
-        if (entry.empty())
+        if (entry.empty() || !cache_entry->updated)
             continue;
 
         size_t matching_marks = std::count(entry.begin(), entry.end(), true);
