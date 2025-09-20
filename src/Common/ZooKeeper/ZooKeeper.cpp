@@ -1671,11 +1671,16 @@ Coordination::RequestPtr makeSetRequest(const std::string & path, const std::str
     return request;
 }
 
-Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
+Coordination::RequestPtr makeCheckRequest(const std::string & path, int version, bool not_exists, std::optional<Coordination::Stat> stat_to_check)
 {
+    if (not_exists && stat_to_check)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Check request supports only single extension at a time");
+
     auto request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
+    request->not_exists = not_exists;
+    request->stat_to_check = std::move(stat_to_check);
     return request;
 }
 

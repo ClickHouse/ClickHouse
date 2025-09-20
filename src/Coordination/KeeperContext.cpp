@@ -53,6 +53,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
         KeeperFeatureFlag::REMOVE_RECURSIVE,
         KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::CHECK_STAT,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -634,6 +635,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
+        case Coordination::OpNum::CheckStat:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:
