@@ -498,6 +498,7 @@ QueryLogElement logQueryStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
+            LOG_INFO(getLogger("stetsyuk"), "literally adding log entry to the query log");
             query_log->add(elem);
         }
         else if (elem.type < settings[Setting::log_queries_min_type])
@@ -1706,6 +1707,7 @@ static BlockIO executeQueryImpl(
 
         /// Everything related to query log.
         {
+            LOG_INFO(getLogger("stetsyuk"), "logging query start");
             QueryLogElement elem = logQueryStart(
                 query_start_time,
                 context,
@@ -1733,6 +1735,8 @@ static BlockIO executeQueryImpl(
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
+
+                LOG_INFO(getLogger("stetsyuk"), "logging query finish");
 
                 logQueryFinishImpl(
                     elem,
@@ -1765,6 +1769,8 @@ static BlockIO executeQueryImpl(
 
                 if (my_quota)
                     my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+
+                LOG_INFO(getLogger("stetsyuk"), "logging query exception");
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
             };
