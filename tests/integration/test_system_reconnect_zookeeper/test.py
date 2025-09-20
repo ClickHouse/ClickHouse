@@ -24,4 +24,4 @@ def test_system_reconnect_zookeeper(start_cluster):
     )
 
     instance.query("SYSTEM RECONNECT ZOOKEEPER")
-    assert instance.contains_in_log("Trying to establish a new connection with ZooKeeper")
+    assert instance.contains_in_log("ZooKeeper connection closed")
