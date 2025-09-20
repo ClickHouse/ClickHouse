@@ -10,10 +10,9 @@ doc_type: 'reference'
 
 # Time64
 
-The Time64 data type allows storing time values with sub-second precision. Unlike DateTime64, it does not include a calendar date, but only represents time. The precision defines the resolution of stored values in fractional seconds.
+Data type `Time64` represents a time-of-day with fractional seconds. It has no calendar date component. The `precision` parameter defines the number of fractional digits and therefore the tick size.
 
-Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
+Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: 0..9. Common choices are 3 (milliseconds), 6 (microseconds), and 9 (nanoseconds).
 
 **Syntax:**
 
@@ -21,80 +20,86 @@ Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 Time64(precision)
 ```
 
-Internally, Time64 stores data as an Int64 number of ticks since the start of the day (000:00:00.000000000). The tick resolution is determined by the precision parameter. **Note that specifying a timezone during Time64 type initialization is not allowed and will result in an error**.
+Internally, `Time64` stores a signed 64-bit decimal (Decimal64) number of fractional seconds since 00:00:00. The tick resolution is determined by the `precision` parameter. Time zones are not supported: specifying a time zone with `Time64` will throw an error.
 
-Unlike DateTime64, Time64 does not store a date component, meaning that it only represents time. See details in [Time](../../sql-reference/data-types/time.md).
+Unlike `DateTime64`, `Time64` does not store a date component. See also [`Time`](../../sql-reference/data-types/time.md).
 
-Supported range of values: \[-999:59:59.999999999, 999:59:59.999999999\]
+Displayed range of values: 00:00:00.000 to 999:59:59.999 for `precision = 3` (the number of fractional digits depends on `precision`).
 
-The number of digits after the decimal point depends on the precision parameter.
+## Implementation details {#implementation-details}
+
+- Representation: signed `Decimal64` value counting fractional seconds since 00:00:00 with `precision` fractional digits.
+- Normalization: When parsing text, components are normalized rather than strictly validated. For example, `25:70:70.250` is interpreted as `26:11:10.250`.
+- Negative values: A leading minus sign is supported and preserved on output. Negative values typically arise from arithmetic; they do not represent a calendar concept of "negative time-of-day".
+- Display saturation: When formatting values for output, hours above 999 are saturated to `999:59:59.xxx`.
+- Time zones: `Time64` does not support time zones. Specifying a time zone when creating a `Time64` type or value throws an error.
 
 ## Examples {#examples}
 
-1. Creating a table with `Time64`-type column and inserting data into it:
+1. Creating a table with a `Time64`-type column and inserting data into it:
 
 ``` sql
-CREATE TABLE t64
+CREATE TABLE tab64
 (
-    `timestamp` Time64(3),
-    `event_id` UInt8
+    `event_id` UInt8,
+    `time` Time64(3)
 )
 ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse Time
--- - from integer interpreted as number of seconds since 1970-01-01.
+-- Parse Time64
 -- - from string,
-INSERT INTO t64 VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);
+-- - from a number of seconds since 00:00:00 (fractional part according to precision).
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
 
-SELECT * FROM t64;
+SELECT * FROM tab64 ORDER BY event_id;
 ```
 
 ``` text
-   ┌─────timestamp─┬─event_id─┐
-1. │  04:17:43.123 │        1 │
-2. │  42:56:40.123 │        2 │
-3. │ 100:00:00.000 │        3 │
-   └───────────────┴──────────┘
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
 ```
 
 2. Filtering on `Time64` values
 
 ``` sql
-SELECT * FROM t64 WHERE timestamp = toTime64('100:00:00', 3);
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
 ```
 
 ``` text
-   ┌─────timestamp─┬─event_id─┐
-1. │ 100:00:00.000 │        3 │
-   └───────────────┴──────────┘
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
 ```
 
 Unlike `Time`, `Time64` values are not converted from `String` automatically.
 
 ``` sql
-SELECT * FROM t64 WHERE timestamp = toTime64(154600.123, 3);
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
 ```
 
 ``` text
-   ┌─────timestamp─┬─event_id─┐
-1. │  42:56:40.123 │        2 │
-   └───────────────┴──────────┘
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
 ```
 
-Contrary to inserting, the `toTime64` function will treat all values as the decimal variant, so precision needs to
-be given after the decimal point.
+Note: `toTime64` parses numeric literals as seconds with a fractional part according to the specified precision, so provide the intended fractional digits explicitly.
 
-3. Getting a time zone for a `Time64`-type value:
+3. Inspecting the resulting type:
 
 ``` sql
-SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
 ```
 
 ``` text
-   ┌────────column─┬─x─────────┐
-1. │  19:14:16.000 │ Time64(3) │
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
    └───────────────┴───────────┘
 ```
 
