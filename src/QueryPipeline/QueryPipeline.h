@@ -4,7 +4,6 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Interpreters/Context.h>
 
 #include <functional>
 
