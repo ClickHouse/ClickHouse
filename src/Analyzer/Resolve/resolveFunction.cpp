@@ -777,7 +777,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// Function randConstant() would return the same value for the same arguments (in scope).
         /// But we need to exclude getSetting() function because SETTINGS can change its result for every scope.
 
-        if (function_name != "getSetting")
+        if (function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
         {
             auto hash = function_node_ptr->getTreeHash();
 
