@@ -183,8 +183,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
     UNUSED(factory);
 }
 
-#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
-
+#if USE_AWS_S3 || USE_AVRO
 static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
@@ -192,6 +191,9 @@ static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & 
         storage_settings->loadFromQuery(*storage_def.settings);
     return storage_settings;
 }
+#endif
+
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
 void registerStorageIceberg(StorageFactory & factory)
 {
@@ -211,9 +213,11 @@ void registerStorageIceberg(StorageFactory & factory)
                 case ObjectStorageType::S3:
                     configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                     break;
+#if USE_AZURE_BLOB_STORAGE
                 case ObjectStorageType::Azure:
                     configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
                     break;
+#endif
                 case ObjectStorageType::Local:
                     configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                     break;
