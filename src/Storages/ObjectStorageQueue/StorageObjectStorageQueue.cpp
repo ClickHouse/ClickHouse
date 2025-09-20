@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -33,6 +34,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -102,6 +104,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
@@ -236,19 +239,66 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            columns, configuration->getRawPath().path, format_settings, context_);
+    }
+
+    std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+
+    for (const auto & [name, type_] : hive_partition_columns_to_read_from_file_path)
+    {
+        hive_partition_columns_to_read_from_file_path_set.insert(name);
+    }
+
+    for (const auto & column : columns.getAllPhysical())
+    {
+        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
+        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
+            file_columns.emplace_back(column);
+        else
+            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
+    }
+
+    /// All hive columns must be in storage schema
+    if (!hive_partition_columns_to_read_from_file_path_set.empty())
+    {
+        auto column = hive_partition_columns_to_read_from_file_path_set.begin();
+        std::string not_found_columns = *column;
+        ++column;
+        while (column != hive_partition_columns_to_read_from_file_path_set.end())
+        {
+            not_found_columns += ", " + *column;
+            ++column;
+        }
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
+            not_found_columns);
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
+
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
+
+    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zk_path, *queue_settings_,
+        storage_metadata.getColumns(),
+        configuration_->format,
+        context_,
+        is_attach,
+        is_path_with_hive_partitioning,
+        log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -260,7 +310,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::use_persistent_processing_nodes],
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        is_path_with_hive_partitioning);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -462,6 +513,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -724,7 +776,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            /*supports_tuple_elements*/ false,
+            PrepareReadingFromFormatHiveParams {file_columns,
+                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+        );
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -814,8 +870,11 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
     if (requests.empty())
     {
@@ -1260,6 +1319,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,
