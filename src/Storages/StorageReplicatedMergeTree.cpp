@@ -225,6 +225,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace FailPoints
@@ -6468,7 +6469,10 @@ void StorageReplicatedMergeTree::alter(
     const auto & query_settings = query_context->getSettingsRef();
 
     StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+
+    removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
+    addImplicitStatistics(future_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
     if (commands.isSettingsAlter())
     {

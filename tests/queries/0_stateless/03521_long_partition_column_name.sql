@@ -6,7 +6,7 @@ CREATE TABLE t_long_partition_column_name (
 ENGINE = ReplacingMergeTree()
 PARTITION BY `一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串`
 ORDER BY tuple()
-SETTINGS replace_long_file_name_to_hash = 1, max_file_name_length = 127;
+SETTINGS replace_long_file_name_to_hash = 1, max_file_name_length = 127, auto_statistics_types = '';
 
 insert into t_long_partition_column_name values(1);
 
