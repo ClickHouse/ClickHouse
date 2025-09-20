@@ -93,7 +93,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
-                root->step->getName(),
+                plans[i]->root->step->getName(),
                 plan_header->dumpStructure(),
                 step_header->dumpStructure());
     }

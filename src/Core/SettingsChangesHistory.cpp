@@ -135,6 +135,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"correlated_subqueries_default_join_kind", "right", "right", "New setting. Default join kind for decorrelated query plan."},
+            {"correlated_subqueries_use_input_buffer", true, true, "New setting."},
             {"promql_database", "", "", "New experimental setting"},
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
