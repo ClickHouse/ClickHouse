@@ -479,7 +479,7 @@ private:
 
     template <typename Method, typename Table>
     ConvertToBlockResVariant
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, bool release_data_memory=true) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -525,7 +525,7 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
-    void mergeSingleLevelDataImplFixedMap(
+    Block mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
         bool final,

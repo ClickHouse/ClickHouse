@@ -1869,7 +1869,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 }
 
 template <typename Method>
-void Aggregator::mergeSingleLevelDataImplFixedMap(
+Block Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
     Arena * arena,
     bool final,
@@ -1930,6 +1930,8 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataOnlyExistingKeysImpl not handled!");
             /// called mergeToViaFind, not sure if need to add similar hash map method.
+            /// Probably need to add mergeToViaFind(skip_filter) kinda of thing.
+            /// Of course depending how this is triggered, should be key limit is hit, and has key, skip merge. should be able to implement that in the FixedHashMap new method.
             // mergeDataOnlyExistingKeysImpl<Method>(
             //     getDataVariant<Method>(*res).data,
             //     getDataVariant<Method>(current).data,
@@ -1939,6 +1941,19 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         /// `current` will not destroy the states of aggregate functions in the destructor
         current.aggregator = nullptr;
     }
+
+    auto & merged_data = *res;
+    auto method = merged_data.type;
+    Block block; 
+
+    // TODO(here): adding this causing mergeAndDestroyBatch from above mergeSingleLevelDataImplFixedMap to segfault, add release_data_memory false not help.
+    /// No just call prepareBlockAndFillSingleLevel in the caller, in AggregationTransform.cpp, barrier pattern. that would absolutely work.
+    if (method == AggregatedDataVariants::Type::key8)
+        block = std::get<Block>(convertToBlockImpl<decltype(merged_data.key8)::element_type>(*(res->key8), merged_data.key8->data, arena, res->aggregates_pools, final, res->size(), false, false /* release_data_memory */));
+    else
+        block = std::get<Block>(convertToBlockImpl<decltype(merged_data.key16)::element_type>(*(res->key16), merged_data.key16->data, arena, res->aggregates_pools, final, res->size(), false, false /* release_data_memory */));
+
+    return block;
 }
 
 Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
@@ -2041,7 +2056,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 
 template <typename Method, typename Table>
 Aggregator::ConvertToBlockResVariant
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block, bool release_data_memory) const
 {
     if (data.empty())
     {
@@ -2171,7 +2186,8 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
     }
 
     /// In order to release memory early.
-    data.clearAndShrink();
+    if (release_data_memory)
+        data.clearAndShrink();
 
     return res;
 }
@@ -3154,9 +3170,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #undef M
 
 // Explicit template instantiations for mergeSingleLevelDataImplFixedMap (only needed for FixedHashMap types)
-template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
+template Block NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
     ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
-template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
+template Block NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
     ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
 
 template <typename Method>

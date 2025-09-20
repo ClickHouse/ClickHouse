@@ -111,14 +111,14 @@ protected:
         Block block;
 
         if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            block = params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
         else
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            block =params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
 
         // auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         // for (auto & block : blocks)
         //     if (block.rows() > 0)
-        //         single_level_chunks.emplace_back(convertToChunk(block));
+        //         single_level_chunks.emplace_back(convertToChunk(block));'
         finished = true;
         // data.reset();
 
