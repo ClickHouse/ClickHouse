@@ -6,6 +6,14 @@
 namespace DB
 {
 
+ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, IColumnFilter applied_filter_)
+    : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
+
+ChunkInfoRowNumbers::Ptr ChunkInfoRowNumbers::clone() const
+{
+    return std::make_shared<ChunkInfoRowNumbers>(row_num_offset, IColumnFilter(applied_filter.begin(), applied_filter.end()));
+}
+
 IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)
 {
     column_mapping = std::make_shared<ColumnMapping>();

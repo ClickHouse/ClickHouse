@@ -380,7 +380,7 @@ void StorageObjectStorage::read(
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    configuration->modifyFormatSettings(modified_format_settings.value());
+    configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,

@@ -7,6 +7,11 @@ from helpers.iceberg_utils import (
 )
 
 
+def get_array(query_result: str):
+    arr = sorted([int(x) for x in query_result.strip().split("\n")])
+    print(arr)
+    return arr
+
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmaps,  storage_type):
@@ -22,11 +27,6 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         """
     )
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
-
-    def get_array(query_result: str):
-        arr = sorted([int(x) for x in query_result.strip().split("\n")])
-        print(arr)
-        return arr
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
@@ -104,5 +104,52 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         )
     ) == [70]
 
+    # Check PREWHERE (or regular WHERE if optimize_move_to_prewhere = 0 or
+    # input_format_parquet_use_native_reader_v3 = 0)
+    assert get_array(
+        instance.query(
+            f"SELECT id FROM {TABLE_NAME} WHERE id % 3 = 0")) == list(range(21, 90, 3)) + list(range(102, 150, 3))
+
     # Clean up
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_position_deletes_out_of_order_" + get_uuid_str()
+    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes=0;")
+    instance.query(f"SET input_format_parquet_use_native_reader_v3=1;")
+
+    # There are a few flaky hacks chained together here.
+    # We want the parquet reader to produce chunks corresponding to row groups out of order if
+    # `format_settings.parquet.preserve_order` wasn't enabled. For that we:
+    #  * Use `PREWHERE NOT sleepEachRow(...)` to make the reader take longer for bigger row groups.
+    #  * Set spark row group size limit to 1 byte. Rely on current spark implementation detail:
+    #    it'll check this limit every 100 rows. So effectively we've set row group size to 100 rows.
+    #  * Insert 105 rows. So the first row group will have 100 rows, the second 5 rows.
+    # If one of these steps breaks in future, this test will be less effective but won't fail.
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read', 'write.parquet.row-group-size-bytes'='1')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select /*+ COALESCE(1) */ id, char(id + ascii('a')) from range(0, 105)")
+    # (Fun fact: if you replace these two queries with one query with `WHERE id < 10 OR id = 103`,
+    #  spark either quetly fails to delete row 103 or outright crashes with segfault in jre.)
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 103")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} PREWHERE NOT sleepEachRow(1/100) order by id")) == list(range(10, 103)) + [104]
+
     instance.query(f"DROP TABLE {TABLE_NAME}")

@@ -808,6 +808,14 @@ std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
     return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id);
 }
 
+void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
+{
+    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
+        /// data reader and the deletes reader.
+        format_settings.parquet.preserve_order = true;
+}
+
 void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
     QueryPipelineBuilder & builder,
