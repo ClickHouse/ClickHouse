@@ -19,9 +19,9 @@ def start_cluster():
 
 
 def test_system_reconnect_zookeeper(start_cluster):
+    instance.query("DROP TABLE IF EXISTS simple SYNC")
     instance.query(
         "CREATE TABLE simple (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', 'instance') ORDER BY tuple() PARTITION BY date;"
     )
-
     instance.query("SYSTEM RECONNECT ZOOKEEPER")
     assert instance.contains_in_log("ZooKeeper connection closed")
