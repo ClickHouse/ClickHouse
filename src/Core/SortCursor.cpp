@@ -48,7 +48,8 @@ void SortCursorImpl::reset(const Columns & columns, const Block & block, UInt64 
     permutation = perm;
 }
 
-DataTypes SortQueueVariants::extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description)
+template <QueueImplType queue_type>
+DataTypes SortQueueVariants<queue_type>::extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description)
 {
     size_t sort_description_size = sort_description.size();
     DataTypes data_types(sort_description_size);
@@ -61,5 +62,7 @@ DataTypes SortQueueVariants::extractSortDescriptionTypesFromHeader(const Block &
 
     return data_types;
 }
+template class SortQueueVariants<QueueImplType::Default>;
+template class SortQueueVariants<QueueImplType::LoserTree>;
 
 }
