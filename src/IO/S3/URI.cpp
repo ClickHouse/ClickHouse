@@ -84,26 +84,29 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     if (uri.getHost().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
-    /// Extract object version ID from query string.
-    bool has_version_id = false;
+    // Detect presence of *any* query parameters (k=v). If present, '?' is a query delimiter,
+    // not a wildcard, so we must not percent-encode it
+    const std::string raw_query = uri.getQuery();
+    const bool has_any_query_params = !raw_query.empty() && raw_query.find('=') != std::string::npos;
+
+    /// if there are ANY query params (e.g. pre-signed URLs with X-Amz-*), do NOT encode '?'
+    /// Otherwise, treat '?' as a wildcard in the path and encode it so Poco keeps it in the path
+    if (!has_any_query_params && uri_str.find('?') != std::string::npos)
+    {
+        // Encode based on the current (already-mapped) URI to avoid regressing to s3:// etc
+        std::string encoded_current;
+        Poco::URI::encode(uri.toString(), "?", encoded_current);
+        uri = Poco::URI(encoded_current);
+    }
+
+    /// Extract object version ID from query string (after final URI is settled).
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
-            has_version_id = true;
+            break;
         }
-    }
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
     }
 
     String name;
