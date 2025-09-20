@@ -143,7 +143,7 @@ void TCPServer::run()
                         if (ss.address().family() != AddressFamily::UNIX_LOCAL)
 #endif
                         {
-                            ss.setNoDelay(true);
+                            ss.setNoDelay(_pDispatcher->params().getNoDelay());
                         }
                         _pDispatcher->enqueue(ss);
                     }
