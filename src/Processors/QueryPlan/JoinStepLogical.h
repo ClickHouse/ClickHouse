@@ -155,6 +155,9 @@ public:
     std::string_view getDummyStats() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
+    /// Swap left and right sides
+    void swapInputs();
+
 protected:
     void updateOutputHeader() override;
 

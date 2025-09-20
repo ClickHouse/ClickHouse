@@ -285,6 +285,15 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
 }
 
+void JoinStepLogical::swapInputs()
+{
+    auto inputs = getInputHeaders();
+    chassert(inputs.size() == 2);
+    updateInputHeaders({inputs[1], inputs[0]});
+
+    expression_actions.swapExpressionSources();
+}
+
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
