@@ -4,6 +4,7 @@ description: 'System table containing error codes with the number of times they 
 keywords: ['system table', 'errors']
 slug: /operations/system-tables/errors
 title: 'system.errors'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
