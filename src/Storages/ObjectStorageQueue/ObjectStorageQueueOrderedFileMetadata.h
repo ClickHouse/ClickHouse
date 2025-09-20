@@ -17,9 +17,7 @@ public:
     struct BucketInfo
     {
         Bucket bucket;
-        int bucket_version;
         std::string bucket_lock_path;
-        std::string bucket_lock_id_path;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
@@ -44,6 +42,7 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         const Processor & processor,
+        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
@@ -59,9 +58,7 @@ public:
         size_t buckets_num,
         LoggerPtr log);
 
-    void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+    void prepareProcessedAtStartRequests(Coordination::Requests & requests) override;
 
 private:
     const size_t buckets_num;
@@ -75,17 +72,16 @@ private:
     bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
-        const zkutil::ZooKeeperPtr & zk_client);
+        LoggerPtr log_);
 
     static bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        const zkutil::ZooKeeperPtr & zk_client);
+        LoggerPtr log_);
 
-    void prepareProcessedRequests(
+    void doPrepareProcessedRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client,
         const std::string & processed_node_path_,
         bool ignore_if_exists);
 };
@@ -94,10 +90,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 {
     BucketHolder(
         const Bucket & bucket_,
-        int bucket_version_,
         const std::string & bucket_lock_path_,
-        const std::string & bucket_lock_id_path_,
-        zkutil::ZooKeeperPtr zk_client_,
         LoggerPtr log_);
 
     ~BucketHolder();
@@ -108,13 +101,10 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
-    bool isZooKeeperSessionExpired() const { return zk_client->expired(); }
-
     void release();
 
 private:
     BucketInfoPtr bucket_info;
-    const zkutil::ZooKeeperPtr zk_client;
     bool released = false;
     bool finished = false;
     LoggerPtr log;
