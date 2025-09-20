@@ -516,6 +516,7 @@ TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, 
     , target_size(std::move(target_size_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , outcome(std::make_shared<TruncateFileOperationOutcome>())
 {
 }
 

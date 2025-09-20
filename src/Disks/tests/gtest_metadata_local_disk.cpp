@@ -1187,6 +1187,40 @@ TEST_F(MetadataLocalDiskTest, TestFoldedRemoveRecursiveRollback)
     }
 }
 
+TEST_F(MetadataLocalDiskTest, TestTruncate)
+{
+    auto metadata = getMetadataStorage("/TestTruncate");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-1"), 100);
+        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-2"), 200);
+        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-3"), 100);
+        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-4"), 400);
+        tx->commit();
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("file").size(), 4);
+
+    /// Check that truncate combines
+    {
+        auto tx = metadata->createTransaction();
+        auto outcome_1 = tx->truncateFile("file", 300);  /// blob-1 + blob-2
+        auto outcome_2 = tx->truncateFile("file", 100);  /// blob-1
+        tx->commit();
+
+        EXPECT_EQ(outcome_1->objects_to_remove.size(), 2);
+        EXPECT_EQ(outcome_1->objects_to_remove[0].remote_path, "blob-4");
+        EXPECT_EQ(outcome_1->objects_to_remove[1].remote_path, "blob-3");
+
+        EXPECT_EQ(outcome_2->objects_to_remove.size(), 1);
+        EXPECT_EQ(outcome_2->objects_to_remove[0].remote_path, "blob-2");
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file").front().remote_path, "blob-1");
+}
+
 TEST_F(MetadataLocalDiskTest, TestNonExistingObjects)
 {
     auto metadata = getMetadataStorage("/TestNonExistingObjects");
