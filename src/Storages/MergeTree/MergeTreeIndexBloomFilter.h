@@ -86,6 +86,31 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
 
+    void transformToDisjuncts() override
+    {
+        for (RPNElement & element : rpn)
+        {
+            if (element.function == RPNElement::FUNCTION_AND)
+                element.function = RPNElement::FUNCTION_OR;
+            else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+                element.function = RPNElement::ALWAYS_FALSE;
+        }
+    }
+
+    std::vector<size_t> getResolvedPositions() const override
+    {
+        std::vector<size_t> positions{};
+        for (size_t i = 0; i < rpn.size(); i++)
+        {
+            auto element = rpn[i];
+            if (element.function != RPNElement::FUNCTION_AND && element.function != RPNElement::FUNCTION_OR &&
+                element.function != RPNElement::FUNCTION_NOT && element.function != RPNElement::FUNCTION_UNKNOWN &&
+                element.function != RPNElement::ALWAYS_FALSE && element.function != RPNElement::ALWAYS_TRUE)
+                positions.push_back(i);
+        }
+        return positions;
+    }
+
 private:
     const Block & header;
     const size_t hash_functions;
