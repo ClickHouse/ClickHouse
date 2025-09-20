@@ -114,14 +114,10 @@ protected:
         else
             params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
 
-        // auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-        // for (auto & block : blocks)
-        //     if (block.rows() > 0)
-        //         single_level_chunks.emplace_back(convertToChunk(block));'
         finished = true;
 
         /// TODO: shared ptr should be okay.
-        // data.reset();
+        data.reset();
 
         shared_data->finished_threads.fetch_add(1);
 
@@ -379,16 +375,10 @@ public:
             data->at(0)->type == AggregatedDataVariants::Type::key16))
         {
             parallelize_single_level_merge = true;
-            LOG_INFO(getLogger("Aggregator"), "jianfei createSourcesForFixedHashMap, parallelize_single_level_merge set to true");
             if (inputs.empty())
-            {
                 createSourcesForFixedHashMap();
-            }
             else
-            {
-                LOG_INFO(getLogger("Aggregator"), "jianfei parallel fixed hashmap finish all input, working on merge now.");
-                mergeParallelSingleLevel();
-            }
+                mergeSingleLevel();
         }
         else
         {
@@ -462,9 +452,6 @@ public:
 private:
     IProcessor::Status prepareParallelizeSingleLevel()
     {
-        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel");
-
-        /// Check if all inputs are finished
         for (auto & input : inputs)
         {
             if (!input.isFinished())
@@ -472,7 +459,6 @@ private:
         }
 
         LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, all inputs are finished");
-
         return Status::Ready;
     }
 
@@ -579,40 +565,33 @@ private:
         }
     }
 
-    void mergeParallelSingleLevel()
-    {
-        LOG_INFO(getLogger("Aggregator"), "jianfei mergeParallelSingleLevel");
-        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*data->at(0), params->final);
-        for (auto & block : blocks)
-            if (block.rows() > 0)
-                single_level_chunks.emplace_back(convertToChunk(block));
-        finished = true;
-        data.reset();
-    }
-
     void mergeSingleLevel()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+        // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
+        if (!parallelize_single_level_merge)
         {
-            finished = true;
-            return;
+
+            if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+            {
+                finished = true;
+                return;
+            }
+
+            ++current_bucket_num;
+
+        #define M(NAME) \
+                    else if (first->type == AggregatedDataVariants::Type::NAME) \
+                        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+            if (false) {} // NOLINT
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+        #undef M
+            else
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        ++current_bucket_num;
-
-    #define M(NAME) \
-                else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
-        if (false) {} // NOLINT
-        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
-    #undef M
-        else
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
-
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-
 
         /// NOTE(jianfei): used to get the block directly inline here in a single transform for single level.
         for (auto & block : blocks)

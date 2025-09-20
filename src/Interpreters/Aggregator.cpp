@@ -1902,15 +1902,15 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
             // NOTE(jianfei): hitting.
             // LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap, no_more_keys is false, result_num: {}", result_num);
 #if USE_EMBEDDED_COMPILER
-            // if (compiled_aggregate_functions_holder)
-            // {
-            //     mergeDataImpl<Method>(
-            //         getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
-            // }
-            // else
+            if (compiled_aggregate_functions_holder)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataImplFixedMap, not handled: compile_aggregate_functions_holder is true, result_num: {}", result_num);
+                // mergeDataImpl<Method>(
+                //     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
+            }
+            else
 #endif
             {
-                /// NOTE(jianfei): hitting.
                 LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataImplFixedMap compile_aggregate_functions_holder is false, result_num: {}", result_num);
                 mergeDataImplFixedMap<Method>(
                     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled, filter_id, step_size);
@@ -3089,8 +3089,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
-
-    LOG_INFO(log, "jianfei mergeBucketImpl, data size: {}", non_empty_data.size());
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
