@@ -354,7 +354,7 @@ public:
         pipeline_.setConcurrencyControl(false);
     }
 
-    SourceFromQueryPipeline(BlockIO io)
+    explicit SourceFromQueryPipeline(BlockIO io)
         : ISource(io.pipeline.getSharedHeader())
         , io_holder(std::move(io))
         , executor(io_holder->pipeline)

@@ -19,6 +19,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT countIf(type = 'QueryStart') > 0, countIf(type = 'QueryFinish') > 0
 FROM system.query_log
-WHERE is_internal = 1 AND current_database = currentDatabase();
+WHERE is_internal = 1 AND query = 'SELECT toString(number) AS name, toFloat64(number) AS value FROM system.numbers LIMIT 10';
 
 DROP DICTIONARY test_logging_internal_queries_dict;
