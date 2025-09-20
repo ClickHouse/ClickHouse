@@ -121,6 +121,8 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
     auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
+    query_io.context_holder = std::move(subquery_context);
+
     auto & pipeline = query_io.pipeline;
 
     if (!pipeline.initialized())

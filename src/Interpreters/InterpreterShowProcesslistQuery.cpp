@@ -16,7 +16,10 @@ BlockIO InterpreterShowProcesslistQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    return executeQuery("SELECT * FROM system.processes ORDER BY elapsed DESC", std::move(query_context), QueryFlags{ .internal = true }).second;
+
+    BlockIO io = executeQuery("SELECT * FROM system.processes ORDER BY elapsed DESC", query_context, QueryFlags{ .internal = true }).second;
+    io.context_holder = std::move(query_context);
+    return io;
 }
 
 void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory)

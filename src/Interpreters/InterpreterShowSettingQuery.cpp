@@ -30,7 +30,10 @@ BlockIO InterpreterShowSettingQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    return executeQuery(getRewrittenQuery(), std::move(query_context), QueryFlags{ .internal = true }).second;
+
+    BlockIO io = executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    io.context_holder = std::move(query_context);
+    return io;
 }
 
 void registerInterpreterShowSettingQuery(InterpreterFactory & factory)
