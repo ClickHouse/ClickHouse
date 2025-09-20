@@ -114,9 +114,9 @@ public:
 
 
     template <typename Func>
-    void ALWAYS_INLINE mergeToViaRange(Self & that, Func && func, UInt32 offset_begin, UInt32 offset_end)
+    void ALWAYS_INLINE mergeToViaRange(Self & that, Func && func, UInt32 filter_id, UInt32 step_size)
     {
-        for (UInt32 key_i = offset_begin; key_i < offset_end; ++key_i)
+        for (UInt32 key_i = filter_id; key_i < this->getBufferSizeInCells(); key_i += step_size)
         {
             if (!this->buf[key_i].isZero(*this))
             {

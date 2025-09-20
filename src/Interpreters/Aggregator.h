@@ -448,7 +448,7 @@ private:
 
     template <typename Method, typename Table>
     void mergeDataImplFixedMap(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 offset_begin, UInt32 offset_end) const;
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 filter_id, UInt32 step_size) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -526,11 +526,11 @@ private:
 
     template <typename Method>
     void mergeSingleLevelDataImplFixedMap(
-        ManyAggregatedDataVariants & variants,
+        ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
         bool final,
-        UInt32 offset_begin,
-        UInt32 offset_end,
+        UInt32 filter_id,
+        UInt32 step_size,
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;

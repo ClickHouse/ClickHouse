@@ -1873,12 +1873,12 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
     Arena * arena,
     bool final,
-    UInt32 offset_begin,
-    UInt32 offset_end,
+    UInt32 filter_id,
+    UInt32 step_size,
     std::atomic<bool> & is_cancelled) const
 {
-    LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap, offset_begin: {}, offset_end: {}"
-        "is_cancelled: {}, final: {}, arena empty: {}", offset_begin, offset_end, is_cancelled.load(std::memory_order_seq_cst), final, arena == nullptr);
+    LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap, filter_id: {}, step_size: {}"
+        "is_cancelled: {}, final: {}, arena empty: {}", filter_id, step_size, is_cancelled.load(std::memory_order_seq_cst), final, arena == nullptr);
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
@@ -1913,7 +1913,7 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
                 /// NOTE(jianfei): hitting.
                 LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataImplFixedMap compile_aggregate_functions_holder is false, result_num: {}", result_num);
                 mergeDataImplFixedMap<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled, offset_begin, offset_end);
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled, filter_id, step_size);
             }
         }
         else if (res->without_key)
@@ -2863,7 +2863,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImplFixedMap(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 offset_begin, UInt32 offset_end) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 filter_id, UInt32 step_size) const
 {
     if (is_simple_count)
     {
@@ -2878,7 +2878,7 @@ void NO_INLINE Aggregator::mergeDataImplFixedMap(
                 getInlineCountState(dst) += getInlineCountState(src);
         };
 
-        table_src.mergeToViaRange(table_dst, std::move(merge), offset_begin, offset_end);
+        table_src.mergeToViaRange(table_dst, std::move(merge), filter_id, step_size);
         return;
     }
 
@@ -2903,7 +2903,7 @@ void NO_INLINE Aggregator::mergeDataImplFixedMap(
         src = nullptr;
     };
 
-    table_src.mergeToViaRange(table_dst, std::move(merge), offset_begin, offset_end);
+    table_src.mergeToViaRange(table_dst, std::move(merge), filter_id, step_size);
 
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
@@ -3155,9 +3155,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 // Explicit template instantiations for mergeSingleLevelDataImplFixedMap (only needed for FixedHashMap types)
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 offset_begin, UInt32 offset_end, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 offset_begin, UInt32 offset_end, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, bool final, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(

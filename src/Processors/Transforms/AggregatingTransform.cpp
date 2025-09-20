@@ -92,16 +92,15 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
-    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, const UInt32 total_bucket_, UInt32 index, UInt32 num_threads, Arena * arena_)
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<SharedData>())
-        , total_bucket(total_bucket_)
+        , thread_index(thread_index_)
+        , num_threads(num_threads_)
         , arena(arena_)
     {
-        offset_begin = index * total_bucket / num_threads;
-        offset_end = (index + 1) * total_bucket / num_threads;
     }
 
     String getName() const override { return "ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap"; }
@@ -112,9 +111,9 @@ protected:
         Block block;
 
         if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, offset_begin, offset_end, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
         else
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, offset_begin, offset_end, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
 
         // auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         // for (auto & block : blocks)
@@ -132,11 +131,8 @@ private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
-    const UInt32 total_bucket;
-
-    // [bucket_begin, bucket_end)
-    UInt32 offset_begin;
-    UInt32 offset_end;
+    UInt32 thread_index;
+    UInt32 num_threads;
     Arena * arena;
 };
 
@@ -653,17 +649,11 @@ private:
         AggregatedDataVariantsPtr & first = data->at(0);
         processors.reserve(num_threads);
 
-        UInt32 num_buckets = 256;
-        if (first->type == AggregatedDataVariants::Type::key8)
-            num_buckets = 256;
-        else
-            num_buckets = 65536;
-
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, num_buckets, thread, num_threads, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, arena);
             processors.emplace_back(std::move(source));
         }
 
