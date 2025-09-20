@@ -135,7 +135,6 @@ inline bool compare64(const char * p1, const char * p2)
 
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
 
-template<bool case_insensitive>
 inline bool memequalWide(const char * p1, const char * p2, size_t size)
 {
     /** The order of branches and the trick with overlapping comparisons
@@ -205,8 +204,7 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-template<bool case_insensitive, bool letter_only, bool lower_rhs>
-inline bool compare(StringRef lhs, StringRef rhs)
+inline bool operator== (StringRef lhs, StringRef rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -214,44 +212,12 @@ inline bool compare(StringRef lhs, StringRef rhs)
     if (lhs.size == 0)
         return true;
 
-    if constexpr (case_insensitive)
-    {
-        for (size_t i = 0; i < lhs.size; ++i)
-        {
-            char l = lhs.data[i];
-            char r = rhs.data[i];
-            if constexpr (letter_only)
-            {
-                l |= 0x20;
-                if constexpr (!lower_rhs) r |= 0x20;
-            }
-            else
-            {
-                /// Do not lower non-letters that differ by 32, e.g. '{' vs '['
-                if (l >= 'A' && l <= 'Z') l |= 0x20;
-                if constexpr (!lower_rhs)
-                    if (r >= 'A' && r <= 'Z') r |= 0x20;
-            }
-            if (l != r)
-                return false;
-        }
-        return true;
-    }
-    else
-    {
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-        return memequalWide<case_insensitive>(lhs.data, rhs.data, lhs.size);
+    return memequalWide(lhs.data, rhs.data, lhs.size);
 #else
-        return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 #endif
-    }
 }
-
-inline bool operator== (StringRef lhs, StringRef rhs)
-{
-    return compare<false, false, false>(lhs, rhs);
-}
-
 
 inline bool operator!= (StringRef lhs, StringRef rhs)
 {
