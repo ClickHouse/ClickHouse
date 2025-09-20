@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/Names.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -50,6 +51,7 @@ struct KeyDescription
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
+        LoadingStrictnessLevel loading_strictness_level,
         ContextPtr context);
 
     /// Sorting key can contain additional column defined by storage type (like
@@ -57,6 +59,7 @@ struct KeyDescription
     static KeyDescription getSortingKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
+        LoadingStrictnessLevel loading_strictness_level,
         ContextPtr context,
         const std::optional<String> & additional_column);
 
