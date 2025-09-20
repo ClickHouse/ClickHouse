@@ -148,7 +148,6 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -1324,6 +1323,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         log,
         merge_tree_select_result_ptr,
         enable_parallel_reading,
+        std::nullopt,
         extension_ ? std::optional(extension_->getAllRangesCallback()) : std::nullopt,
         extension_ ? std::optional(extension_->getReadTaskCallback()) : std::nullopt,
         extension_ ? std::optional(extension_->getNumberOfCurrentReplica()) : std::nullopt);

@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
+            {"distributed_index_analysis", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
