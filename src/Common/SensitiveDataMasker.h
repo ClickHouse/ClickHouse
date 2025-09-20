@@ -54,6 +54,7 @@ public:
 
     /// Returns the number of matched rules.
     size_t wipeSensitiveData(std::string & data) const;
+    size_t wipeSensitiveDataThrow(std::string & data) const;
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
