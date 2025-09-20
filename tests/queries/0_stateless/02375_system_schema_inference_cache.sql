@@ -7,6 +7,6 @@ system drop schema cache for file;
 desc file(currentDatabase() || '_02374_data1.jsonl');
 desc file(currentDatabase() || '_02374_data2.jsonl');
 
-select storage, splitByChar('/', source)[-1], format, schema from system.schema_inference_cache where storage='File';
+select storage, replace(splitByChar('/', source)[-1], currentDatabase() || '_', ''), format, schema from system.schema_inference_cache where storage='File';
 system drop schema cache for file;
 select storage, source, format, schema from system.schema_inference_cache where storage='File';
