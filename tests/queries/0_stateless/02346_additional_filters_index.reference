@@ -28,3 +28,33 @@ select * from distr_table order by x settings additional_table_filters={'distr_t
 1	a
 2	bb
 2	bb
+set param_a = 3;
+set max_rows_to_read = 2;
+select * from table_1 order by x settings additional_table_filters={'table_1' : 'x > {a:UInt32}'};
+4	dddd
+select * from table_1 order by x settings additional_table_filters={'table_1' : 'x < {a:UInt32}'};
+1	a
+2	bb
+select * from table_1 order by x settings additional_table_filters={'table_1' : 'length(y) >= {a:UInt32}'};
+3	ccc
+4	dddd
+select * from table_1 order by x settings additional_table_filters={'table_1' : 'length(y) < {a:UInt32}'};
+1	a
+2	bb
+set max_rows_to_read = 4;
+select * from distr_table order by x settings additional_table_filters={'distr_table' : 'x > {a:UInt32}'};
+4	dddd
+4	dddd
+select * from distr_table order by x settings additional_table_filters={'distr_table' : 'x < {a:UInt32}'};
+1	a
+1	a
+2	bb
+2	bb
+select * from distr_table order by x settings additional_table_filters={'distr_table' : 'length(y) > {a:UInt32}'};
+4	dddd
+4	dddd
+select * from distr_table order by x settings additional_table_filters={'distr_table' : 'length(y) < {a:UInt32}'};
+1	a
+1	a
+2	bb
+2	bb
