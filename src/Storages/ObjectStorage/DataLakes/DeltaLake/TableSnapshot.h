@@ -35,7 +35,7 @@ public:
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update(DB::ContextPtr context);
+    bool update(const DB::ContextPtr & context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -55,6 +55,7 @@ public:
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
 
+    DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
     class Iterator;
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
@@ -68,10 +69,11 @@ private:
     bool enable_expression_visitor_logging;
     bool throw_on_engine_visitor_error;
     bool enable_engine_predicate;
+    std::optional<size_t> snapshot_version_to_read;
 
     struct KernelSnapshotState : private boost::noncopyable
     {
-        explicit KernelSnapshotState(const IKernelHelper & helper_);
+        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
 
         KernelExternEngine engine;
         KernelSnapshot snapshot;
