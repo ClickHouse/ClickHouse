@@ -577,6 +577,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
+    const PrewhereInfoPtr & prewhere_info,
     PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -616,7 +617,13 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
         return {};
 
     table_expression_query_info.additional_filter_ast = additional_filter_ast;
-    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    if (prewhere_info)
+    {
+        for (const auto * input : filter_info.actions.getInputs())
+            prewhere_info->prewhere_actions.tryRestoreColumn(input->result_name);
+    }
+    return filter_info;
 }
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
@@ -871,6 +878,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (!select_query_options.only_analyze)
             {
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
+                auto & row_level_filter = table_expression_query_info.row_level_filter;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
                 const auto & columns_names = table_expression_data.getColumnNames();
 
@@ -898,44 +906,41 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                const auto add_filter = [&](FilterDAGInfo & filter_info, DescriptionHolderPtr description)
+                const auto add_filter = [&](FilterDAGInfo & filter_info, DescriptionHolderPtr description, bool is_row_policy = false)
                 {
-                    bool is_final = table_expression_query_info.table_expression_modifiers
-                        && table_expression_query_info.table_expression_modifiers->hasFinal();
-                    bool optimize_move_to_prewhere
-                        = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
+                    // bool is_final = table_expression_query_info.table_expression_modifiers
+                    //     && table_expression_query_info.table_expression_modifiers->hasFinal();
+                    // bool optimize_move_to_prewhere
+                    //     = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
-                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    bool has_table_virtual_column =
-                        filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
-                    if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
-                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
-                        && !has_table_virtual_column)
-                    {
-                        if (!prewhere_info)
+                    // auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    // bool has_table_virtual_column =
+                    //     filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
+                    // if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
+                    //     && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
+                    //     && !has_table_virtual_column)
+                    // {
+                        if (is_row_policy)
                         {
-                            prewhere_info = std::make_shared<PrewhereInfo>();
-                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
-                            prewhere_info->prewhere_column_name = filter_info.column_name;
-                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
-                            prewhere_info->need_filter = true;
+                            row_level_filter = std::make_shared<FilterDAGInfo>(std::move(filter_info));
                         }
-                        else if (!prewhere_info->row_level_filter)
-                        {
-                            prewhere_info->row_level_filter = std::move(filter_info.actions);
-                            prewhere_info->row_level_column_name = filter_info.column_name;
-                            prewhere_info->need_filter = true;
-                        }
+                        // else if (!prewhere_info)
+                        // {
+                        //     prewhere_info = std::make_shared<PrewhereInfo>();
+                        //     prewhere_info->prewhere_actions = std::move(filter_info.actions);
+                        //     prewhere_info->prewhere_column_name = filter_info.column_name;
+                        //     prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
+                        //     prewhere_info->need_filter = true;
+                        // }
                         else
                         {
                             where_filters.emplace_back(std::move(filter_info), std::move(description));
                         }
-
-                    }
-                    else
-                    {
-                        where_filters.emplace_back(std::move(filter_info), std::move(description));
-                    }
+                    // }
+                    // else
+                    // {
+                    //     where_filters.emplace_back(std::move(filter_info), std::move(description));
+                    // }
                 };
 
                 auto row_policy_filter_info
@@ -943,7 +948,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"));
+                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"), storage->supportsPrewhere());
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -966,7 +971,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
-                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
+                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     add_filter(*additional_filters_info, makeDescription("additional filter"));
