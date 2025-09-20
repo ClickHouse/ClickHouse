@@ -14,7 +14,10 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     cluster = ClickHouseCluster(__file__)
     cluster.add_instance(
-        "node",
+        "old_node",
+        with_installed_binary=True,
+        image="clickhouse/clickhouse-server",
+        tag="25.8.4.13",
         main_configs=[
             "configs/old_node.xml",
             "configs/storage_conf.xml",
@@ -29,7 +32,6 @@ def cluster():
     cluster.add_instance(
         "new_node",
         main_configs=[
-            "configs/new_node.xml",
             "configs/storage_conf_new.xml",
         ],
         user_configs=[
@@ -38,19 +40,6 @@ def cluster():
         with_minio=True,
         macros={"replica": "2"},
         with_zookeeper=True,
-    )
-    cluster.add_instance(
-        "switching_node",
-        main_configs=[
-            "configs/switching_node.xml",
-            "configs/storage_conf.xml",
-        ],
-        user_configs=[
-            "configs/settings.xml",
-        ],
-        with_minio=True,
-        with_zookeeper=True,
-        stay_alive=True,
     )
 
     logging.info("Starting cluster...")
@@ -99,11 +88,22 @@ def find_keys_for_local_path(node, local_path):
     ).split("\n")
     return [x for x in remote if x]
 
+def test_version(cluster):
+    old_node = cluster.instances["old_node"]
+
+    version = old_node.query(
+        """
+        SELECT version();
+        """
+    ).strip()
+
+    assert version == "25.8.4.13", version
+
 
 def test_read_new_format(cluster):
-    node = cluster.instances["node"]
+    old_node = cluster.instances["old_node"]
 
-    node.query(
+    old_node.query(
         """
         CREATE TABLE test_read_new_format (
             id Int64,
@@ -113,24 +113,24 @@ def test_read_new_format(cluster):
         """
     )
 
-    node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
+    old_node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
 
-    part_name = get_first_part_name(node, "test_read_new_format")
-    part_path = get_part_path(node, "test_read_new_format", part_name)
+    part_name = get_first_part_name(old_node, "test_read_new_format")
+    part_path = get_part_path(old_node, "test_read_new_format", part_name)
     primary_idx = os.path.join(part_path, "primary.cidx")
 
-    remote = find_keys_for_local_path(node, primary_idx)
+    remote = find_keys_for_local_path(old_node, primary_idx)
     assert len(remote) == 1
     remote = remote[0]
 
-    node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
+    old_node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
 
     detached_primary_idx = os.path.join(
         os.path.dirname(part_path), "detached", part_name, "primary.cidx"
     )
 
     # manually change the metadata format and see that CH reads it correctly
-    meta_data = read_file(node, detached_primary_idx)
+    meta_data = read_file(old_node, detached_primary_idx)
     lines = meta_data.split("\n")
     object_size, object_key = lines[2].split("\t")
     assert remote.endswith(object_key), object_key
@@ -138,39 +138,39 @@ def test_read_new_format(cluster):
     lines[2] = f"{object_size}\t{remote}"
     lines[0] = "5"
 
-    write_file(node, detached_primary_idx, "\n".join(lines))
+    write_file(old_node, detached_primary_idx, "\n".join(lines))
 
-    active_count = node.query(
+    active_count = old_node.query(
         f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
     ).strip()
     assert active_count == "0", active_count
 
-    node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
+    old_node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
 
-    active_count = node.query(
+    active_count = old_node.query(
         f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
     ).strip()
     assert active_count == "1", active_count
 
-    values = node.query(f"SELECT * FROM test_read_new_format").split("\n")
+    values = old_node.query(f"SELECT * FROM test_read_new_format").split("\n")
     values = [x for x in values if x]
     assert values == ["1\tHello"], values
 
     # part name has changed after attach
-    part_name = get_first_part_name(node, "test_read_new_format")
-    part_path = get_part_path(node, "test_read_new_format", part_name)
+    part_name = get_first_part_name(old_node, "test_read_new_format")
+    part_path = get_part_path(old_node, "test_read_new_format", part_name)
     primary_idx = os.path.join(part_path, "primary.cidx")
 
-    new_remote = find_keys_for_local_path(node, primary_idx)
+    new_remote = find_keys_for_local_path(old_node, primary_idx)
     assert len(new_remote) == 1
     new_remote = new_remote[0]
     assert remote == new_remote
 
 
 def test_write_new_format(cluster):
-    node = cluster.instances["new_node"]
+    new_node = cluster.instances["new_node"]
 
-    node.query(
+    new_node.query(
         """
         CREATE TABLE test_read_new_format (
             id Int64,
@@ -180,24 +180,24 @@ def test_write_new_format(cluster):
         """
     )
 
-    node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
+    new_node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
 
-    part_name = get_first_part_name(node, "test_read_new_format")
-    part_path = get_part_path(node, "test_read_new_format", part_name)
+    part_name = get_first_part_name(new_node, "test_read_new_format")
+    part_path = get_part_path(new_node, "test_read_new_format", part_name)
     primary_idx = os.path.join(part_path, "primary.cidx")
 
-    remote = find_keys_for_local_path(node, primary_idx)
+    remote = find_keys_for_local_path(new_node, primary_idx)
     assert len(remote) == 1
     remote = remote[0]
 
-    node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
+    new_node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
 
     detached_primary_idx = os.path.join(
         os.path.dirname(part_path), "detached", part_name, "primary.cidx"
     )
 
     # manually change the metadata format and see that CH reads it correctly
-    meta_data = read_file(node, detached_primary_idx)
+    meta_data = read_file(new_node, detached_primary_idx)
     lines = meta_data.split("\n")
     object_size, object_key = lines[2].split("\t")
     assert remote.endswith(object_key), object_key
@@ -234,7 +234,7 @@ def test_replicated_merge_tree(cluster, test_case):
         # MergeTree table doesn't work on s3_plain. Rename operation is not implemented
         return
 
-    node_old = cluster.instances["node"]
+    node_old = cluster.instances["old_node"]
     node_new = cluster.instances["new_node"]
 
     zk_table_path = f"/clickhouse/tables/test_replicated_merge_tree_{storage_policy}{'_zero_copy' if zero_copy else ''}"
@@ -403,59 +403,3 @@ def test_replicated_merge_tree(cluster, test_case):
         assert (new_style_count > 0 and old_style_count == new_style_count) or (
             new_style_count == 0 and old_style_count == len(blobs_replicas)
         )
-
-
-def switch_config_write_full_object_key(node, enable):
-    setting_path = "/etc/clickhouse-server/config.d/switching_node.xml"
-
-    is_on = "<storage_metadata_write_full_object_key>1<"
-    is_off = "<storage_metadata_write_full_object_key>0<"
-
-    data = read_file(node, setting_path)
-
-    assert data != ""
-    assert is_on in data or is_off in data
-
-    if enable:
-        node.replace_in_config(setting_path, is_off, is_on)
-    else:
-        node.replace_in_config(setting_path, is_on, is_off)
-
-    node.restart_clickhouse()
-
-
-@pytest.mark.parametrize("storage_policy", ["s3", "s3_plain"])
-def test_log_table(cluster, storage_policy):
-    if storage_policy == "s3_plain":
-        # Log table doesn't work on s3_plain. Rename operation is not implemented
-        return
-
-    node = cluster.instances["switching_node"]
-
-    create_table_statement = f"""
-        CREATE TABLE test_log_table (
-            id Int64,
-            val String
-        ) ENGINE=Log
-        SETTINGS
-            storage_policy='{storage_policy}'
-        """
-
-    node.query(create_table_statement)
-
-    node.query("INSERT INTO test_log_table VALUES (0, 'a')")
-    assert "1" == node.query("SELECT count() FROM test_log_table").strip()
-
-    switch_config_write_full_object_key(node, True)
-    node.query("INSERT INTO test_log_table VALUES (0, 'a')")
-    assert "2" == node.query("SELECT count() FROM test_log_table").strip()
-
-    switch_config_write_full_object_key(node, False)
-    node.query("INSERT INTO test_log_table VALUES (1, 'b')")
-    assert "3" == node.query("SELECT count() FROM test_log_table").strip()
-
-    switch_config_write_full_object_key(node, True)
-    node.query("INSERT INTO test_log_table VALUES (2, 'c')")
-    assert "4" == node.query("SELECT count() FROM test_log_table").strip()
-
-    node.query("DROP TABLE test_log_table SYNC")

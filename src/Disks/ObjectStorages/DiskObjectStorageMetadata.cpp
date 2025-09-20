@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool storage_metadata_write_full_object_key;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
@@ -115,31 +110,8 @@ catch (Exception & e)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    /// These are the changes for backward compatibility
-    /// No new file should be written as VERSION_FULL_OBJECT_KEY until storage_metadata_write_full_object_key feature is enabled
-    /// However, in case of rollback, once file had been written as VERSION_FULL_OBJECT_KEY
-    /// it has to be always rewritten as VERSION_FULL_OBJECT_KEY
+    constexpr UInt32 write_version = VERSION_FULL_OBJECT_KEY;
 
-    bool storage_metadata_write_full_object_key = getWriteFullObjectKeySetting();
-
-    if (version == VERSION_FULL_OBJECT_KEY && !storage_metadata_write_full_object_key)
-    {
-        LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
-        LOG_WARNING(
-            logger,
-            "Metadata file {} is written with VERSION_FULL_OBJECT_KEY version"
-            "However storage_metadata_write_full_object_key is off.",
-            metadata_file_path);
-    }
-
-    UInt32 write_version = version;
-    if (storage_metadata_write_full_object_key)
-        write_version = VERSION_FULL_OBJECT_KEY;
-
-    if (!inline_data.empty() && write_version < VERSION_INLINE_DATA)
-        write_version = VERSION_INLINE_DATA;
-
-    chassert(write_version >= VERSION_ABSOLUTE_PATHS && write_version <= VERSION_FULL_OBJECT_KEY);
     writeIntText(write_version, buf);
 
     writeChar('\n', buf);
@@ -154,20 +126,8 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
         writeIntText(object_meta.size_bytes, buf);
         writeChar('\t', buf);
 
-        if (write_version == VERSION_FULL_OBJECT_KEY)
-        {
-            /// if the metadata file has VERSION_FULL_OBJECT_KEY version
-            /// all keys inside are written as absolute paths
-            writeEscapedString(object_key.serialize(), buf);
-            writeChar('\n', buf);
-        }
-        else
-        {
-            /// otherwise keys are written as relative paths
-            /// therefore keys have to have suffix and prefix
-            writeEscapedString(object_key.getSuffix(), buf);
-            writeChar('\n', buf);
-        }
+        writeEscapedString(object_key.serialize(), buf);
+        writeChar('\n', buf);
     }
 
     writeIntText(ref_count, buf);
@@ -205,24 +165,6 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
 {
-    if (!key.hasPrefix())
-    {
-        version = VERSION_FULL_OBJECT_KEY;
-
-        bool storage_metadata_write_full_object_key = getWriteFullObjectKeySetting();
-        if (!storage_metadata_write_full_object_key)
-        {
-            LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
-            LOG_WARNING(
-                logger,
-                "Metadata file {} has at least one key {} without fixed common key prefix."
-                "That forces using VERSION_FULL_OBJECT_KEY version for that metadata file."
-                "However storage_metadata_write_full_object_key is off.",
-                metadata_file_path,
-                key.serialize());
-        }
-    }
-
     total_size += size;
     keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}, {}});
 }
@@ -237,11 +179,6 @@ ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
     total_size -= object.metadata.size_bytes;
 
     return object;
-}
-
-bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
-{
-    return Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::storage_metadata_write_full_object_key];
 }
 
 }
