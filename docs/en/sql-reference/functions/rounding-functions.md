@@ -3,6 +3,7 @@ description: 'Documentation for Rounding Functions'
 sidebar_label: 'Rounding'
 slug: /sql-reference/functions/rounding-functions
 title: 'Rounding Functions'
+doc_type: 'reference'
 ---
 
 # Rounding functions

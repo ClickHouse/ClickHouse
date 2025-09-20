@@ -25,6 +25,7 @@
 #include <Common/Exception.h>
 
 #include <Databases/DataLake/Common.h>
+#include <Disks/DiskType.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -511,7 +512,6 @@ void IcebergMetadata::createInitial(
     const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
-
     std::vector<String> metadata_files;
     try
     {
@@ -895,7 +895,7 @@ void IcebergMetadata::addDeleteTransformers(
             /// Construct right argument of 'not in' expression, it is the column set.
             const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
             /// Construct left argument of 'not in' expression
-            std::vector<const ActionsDAG::Node *> left_columns;
+            ActionsDAG::NodeRawConstPtrs left_columns;
             std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
             for (const auto & output : dag.getOutputs())
                 outputs.emplace(output->result_name, output);
@@ -964,7 +964,8 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (!iceberg_object_info)
         return nullptr;
     auto configuration_ptr = configuration.lock();
-    if (Poco::toLower(configuration_ptr->format) != "parquet")
+    chassert(object_info->getFileFormat().has_value());
+    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
@@ -972,9 +973,6 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema() const
 {
-    auto configuration_ptr = configuration.lock();
-    if (Poco::toLower(configuration_ptr->format) != "parquet")
-        return nullptr;
     SharedLockGuard lock(mutex);
     return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
 }

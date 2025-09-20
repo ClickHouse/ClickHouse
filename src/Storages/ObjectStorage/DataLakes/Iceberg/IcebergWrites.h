@@ -53,7 +53,12 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
+    explicit FileNamesGenerator(
+        const String & table_dir_,
+        const String & storage_dir_,
+        bool use_uuid_in_metadata_,
+        CompressionMethod compression_method_,
+        const String & format_name_);
 
     FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
@@ -81,6 +86,7 @@ private:
     String storage_metadata_dir;
     bool use_uuid_in_metadata;
     CompressionMethod compression_method;
+    String format_name;
 
     Int32 initial_version = 0;
 };
@@ -93,6 +99,7 @@ public:
     void update(const Chunk & chunk);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -102,6 +109,7 @@ private:
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
+    std::vector<Int64> null_counts;
     std::vector<Range> ranges;
 };
 
