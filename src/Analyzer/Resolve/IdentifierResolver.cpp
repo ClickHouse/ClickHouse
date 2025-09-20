@@ -538,6 +538,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
 
+    size_t identifier_bind_size = identifier_column_qualifier_parts;
+
     if (can_resolve_directly_from_storage)
     {
         match_full_identifier = true;
@@ -545,9 +547,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
     else
     {
-        auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
-        if (it != table_expression_data.column_name_to_column_node.end())
-            result_expression = it->second;
+        String column_name;
+        /// Column name may contain several identifier parts.
+        /// For example: column `a.b Tuple(c UInt32)` and requested subcolumn a.b.c.
+        for (const auto & part : identifier_without_column_qualifier.getParts())
+        {
+            column_name = Nested::concatenateName(column_name, part);
+            ++identifier_bind_size;
+            auto it = table_expression_data.column_name_to_column_node.find(column_name);
+            if (it != table_expression_data.column_name_to_column_node.end())
+            {
+                result_expression = it->second;
+                break;
+            }
+        }
     }
 
     bool clone_is_needed = true;
@@ -558,7 +571,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (result_expression && !match_full_identifier && identifier_without_column_qualifier.isCompound())
     {
-        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
         result_expression = tryResolveIdentifierFromCompoundExpression(identifier,
             identifier_bind_size,
             result_expression,
