@@ -235,6 +235,7 @@ public:
     }
 
     virtual void drop(ContextPtr) {}
+    virtual void truncate(ContextPtr /*local_context*/, std::shared_ptr<DataLake::ICatalog> /*catalog*/, const StorageID & /*table_id_*/) {}
 
     String format = "auto";
     String compression_method = "auto";

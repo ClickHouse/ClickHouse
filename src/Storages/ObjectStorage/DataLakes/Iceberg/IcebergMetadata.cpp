@@ -369,6 +369,7 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
 
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
 {
+    latest_metadata_object = metadata_object;
     auto configuration_ptr = configuration.lock();
 
     std::optional<String> manifest_list_file;
@@ -952,11 +953,54 @@ void IcebergMetadata::drop(ContextPtr context)
     if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
         auto configuration_ptr = configuration.lock();
-        auto files = listFiles(*object_storage, *configuration_ptr, configuration_ptr->getPathForRead().path, "");
+        auto files = listFiles(*object_storage, *configuration_ptr, "", "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
 }
+
+void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & table_id_)
+{
+    auto configuration_ptr = configuration.lock();
+    auto files = listFiles(*object_storage, *configuration_ptr, "", "");
+    for (const auto & file : files)
+        object_storage->removeObjectIfExists(StoredObject(file));
+
+    auto compression_suffix = toContentEncodingName(metadata_compression_method);
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+
+    auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+    auto cleanup = [&] ()
+    {
+        object_storage->removeObjectIfExists(StoredObject(filename));
+    };
+
+    if (latest_metadata_object->getArray(f_snapshots))
+        latest_metadata_object->getArray(f_snapshots)->clear();
+    if (latest_metadata_object->getArray(f_snapshot_log))
+        latest_metadata_object->getArray(f_snapshot_log)->clear();
+    if (latest_metadata_object->getArray(f_metadata_log))
+        latest_metadata_object->getArray(f_metadata_log)->clear();
+
+    latest_metadata_object->set(f_current_snapshot_id, -1);
+    {
+        std::lock_guard lock(mutex);
+        updateState(local_context, latest_metadata_object);
+        relevant_snapshot = nullptr;
+    }
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(latest_metadata_object, oss, 4);
+    writeMessageToFile(oss.str(), filename, object_storage, local_context, cleanup, metadata_compression_method);
+
+    if (catalog)
+    {
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+        catalog->createTable(namespace_name, table_name, catalog_filename, latest_metadata_object);
+    }
+}
+
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
 {

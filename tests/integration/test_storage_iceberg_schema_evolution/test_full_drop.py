@@ -38,3 +38,19 @@ def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, sto
         )
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_writes_truncate(started_cluster_iceberg_schema_evolution, format_version, storage_type):
+    instance = started_cluster_iceberg_schema_evolution.instances["node1"]
+    spark = started_cluster_iceberg_schema_evolution.spark_session
+    TABLE_NAME = "test_writes_complex_types_" + storage_type + "_" + get_uuid_str()
+
+    schema = "(x String)"
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_schema_evolution, schema, format_version)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('1000-7');", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1000-7\n'
+    instance.query(f"TRUNCATE TABLE {TABLE_NAME}")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
