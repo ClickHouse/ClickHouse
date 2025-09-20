@@ -117,6 +117,7 @@ public:
 
         if (mutations_state_ptr)
         {
+            std::lock_guard lock(mutations_state_ptr->state_mutex);
             Int64 left_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
                 left.info.getOriginalPartitionId(), left.info.getDataVersion());
 
@@ -178,7 +179,12 @@ public:
         if (it == patches_by_partition.end() || it->second.empty())
             return {};
 
-        Int64 next_version = mutations_state_ptr->getNextMutationVersion(partition_id, first_part.getDataVersion());
+        Int64 next_version{};
+        {
+            std::lock_guard lock(mutations_state_ptr->state_mutex);
+            next_version = mutations_state_ptr->getNextMutationVersion(partition_id, first_part.getDataVersion());
+        }
+        
         return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
     }
 
