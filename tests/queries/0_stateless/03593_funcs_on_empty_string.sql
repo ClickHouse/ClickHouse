@@ -125,7 +125,6 @@ SELECT extractTextFromHTML('');
 SELECT extractURLParameterNames('');
 SELECT extractURLParameters('');
 SELECT farmFingerprint64('');
-SELECT farmHash64('');
 SELECT firstLine('');
 SELECT firstSignificantSubdomain('');
 SELECT firstSignificantSubdomainRFC('');

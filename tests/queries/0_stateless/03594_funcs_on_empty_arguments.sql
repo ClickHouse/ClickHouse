@@ -6,7 +6,6 @@ SET session_timezone = 'UTC';
 SELECT array() FROM system.one;
 SELECT arrayZip() FROM system.one;
 SELECT arrayZipUnaligned() FROM system.one;
-SELECT blockNumber() FROM system.one;
 SELECT blockSerializedSize() FROM system.one;
 SELECT blockSize() FROM system.one;
 SELECT byteSize() FROM system.one;
