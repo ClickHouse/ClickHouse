@@ -83,10 +83,10 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
     po::store(parsed, options);
 }
 
-OptionsAliasParser::OptionsAliasParser(const boost::program_options::options_description& options)
+OptionsAliasParser::OptionsAliasParser(const boost::program_options::options_description & options)
 {
     options_names.reserve(options.options().size());
-    for (const auto& option : options.options())
+    for (const auto & option : options.options())
         options_names.insert(option->long_name());
 }
 

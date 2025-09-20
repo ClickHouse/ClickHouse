@@ -694,8 +694,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         settings.addToProgramOptions(options_description);
 
         po::variables_map options;
-        po::parsed_options parsed 
-            = po::parse_command_line(argc, argv, options_description, 0, OptionsAliasParser(options_description));
+        po::parsed_options parsed = po::parse_command_line(argc, argv, options_description, 0, OptionsAliasParser(options_description));
         po::store(parsed, options);
         po::notify(options);
 
