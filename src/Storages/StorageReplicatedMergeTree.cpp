@@ -283,6 +283,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
+    extern const int KEEPER_EXCEPTION;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -6883,7 +6884,19 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     if (is_first_replica)
         for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+        {
+            try
+            {
+                attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+            }
+            catch (const DB::Exception & e)
+            {
+                if (e.code() == ErrorCodes::NO_ZOOKEEPER || e.code() == ErrorCodes::KEEPER_EXCEPTION)
+                    throw;
+
+                LOG_WARNING(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+            }
+        }
 
     if (!is_called_during_attach)
     {
