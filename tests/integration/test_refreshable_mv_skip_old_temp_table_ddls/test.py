@@ -79,6 +79,11 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
     db_name = "test_" + get_random_string()
     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     node2.query(f"DROP DATABASE IF EXISTS {db_name}  SYNC")
+    # Make sure that the MV is refreshed on node1
+    node2.query(
+        "SYSTEM ENABLE FAILPOINT refresh_task_delay_update_coordination_state_running"
+    )
+    node2.query("SYSTEM ENABLE FAILPOINT database_replicated_delay_entry_execution")
 
     node1.query(
         f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
@@ -93,11 +98,11 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
             f"CREATE TABLE {db_name}.target (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x"
         )
         node1.query(
-        f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 2 SECOND {append_clause} TO {db_name}.target AS SELECT now() AS x"
-    )
+            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 SECOND {append_clause} TO {db_name}.target AS SELECT now() AS x"
+        )
     else:
         node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 2 SECOND {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
+            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 SECOND {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
         )
 
     node2.query(
@@ -116,12 +121,9 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
     )
 
     last_log_ts = get_last_ddl_worker_log_ts(node2, db_name)
-    node2.stop_clickhouse()
 
     # Wait for node1 to refresh the view several times
     time.sleep(5)
-
-    node2.start_clickhouse()
 
     node1.query(f"ALTER TABLE {db_name}.mv MODIFY REFRESH EVERY 1 HOUR {append_clause}")
 
@@ -132,6 +134,11 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
         - datetime.strptime(x.strip(), "%Y-%m-%d %H:%M:%S")
         > datetime.timedelta(minutes=10),
     )
+
+    node2.query(
+        "SYSTEM DISABLE FAILPOINT refresh_task_delay_update_coordination_state_running"
+    )
+    node2.query("SYSTEM DISABLE FAILPOINT database_replicated_delay_entry_execution")
 
     table_info1 = node1.query(f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'")
     assert table_info1 == node2.query_with_retry(

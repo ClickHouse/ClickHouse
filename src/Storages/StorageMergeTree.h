@@ -107,8 +107,6 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
-
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;

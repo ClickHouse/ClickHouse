@@ -51,8 +51,7 @@ struct BitShiftLeftImpl
             if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
             {
                 // insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 
@@ -68,9 +67,8 @@ struct BitShiftLeftImpl
             else
                 length = end + shift_left_bytes - begin;
 
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             UInt8 * op_pointer = const_cast<UInt8 *>(begin);
             UInt8 * out = out_vec.data() + old_size;

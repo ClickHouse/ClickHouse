@@ -52,7 +52,20 @@ using FunctionTanh = FunctionMathUnary<UnaryFunctionVectorized<TanhName, tanh>>;
 
 REGISTER_FUNCTION(Tanh)
 {
-    factory.registerFunction<FunctionTanh>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the hyperbolic tangent.
+)";
+    FunctionDocumentation::Syntax syntax = "tanh(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The angle in radians. Values from the interval: -∞ < x < +∞.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns values from the interval: -1 < tanh(x) < 1", {"Float*"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT tanh(0)", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTanh>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

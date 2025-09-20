@@ -964,7 +964,11 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         select_contexts[root_view] = select_context;
         insert_contexts[root_view] = insert_context;
         input_headers[root_view] = init_header;
-        thread_groups[root_view] = CurrentThread::getGroup();
+        /// For background tasks (i.e. Buffer flush) there may not be any group
+        if (auto thread_group = CurrentThread::getGroup())
+            thread_groups[root_view] = thread_group;
+        else
+            thread_groups[root_view] = ThreadGroup::createForMaterializedView(init_context);
         views_error_registry->init(root_view);
         dependent_views[root_view] = {};
     };
@@ -990,7 +994,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         inner_tables[current] = materialized_view->getTargetTableId();
         source_tables[current] = parent;
-        thread_groups[current] = ThreadGroup::createForMaterializedView();
+        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
         view_types[current] = QueryViewsLogElement::ViewType::MATERIALIZED;
         views_error_registry->init(current);
 
@@ -1019,7 +1023,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         inner_tables[current] = current;
         select_queries[current] = live_view->getInnerQuery();
         input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView();
+        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
         view_types[current] = QueryViewsLogElement::ViewType::LIVE;
         views_error_registry->init(current);
 
@@ -1051,7 +1055,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         inner_tables[current] = current;
         select_queries[current] = window_view->getMergeableQuery();
         input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView();
+        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
         view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
         views_error_registry->init(current);
 
