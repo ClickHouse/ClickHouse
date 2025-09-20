@@ -4883,6 +4883,9 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
+    DECLARE(Bool, delta_lake_log_metadata, false, R"(
+Enables logging delta lake metadata files into system table.
+)", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.
@@ -7091,6 +7094,15 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
+Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
