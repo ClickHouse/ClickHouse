@@ -306,7 +306,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
-    return IDataType::getSerialization(*column_in_part);
+    return IDataType::getSerialization(*column_in_part, infos.getSettings());
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const

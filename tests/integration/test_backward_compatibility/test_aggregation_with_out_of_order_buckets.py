@@ -13,8 +13,8 @@ node0 = cluster.add_instance(
     use_old_analyzer=False,
     macros={"replica": "node0", "shard": "shard"}
 )
-node1 = cluster.add_instance("node1", main_configs=["configs/clusters.xml"], with_zookeeper=True, use_old_analyzer=False, macros={"replica": "node1", "shard": "shard"})
-node2 = cluster.add_instance("node2", main_configs=["configs/clusters.xml"], with_zookeeper=True, use_old_analyzer=False,  macros={"replica": "node2", "shard": "shard"})
+node1 = cluster.add_instance("node1", main_configs=["configs/clusters.xml", "configs/default_serialization_info.xml"], with_zookeeper=True, use_old_analyzer=False, macros={"replica": "node1", "shard": "shard"})
+node2 = cluster.add_instance("node2", main_configs=["configs/clusters.xml", "configs/default_serialization_info.xml"], with_zookeeper=True, use_old_analyzer=False,  macros={"replica": "node2", "shard": "shard"})
 nodes = [node0, node1, node2]
 
 

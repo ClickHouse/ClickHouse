@@ -213,7 +213,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;

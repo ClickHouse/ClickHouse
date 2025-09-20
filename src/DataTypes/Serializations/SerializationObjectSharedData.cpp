@@ -476,7 +476,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
         const auto & values_column = shared_data_tuple_column.getColumn(1);
         if (nested_limit)
-            SerializationString().serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
+            SerializationString(false).serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
         settings.path.pop_back();
 
         settings.path.pop_back();
@@ -1248,7 +1248,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            SerializationString(false).deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1368,7 +1368,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString(false).deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
