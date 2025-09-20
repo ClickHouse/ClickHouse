@@ -736,6 +736,23 @@ void TCPHandler::runImpl()
                         getFormatSettings(query_state->query_context));
                 });
 
+            query_state->query_context->setInteractiveCancelCallback(
+                [this, &query_state]()
+                {
+                    std::lock_guard lock(callback_mutex);
+
+                    if (!query_state->need_receive_data_for_input)
+                        receivePacketsExpectCancel(query_state.value());
+
+                    if (query_state->stop_read_return_partial_result)
+                        return true;
+
+                    sendProgress(query_state.value());
+                    sendSelectProfileEvents(query_state.value());
+                    sendLogs(query_state.value());
+                    return false;
+                });
+
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
@@ -763,23 +780,9 @@ void TCPHandler::runImpl()
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
                     /// Should not check for cancel in case of input.
-                    if (!query_state->need_receive_data_for_input)
+                    if (auto callback = query_state->query_context->getInteractiveCancelCallback();
+                        !query_state->need_receive_data_for_input && callback)
                     {
-                        auto callback = [this, &query_state]()
-                        {
-                            std::lock_guard lock(callback_mutex);
-
-                            receivePacketsExpectCancel(query_state.value());
-
-                            if (query_state->stop_read_return_partial_result)
-                                return true;
-
-                            sendProgress(query_state.value());
-                            sendSelectProfileEvents(query_state.value());
-                            sendLogs(query_state.value());
-                            return false;
-                        };
-
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
                     }
 
