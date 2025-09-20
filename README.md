@@ -68,7 +68,7 @@ Upcoming meetups
 
 Recent meetups
 * [Beijing Meetup](https://mp.weixin.qq.com/s/WltEVYwTKxek0t8SKJRTjQ) - September 20, 2025
-* [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/310536674) - September 16,2025
+* [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/310536674) - September 16, 2025
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/310122820) - September 16, 2025
 * [Bangkok Meetup](https://www.meetup.com/clickhouse-thailand-meetup-group/events/310647332/) - September 16, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/309165659) - September 9, 2025
