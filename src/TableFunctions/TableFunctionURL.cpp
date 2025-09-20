@@ -21,6 +21,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Storages/HivePartitioningUtils.h>
 
+#include <Poco/URI.h>  // [relative-url] — для работы с URI
 
 namespace DB
 {
@@ -53,7 +54,7 @@ std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNo
 
 void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 {
-    /// Clone ast function, because we can modify it's arguments like removing headers.
+    /// Clone ast function, because we can modify its arguments like removing headers.
     ITableFunctionFileLike::parseArguments(ast->clone(), context);
 }
 
@@ -89,6 +90,25 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         if (headers_ast)
             args.push_back(headers_ast);
+    }
+
+    // [relative-url] Apply `url_base` setting if specified
+    if (!filename.empty())
+    {
+        const auto & settings = context->getSettingsRef();
+        if (!settings.url_base.empty())
+        {
+            try
+            {
+                Poco::URI base_uri(settings.url_base.toString());
+                Poco::URI resolved_uri(base_uri, filename);
+                filename = resolved_uri.toString();
+            }
+            catch (const Poco::SyntaxException & e)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid url_base or relative URL: {}", e.displayText());
+            }
+        }
     }
 }
 
@@ -185,4 +205,6 @@ void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>();
 }
-}
+
+} // namespace DB
+
