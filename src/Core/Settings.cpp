@@ -6917,6 +6917,10 @@ Possible values: -20 to 19.
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
+    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
+Tests-only: if true, inject a top-level ORDER BY rand() into SELECT/UNION queries that lack ORDER BY.
+Applied only at subquery_depth == 0; subqueries and INSERT ... SELECT are not affected.
+    )", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
