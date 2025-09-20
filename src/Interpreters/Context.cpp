@@ -546,6 +546,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
     mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
+    mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
+    mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -3120,6 +3123,7 @@ void Context::makeQueryContext()
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    runtime_filter_lookup = createRuntimeFilterLookup();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -4172,6 +4176,16 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+ThrottlerPtr Context::getDistributedCacheReadThrottler() const
+{
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
+{
+    return shared->distributed_cache_write_throttler;
 }
 
 void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
@@ -5268,6 +5282,16 @@ std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
         return {};
 
     return shared->system_logs->iceberg_metadata_log;
+}
+
+std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->delta_lake_metadata_log;
 }
 
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
@@ -6807,6 +6831,16 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
+void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
+{
+    runtime_filter_lookup = filter_lookup;
+}
+
+RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
+{
+    return runtime_filter_lookup;
+}
+
 void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
 {
     storage_alias_behaviour = storage_alias_behaviour_;
@@ -6827,14 +6861,15 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
-void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
 {
-    partition_id_to_max_block = std::move(partitions);
+    partition_id_to_max_block[table_uuid] = std::move(partitions);
 }
 
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
 {
-    return partition_id_to_max_block;
+    auto it = partition_id_to_max_block.find(table_uuid);
+    return it != partition_id_to_max_block.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

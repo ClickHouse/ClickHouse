@@ -155,11 +155,6 @@
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
 
-    https://github.com/ClickHouse/clickhouse-private/issues/14844
-02367_analyzer_table_alias_columns
-02989_join_using_parent_scope
-02514_if_with_lazy_low_cardinality
-
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
 
