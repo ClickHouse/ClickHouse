@@ -601,7 +601,8 @@ void logQueryFinishImpl(
     if (process_list_elem)
     {
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
+        if (!query_pipeline.getProcessors().empty())
+            logProcessorProfile(context, query_pipeline.getProcessors());
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
 
