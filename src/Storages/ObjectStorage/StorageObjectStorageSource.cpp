@@ -307,6 +307,16 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
+            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -318,15 +328,8 @@ Chunk StorageObjectStorageSource::generate()
                  .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
                 read_context);
 
-            // The order is important, it must be added after virtual columns..
-            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
-            {
-                HivePartitioningUtils::addPartitionColumnsToChunk(
-                    chunk,
-                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
-            }
-#if USE_PARQUET && USE_AWS_S3
+
+#if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
@@ -340,11 +343,19 @@ Chunk StorageObjectStorageSource::generate()
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
+#if USE_AWS_S3
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
                         }
-                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
+                        }
+#endif
+                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
@@ -370,7 +381,6 @@ Chunk StorageObjectStorageSource::generate()
                                 }
                             }
                         }
-
                     }
                 }
             }
@@ -403,7 +413,10 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info), configuration->format, format_settings, read_context);
+        getUniqueStoragePathIdentifier(*configuration, object_info),
+        object_info.getFileFormat().value_or(configuration->format),
+        format_settings,
+        read_context);
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
@@ -479,7 +492,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
 
@@ -502,8 +515,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
+
+        auto names_and_types = read_from_format_info.columns_description.getAllPhysical();
+        ColumnsWithTypeAndName columns;
+        for (const auto & [name, type] : names_and_types)
+            columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              std::make_shared<const Block>(read_from_format_info.format_header), *num_rows_from_cache, max_block_size)));
+                              std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
     }
     else
     {
@@ -521,6 +539,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         Block initial_header = read_from_format_info.format_header;
+        bool schema_changed = false;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
@@ -530,17 +549,27 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 sample_header.insert({type->createColumn(), type, name});
             }
             initial_header = sample_header;
+            schema_changed = true;
         }
+        auto filter_info = [&]()
+        {
+            if (!schema_changed)
+                return format_filter_info;
+            auto mapper = configuration->getColumnMapperForObject(object_info);
+            if (!mapper)
+                return format_filter_info;
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper);
+        }();
 
         auto input_format = FormatFactory::instance().getInput(
-            configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
             initial_header,
             context_,
             max_block_size,
             format_settings,
             parser_shared_resources,
-            format_filter_info,
+            filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
@@ -552,12 +581,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (object_info->hasPositionDeleteTransformer())
-        {
-            builder.addSimpleTransform(
-                [file_iterator, object_info, object_storage, &context_, &format_settings](const SharedHeader & header)
-                { return object_info->getPositionDeleteTransformer(object_storage, header, format_settings, context_); });
-        }
+        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
         std::optional<ActionsDAG> transformer;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)

@@ -3,6 +3,7 @@ description: 'Documentation for LIMIT Clause'
 sidebar_label: 'LIMIT'
 slug: /sql-reference/statements/select/limit
 title: 'LIMIT Clause'
+doc_type: 'reference'
 ---
 
 # LIMIT Clause

@@ -5,6 +5,7 @@ slug: /sql-reference/data-types/time
 sidebar_position: 15
 sidebar_label: 'Time'
 title: 'Time'
+doc_type: 'reference'
 ---
 
 # Time
@@ -31,7 +32,7 @@ Due to the implementation details, the `Time` and `DateTime` type requires 4 byt
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time.
 
-**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
+**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. **Specifying timezone during Time type initialization is not allowed and will result in an error**. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
 
 ## Examples {#examples}
 

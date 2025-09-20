@@ -5,6 +5,7 @@ sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
 title: 'Syntax'
+doc_type: 'reference'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -223,7 +224,7 @@ The following should be noted for `NULL`:
 
 - Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isNull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isNotNull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -366,19 +367,22 @@ For more information, see the sections:
 
 ## Expressions {#expressions}
 
-An expression can be the following: 
+An expression can be any of the following:
 - a function
 - an identifier
 - a literal
-- an application of an operator
+- the application of an operator
 - an expression in brackets
 - a subquery
-- or an asterisk. 
+- an asterisk
 
 It can also contain an [alias](#expression-aliases).
 
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
+
+A constant expression is an expression whose result is known during query analysis, i.e. before execution.
+For example, expressions over literals are constant expressions.
 
 ## Expression Aliases {#expression-aliases}
 

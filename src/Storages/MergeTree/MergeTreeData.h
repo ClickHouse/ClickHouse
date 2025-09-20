@@ -32,7 +32,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
-#include <Storages/MarkCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -68,6 +67,9 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
+
+class MarkCache;
+using MarkCachePtr = std::shared_ptr<MarkCache>;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -492,7 +494,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -993,16 +995,20 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
     ColumnSizeByName getColumnSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return column_sizes;
     }
 
@@ -1012,8 +1018,10 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return secondary_index_sizes;
     }
 
@@ -1531,7 +1539,11 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
+    void calculateColumnAndSecondaryIndexSizesImpl() const;
+
+    /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
+    /// Call it with data_parts and columns_and_secondary_indices_sizes_mutex mutexes locked.
+    void calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
@@ -1575,6 +1587,7 @@ protected:
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;

@@ -841,6 +841,14 @@ void Connection::sendQuery(
         std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
         /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
@@ -1528,7 +1536,7 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in);
+    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
