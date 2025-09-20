@@ -387,7 +387,7 @@ void HTTPHandler::processQuery(
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
             });
         }
         else
