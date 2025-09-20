@@ -67,12 +67,12 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t threads) override;
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t max_block_size,
+        const size_t threads) override;
 
     /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
     /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long

@@ -7,6 +7,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_);
@@ -53,7 +55,7 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
+        return std::make_shared<DirectDictionary>(context, getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -99,11 +101,14 @@ public:
     void applySettings(const Settings & settings);
 
 private:
-    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourcePipe(QueryPipeline & pipeline, const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    BlockIO loadKeys(const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    ContextPtr context;
 
     bool use_async_executor = false;
 

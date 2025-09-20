@@ -15,6 +15,8 @@
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context_fwd.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -41,6 +43,7 @@ public:
     const std::string name = "RegExpTree";
 
     RegExpTreeDictionary(
+        ContextPtr context_,
         const StorageID & id_,
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
@@ -84,7 +87,7 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<RegExpTreeDictionary>(
-            getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
+            context, getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -160,6 +163,8 @@ private:
     const DictionaryStructure structure;
     DictionarySourcePtr source_ptr;
     const Configuration configuration;
+
+    ContextPtr context;
 
     size_t bytes_allocated = 0;
 

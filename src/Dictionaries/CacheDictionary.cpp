@@ -43,6 +43,7 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::CacheDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -62,6 +63,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
         })
     , configuration(configuration_)
     , log(getLogger("ExternalDictionaries"))
+    , context(std::move(context_))
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
@@ -628,62 +630,66 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     const auto now = std::chrono::system_clock::now();
 
+    auto current_source_ptr = getSourceAndUpdateIfNeeded();
+    BlockIO io;
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        io = current_source_ptr->loadIds(requested_keys_vector);
+    else
+        io = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
+
     if (now > backoff_end_time.load())
     {
         try
         {
-            auto current_source_ptr = getSourceAndUpdateIfNeeded();
-
             Stopwatch watch;
-            QueryPipeline pipeline;
-
-            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
-            else
-                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-            pipeline.setConcurrencyControl(false);
-            Block block;
-            while (executor.pull(block))
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
+            auto func = [&]()
             {
-                Columns key_columns;
-                key_columns.reserve(skip_keys_size_offset);
-
-                convertToFullIfSparse(block);
-                auto block_columns = block.getColumns();
-
-                /// Split into keys columns and attribute columns
-                for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                Block block;
+                while (executor.pull(block))
                 {
-                    key_columns.emplace_back(*block_columns.begin());
-                    block_columns.erase(block_columns.begin());
+                    Columns key_columns;
+                    key_columns.reserve(skip_keys_size_offset);
+
+                    convertToFullIfSparse(block);
+                    auto block_columns = block.getColumns();
+
+                    /// Split into keys columns and attribute columns
+                    for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                    {
+                        key_columns.emplace_back(*block_columns.begin());
+                        block_columns.erase(block_columns.begin());
+                    }
+
+                    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
+                    auto keys_extracted_from_block = keys_extractor.extractAllKeys();
+
+                    for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
+                    {
+                        auto & column_to_update = fetched_columns_during_update[index_of_attribute];
+                        auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
+                        column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
+                    }
+
+                    for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
+                    {
+                        auto fetched_key_from_source = keys_extracted_from_block[i];
+
+                        not_found_keys.erase(fetched_key_from_source);
+                        update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
+                        found_keys_in_source.emplace_back(fetched_key_from_source);
+                    }
                 }
-
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
-                auto keys_extracted_from_block = keys_extractor.extractAllKeys();
-
-                for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
-                {
-                    auto & column_to_update = fetched_columns_during_update[index_of_attribute];
-                    auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
-                }
-
-                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
-                {
-                    auto fetched_key_from_source = keys_extracted_from_block[i];
-
-                    not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
-                    found_keys_in_source.emplace_back(fetched_key_from_source);
-                }
-            }
+            };
+            io.executeWithCallbacks(std::move(func));
 
             PaddedPODArray<KeyType> not_found_keys_in_source;
             not_found_keys_in_source.reserve(not_found_keys.size());

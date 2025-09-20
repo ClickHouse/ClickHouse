@@ -8,6 +8,8 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -59,6 +61,7 @@ public:
     };
 
     IPolygonDictionary(
+            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -159,6 +162,8 @@ private:
         ValueGetter && get_value,
         ValueSetter && set_value,
         IColumn::Filter & default_mask) const;
+
+    ContextPtr context;
 
     ColumnPtr key_attribute_column;
 

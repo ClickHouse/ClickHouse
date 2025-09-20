@@ -13,7 +13,13 @@ namespace DB
 
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.processes ORDER BY elapsed DESC", getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+
+    BlockIO io = executeQuery("SELECT * FROM system.processes ORDER BY elapsed DESC", query_context, QueryFlags{ .internal = true }).second;
+    io.context_holder = std::move(query_context);
+    return io;
 }
 
 void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory)

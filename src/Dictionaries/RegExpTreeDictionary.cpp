@@ -316,15 +316,21 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        BlockIO io = source_ptr->loadAll();
 
-        Block block;
-        while (executor.pull(block))
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+
+        auto func = [&]()
         {
-            initRegexNodes(block);
-        }
+            Block block;
+            while (executor.pull(block))
+            {
+                initRegexNodes(block);
+            }
+        };
+        io.executeWithCallbacks(std::move(func));
+
         initGraph();
         if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
@@ -386,7 +392,6 @@ void RegExpTreeDictionary::loadData()
         if (err != HS_SUCCESS)
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
 #endif
-
     }
     else
     {
@@ -395,6 +400,7 @@ void RegExpTreeDictionary::loadData()
 }
 
 RegExpTreeDictionary::RegExpTreeDictionary(
+    ContextPtr context_,
     const StorageID & id_,
     const DictionaryStructure & structure_,
     DictionarySourcePtr source_ptr_,
@@ -406,6 +412,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
       structure(structure_),
       source_ptr(source_ptr_),
       configuration(configuration_),
+      context(std::move(context_)),
       use_vectorscan(use_vectorscan_),
       flag_case_insensitive(flag_case_insensitive_),
       flag_dotall(flag_dotall_),
@@ -742,9 +749,9 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                             unsigned long long /* from */, // NOLINT
                             unsigned long long /* to */, // NOLINT
                             unsigned int /* flags */,
-                            void * context) -> int
+                            void * context_) -> int
             {
-                static_cast<MatchContext *>(context)->insertIdx(id);
+                static_cast<MatchContext *>(context_)->insertIdx(id);
                 return 0;
             };
 
@@ -1003,6 +1010,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         };
 
         return std::make_unique<RegExpTreeDictionary>(
+            context,
             dict_id,
             dict_struct,
             std::move(source_ptr),
