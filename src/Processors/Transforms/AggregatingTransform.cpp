@@ -88,6 +88,7 @@ public:
     struct SharedData
     {
         std::atomic<bool> is_cancelled = false;
+        std::atomic<UInt32> finished_threads = 0;
     };
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
@@ -108,22 +109,33 @@ public:
 protected:
     Chunk generate() override
     {
-        Block block;
-
         if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            block = params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
         else
-            block =params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
 
         // auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         // for (auto & block : blocks)
         //     if (block.rows() > 0)
         //         single_level_chunks.emplace_back(convertToChunk(block));'
         finished = true;
+
+        /// TODO: shared ptr should be okay.
         // data.reset();
 
-        
-        Chunk chunk = convertToChunk(block);
+        shared_data->finished_threads.fetch_add(1);
+
+        // TODO: decide should we convert in the input part or the other part above.
+        // if (shared_data->finished_threads.load() == num_threads)
+        // {
+        //     AggregatedDataVariantsPtr & first = data->at(0);
+        //     block = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(*first, params->final);
+        //     Chunk chunk = convertToChunk(block);
+        //     data.reset();
+        //     return chunk;
+        // }
+
+        Chunk chunk;
         return chunk;
     }
 
@@ -360,6 +372,7 @@ public:
             if (inputs.empty())
                 createSources();
         }
+
         /// TODO: fix condition.
         else if (num_threads > 1 &&  (
             data->at(0)->type == AggregatedDataVariants::Type::key8  ||
@@ -368,7 +381,14 @@ public:
             parallelize_single_level_merge = true;
             LOG_INFO(getLogger("Aggregator"), "jianfei createSourcesForFixedHashMap, parallelize_single_level_merge set to true");
             if (inputs.empty())
+            {
                 createSourcesForFixedHashMap();
+            }
+            else
+            {
+                LOG_INFO(getLogger("Aggregator"), "jianfei parallel fixed hashmap finish all input, working on merge now.");
+                mergeParallelSingleLevel();
+            }
         }
         else
         {
@@ -443,52 +463,17 @@ private:
     IProcessor::Status prepareParallelizeSingleLevel()
     {
         LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel");
-        auto & output = outputs.front();
-
-        /// Read all input sources and collect their chunks
-        for (auto & input : inputs)
-        {
-            if (!input.isFinished() && input.hasData())
-            {
-                auto chunk = input.pull();
-                // For single-level FixedHashMap, we don't need bucket ordering
-                // Just collect all chunks directly
-                if (chunk.hasRows())
-                {
-                    LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, chunk has rows");
-                    single_level_chunks.emplace_back(std::move(chunk));
-                }
-            }
-        }
 
         /// Check if all inputs are finished
-        bool all_inputs_finished = true;
         for (auto & input : inputs)
         {
             if (!input.isFinished())
-            {
-                all_inputs_finished = false;
-                break;
-            }
+                return Status::NeedData;
         }
 
-        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, all_inputs_finished: {}", all_inputs_finished);
+        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, all inputs are finished");
 
-        /// If we have chunks ready to output, do it
-        if (!single_level_chunks.empty())
-        {
-            return preparePushToOutput();
-        }
-
-        /// If all inputs are finished and no more chunks, we're done
-        if (all_inputs_finished)
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        /// Otherwise wait for more data
-        return Status::NeedData;
+        return Status::Ready;
     }
 
 
@@ -594,6 +579,17 @@ private:
         }
     }
 
+    void mergeParallelSingleLevel()
+    {
+        LOG_INFO(getLogger("Aggregator"), "jianfei mergeParallelSingleLevel");
+        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*data->at(0), params->final);
+        for (auto & block : blocks)
+            if (block.rows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(block));
+        finished = true;
+        data.reset();
+    }
+
     void mergeSingleLevel()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
@@ -657,7 +653,8 @@ private:
             processors.emplace_back(std::move(source));
         }
 
-        data.reset();
+        // TODO: not great idea, two level reset and only consume from the last thread.
+        // data.reset();
     }
 };
 

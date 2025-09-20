@@ -525,7 +525,7 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
-    Block mergeSingleLevelDataImplFixedMap(
+    void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
         bool final,
