@@ -414,8 +414,8 @@ void IPAddressDictionary::loadData()
     std::vector<IPRecord> ip_records;
     bool has_ipv6 = false;
     {
-        auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        auto [query_scope, _] = createThreadGroupIfNeeded(context);
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -1071,7 +1071,7 @@ static auto keyViewGetter()
     };
 }
 
-Pipe IPAddressDictionary::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 

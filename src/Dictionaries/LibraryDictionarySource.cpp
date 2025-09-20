@@ -106,7 +106,7 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-BlockIO LibraryDictionarySource::loadAll(ContextMutablePtr)
+BlockIO LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     BlockIO io;
@@ -115,7 +115,7 @@ BlockIO LibraryDictionarySource::loadAll(ContextMutablePtr)
 }
 
 
-BlockIO LibraryDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     BlockIO io;
@@ -124,7 +124,7 @@ BlockIO LibraryDictionarySource::loadIds(ContextMutablePtr, const std::vector<UI
 }
 
 
-BlockIO LibraryDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+BlockIO LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);

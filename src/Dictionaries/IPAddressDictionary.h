@@ -88,7 +88,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 

@@ -130,27 +130,27 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
 /// because a weak ptr to context is saved to pipeline.process_list_entry.it (via : WithContext)
 /// and it's expected that it's always pointing at non-null
 
-BlockIO ClickHouseDictionarySource::loadAll(ContextMutablePtr query_context)
+BlockIO ClickHouseDictionarySource::loadAll()
 {
-    return createStreamForQuery(std::move(query_context), load_all_query);
+    return createStreamForQuery(load_all_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadUpdatedAll(ContextMutablePtr query_context)
+BlockIO ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(std::move(query_context), load_update_query);
+    return createStreamForQuery(load_update_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids)
+BlockIO ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(std::move(query_context), query_builder->composeLoadIdsQuery(ids));
+    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
-BlockIO ClickHouseDictionarySource::loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(std::move(query_context), query);
+    return createStreamForQuery(query);
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -177,7 +177,7 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockIO ClickHouseDictionarySource::createStreamForQuery(ContextMutablePtr query_context, const String & query)
+BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     BlockIO io;
 
@@ -194,13 +194,14 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(ContextMutablePtr query
 
     if (configuration.is_local)
     {
-        query_context->applySettingsChanges(settings_changes);
-        chassert(client_info);
-        query_context->setClientInfo(*client_info);
-        query_context->setCurrentQueryId("");
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId({});
 
         io = executeQuery(query, std::move(query_context), QueryFlags{ .internal = true }).second;
+
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
+        io.context_holder = query_context;
     }
     else
     {

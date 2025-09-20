@@ -140,7 +140,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -270,7 +270,7 @@ private:
         const PaddedPODArray<UInt64> & key_to_index,
         ValueSetter && set_value) const;
 
-    void updateData(ContextMutablePtr query_context);
+    void updateData();
 
     void blockToAttributes(const Block & block);
 
@@ -551,10 +551,10 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -570,7 +570,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     }
     else
     {
-        updateData(std::move(query_context));
+        updateData();
     }
 
     impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
@@ -706,9 +706,9 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr query_context)
+void RangeHashedDictionary<dictionary_key_type>::updateData()
 {
-    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
@@ -946,7 +946,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe RangeHashedDictionary<dictionary_key_type>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     auto key_to_index_column = ColumnUInt64::create();
     auto range_min_column = dict_struct.range_min->type->createColumn();

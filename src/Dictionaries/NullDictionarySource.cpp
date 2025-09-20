@@ -18,7 +18,7 @@ NullDictionarySource::NullDictionarySource(const NullDictionarySource & other) :
 {
 }
 
-BlockIO NullDictionarySource::loadAll(ContextMutablePtr)
+BlockIO NullDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
     BlockIO io;

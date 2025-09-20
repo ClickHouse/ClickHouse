@@ -543,7 +543,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe CacheDictionary<dictionary_key_type>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     ColumnsWithTypeAndName key_columns;
 
@@ -630,13 +630,13 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     const auto now = std::chrono::system_clock::now();
 
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     auto current_source_ptr = getSourceAndUpdateIfNeeded();
     BlockIO io;
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        io = current_source_ptr->loadIds(query_context, requested_keys_vector);
+        io = current_source_ptr->loadIds(requested_keys_vector);
     else
-        io = current_source_ptr->loadKeys(query_context, update_unit_ptr->key_columns, requested_complex_key_rows);
+        io = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
 
     if (now > backoff_end_time.load())
     {

@@ -170,7 +170,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -216,7 +216,7 @@ private:
 
     void blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard);
 
-    void updateData(ContextMutablePtr query_context);
+    void updateData();
 
     void loadData();
 
@@ -879,10 +879,10 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData(ContextMutablePtr query_context)
+void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 {
     /// NOTE: updateData() does not preallocation since it may increase memory usage.
-    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
@@ -1161,14 +1161,14 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 {
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
             parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -1192,7 +1192,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
     }
     else
     {
-        updateData(std::move(query_context));
+        updateData();
     }
 
     if (configuration.require_nonempty && 0 == element_count)
@@ -1272,7 +1272,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 

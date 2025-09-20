@@ -316,8 +316,8 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        auto [query_scope, _] = createThreadGroupIfNeeded(context);
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -869,7 +869,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     return result;
 }
 
-Pipe RegExpTreeDictionary::read(ContextMutablePtr /* query_context */, const Names & , size_t max_block_size, size_t) const
+Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
 {
 
     auto it = regex_nodes.begin();

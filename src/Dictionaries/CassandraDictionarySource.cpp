@@ -141,7 +141,7 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-BlockIO CassandraDictionarySource::loadAll(ContextMutablePtr)
+BlockIO CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
@@ -156,7 +156,7 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-BlockIO CassandraDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
@@ -167,7 +167,7 @@ BlockIO CassandraDictionarySource::loadIds(ContextMutablePtr, const std::vector<
     return io;
 }
 
-BlockIO CassandraDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
@@ -196,7 +196,7 @@ BlockIO CassandraDictionarySource::loadKeys(ContextMutablePtr, const Columns & k
     return io;
 }
 
-BlockIO CassandraDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

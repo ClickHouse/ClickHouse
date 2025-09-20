@@ -94,7 +94,7 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
-    BlockIO RedisDictionarySource::loadAll(ContextMutablePtr)
+    BlockIO RedisDictionarySource::loadAll()
     {
         BlockIO io;
         auto connection = getRedisConnection(pool, configuration);
@@ -129,7 +129,7 @@ namespace DB
         return io;
     }
 
-    BlockIO RedisDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+    BlockIO RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         auto connection = getRedisConnection(pool, configuration);
 
@@ -151,7 +151,7 @@ namespace DB
         return io;
     }
 
-    BlockIO RedisDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+    BlockIO RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
     {
         auto connection = getRedisConnection(pool, configuration);
 

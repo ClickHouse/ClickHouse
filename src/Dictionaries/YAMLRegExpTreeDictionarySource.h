@@ -30,19 +30,19 @@ public:
 
     YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other);
 
-    BlockIO loadAll(ContextMutablePtr) override;
+    BlockIO loadAll() override;
 
-    BlockIO loadUpdatedAll(ContextMutablePtr) override
+    BlockIO loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> &) override
+    BlockIO loadIds(const std::vector<UInt64> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    BlockIO loadKeys(ContextMutablePtr, const Columns &, const std::vector<size_t> &) override
+    BlockIO loadKeys(const Columns &, const std::vector<size_t> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for YAMLRegExpTreeDictionarySource");
     }

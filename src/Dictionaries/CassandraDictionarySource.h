@@ -51,7 +51,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockIO loadAll(ContextMutablePtr) override;
+    BlockIO loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -64,11 +64,11 @@ public:
         return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
     }
 
-    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockIO loadUpdatedAll(ContextMutablePtr) override;
+    BlockIO loadUpdatedAll() override;
 
     String toString() const override;
 

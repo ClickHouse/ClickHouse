@@ -318,7 +318,7 @@ public:
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
+    virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
     bool supportUpdates() const override { return true; }
 

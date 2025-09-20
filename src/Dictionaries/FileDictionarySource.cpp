@@ -47,7 +47,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockIO FileDictionarySource::loadAll(ContextMutablePtr)
+BlockIO FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);

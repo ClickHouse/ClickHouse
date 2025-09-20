@@ -43,13 +43,13 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    BlockIO loadAll(ContextMutablePtr) override;
+    BlockIO loadAll() override;
 
-    BlockIO loadUpdatedAll(ContextMutablePtr) override;
+    BlockIO loadUpdatedAll() override;
 
-    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

@@ -453,9 +453,9 @@ void FlatDictionary::blockToAttributes(const Block & block)
     }
 }
 
-void FlatDictionary::updateData(ContextMutablePtr query_context)
+void FlatDictionary::updateData()
 {
-    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
@@ -501,10 +501,10 @@ void FlatDictionary::updateData(ContextMutablePtr query_context)
 
 void FlatDictionary::loadData()
 {
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -518,7 +518,7 @@ void FlatDictionary::loadData()
         io.executeWithCallbacks(std::move(func));
     }
     else
-        updateData(std::move(query_context));
+        updateData();
 
     element_count = 0;
 
@@ -737,7 +737,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-Pipe FlatDictionary::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const auto keys_count = loaded_keys.size();
 

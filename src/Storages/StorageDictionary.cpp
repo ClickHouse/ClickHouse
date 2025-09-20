@@ -177,63 +177,30 @@ void StorageDictionary::checkTableCanBeDetached() const
     checkTableCanBeDropped(getContext());
 }
 
-void StorageDictionary::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    ContextMutablePtr query_context = Context::createCopy(local_context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-
-    auto pipe = makePipe(column_names, storage_snapshot, query_info, query_context, processed_stage, max_block_size, num_streams);
-
-    /// parallelize processing if not yet
-    const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = query_context->getSettingsRef()[Setting::parallelize_output_from_storages];
-
-    /// For distributed_aggregation_memory_efficient with Two-Level-Hash aggregation, the `GroupingAggregatedTransform`
-    /// need to receive buckets from Remote in order of bucket number, while resize here will break the buckets order
-    /// return from `RemoteSource`. See https://github.com/ClickHouse/ClickHouse/issues/76934.
-    const bool should_not_resize = query_context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
-
-    if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(query_context) && output_ports > 0
-        && output_ports < num_streams)
-        pipe.resize(num_streams);
-
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, query_context, shared_from_this());
-}
-
-Pipe StorageDictionary::makePipe(
+Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
-    ContextMutablePtr query_context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const size_t threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, query_context);
+    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
 
     /**
      * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
      * If none of these conditions are met - we ask to grant a dictGet.
      */
-    bool has_dict_get = query_context->getAccess()->isGranted(
+    bool has_dict_get = local_context->getAccess()->isGranted(
         AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    bool has_select = query_context->getAccess()->isGranted(
+    bool has_select = local_context->getAccess()->isGranted(
         AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
     if (!has_dict_get && !has_select)
-        query_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
 
-    return dictionary->read(std::move(query_context), column_names, max_block_size, threads);
+    return dictionary->read(column_names, max_block_size, threads);
 }
 
 std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const

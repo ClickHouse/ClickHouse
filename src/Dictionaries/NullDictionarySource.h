@@ -19,19 +19,19 @@ public:
 
     NullDictionarySource(const NullDictionarySource & other);
 
-    BlockIO loadAll(ContextMutablePtr) override;
+    BlockIO loadAll() override;
 
-    BlockIO loadUpdatedAll(ContextMutablePtr) override
+    BlockIO loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for NullDictionarySource");
     }
 
-    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & /*ids*/) override
+    BlockIO loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for NullDictionarySource");
     }
 
-    BlockIO loadKeys(ContextMutablePtr, const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockIO loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for NullDictionarySource");
     }

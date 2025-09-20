@@ -88,8 +88,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
-    BlockIO io = loadKeys(query_context, requested_keys, key_columns);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
+    BlockIO io = loadKeys(requested_keys, key_columns);
 
     QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
@@ -262,8 +262,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
-    BlockIO io = loadKeys(query_context, requested_keys, key_columns);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
+    BlockIO io = loadKeys(requested_keys, key_columns);
 
     QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
@@ -356,13 +356,12 @@ public:
         pipeline_.setConcurrencyControl(false);
     }
 
-    SourceFromQueryPipeline(QueryPipeline pipeline_, ContextPtr context_)
-        : ISource(pipeline_.getSharedHeader())
-        , pipeline_holder(std::move(pipeline_))
-        , executor(*pipeline_holder)
-        , context_holder(std::move(context_))
+    SourceFromQueryPipeline(BlockIO io)
+        : ISource(io.pipeline.getSharedHeader())
+        , io_holder(std::move(io))
+        , executor(io_holder->pipeline)
     {
-        pipeline_holder->setConcurrencyControl(false);
+        io_holder->pipeline.setConcurrencyControl(false);
     }
 
     std::string getName() const override
@@ -370,6 +369,7 @@ public:
         return std::is_same_v<PullingAsyncPipelineExecutor, TExecutor> ? "SourceFromQueryPipelineAsync" : "SourceFromQueryPipeline";
     }
 
+    /// TODO(mstetsyuk): try to wrap in try catch and call io_holder.onException(), and call io_holder.onFinish() in dtor if no exception was thrown
     Chunk generate() override
     {
         Chunk chunk;
@@ -383,9 +383,8 @@ public:
     }
 
 private:
-    std::optional<QueryPipeline> pipeline_holder;
+    std::optional<BlockIO> io_holder;
     TExecutor executor;
-    ContextPtr context_holder;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -400,23 +399,24 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockIO DirectDictionary<dictionary_key_type>::loadKeys(ContextMutablePtr query_context, const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const
+BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
-        return source_ptr->loadIds(std::move(query_context), ids);
+        return source_ptr->loadIds(ids);
     }
 
     auto requested_rows = std::views::iota(size_t{0}, requested_keys.size()) | std::ranges::to<std::vector>();
-    return source_ptr->loadKeys(query_context, key_columns, requested_rows);
+    return source_ptr->loadKeys(key_columns, requested_rows);
 }
 
 // NOTE(mstetsyuk): this way we don't run io.onFinish or io.onException (and so no logging), but other that this, everything should work
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::read(ContextMutablePtr query_context, const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(source_ptr->loadAll(query_context).pipeline, query_context));
+    BlockIO io = source_ptr->loadAll();
+    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(std::move(io)));
 }
 
 template <DictionaryKeyType dictionary_key_type>

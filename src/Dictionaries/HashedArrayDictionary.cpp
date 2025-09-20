@@ -479,9 +479,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
-void HashedArrayDictionary<dictionary_key_type, sharded>::updateData(ContextMutablePtr query_context)
+void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 {
-    BlockIO io = source_ptr->loadUpdatedAll(std::move(query_context));
+    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
@@ -980,14 +980,14 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
     if (!source_ptr->hasUpdateField())
     {
         std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
             parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        BlockIO io = source_ptr->loadAll();
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
@@ -1043,7 +1043,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
     }
     else
     {
-        updateData(std::move(query_context));
+        updateData();
     }
 
     if (configuration.require_nonempty && 0 == total_element_count)
@@ -1123,7 +1123,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
-Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedArrayDictionary::KeyType> keys;
     keys.reserve(total_element_count);

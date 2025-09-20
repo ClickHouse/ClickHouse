@@ -207,7 +207,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     return result;
 }
 
-Pipe IPolygonDictionary::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t, size_t) const
+Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
 {
     if (!configuration.store_polygon_key_column)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -292,8 +292,8 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    auto [query_scope, query_context] = createThreadGroupIfNeeded(context);
-    BlockIO io = source_ptr->loadAll(std::move(query_context));
+    auto [query_scope, _] = createThreadGroupIfNeeded(context);
+    BlockIO io = source_ptr->loadAll();
 
     DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
     io.pipeline.setConcurrencyControl(false);

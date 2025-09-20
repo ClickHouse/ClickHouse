@@ -105,7 +105,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -150,7 +150,7 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    void updateData(ContextMutablePtr query_context);
+    void updateData();
 
     void loadData();
 

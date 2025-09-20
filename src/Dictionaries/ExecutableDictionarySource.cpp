@@ -103,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-BlockIO ExecutableDictionarySource::loadAll(ContextMutablePtr)
+BlockIO ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -119,7 +119,7 @@ BlockIO ExecutableDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-BlockIO ExecutableDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -156,7 +156,7 @@ BlockIO ExecutableDictionarySource::loadUpdatedAll(ContextMutablePtr)
     return io;
 }
 
-BlockIO ExecutableDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -166,7 +166,7 @@ BlockIO ExecutableDictionarySource::loadIds(ContextMutablePtr, const std::vector
     return io;
 }
 
-BlockIO ExecutableDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 

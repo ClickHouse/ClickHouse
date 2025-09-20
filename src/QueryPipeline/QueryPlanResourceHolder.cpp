@@ -6,20 +6,20 @@ namespace DB
 
 QueryPlanResourceHolder & QueryPlanResourceHolder::append(QueryPlanResourceHolder && rhs) noexcept
 {
-    table_locks.insert(table_locks.end(), 
-                       std::make_move_iterator(rhs.table_locks.begin()), 
+    table_locks.insert(table_locks.end(),
+                       std::make_move_iterator(rhs.table_locks.begin()),
                        std::make_move_iterator(rhs.table_locks.end()));
-    storage_holders.insert(storage_holders.end(), 
-                          std::make_move_iterator(rhs.storage_holders.begin()), 
+    storage_holders.insert(storage_holders.end(),
+                          std::make_move_iterator(rhs.storage_holders.begin()),
                           std::make_move_iterator(rhs.storage_holders.end()));
     interpreter_context.insert(interpreter_context.end(),
                                std::make_move_iterator(rhs.interpreter_context.begin()),
                                std::make_move_iterator(rhs.interpreter_context.end()));
-    query_id_holders.insert(query_id_holders.end(), 
-                           std::make_move_iterator(rhs.query_id_holders.begin()), 
+    query_id_holders.insert(query_id_holders.end(),
+                           std::make_move_iterator(rhs.query_id_holders.begin()),
                            std::make_move_iterator(rhs.query_id_holders.end()));
-    insert_dependencies_holders.insert(insert_dependencies_holders.end(), 
-                                       std::make_move_iterator(rhs.insert_dependencies_holders.begin()), 
+    insert_dependencies_holders.insert(insert_dependencies_holders.end(),
+                                       std::make_move_iterator(rhs.insert_dependencies_holders.begin()),
                                        std::make_move_iterator(rhs.insert_dependencies_holders.end()));
 
     return *this;

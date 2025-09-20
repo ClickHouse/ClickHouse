@@ -2,7 +2,6 @@
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/StringUtils.h>
-#include <Interpreters/Context_fwd.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -178,7 +177,6 @@ void IStorage::truncate(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
 }
 
-// NOTE(mstetsyuk): here!
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -189,9 +187,7 @@ void IStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    ContextMutablePtr query_context = Context::createCopy(context);
-
-    auto pipe = read(column_names, storage_snapshot, query_info, query_context, processed_stage, max_block_size, num_streams);
+    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();

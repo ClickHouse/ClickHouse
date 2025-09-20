@@ -77,17 +77,17 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-BlockIO ExecutablePoolDictionarySource::loadAll(ContextMutablePtr)
+BlockIO ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -97,7 +97,7 @@ BlockIO ExecutablePoolDictionarySource::loadIds(ContextMutablePtr, const std::ve
     return io;
 }
 
-BlockIO ExecutablePoolDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 

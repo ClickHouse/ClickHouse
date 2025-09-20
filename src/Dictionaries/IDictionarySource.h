@@ -21,10 +21,10 @@ class IDictionarySource
 public:
 
     /// Returns a pipe with all the data available from this source.
-    virtual BlockIO loadAll(ContextMutablePtr query_context) = 0;
+    virtual BlockIO loadAll() = 0;
 
     /// Returns a pipe with updated data available from this source.
-    virtual BlockIO loadUpdatedAll(ContextMutablePtr query_context) = 0;
+    virtual BlockIO loadUpdatedAll() = 0;
 
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.
@@ -34,13 +34,13 @@ public:
     /** Returns an input stream with the data for a collection of identifiers.
       * It must be guaranteed, that 'ids' array will live at least until all data will be read from returned stream.
       */
-    virtual BlockIO loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids) = 0;
+    virtual BlockIO loadIds(const std::vector<UInt64> & ids) = 0;
 
     /** Returns an input stream with the data for a collection of composite keys.
       * `requested_rows` contains indices of all rows containing unique keys.
       * It must be guaranteed, that 'requested_rows' array will live at least until all data will be read from returned stream.
       */
-    virtual BlockIO loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
+    virtual BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
 
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;

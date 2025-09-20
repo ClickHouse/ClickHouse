@@ -91,7 +91,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadAll(ContextMutablePtr)
+BlockIO PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     BlockIO io;
@@ -100,7 +100,7 @@ BlockIO PostgreSQLDictionarySource::loadAll(ContextMutablePtr)
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
@@ -109,7 +109,7 @@ BlockIO PostgreSQLDictionarySource::loadUpdatedAll(ContextMutablePtr)
     return io;
 }
 
-BlockIO PostgreSQLDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     BlockIO io;
@@ -118,7 +118,7 @@ BlockIO PostgreSQLDictionarySource::loadIds(ContextMutablePtr, const std::vector
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     BlockIO io;

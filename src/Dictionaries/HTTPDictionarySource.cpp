@@ -86,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockIO HTTPDictionarySource::loadAll(ContextMutablePtr)
+BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -104,7 +104,7 @@ BlockIO HTTPDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-BlockIO HTTPDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -123,7 +123,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll(ContextMutablePtr)
     return io;
 }
 
-BlockIO HTTPDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -154,7 +154,7 @@ BlockIO HTTPDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt6
     return io;
 }
 
-BlockIO HTTPDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
