@@ -6,6 +6,7 @@ keywords: ['JSONColumnsWithMetadata']
 output_format: true
 slug: /interfaces/formats/JSONColumnsWithMetadata
 title: 'JSONColumnsWithMetadata'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

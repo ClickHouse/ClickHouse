@@ -47,6 +47,8 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
@@ -1204,7 +1206,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                                         "Please check the path in query. "
                                         "If you want to drop replica "
                                         "of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
+                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
                                         storage_replicated->getStorageID().getNameForLogs());
                 }
             }
