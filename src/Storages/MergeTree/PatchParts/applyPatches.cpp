@@ -249,7 +249,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_block)
+Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
     std::vector<Block> headers;
 
@@ -266,9 +266,8 @@ Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_bloc
 
         for (const auto & column : patch->patch_blocks[0])
         {
-            /// System columns may differ in patches because we allow to apply combined patches
-            /// with different modes. Ignore columns that are not present in result block.
-            if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
+            /// Ignore columns that are not updated.
+            if (!updated_columns.contains(column.name))
                 header.erase(column.name);
         }
 
@@ -568,13 +567,15 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version)
 {
     if (patches.empty())
         return;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
-    auto updated_header = getUpdatedHeader(patches, result_block);
+    NameSet updated_columns_set(updated_columns.begin(), updated_columns.end());
+    auto updated_header = getUpdatedHeader(patches, updated_columns_set);
 
     if (canApplyPatchesRaw(patches))
         applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);
