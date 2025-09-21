@@ -270,6 +270,122 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
     return removal <= oldest_snapshot_version;
 }
 
+bool VersionMetadata::verifyMetadata(LoggerPtr logger)
+{
+    /// Check if CSNs were written after committing transaction, update and write if needed.
+    bool version_updated = false;
+    chassert(!getCreationTID().isEmpty());
+
+    if (!creation_csn)
+    {
+        LOG_TRACE(
+            logger, "Part {} does not have creation_csn, try to get it from creation_tid {}", merge_tree_data_part->name, creation_tid);
+
+        auto csn_of_creation_tid = TransactionLog::getCSNAndAssert(creation_tid, creation_csn);
+        if (!csn_of_creation_tid)
+        {
+            LOG_TRACE(
+                logger,
+                "Part {}, unable to find creation_csn of creation_tid {}, resetting it to {}",
+                merge_tree_data_part->name,
+                creation_tid,
+                Tx::RolledBackCSN);
+            setCreationCSN(Tx::RolledBackCSN);
+            version_updated = true;
+        }
+        else
+        {
+            LOG_TRACE(
+                logger,
+                "Part {}, found creation_csn {} of creation_tid {}, updating it",
+                merge_tree_data_part->name,
+                csn_of_creation_tid,
+                creation_tid);
+            setCreationCSN(csn_of_creation_tid);
+            version_updated = true;
+        }
+    }
+
+    if (!getRemovalCSN())
+    {
+        if (!getRemovalTID().isEmpty())
+        {
+            auto tid_running = TransactionLog::instance().tryGetRunningTransaction(getRemovalTID().getHash());
+            LOG_TRACE(
+                logger, "Part {} does not have removal_csn, try to get it from removal_tid {}", merge_tree_data_part->name, removal_tid);
+            auto csn_of_removal_tid = TransactionLog::getCSNAndAssert(removal_tid, removal_csn);
+            if (csn_of_removal_tid)
+            {
+                LOG_TRACE(
+                    logger,
+                    "Part {}, found removal_csn {} of removal_tid {}, updating it",
+                    merge_tree_data_part->name,
+                    csn_of_removal_tid,
+                    removal_tid);
+                setRemovalCSN(csn_of_removal_tid);
+                version_updated = true;
+            }
+            else if (tid_running == NO_TRANSACTION_PTR)
+            {
+                LOG_TRACE(
+                    logger,
+                    "Part {}, unable to find removal_csn of non-running removal_tid {}, restting removal_tid and removal lock",
+                    merge_tree_data_part->name,
+                    removal_tid);
+                setRemovalTIDLock(0);
+                removal_tid = Tx::EmptyTID;
+                version_updated = true;
+            }
+            else
+            {
+                LOG_TRACE(logger, "Part {}, unable to find removal_csn of removal_tid {}", merge_tree_data_part->name, removal_tid);
+                TIDHash current_removal_tid_lock_hash = getRemovalTIDLock();
+                TIDHash removal_tid_hash = removal_tid.getHash();
+
+                if (!current_removal_tid_lock_hash)
+                {
+                    LOG_TRACE(
+                        logger,
+                        "Part {}, no removal_tid_lock, the transaction was not committed, resetting removal_tid",
+                        merge_tree_data_part->name);
+                    removal_tid = Tx::EmptyTID;
+                    version_updated = true;
+                }
+                else if (current_removal_tid_lock_hash == removal_tid_hash)
+                {
+                    LOG_TRACE(
+                        logger,
+                        "Part {}, removal_tid_lock hash {} is matched to removal_tid hash",
+                        merge_tree_data_part->name,
+                        current_removal_tid_lock_hash);
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Part {}, removal_tid_lock hash {} is not matched to the removal_tid hash {}",
+                        merge_tree_data_part->name,
+                        current_removal_tid_lock_hash,
+                        removal_tid_hash);
+                }
+            }
+        }
+    }
+
+    LOG_TEST(logger, "Part {}, removal_csn {}, removal_tid_lock hash {}", merge_tree_data_part->name, getRemovalCSN(), getRemovalTIDLock());
+
+    /// Sanity checks
+    bool csn_order = !getRemovalCSN() || getCreationCSN() <= getRemovalCSN() || getRemovalCSN() == Tx::PrehistoricCSN;
+    bool min_start_csn_order = getCreationTID().start_csn <= getCreationCSN();
+    bool max_start_csn_order = getRemovalTID().start_csn <= getRemovalCSN();
+    bool creation_csn_known = getCreationCSN();
+
+    if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", merge_tree_data_part->name, toString());
+
+    return version_updated;
+}
+
 
 VersionMetadata::Info VersionMetadata::readFromBufferHelper(ReadBuffer & buf)
 {
@@ -356,114 +472,8 @@ void VersionMetadata::loadAndVerifyMetadata(LoggerPtr logger)
     else
         setRemovalTIDLock(removal_tid.getHash());
 
-    /// Check if CSNs were written after committing transaction, update and write if needed.
-    bool version_updated = false;
-    chassert(!getCreationTID().isEmpty());
-
-    if (!creation_csn)
-    {
-        LOG_TRACE(
-            logger, "Part {} does not have creation_csn, try to get it from creation_tid {}", merge_tree_data_part->name, creation_tid);
-
-        auto csn_of_creation_tid = TransactionLog::getCSNAndAssert(creation_tid, creation_csn);
-        if (!csn_of_creation_tid)
-        {
-            LOG_TRACE(
-                logger,
-                "Part {}, unable to find creation_csn of creation_tid {}, resetting it to {}",
-                merge_tree_data_part->name,
-                creation_tid,
-                Tx::RolledBackCSN);
-            setCreationCSN(Tx::RolledBackCSN);
-        }
-        else
-        {
-            LOG_TRACE(
-                logger,
-                "Part {}, found creation_csn {} of creation_tid {}, updating it",
-                merge_tree_data_part->name,
-                csn_of_creation_tid,
-                creation_tid);
-            setCreationCSN(csn_of_creation_tid);
-        }
-        version_updated = true;
-    }
-
-    if (!getRemovalCSN())
-    {
-        if (!getRemovalTID().isEmpty())
-        {
-            auto tid_running = TransactionLog::instance().tryGetRunningTransaction(getRemovalTID().getHash());
-            LOG_TRACE(
-                logger, "Part {} does not have removal_csn, try to get it from removal_tid {}", merge_tree_data_part->name, removal_tid);
-            auto csn_of_removal_tid = TransactionLog::getCSNAndAssert(removal_tid, removal_csn);
-            if (csn_of_removal_tid)
-            {
-                LOG_TRACE(
-                    logger,
-                    "Part {}, found removal_csn {} of removal_tid {}, updating it",
-                    merge_tree_data_part->name,
-                    csn_of_removal_tid,
-                    removal_tid);
-                setRemovalCSN(csn_of_removal_tid);
-            }
-            else if (tid_running == NO_TRANSACTION_PTR)
-            {
-                LOG_TRACE(
-                    logger,
-                    "Part {}, unable to find removal_csn of non-running removal_tid {}, restting removal_tid and removal lock",
-                    merge_tree_data_part->name,
-                    removal_tid);
-                setRemovalTIDLock(0);
-                removal_tid = Tx::EmptyTID;
-            }
-            else
-            {
-                LOG_TRACE(logger, "Part {}, unable to find removal_csn of removal_tid {}", merge_tree_data_part->name, removal_tid);
-                TIDHash current_removal_tid_lock_hash = getRemovalTIDLock();
-                TIDHash removal_tid_hash = removal_tid.getHash();
-
-                if (!current_removal_tid_lock_hash)
-                {
-                    LOG_TRACE(
-                        logger,
-                        "Part {}, no removal_tid_lock, the transaction was not committed, resetting removal_tid",
-                        merge_tree_data_part->name);
-                    removal_tid = Tx::EmptyTID;
-                }
-                else if (current_removal_tid_lock_hash == removal_tid_hash)
-                {
-                    LOG_TRACE(
-                        logger,
-                        "Part {}, removal_tid_lock hash {} is matched to removal_tid hash",
-                        merge_tree_data_part->name,
-                        current_removal_tid_lock_hash);
-                }
-                else
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Part {}, removal_tid_lock hash {} is not matched to the removal_tid hash {}",
-                        merge_tree_data_part->name,
-                        current_removal_tid_lock_hash,
-                        removal_tid_hash);
-                }
-            }
-            version_updated = true;
-        }
-    }
-
-    LOG_TEST(logger, "Part {}, removal_csn {}, removal_tid_lock hash {}", merge_tree_data_part->name, getRemovalCSN(), getRemovalTIDLock());
-
-    /// Sanity checks
-    bool csn_order = !getRemovalCSN() || getCreationCSN() <= getRemovalCSN() || getRemovalCSN() == Tx::PrehistoricCSN;
-    bool min_start_csn_order = getCreationTID().start_csn <= getCreationCSN();
-    bool max_start_csn_order = getRemovalTID().start_csn <= getRemovalCSN();
-    bool creation_csn_known = getCreationCSN();
-
-    if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", merge_tree_data_part->name, toString());
-    if (version_updated)
+    auto updated = verifyMetadata(logger);
+    if (updated)
         storeMetadata(/*force=*/true);
 }
 
