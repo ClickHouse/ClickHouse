@@ -115,21 +115,9 @@ protected:
             params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
 
         finished = true;
-
-        /// TODO: shared ptr should be okay.
         data.reset();
 
         shared_data->finished_threads.fetch_add(1);
-
-        // TODO: decide should we convert in the input part or the other part above.
-        // if (shared_data->finished_threads.load() == num_threads)
-        // {
-        //     AggregatedDataVariantsPtr & first = data->at(0);
-        //     block = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(*first, params->final);
-        //     Chunk chunk = convertToChunk(block);
-        //     data.reset();
-        //     return chunk;
-        // }
 
         Chunk chunk;
         return chunk;
@@ -369,7 +357,7 @@ public:
                 createSources();
         }
 
-        /// TODO: fix condition.
+        /// TODO: use a proper condition.
         else if (num_threads > 1 &&  (
             data->at(0)->type == AggregatedDataVariants::Type::key8  ||
             data->at(0)->type == AggregatedDataVariants::Type::key16))
@@ -592,8 +580,6 @@ private:
         }
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-
-        /// NOTE(jianfei): used to get the block directly inline here in a single transform for single level.
         for (auto & block : blocks)
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));
@@ -631,9 +617,6 @@ private:
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, arena);
             processors.emplace_back(std::move(source));
         }
-
-        // TODO: not great idea, two level reset and only consume from the last thread.
-        // data.reset();
     }
 };
 

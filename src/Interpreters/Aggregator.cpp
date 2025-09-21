@@ -1879,8 +1879,6 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
-    LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap,  filter_id: {}, step_size: {}"
-        "is_cancelled: {}, final: {}, arena empty: {}", filter_id, step_size, is_cancelled.load(std::memory_order_seq_cst), final, arena == nullptr);
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
@@ -1888,54 +1886,45 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
-        // NOTE(jianfei): not hitting.
         if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/!checkLimits not handled!");
             break;
-        }
 
         AggregatedDataVariants & current = *non_empty_data[result_num];
 
         if (!no_more_keys)
         {
-            // NOTE(jianfei): hitting.
-            // LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap, no_more_keys is false, result_num: {}", result_num);
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataImplFixedMap, not handled: compile_aggregate_functions_holder is true, result_num: {}", result_num);
-                // mergeDataImpl<Method>(
-                //     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
+                mergeDataImplFixedMap<Method>(
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
             }
             else
 #endif
             {
-                LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataImplFixedMap compile_aggregate_functions_holder is false, result_num: {}", result_num);
                 mergeDataImplFixedMap<Method>(
                     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled, filter_id, step_size);
             }
         }
         else if (res->without_key)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataNoMoreKeysImpl not handled!");
-            // LOG_INFO(log, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataNoMoreKeysImpl, result_num: {}", result_num);
-            // mergeDataNoMoreKeysImpl<Method>(
-            //     getDataVariant<Method>(*res).data,
-            //     res->without_key,
-            //     getDataVariant<Method>(current).data,
-            //     res->aggregates_pool);
+            /// Workaround to ensure only thread 0 is working on these merges, because currently mergeDataNoMoreKeysImpl and 
+            //  mergeDataOnlyExistingKeysImpl uses mergeToViaFind which does not support filter yet.
+            if (filter_id == 0)
+                mergeDataNoMoreKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    res->without_key,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "jianfei mergeAndConvertOneBucketToBlockFixedHashMap/mergeDataOnlyExistingKeysImpl not handled!");
-            /// called mergeToViaFind, not sure if need to add similar hash map method.
-            /// Probably need to add mergeToViaFind(skip_filter) kinda of thing.
-            /// Of course depending how this is triggered, should be key limit is hit, and has key, skip merge. should be able to implement that in the FixedHashMap new method.
-            // mergeDataOnlyExistingKeysImpl<Method>(
-            //     getDataVariant<Method>(*res).data,
-            //     getDataVariant<Method>(current).data,
-            //     res->aggregates_pool);
+            if (filter_id == 0)
+                mergeDataOnlyExistingKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool,
+                    false);
         }
 
         /// `current` will not destroy the states of aggregate functions in the destructor
@@ -2983,7 +2972,8 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_dst,
     Table & table_src,
-    Arena * arena) const
+    Arena * arena,
+    bool clean_table_src) const
 {
     if (is_simple_count)
     {
@@ -2996,7 +2986,9 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
                 return;
             getInlineCountState(dst) += getInlineCountState(src);
         });
-        table_src.clearAndShrink();
+
+        if (clean_table_src)
+            table_src.clearAndShrink();
         return;
     }
 
@@ -3004,6 +2996,9 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
+    /// TODO: here.
+    /// I think we can add method to filter the mergeToViaFindWithFilter, first filter by the index first.
+    /// lukciy when no found we don't have to do anything.
     table_src.mergeToViaFind(table_dst,
         [&](AggregateDataPtr dst, AggregateDataPtr & src, bool found)
     {
@@ -3021,7 +3016,9 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
         src = nullptr;
     });
-    table_src.clearAndShrink();
+    /// TODO: probably not needed after we fix the race condition in this function.
+    if (clean_table_src)
+        table_src.clearAndShrink();
 }
 
 

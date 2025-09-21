@@ -463,7 +463,8 @@ private:
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        bool clean_table_src = true) const;
 
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
