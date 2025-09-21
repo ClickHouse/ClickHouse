@@ -9,7 +9,7 @@ CREATE TABLE test_duplicate_partition_keys (
     c1 Int32
 )
 ENGINE = MergeTree()
-PARTITION BY (c1, c1, SHA512_256(c0))
+PARTITION BY (c1, c1, sipHash64(c0))
 ORDER BY c0;
 
 -- Insert some test data
