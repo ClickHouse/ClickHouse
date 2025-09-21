@@ -26,7 +26,7 @@ namespace impl
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
     [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(const LogSeriesLimiterPtr & logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
@@ -107,7 +107,7 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+            _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
     }                                                                                                               \
     /* We want to propagate all exceptions from arguments evaluation, e.g.                                       */ \
@@ -125,8 +125,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
-        _channel->log(_poco_message);                                                                               \
+            (PRIORITY), std::move(_file_function), __LINE__, _format_string, _format_string_args);                  \
+        _channel->log(std::move(_poco_message));                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \

@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for cluster discovery in ClickHouse'
-sidebar_label: 'Cluster Discovery'
+sidebar_label: 'Cluster discovery'
 slug: /operations/cluster-discovery
-title: 'Cluster Discovery'
+title: 'Cluster discovery'
+doc_type: 'guide'
 ---
 
-# Cluster Discovery
+# Cluster discovery
 
 ## Overview {#overview}
 
@@ -25,9 +26,9 @@ To enable it include the `allow_experimental_cluster_discovery` setting in your 
 ```
 :::
 
-## Remote Servers Configuration {#remote-servers-configuration}
+## Remote servers configuration {#remote-servers-configuration}
 
-### Traditional Manual Configuration {#traditional-manual-configuration}
+### Traditional manual configuration {#traditional-manual-configuration}
 
 Traditionally, in ClickHouse, each shard and replica in the cluster needed to be manually specified in the configuration:
 
@@ -59,7 +60,7 @@ Traditionally, in ClickHouse, each shard and replica in the cluster needed to be
 
 ```
 
-### Using Cluster Discovery {#using-cluster-discovery}
+### Using cluster discovery {#using-cluster-discovery}
 
 With Cluster Discovery, rather than defining each node explicitly, you simply specify a path in ZooKeeper. All nodes that register under this path in ZooKeeper will be automatically discovered and added to the cluster.
 
@@ -109,7 +110,6 @@ for `node3` and `node4`:
 
 ### Observer mode {#observer-mode}
 
-
 Nodes configured in observer mode will not register themselves as replicas.
 They will solely observe and discover other active replicas in the cluster without actively participating.
 To enable observer mode, include the `<observer/>` tag within the `<discovery>` section:
@@ -120,7 +120,6 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
     <observer/>
 </discovery>
 ```
-
 
 ### Discovery of clusters {#discovery-of-clusters}
 
@@ -162,16 +161,13 @@ Limitations:
 - `<multicluster_root_path>` can only be with `<observer/>`.
 - The last part of path from Keeper is used as the cluster name, while during registration the name is taken from the XML tag.
 
-
-
-## Use-Cases and Limitations {#use-cases-and-limitations}
+## Use cases and limitations {#use-cases-and-limitations}
 
 As nodes are added or removed from the specified ZooKeeper path, they are automatically discovered or removed from the cluster without the need for configuration changes or server restarts.
 
 However, changes affect only cluster configuration, not the data or existing databases and tables.
 
 Consider the following example with a cluster of 3 nodes:
-
 
 ```xml
 <remote_servers>
@@ -215,7 +211,6 @@ Then, we add a new node to the cluster, starting a new node with the same entry 
 
 The fourth node is participating in the cluster, but table `event_table` still exists only on the first three nodes:
 
-
 ```sql
 SELECT hostname(), database, table FROM clusterAllReplicas(default, system.tables) WHERE table = 'event_table' FORMAT PrettyCompactMonoBlock
 
@@ -227,4 +222,3 @@ SELECT hostname(), database, table FROM clusterAllReplicas(default, system.table
 ```
 
 If you need to have tables replicated on all the nodes, you may use the [Replicated](../engines/database-engines/replicated.md) database engine in alternative to cluster discovery.
-

@@ -185,15 +185,56 @@ The function also works for [strings](string-functions.md#notempty) or [UUID](uu
     )";
     FunctionDocumentation::Syntax syntax_empty = "empty(arr)";
     FunctionDocumentation::Syntax syntax_not_empty = "notEmpty(arr)";
-    FunctionDocumentation::Arguments arguments = {{"arr", "Input array. [`Array(T)`](/sql-reference/data-types/array)."}};
-    FunctionDocumentation::ReturnedValue returned_value_empty = "Returns `1` for an empty array or `0` for a non-empty array. [`UInt8`](../data-types/int-uint.md).";
-    FunctionDocumentation::ReturnedValue returned_value_not_empty = "Returns `1` for a non-empty array or `0` for an empty array. [`UInt8`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_empty = {{"Usage example", "SELECT empty([]);", "1"}};
+    FunctionDocumentation::Arguments arguments = {{"arr", "Input array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value_empty = {"Returns `1` for an empty array or `0` for a non-empty array", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value_not_empty = {"Returns `1` for a non-empty array or `0` for an empty array", {"UInt8"}};    FunctionDocumentation::Examples examples_empty = {{"Usage example", "SELECT empty([]);", "1"}};
     FunctionDocumentation::Examples examples_not_empty = {{"Usage example", "SELECT notEmpty([1,2]);", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_empty = {description_empty, syntax_empty, arguments, returned_value_empty, examples_empty, introduced_in, category};
     FunctionDocumentation documentation_not_empty = {description_not_empty, syntax_not_empty, arguments, returned_value_not_empty, examples_not_empty, introduced_in, category};
+
+    // String function documentation
+    FunctionDocumentation::Description description_empty_string = R"(
+Checks whether the input string is empty.
+A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](/sql-reference/data-types/uuid).
+)";
+    FunctionDocumentation::Description description_not_empty_string = R"(
+Checks whether the input string is non-empty.
+A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](/sql-reference/data-types/uuid).
+)";
+    FunctionDocumentation::Syntax syntax_empty_string = "empty(x)";
+    FunctionDocumentation::Syntax syntax_not_empty_string = "notEmpty(x)";
+    FunctionDocumentation::Arguments arguments_string = {{"x", "Input value.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_empty_string = {"Returns `1` for an empty string or `0` for a non-empty string.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value_not_empty_string = {"Returns `1` for a non-empty string or `0` for an empty string.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_empty_string = {
+    {
+        "Basic usage",
+        "SELECT empty('')",
+        R"(
+┌─empty('')─┐
+│         1 │
+└───────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Examples examples_not_empty_string = {
+    {
+        "Basic usage",
+        "SELECT notEmpty('text')",
+        R"(
+┌─notEmpty('text')─┐
+│                1 │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category_string = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
+    FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
 
     factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_not_empty);
     factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);

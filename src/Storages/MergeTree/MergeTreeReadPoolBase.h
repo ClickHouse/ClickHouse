@@ -2,9 +2,14 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
+
+class UncompressedCache;
+using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
 
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
@@ -30,6 +35,7 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
@@ -46,6 +52,7 @@ protected:
     const RangesInDataParts parts_ranges;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
+    const IndexReadTasks index_read_tasks;
     const StorageSnapshotPtr storage_snapshot;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
@@ -55,12 +62,23 @@ protected:
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
+    const PatchJoinCachePtr patch_join_cache;
     const Block header;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
 
-    MergeTreeReadTaskPtr createTask(MergeTreeReadTaskInfoPtr read_info, MergeTreeReadTask::Readers task_readers, MarkRanges ranges) const;
+    MergeTreeReadTaskPtr createTask(
+        MergeTreeReadTaskInfoPtr read_info,
+        MergeTreeReadTask::Readers task_readers,
+        MarkRanges ranges,
+        std::vector<MarkRanges> patches_ranges) const;
+
+    MergeTreeReadTaskPtr createTask(
+        MergeTreeReadTaskInfoPtr read_info,
+        MarkRanges ranges,
+        std::vector<MarkRanges> patches_ranges,
+        MergeTreeReadTask * previous_task) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
@@ -70,6 +88,7 @@ protected:
     MergeTreeReadTask::Extras getExtras() const;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
+    RangesInPatchParts ranges_in_patch_parts;
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;

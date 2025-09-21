@@ -6,6 +6,7 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
+#include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
@@ -62,8 +63,6 @@ public:
     /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
     void flushAndShutdown();
 
-private:
-
     struct InsertQuery
     {
     public:
@@ -93,9 +92,10 @@ private:
         std::vector<SettingChange> setting_changes;
     };
 
-    struct DataChunk : public std::variant<String, Block>
+private:
+    struct DataChunk : public std::variant<TrackedString, Block>
     {
-        using std::variant<String, Block>::variant;
+        using std::variant<TrackedString, Block>::variant;
 
         size_t byteSize() const
         {
@@ -126,7 +126,7 @@ private:
             }, *this);
         }
 
-        const String * asString() const { return std::get_if<String>(this); }
+        const TrackedString * asString() const { return std::get_if<TrackedString>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 

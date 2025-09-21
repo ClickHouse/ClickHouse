@@ -74,7 +74,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
                 is_definer_current_user = true;
-            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
+            else if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, definer, expected))
                 return false;
 
             continue;
@@ -177,14 +177,22 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
 
     if (granularity)
+    {
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    }
     else
     {
-        auto index_type = index->getType();
-        if (index_type->name == "vector_similarity")
-            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+
+        if (auto index_type = index->getType())
+        {
+            const std::string_view index_type_name = index_type->name;
+
+            if (index_type_name == "vector_similarity")
+                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+            else if (index_type_name == "text")
+                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+        }
     }
 
     node = index;
@@ -730,7 +738,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         replace = true;
     else
         return false;
-
 
     if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
@@ -1537,6 +1544,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_empty(Keyword::EMPTY);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_to{Keyword::TO};
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -1568,6 +1576,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_populate = false;
     bool is_create_empty = false;
     bool replace_view = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1591,6 +1600,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
         is_ordinary_view = true;
+
+    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    {
+        is_temporary = true;
+    }
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -1717,6 +1731,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
+    query->temporary = is_temporary;
 
     auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
@@ -1766,7 +1781,15 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         targets = std::make_shared<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+        {
+            if (!to_table->as<ASTTableIdentifier>()->isParam())
+                targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            else
+            {
+                chassert(is_materialized_view);
+                targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
+            }
+        }
         if (to_inner_uuid)
             targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
         if (storage)
@@ -1863,6 +1886,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
 
@@ -1914,6 +1938,10 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
         if (!attributes_p.parse(pos, attributes, expected))
             return false;
+
+        /// We allow a trailing comma in the columns list for user convenience.
+        /// Although it diverges from the SQL standard slightly.
+        s_comma.ignore(pos, expected);
 
         if (!s_right_paren.ignore(pos, expected))
             return false;

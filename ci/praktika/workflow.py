@@ -33,7 +33,10 @@ class Workflow:
         enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
+        # do a best effort to merge the PR if all jobs are successful
+        enable_automerge: bool = False
         enable_merge_ready_status: bool = False
+        enable_gh_summary_comment: bool = False
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
@@ -45,7 +48,10 @@ class Workflow:
         # If the Docker images specified in .dockers are intended to be built in a different workflow,
         #   their build process in this workflow can be disabled by setting this to True.
         disable_dockers_build: bool = False
-        set_latest_in_dockers_build: bool = False
+        # If Docker images built for multiple platforms and merging them into a single manifest is required in this workflow
+        enable_dockers_manifest_merge: bool = False
+        # If latest tag shpuld be added for merged docker manifest, enable with .enable_dockers_manifest_merge
+        set_latest_for_docker_merged_manifest: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -100,6 +106,15 @@ class Workflow:
                 names.append(secret.name)
             print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
             raise
+
+        def _enabled_workflow_config(self):
+            return (
+                self.enable_cache
+                or self.enable_report
+                or self.dockers
+                or self.enable_merge_ready_status
+                or self.pre_hooks
+            )
 
         @dataclass
         class InputConfig:

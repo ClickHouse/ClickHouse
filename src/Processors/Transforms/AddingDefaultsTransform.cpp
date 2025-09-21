@@ -105,7 +105,8 @@ static void mixNumberColumns(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
-static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
+static MutableColumnPtr mixColumns(
+    const ColumnWithTypeAndName & col_read,
     const ColumnWithTypeAndName & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
@@ -135,7 +136,7 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 
 
 AddingDefaultsTransform::AddingDefaultsTransform(
-    const Block & header,
+    SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
     ContextPtr context_)

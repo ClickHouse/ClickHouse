@@ -1,3 +1,4 @@
+import dataclasses
 import glob
 import json
 import os
@@ -14,6 +15,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
+from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -21,21 +23,59 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+_GH_authenticated = False
+
+
+def _GH_Auth(workflow):
+    global _GH_authenticated
+    if _GH_authenticated:
+        return
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
+
+    if not Shell.check(f"gh auth status", verbose=True):
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
+    _GH_authenticated = True
+
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        assert (bool(pr) ^ bool(branch)) or (not pr and not branch)
+        pr = pr or -1
+        if branch:
+            pr = 0
+        digest_dockers = {}
+        for docker in workflow.dockers:
+            digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, workflow.dockers
+            )
+        workflow_config = RunConfig(
+            name=workflow.name,
+            digest_jobs={},
+            digest_dockers=digest_dockers,
+            sha="",
+            cache_success=[],
+            cache_success_base64=[],
+            cache_artifacts={},
+            cache_jobs={},
+            filtered_jobs={},
+            custom_data={},
+        )
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH="branch_name",
+            BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
-            PR_NUMBER=pr or -1,
+            PR_NUMBER=pr if not branch else 0,
             EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
@@ -53,25 +93,17 @@ class Runner:
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
+            EVENT_TIME="",
+            WORKFLOW_DATA={
+                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
+                    "outputs": {
+                        "data": json.dumps(
+                            {"workflow_config": dataclasses.asdict(workflow_config)}
+                        )
+                    }
+                }
+            },
         ).dump()
-        workflow_config = RunConfig(
-            name=workflow.name,
-            digest_jobs={},
-            digest_dockers={},
-            sha="",
-            cache_success=[],
-            cache_success_base64=[],
-            cache_artifacts={},
-            cache_jobs={},
-            filtered_jobs={},
-            custom_data={},
-        )
-        for docker in workflow.dockers:
-            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, workflow.dockers
-            )
-
-        workflow_config.dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -119,12 +151,7 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and job.name not in (
-            Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-            Settings.FINISH_WORKFLOW_JOB_NAME,
-        ):
+        if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -140,18 +167,7 @@ class Runner:
                 else:
                     if (
                         requires_artifact_name
-                        in [
-                            job.name
-                            for job in workflow.jobs
-                            if job.name
-                            not in (
-                                Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                                Settings.FINISH_WORKFLOW_JOB_NAME,
-                            )
-                            and job.provides
-                        ]
+                        in [job.name for job in workflow.jobs if job.provides]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
                         print(
@@ -200,6 +216,10 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
+                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
+                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
+                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
+                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -218,7 +238,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).digest_dockers
+                    RunConfig.from_workflow_data().digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -236,7 +256,7 @@ class Runner:
                 job.run_in_docker.split("+")[1:],
             )
             from_root = "root" in docker_settings
-            settings = [s for s in docker_settings if s.startswith("--")]
+            settings = [s for s in docker_settings if s.startswith("-")]
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -245,10 +265,25 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
+                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
                 )
+                if Utils.is_arm():
+                    docker_tag += "_arm"
+                elif Utils.is_amd():
+                    docker_tag += "_amd"
+                else:
+                    raise RuntimeError("Unsupported CPU architecture")
+
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            for setting in settings:
+                if setting.startswith("--volume"):
+                    volume = setting.removeprefix("--volume=").split(":")[0]
+                    if not Path(volume).exists():
+                        print(
+                            "WARNING: Create mount dir point in advance to have the same owner"
+                        )
+                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -362,12 +397,25 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif not result.is_ok and job.allow_merge_on_failure:
-            result.set_not_required_label()
+        elif (
+            not result.is_ok()
+            and workflow.enable_merge_ready_status
+            and not job.allow_merge_on_failure
+        ):
+            print("set required label")
+            result.set_required_label()
 
         result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(job_outputs)}",
+                file=f,
+            )
 
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
@@ -407,7 +455,7 @@ class Runner:
                                 "TODO: globe is not supported with comress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
-                        artifact.path = Utils.compress_file_zst(artifact.path)
+                        artifact.path = Utils.compress_zst(artifact.path)
 
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
@@ -447,12 +495,20 @@ class Runner:
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
+                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
+                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
+                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+                assert url_secret and user_secret and passwd_secret
+                # request all secret at once to avoid rate limiting
+                url, user, pwd = (
+                    url_secret.join_with(user_secret)
+                    .join_with(passwd_secret)
+                    .get_value()
+                )
                 ci_db = CIDB(
-                    url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
-                    passwd=workflow.get_secret(
-                        Settings.SECRET_CI_DB_PASSWORD
-                    ).get_value(),
+                    url=url,
+                    user=user,
+                    passwd=pwd,
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
@@ -470,40 +526,54 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
+        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-
-        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
-            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
             workflow_result = Result.from_fs(workflow.name)
-            workflow_storage_usage = StorageUsage.from_dict(
-                workflow_result.ext.get("storage_usage", {})
-            )
-            workflow_compute_usage = ComputeUsage.from_dict(
-                workflow_result.ext.get("compute_usage", {})
-            )
-            if workflow_storage_usage:
-                print(
-                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
                 )
-                ci_db.insert_storage_usage(workflow_storage_usage)
-            if workflow_compute_usage:
-                print(
-                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
                 )
-                ci_db.insert_compute_usage(workflow_compute_usage)
+                if workflow_storage_usage:
+                    print(
+                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_storage_usage(workflow_storage_usage)
+                if workflow_compute_usage:
+                    print(
+                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
+
+        if workflow.enable_gh_summary_comment and (
+            job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
+        ):
+            _GH_Auth(workflow)
+            try:
+                summary_body = GH.ResultSummaryForGH.from_result(
+                    workflow_result
+                ).to_markdown()
+                if not GH.post_updateable_comment(
+                    comment_tags_and_bodies={"summary": summary_body},
+                    only_update=True,
+                ):
+                    print(f"ERROR: failed to post CI summary")
+            except Exception as e:
+                print(f"ERROR: failed to post CI summary, ex: {e}")
+                traceback.print_exc()
+
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
-
-                pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
+            _GH_Auth(workflow)
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -516,6 +586,39 @@ class Runner:
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
+
+        if (
+            workflow.enable_automerge
+            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and workflow.is_event_pull_request()
+        ):
+            try:
+                _GH_Auth(workflow)
+                workflow_result = Result.from_fs(workflow.name)
+                if workflow_result.is_ok():
+                    if not GH.merge_pr():
+                        print("ERROR: Failed to merge the PR")
+                else:
+                    print(
+                        f"NOTE: Workflow status [{workflow_result.status}] - do not merge"
+                    )
+            except Exception as e:
+                print(f"ERROR: Failed to merge the PR: [{e}]")
+                traceback.print_exc()
+
+        # finally, set the status flag for GH Actions
+        pipeline_status = Result.Status.SUCCESS
+        if not result.is_ok():
+            if result.is_failure() and result.do_not_block_pipeline_on_failure():
+                # job explicitly says to not block ci even though result is failure
+                pass
+            else:
+                pipeline_status = Result.Status.FAILED
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"pipeline_status={pipeline_status}",
+                file=f,
+            )
 
         return is_ok
 
@@ -555,7 +658,9 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
+            self.generate_local_run_environment(
+                workflow, job, pr=pr, sha=sha, branch=branch
+            )
 
         if res and (not local_run or pr or sha or branch):
             res = False

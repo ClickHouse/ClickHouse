@@ -30,6 +30,11 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
+bool MutationCommand::affectsAllColumns() const
+{
+    return type == DELETE || type == APPLY_DELETED_MASK;
+}
+
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -67,8 +72,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = APPLY_DELETED_MASK;
-        if (command->predicate)
-            res.predicate = command->predicate->clone();
+        if (command->partition)
+            res.partition = command->partition->clone();
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::APPLY_PATCHES)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = APPLY_PATCHES;
         if (command->partition)
             res.partition = command->partition->clone();
         return res;
@@ -92,7 +104,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+        {
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        }
         return res;
     }
     if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -256,6 +271,16 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
             return true;
     }
     return false;
+}
+
+bool MutationCommands::hasAnyUpdateCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
+}
+
+bool MutationCommands::hasOnlyUpdateCommands() const
+{
+    return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
 }
 
 bool MutationCommands::containBarrierCommand() const

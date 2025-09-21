@@ -1,4 +1,4 @@
-#include "DateLUT.h"
+#include <Common/DateLUT.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -23,11 +23,6 @@ namespace Setting
 
 namespace
 {
-
-std::string extractTimezoneFromContext(DB::ContextPtr query_context)
-{
-    return query_context->getSettingsRef()[DB::Setting::session_timezone].value;
-}
 
 Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 {
@@ -160,31 +155,27 @@ const DateLUTImpl & DateLUT::instance()
 {
     const auto & date_lut = getInstance();
 
+    std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        std::string timezone_from_context;
         const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
         if (query_context)
-        {
-            timezone_from_context = extractTimezoneFromContext(query_context);
+            timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
+    }
 
-            if (!timezone_from_context.empty())
-                return date_lut.getImplementation(timezone_from_context);
-        }
-
+    if (!timezone_from_context.has_value())
+    {
         /// On the server side, timezone is passed in query_context,
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
-        const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
+        const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
         if (global_context)
-        {
-            timezone_from_context = extractTimezoneFromContext(global_context);
-
-            if (!timezone_from_context.empty())
-                return date_lut.getImplementation(timezone_from_context);
-        }
+            timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
+
+    if (timezone_from_context.has_value() && !timezone_from_context->empty())
+        return date_lut.getImplementation(*timezone_from_context);
+
     return serverTimezoneInstance();
 }
 
@@ -196,7 +187,7 @@ DateLUT::DateLUT()
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 

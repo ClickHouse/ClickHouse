@@ -1,17 +1,17 @@
-#include "Suggest.h"
+#include <Client/Suggest.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
@@ -94,7 +94,15 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 {
     loading_thread = std::thread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
+        /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;
+        std::optional<CurrentThread::QueryScope> query_scope;
+        /// LocalConnection creates QueryScope for each query
+        if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
+            query_scope.emplace(my_context);
+
+        setThreadName("Suggest");
+
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
@@ -200,7 +208,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
 
 void Suggest::fillWordsFromBlock(const Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     if (block.columns() != 1)

@@ -14,7 +14,7 @@ class ColumnLazyTransform : public ISimpleTransform
 {
 public:
     explicit ColumnLazyTransform(
-        const Block & header_, MergeTreeLazilyReaderPtr lazy_column_reader_);
+        SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_);
 
     static Block transformHeader(Block header);
 

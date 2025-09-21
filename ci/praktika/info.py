@@ -5,8 +5,8 @@ import urllib
 from pathlib import Path
 from typing import Optional
 
-from .runtime import RunConfig
 from .settings import Settings
+from .utils import Utils
 
 
 class Info:
@@ -36,6 +36,10 @@ class Info:
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
+
+    @property
+    def event_time(self):
+        return self.env.EVENT_TIME
 
     @property
     def job_config(self):
@@ -152,7 +156,9 @@ class Info:
     def dump(self):
         self.env.dump()
 
-    def get_specific_report_url(self, pr_number, branch, sha, job_name=""):
+    def get_specific_report_url(
+        self, pr_number, branch, sha, job_name="", workflow_name=""
+    ):
         from .settings import Settings
 
         if pr_number:
@@ -165,7 +171,8 @@ class Info:
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        workflow_name = workflow_name or self.env.WORKFLOW_NAME
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
         if job_name:
             res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
         return res
@@ -182,26 +189,35 @@ class Info:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
 
-    def store_custom_data(self, key, value):
-        assert (
-            self.env.JOB_NAME == "Config Workflow"
-        ), "Custom data can be stored only in Config Workflow Job"
-        workflow_config = RunConfig.from_fs(self.env.WORKFLOW_NAME)
-        workflow_config.custom_data[key] = value
-        workflow_config.dump()
+    def store_kv_data(self, key, value):
+        print(f"Store workflow kv data: key [{key}], value [{value}]")
+        self.env.JOB_KV_DATA[key] = value
+        self.env.dump()
 
-    def get_custom_data(self, key=None):
-        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+    def get_kv_data(self, key=None, source_job="config_workflow"):
+        if Utils.normalize_string(self.env.JOB_NAME) == Utils.normalize_string(
+            source_job
+        ):
+            kv_data = self.env.JOB_KV_DATA
+        else:
+            kv_data = json.loads(
+                self.env.WORKFLOW_DATA.get(Utils.normalize_string(source_job), {})
+                .get("outputs", {})
+                .get("data", {})
+            )
         if key:
-            return custom_data.get(key, None)
-        return custom_data
+            return kv_data.get(key, None)
+        return kv_data
 
     def get_changed_files(self):
-        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
-        return custom_data.get("changed_files", None)
+        return self.get_kv_data().get("changed_files", None)
 
     def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())
+        self.env.dump()
+
+    def add_workflow_report_message(self, message):
+        self.env.add_info(message)
         self.env.dump()
 
     def is_workflow_ok(self):

@@ -1,4 +1,4 @@
-#include "CHColumnToArrowColumn.h"
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -1077,7 +1077,8 @@ namespace DB
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
         const std::vector<Chunk> & chunks,
-        size_t columns_num)
+        size_t columns_num,
+        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
     {
         std::shared_ptr<arrow::Schema> arrow_schema;
         std::vector<arrow::ArrayVector> table_data(columns_num);
@@ -1103,7 +1104,15 @@ namespace DB
                         format_name,
                         settings,
                         &is_column_nullable);
-                    arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
+                    if (column_to_field_id && column_to_field_id->contains(header_column.name))
+                    {
+                        Int64 field_id = column_to_field_id->at(header_column.name);
+                        auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
+                                  {std::to_string(field_id)});
+                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
+                    }
+                    else
+                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
                 }
 
                 arrow::MemoryPool * pool = ArrowMemoryPool::instance();

@@ -162,6 +162,7 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -288,6 +289,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -422,6 +424,8 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
         case AuthenticationType::NO_PASSWORD:
             break;
+        case AuthenticationType::NO_AUTHENTICATION:
+            break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
@@ -452,6 +456,12 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
         AuthenticationData auth_data;
         auth_data.setValidUntil(valid_until);
+        return auth_data;
+    }
+
+    if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
+    {
+        AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
         return auth_data;
     }
 
@@ -601,10 +611,12 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         auth_data.setPasswordHashHex(value, validate);
 
-        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
+        if ((query.type == AuthenticationType::SHA256_PASSWORD || query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
+            && args_size == 2)
         {
             String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
             auth_data.setSalt(parsed_salt);
+            return auth_data;
         }
     }
     else if (query.type == AuthenticationType::LDAP)

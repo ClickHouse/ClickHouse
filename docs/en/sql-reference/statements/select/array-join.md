@@ -3,6 +3,7 @@ description: 'Documentation for ARRAY JOIN Clause'
 sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
 title: 'ARRAY JOIN Clause'
+doc_type: 'reference'
 ---
 
 # ARRAY JOIN Clause
@@ -244,7 +245,7 @@ Multiple arrays with different sizes can be joined by using: `SETTINGS enable_un
 
 ```sql
 SELECT s, arr, a, b
-FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
+FROM arrays_test ARRAY JOIN arr AS a, [['a','b'],['c']] AS b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 

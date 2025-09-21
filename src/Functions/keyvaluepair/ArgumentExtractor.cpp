@@ -31,7 +31,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
 
 ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(ColumnsWithTypeAndNameList arguments)
 {
-    static constexpr auto MAX_NUMBER_OF_ARGUMENTS = 4u;
+    static constexpr auto MAX_NUMBER_OF_ARGUMENTS = 5u;
 
     if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
     {
@@ -65,11 +65,24 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(ColumnsWithTypeAnd
 
     auto quoting_character = extractSingleCharacter(popFrontAndGet(arguments), "quoting_character");
 
+    if (arguments.empty())
+    {
+        return ParsedArguments {
+            data_column,
+            key_value_delimiter,
+            pair_delimiters,
+            quoting_character
+        };
+    }
+
+    auto unexpected_quoting_character_strategy = extractStringColumn(popFrontAndGet(arguments), "unexpected_quoting_character_strategy");
+
     return ParsedArguments {
         data_column,
         key_value_delimiter,
         pair_delimiters,
         quoting_character,
+        unexpected_quoting_character_strategy
     };
 }
 

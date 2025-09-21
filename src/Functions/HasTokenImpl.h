@@ -73,36 +73,41 @@ struct HasTokenImpl
         /// We will search for the next occurrence in all rows at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
-            /// The found substring is a token
-            if ((pos == begin || isTokenSeparator(pos[-1]))
-                && (pos + pattern_size == end || isTokenSeparator(pos[pattern_size])))
+            /// Let's determine which index it refers to.
+            while (begin + haystack_offsets[i] <= pos)
             {
-                /// Let's determine which index it refers to.
-                while (begin + haystack_offsets[i] <= pos)
+                res[i] = negate;
+                ++i;
+            }
+
+            /// We check that the token does not pass through the boundaries of strings.
+            if (pos + pattern_size <= begin + haystack_offsets[i])
+            {
+                /// Now check that this is a token
+                if ((pos == begin + haystack_offsets[i - 1] || isTokenSeparator(pos[-1]))
+                    && (pos + pattern_size == begin + haystack_offsets[i] || isTokenSeparator(pos[pattern_size])))
                 {
-                    res[i] = negate;
+                    res[i] = !negate;
+                    pos = begin + haystack_offsets[i];
                     ++i;
                 }
-
-                /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + pattern.size() < begin + haystack_offsets[i])
-                    res[i] = !negate;
                 else
-                    res[i] = negate;
-
-                pos = begin + haystack_offsets[i];
-                ++i;
+                {
+                    /// Not a token. Jump over it.
+                    pos += pattern_size;
+                }
             }
             else
             {
-                /// Not a token. Jump over it.
-                pos += pattern_size;
+                res[i] = negate;
+                pos = begin + haystack_offsets[i];
+                ++i;
             }
         }
 
         /// Tail, in which there can be no substring.
-        if (i < res.size())
-            memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
+        if (i < input_rows_count)
+            memset(&res[i], negate, (input_rows_count - i) * sizeof(res[0]));
     }
 
     template <typename... Args>

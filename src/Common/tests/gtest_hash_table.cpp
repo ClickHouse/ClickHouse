@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <numeric>
+#include <ranges>
 
 #include <Interpreters/AggregationCommon.h>
 
@@ -428,3 +429,65 @@ INSTANTIATE_TEST_SUITE_P(
         getVectorWithNumbersUpToN(10000),
         getVectorWithNumbersUpToN(100000),
         getVectorWithNumbersUpToN(1000000)));
+
+
+class TwoLevelHashSetMergingFixture : public ::testing::TestWithParam<std::tuple<size_t, bool, bool>>
+{
+};
+
+
+TEST_P(TwoLevelHashSetMergingFixture, MergeWithSingleLevelSet)
+{
+    using Key = UInt64;
+
+    const auto [set_size, two_level_has_zero, single_level_has_zero] = GetParam();
+
+    TwoLevelHashSet<Key, HashCRC32<Key>> two_level;
+    for (size_t elem = 1; elem < set_size + 1; ++elem)
+        two_level.insert(elem);
+    if (two_level_has_zero)
+        two_level.insert(0);
+
+    HashSet<Key, HashCRC32<Key>> single_level;
+    for (size_t elem = 42; elem < set_size + 42; ++elem)
+        single_level.insert(elem);
+    if (single_level_has_zero)
+        single_level.insert(0);
+
+    two_level.merge(single_level);
+
+    ASSERT_EQ(two_level.size(), 2 * set_size + ((two_level_has_zero || single_level_has_zero) ? 1 : 0));
+
+    if (two_level_has_zero || single_level_has_zero)
+        ASSERT_NE(two_level.find(0), nullptr);
+    else
+        ASSERT_EQ(two_level.find(0), nullptr);
+
+    for (size_t elem = 1; elem < set_size + 1; ++elem)
+        ASSERT_NE(two_level.find(elem), nullptr);
+
+    for (size_t elem = 42; elem < set_size + 42; ++elem)
+        ASSERT_NE(two_level.find(elem), nullptr);
+}
+
+
+INSTANTIATE_TEST_SUITE_P(
+    TwoLevelHashSetMergingTests,
+    TwoLevelHashSetMergingFixture,
+    ::testing::Values(
+        std::make_tuple(0, false, false),
+        std::make_tuple(0, false, true),
+        std::make_tuple(0, true, false),
+        std::make_tuple(0, true, true),
+
+        std::make_tuple(1, false, false),
+        std::make_tuple(1, false, true),
+        std::make_tuple(1, true, false),
+        std::make_tuple(1, true, true),
+
+        std::make_tuple(10, false, false),
+        std::make_tuple(10, false, true),
+        std::make_tuple(10, true, false),
+        std::make_tuple(10, true, true)
+    )
+);
