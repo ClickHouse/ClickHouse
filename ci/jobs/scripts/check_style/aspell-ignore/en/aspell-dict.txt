@@ -165,7 +165,9 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ArrowCompression
+ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -256,6 +258,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked
@@ -1390,6 +1393,7 @@ Jemalloc
 jeprof
 Jepsen
 JetBrains
+JetStream
 Jitter
 joda
 Joda
@@ -2026,6 +2030,7 @@ OKLCH
 OLAP
 OLTP
 omclickhouse
+oneof
 onstraints
 ontime
 OnTime
@@ -2996,6 +3001,7 @@ TimescaleDB's
 timeseries
 timeSeries
 TimeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3010,6 +3016,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
 timeSeriesSelector
 timeSeriesTags
 timeSlot
