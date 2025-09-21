@@ -165,6 +165,14 @@ public:
 
 protected:
     bool canBeRemovedImpl(CSN oldest_snapshot_version);
+    /**
+    * @brief Verify information from metadata
+    *
+    * @param logger For trace logging
+    * @return true Version info is updated, need to re-store metadata in storage
+    * @return false Version info is not updated.
+    */
+    bool verifyMetadata(LoggerPtr logger);
 
     /**
     * @brief Write the metadata to a buffer
