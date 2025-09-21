@@ -2401,7 +2401,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     std::vector< std::unordered_set<size_t> > index_results;
     size_t i = 0;
     index_results.resize(10);
-    for (auto & s : skip_index_results)
+    for (const auto & s : skip_index_results)
     {
         for (auto r : s)
         {
