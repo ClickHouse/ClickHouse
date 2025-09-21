@@ -101,9 +101,8 @@ private:
     std::optional<ThreadFromGlobalPool> server_thread;
     bool initialized = false;
     std::atomic<bool> stopped = false;
-
-    virtual std::unique_ptr<Session> createSession(const arrow::flight::ServerCallContext & context);
 };
+
 }
 
 #endif

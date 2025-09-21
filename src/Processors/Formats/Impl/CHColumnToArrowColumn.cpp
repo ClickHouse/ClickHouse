@@ -1152,6 +1152,10 @@ namespace DB
         res = arrow::Table::Make(arrow_schema, columns);
     }
 
+    arrow::Schema CHColumnToArrowColumn::getArrowSchema() const
+    {
+        return arrow::Schema{arrow_fields};
+    }
 }
 
 #endif

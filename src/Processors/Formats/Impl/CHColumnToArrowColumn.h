@@ -41,6 +41,8 @@ public:
         size_t columns_num,
         const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
 
+    arrow::Schema getArrowSchema() const;
+
 private:
     ColumnsWithTypeAndName header_columns;
     std::vector<std::shared_ptr<arrow::Field>> arrow_fields;

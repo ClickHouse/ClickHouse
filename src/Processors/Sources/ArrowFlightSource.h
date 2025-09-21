@@ -15,13 +15,8 @@ class ArrowFlightConnection;
 class ArrowFlightSource : public ISource
 {
 public:
-    ArrowFlightSource(
-        std::shared_ptr<ArrowFlightConnection> connection_,
-        const std::string & query_,
-        const Block & sample_block_,
-        const std::vector<std::string> & column_names_,
-        UInt64 max_block_size_);
-
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const std::string & dataset_name_, const Block & sample_block_);
+    ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_);
     ~ArrowFlightSource() override = default;
 
     String getName() const override { return "ArrowFlightSource"; }
@@ -30,15 +25,12 @@ protected:
     Chunk generate() override;
 
 private:
+    void initializeStream(const String & dataset_name_);
+
     std::shared_ptr<ArrowFlightConnection> connection;
-    std::string query;
-
     Block sample_block;
-    std::unique_ptr<arrow::flight::FlightStreamReader> stream_reader;
+    std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;
-    std::vector<std::string> column_names;
-
-    void initializeStream();
 };
 
 }
