@@ -2403,6 +2403,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     size_t joins_count = 0;
     bool is_full_join = false;
     bool is_global_join = false;
+    int first_left_or_inner_join_pos = -1;
+    int first_right_join_pos = -1;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -2427,15 +2429,34 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
 
+            // if right join position is after left/inner join then we can't parallelize the left/inner join
+            if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
+                first_left_or_inner_join_pos = i;
+            if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
+                first_right_join_pos = i;
+
             continue;
         }
 
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
 
-    /// disable parallel replicas for n-way join with FULL JOIN or GLOBAL JOINS
-    if (joins_count > 1 && (is_full_join || is_global_join))
+    auto should_disable_parallel_replicas = [&]() -> bool
+    {
+        /// n-way join like LEFT/INNER ... RIGHT ...
+        if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
+            return true;
+
+        /// for n-way join with FULL JOIN or GLOBAL JOINS
+        if (joins_count > 1 && (is_full_join || is_global_join))
+            return true;
+
+        return false;
+    };
+
+    if (should_disable_parallel_replicas())
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
 
     // in case of n-way JOINs the table expression stack contains several join nodes
     // so, we need to find right parent node for a table expression to pass into buildQueryPlanForTableExpression()
