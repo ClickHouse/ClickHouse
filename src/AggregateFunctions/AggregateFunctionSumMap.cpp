@@ -759,13 +759,102 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     // these functions used to be called *Map, with now these names occupied by
     // Map combinator, which redirects calls here if was called with
     // array or tuple arguments.
-    factory.registerFunction("sumMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    FunctionDocumentation::Description sumMap_description = R"(
+Totals one or more `value` arrays according to the keys specified in the `key` array. Returns a tuple of arrays: keys in sorted order, followed by values summed for the corresponding keys without overflow.
+
+:::note
+- Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
+- The number of elements in `key` and all `value` arrays must be the same for each row that is totaled.
+:::
+    )";
+    FunctionDocumentation::Syntax sumMap_syntax = R"(
+sumMap(key, value1 [, value2, ...])
+sumMap(Tuple(key, value1 [, value2, ...]))
+    )";
+    FunctionDocumentation::Arguments sumMap_arguments = {
+        {"key", "Array of keys.", {"Array"}},
+        {"value1, value2, ...", "Arrays of values to sum for each key.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue sumMap_returned_value = {"Returns a tuple of arrays: the first array contains keys in sorted order, followed by arrays containing values summed for the corresponding keys.", {"Tuple"}};
+    FunctionDocumentation::Examples sumMap_examples = {
+    {
+        "Basic usage with Nested type",
+        R"(
+CREATE TABLE sum_map(
+    date Date,
+    timeslot DateTime,
+    statusMap Nested(
+        status UInt16,
+        requests UInt64
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
+) ENGINE = Memory;
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
+FROM sum_map
+GROUP BY timeslot;
+        )",
+        R"(
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
+        )"
+    },
+    {
+        "Multiple value arrays example",
+        R"(
+CREATE TABLE multi_metrics(
+    date Date,
+    browser_metrics Nested(
+        browser String,
+        impressions UInt32,
+        clicks UInt32
+    )
+)
+ENGINE = Memory;
+
+INSERT INTO multi_metrics VALUES
+    ('2000-01-01', ['Firefox', 'Chrome'], [100, 200], [10, 25]),
+    ('2000-01-01', ['Chrome', 'Safari'], [150, 50], [20, 5]),
+    ('2000-01-01', ['Firefox', 'Edge'], [80, 40], [8, 4]);
+
+SELECT
+    sumMap(browser_metrics.browser, browser_metrics.impressions, browser_metrics.clicks) AS result
+FROM multi_metrics;
+        )",
+        R"(
+┌─result────────────────────────────────────────────────────────────────────────┐
+│ (['Chrome', 'Edge', 'Firefox', 'Safari'], [350, 40, 180, 50], [45, 4, 18, 5]) │
+└───────────────────────────────────────────────────────────────────────────────┘
+-- In this example:
+-- The result tuple contains three arrays
+-- First array: keys (browser names) in sorted order
+-- Second array: total impressions for each browser
+-- Third array: total clicks for each browser
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn sumMap_introduced_in = {1, 1};
+    FunctionDocumentation::Category sumMap_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation sumMap_documentation = {sumMap_description, sumMap_syntax, sumMap_arguments, {}, sumMap_returned_value, sumMap_examples, sumMap_introduced_in, sumMap_category};
+
+    factory.registerFunction("sumMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}, sumMap_documentation});
 
     factory.registerFunction("minMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
@@ -785,13 +874,87 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
-    factory.registerFunction("sumMapWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    FunctionDocumentation::Description sumMapWithOverflow_description = R"(
+Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
+It differs from the [`sumMap`](/sql-reference/aggregate-functions/reference/summap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+
+:::note
+- Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
+- The number of elements in `key` and `value` must be the same for each row that is totaled.
+:::
+    )";
+    FunctionDocumentation::Syntax sumMapWithOverflow_syntax = R"(
+sumMapWithOverflow(key, value)
+sumMapWithOverflow(Tuple(key, value))
+    )";
+    FunctionDocumentation::Arguments sumMapWithOverflow_arguments = {
+        {"key", "Array of keys.", {"Array"}},
+        {"value", "Array of values.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue sumMapWithOverflow_returned_value = {"Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.", {"Tuple(Array, Array)"}};
+    FunctionDocumentation::Examples sumMapWithOverflow_examples = {
+    {
+        "Array syntax demonstrating overflow behavior",
+        R"(
+CREATE TABLE sum_map(
+    date Date,
+    timeslot DateTime,
+    statusMap Nested(
+        status UInt8,
+        requests UInt8
+    ),
+    statusMapTuple Tuple(Array(Int8), Array(Int8))
+) ENGINE = Memory;
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    toTypeName(sumMap(statusMap.status, statusMap.requests)),
+    toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))
+FROM sum_map
+GROUP BY timeslot;
+        )",
+        R"(
+┌────────────timeslot─┬─toTypeName(sumMap⋯usMap.requests))─┬─toTypeName(sumMa⋯usMap.requests))─┐
+│ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
+│ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
+└─────────────────────┴────────────────────────────────────┴───────────────────────────────────┘
+        )"
+    },
+    {
+        "Tuple syntax with same result",
+        R"(
+SELECT
+    timeslot,
+    toTypeName(sumMap(statusMapTuple)),
+    toTypeName(sumMapWithOverflow(statusMapTuple))
+FROM sum_map
+GROUP BY timeslot;
+        )",
+        R"(
+┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumM⋯tatusMapTuple))─┐
+│ 2000-01-01 00:01:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
+│ 2000-01-01 00:00:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
+└─────────────────────┴────────────────────────────────────┴─────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn sumMapWithOverflow_introduced_in = {20, 1};
+    FunctionDocumentation::Category sumMapWithOverflow_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation sumMapWithOverflow_documentation = {sumMapWithOverflow_description, sumMapWithOverflow_syntax, sumMapWithOverflow_arguments, {}, sumMapWithOverflow_returned_value, sumMapWithOverflow_examples, sumMapWithOverflow_introduced_in, sumMapWithOverflow_category};
+
+    factory.registerFunction("sumMapWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}, sumMapWithOverflow_documentation});
 
     factory.registerFunction("sumMapFiltered", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
