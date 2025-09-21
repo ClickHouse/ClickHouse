@@ -304,7 +304,7 @@ private:
     }
 
     using CaseInsensitiveComparator = std::variant<
-        std::unique_ptr<ASCIICaseInsensitiveStringSearcher>, 
+        std::unique_ptr<ASCIICaseInsensitiveStringSearcher>,
         std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>;
 
     template <typename NeedleSource>
@@ -314,7 +314,7 @@ private:
         {
             auto needle = needle_source.getWhole();
             return std::make_unique<ASCIICaseInsensitiveStringSearcher>(needle.data, needle.size);
-        } 
+        }
         else if constexpr (std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
         {
             auto needle = needle_source.getWhole();
@@ -322,7 +322,7 @@ private:
         }
         return std::unique_ptr<UTF8CaseInsensitiveStringSearcher>{};
     }
- 
+
     template <typename HaystackSource, typename NeedleSource>
     requires is_case_insensitive
     static void executeCaseInsensitive(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
@@ -342,9 +342,9 @@ private:
             else
             {
                 /// Constant needle comparison
-                if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> 
-                        || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>> 
-                        || std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+                if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
                 {
                     if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
                         res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
