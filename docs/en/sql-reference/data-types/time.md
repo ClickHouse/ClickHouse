@@ -10,7 +10,8 @@ doc_type: 'reference'
 
 # Time
 
-Data type `Time` represents a time with hour, minute, and second components. It is independent of any calendar date and is suitable for values where only the time-of-day component is needed.
+Data type `Time` represents a time with hour, minute, and second components.
+It is independent of any calendar date and is suitable for values which do not need day, months and year components.
 
 Syntax:
 
@@ -22,26 +23,29 @@ Text representation range: [-999:59:59, 999:59:59].
 
 Resolution: 1 second.
 
-## Performance {#performance}
-
-Operations on `Time` are comparable to `DateTime` because both are represented as integers internally. Choose the type based on semantics and storage size, not raw speed.
-
-Storage size:
-- `Time`: 4 bytes per value (signed 32-bit integer)
-- `DateTime`: 4 bytes per value
-- `Date`: 2 bytes per value
-
-On-disk size after compression depends on data distribution. Narrower types often compress better, but the actual difference is workload- and data-dependent.
-
 ## Implementation details {#implementation-details}
 
-- Representation: `Time` stores a signed 32-bit integer that encodes seconds since 00:00:00 (no date component is stored).
-- Normalization: When parsing text, components are normalized rather than strictly validated. For example, `25:70:70` is interpreted as `26:11:10`.
-- Negative values: A leading minus sign is supported and preserved on output. Negative values typically arise from arithmetic; they do not represent a calendar concept of "negative time-of-day". When parsing from text, negative inputs are clamped to `00:00:00`; numeric inputs preserve the sign.
-- Display saturation: When formatting values for output, hours above 999 are saturated to `999:59:59`.
-- Time zones: `Time` does not support time zones. The value is interpreted without any regional context. Specifying a time zone for `Time` (as a type parameter or during value creation) throws an error.
+**Representation and Performance**.
+Data type `Time` internally stores a signed 32-bit integer that encodes the seconds since 00:00:00.
+Values of type `Time` and `DateTime` have the same byte size and thus comparable performance.
 
-Note: Attempting to apply or change a time zone on `Time` columns is not supported and results in an error. `Time` values are not silently reinterpreted under different time zones.
+**Normalization**.
+When parsing strings to `Time`, the time components are normalized and not validated.
+For example, `25:70:70` is interpreted as `26:11:10`.
+
+**Negative values**
+Leading minus signs are supported and preserved.
+Negative values typically arise from arithmetic operations on `Time` values.
+When parsing text to `Time`, negative inputs are clamped to `00:00:00`; numeric inputs preserve the sign.
+
+**Display saturation**.
+When formatting values for output, hours above 999 are saturated to `999:59:59`.
+
+**Time zones**.
+`Time` does not support time zones, i.e. `Time` value are interpreted without regional context.
+Specifying a time zone for `Time` as a type parameter or during value creation throws an error.
+Likewise, attempts to apply or change the time zone on `Time` columns is not supported and results in an error.
+`Time` values are not silently reinterpreted under different time zones.
 
 ## Examples {#examples}
 
