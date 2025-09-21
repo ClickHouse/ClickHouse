@@ -52,11 +52,6 @@ public:
 
     size_t currentConnections() const override { return 0; } // TODO
 
-    arrow::Status ListFlights(
-        const arrow::flight::ServerCallContext &,
-        const arrow::flight::Criteria *,
-        std::unique_ptr<arrow::flight::FlightListing> * listings) override;
-
     arrow::Status GetFlightInfo(
         const arrow::flight::ServerCallContext & context,
         const arrow::flight::FlightDescriptor & request,
@@ -82,28 +77,27 @@ public:
         std::unique_ptr<arrow::flight::FlightMessageReader> reader,
         std::unique_ptr<arrow::flight::FlightMetadataWriter> writer) override;
 
-    arrow::Status DoExchange(
-        const arrow::flight::ServerCallContext & context,
-        std::unique_ptr<arrow::flight::FlightMessageReader> reader,
-        std::unique_ptr<arrow::flight::FlightMessageWriter> writer) override;
-
     arrow::Status DoAction(
         const arrow::flight::ServerCallContext & context,
         const arrow::flight::Action & action,
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
-
-    arrow::Status ListActions(const arrow::flight::ServerCallContext & context, std::vector<arrow::flight::ActionType> * actions) override;
 
 private:
     IServer & server;
     LoggerPtr log;
     const Poco::Net::SocketAddress address_to_listen;
     std::optional<ThreadFromGlobalPool> server_thread;
+    std::optional<ThreadFromGlobalPool> cleanup_thread;
     bool initialized = false;
     std::atomic<bool> stopped = false;
 
-    virtual std::unique_ptr<Session> createSession(const arrow::flight::ServerCallContext & context);
+    const UInt64 tickets_lifetime_seconds;
+    const bool cancel_ticket_after_do_get;
+
+    class CallsData;
+    std::unique_ptr<CallsData> calls_data;
 };
+
 }
 
 #endif

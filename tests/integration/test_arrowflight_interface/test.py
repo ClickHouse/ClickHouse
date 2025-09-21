@@ -504,9 +504,12 @@ def test_table_function():
 
     node.query("INSERT INTO mytable VALUES (1, 'a'), (2, 'b')")
 
-    # FIXME
-    assert "Failed to get table schema" in node.query_and_get_error(
-        "SELECT * FROM arrowFlight(flight1, dataset = 'mytable')"
-    )
+    assert node.query(
+          "SELECT * FROM arrowFlight(flight1, dataset = 'mytable') ORDER BY id") == TSV([[1, 'a'], [2, 'b']])
+    
+    node.query("INSERT INTO FUNCTION arrowFlight(flight1, dataset = 'mytable') VALUES (3, 'c')")
+
+    assert node.query(
+          "SELECT * FROM arrowFlight(flight1, dataset = 'mytable') ORDER BY id") == TSV([[1, 'a'], [2, 'b'], [3, 'c']])
 
     node.query("DROP TABLE mytable")

@@ -226,14 +226,13 @@ public:
         chunks.emplace_back(std::move(chunk));
         converter.chChunkToArrowTable(table, chunks, getHeader().columns());
 
-        auto maybe_combined_table = table->CombineChunks();
-        if (!maybe_combined_table.ok())
+        auto reader_res = arrow::RecordBatchReader::MakeFromIterator(
+            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, converter.getArrowSchema());
+        if (!reader_res.ok())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot combine chunks: {}", maybe_combined_table.status().ToString());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert chunk to arrow stream: {}", reader_res.status().ToString());
         }
-
-        auto combined_table = std::move(maybe_combined_table).ValueOrDie();
-        arrow::TableBatchReader reader(combined_table);
+        auto reader = reader_res.ValueOrDie();
 
         std::shared_ptr<arrow::RecordBatch> batch;
         bool first_batch = true;
@@ -241,7 +240,7 @@ public:
 
         while (true)
         {
-            auto status = reader.ReadNext(&batch);
+            auto status = reader->ReadNext(&batch);
             if (!status.ok())
             {
                 throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to read record batch: {}", status.ToString());
