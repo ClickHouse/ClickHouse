@@ -499,7 +499,7 @@ void updateInputsAfterChildAppliesRequest(
             else
                 new_function_node = input_node;
 
-            // either replace input column or function instance with the new function node (TODO: check order)
+            // either replace input column or function instance with the new function node
             if (column_output_names.find(node_to_update) != column_output_names.end())
             {
                 if (new_dag.tryFindInOutputs(column_output_names[node_to_update]))
@@ -660,43 +660,86 @@ bool tryExecuteRequestOnStepOrParents(
 }
 
 /// entry function
-PushdownRequestsStack
-processNodeRecursively(QueryPlan::Node * node, ColumnCandidatesStack column_candidates, NodeToParentsMap & direct_parent_nodes_map)
+void
+processNodeDFS(QueryPlan::Node * node, ColumnCandidatesStack column_candidates, NodeToParentsMap & direct_parent_nodes_map)
 {
-    PushdownRequestsStack requests;
+    std::unordered_map<QueryPlan::Node *, PushdownRequestsStack> all_node_requests;
+    std::vector<QueryPlan::Node *> stack;
+    std::unordered_set<QueryPlan::Node *> visited;
+    std::vector<QueryPlan::Node *> processing_order;
 
-    // Phase 1: Analyze current node to update column candidates
-    FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
-    ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    stack.push_back(node);
 
-    if (filter_step || expression_step)
-        analyzeFilterOrExpressionStep(node, column_candidates);
-    else
-        analyzeNonExpressionStep(node, column_candidates);
-
-    // Phase 2: Create pushdown requests for current node
-    PushdownRequestsStack local_requests = createPushdownRequestsForColumnCandidates(node, column_candidates);
-    requests.insert(requests.end(), local_requests.begin(), local_requests.end());
-
-    // Process parents before execution
-    const std::vector<QueryPlan::Node *> & parent_nodes = direct_parent_nodes_map[node];
-    std::unordered_map<QueryPlan::Node *, PushdownRequestsStack> parent_to_requests;
-    for (QueryPlan::Node * parent_node : parent_nodes)
-        parent_to_requests[parent_node] = processNodeRecursively(parent_node, column_candidates, direct_parent_nodes_map);
-
-    // Aggregate parent requests
-    PushdownRequestsStack parents_requests = aggregateParentRequests(parent_to_requests);
-    requests.insert(requests.end(), parents_requests.begin(), parents_requests.end());
-
-    // Phase 3: Execute pushdown requests
-    for (const PushdownRequestPtr & request : requests)
+    while (!stack.empty())
     {
-        const ColumnCandidatePtr & column_candidate = request->input_column_candidate;
-        if (column_candidate && column_candidate->max_pushdown_point == node)
-            tryExecuteRequestOnStepOrParents(node, request, direct_parent_nodes_map);
+        QueryPlan::Node * current_node = stack.back();
+
+        if (visited.contains(current_node))
+        {
+            stack.pop_back();
+            continue;
+        }
+
+        // Check if all parents have been processed
+        bool all_parents_processed = true;
+        const std::vector<QueryPlan::Node *> & parent_nodes = direct_parent_nodes_map[current_node];
+        for (QueryPlan::Node * parent_node : parent_nodes)
+        {
+            if (!visited.contains(parent_node))
+            {
+                all_parents_processed = false;
+                stack.push_back(parent_node);
+            }
+        }
+
+        if (!all_parents_processed)
+            continue;
+
+        // Process current node
+        visited.insert(current_node);
+        processing_order.push_back(current_node);
+        stack.pop_back();
+
+        // Phase 1: Analyze current node to update column candidates
+        FilterStep * filter_step = typeid_cast<FilterStep *>(current_node->step.get());
+        ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(current_node->step.get());
+
+        if (filter_step || expression_step)
+            analyzeFilterOrExpressionStep(current_node, column_candidates);
+        else
+            analyzeNonExpressionStep(current_node, column_candidates);
+
+        // Phase 2: Create pushdown requests for current node
+        PushdownRequestsStack local_requests = createPushdownRequestsForColumnCandidates(current_node, column_candidates);
+
+        // Aggregate parent requests
+        std::unordered_map<QueryPlan::Node *, PushdownRequestsStack> parent_to_requests;
+        for (QueryPlan::Node * parent_node : parent_nodes)
+            parent_to_requests[parent_node] = all_node_requests[parent_node];
+
+        PushdownRequestsStack parents_requests = aggregateParentRequests(parent_to_requests);
+
+        // Combine local and parent requests
+        PushdownRequestsStack combined_requests;
+        combined_requests.insert(combined_requests.end(), local_requests.begin(), local_requests.end());
+        combined_requests.insert(combined_requests.end(), parents_requests.begin(), parents_requests.end());
+
+        all_node_requests[current_node] = combined_requests;
     }
 
-    return requests;
+    // Phase 3: Execute pushdown requests in reverse processing order
+    for (auto it = processing_order.rbegin(); it != processing_order.rend(); ++it)
+    {
+        QueryPlan::Node * current_node = *it;
+        const PushdownRequestsStack & requests = all_node_requests[current_node];
+
+        for (const PushdownRequestPtr & request : requests)
+        {
+            const ColumnCandidatePtr & column_candidate = request->input_column_candidate;
+            if (column_candidate && column_candidate->max_pushdown_point == current_node)
+                tryExecuteRequestOnStepOrParents(current_node, request, direct_parent_nodes_map);
+        }
+    }
 }
 
 QueryPlan::Node * findSourceNode(QueryPlan::Node * root_node)
@@ -731,7 +774,7 @@ void pushDownVolumeReducingFunctions(QueryPlan::Node * root_node, const QueryPla
         return;
 
     NodeToParentsMap direct_parent_nodes_map = buildDirectParentNodesMap(root_node);
-    processNodeRecursively(node, {}, direct_parent_nodes_map);
+    processNodeDFS(node, {}, direct_parent_nodes_map);
 }
 
 }
