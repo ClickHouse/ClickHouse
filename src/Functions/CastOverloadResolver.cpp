@@ -171,7 +171,7 @@ REGISTER_FUNCTION(CastOverloadResolvers)
     FunctionDocumentation::Description CAST_description = R"(
 Converts a value to a specified data type.
 Unlike the reinterpret function, CAST tries to generate the same value in the target type.
-If that is not possible, an exception is raised.    
+If that is not possible, an exception is raised.
     )";
     FunctionDocumentation::Syntax CAST_syntax = R"(
 CAST(x, T)
