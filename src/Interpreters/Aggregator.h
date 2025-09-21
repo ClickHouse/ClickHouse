@@ -436,6 +436,13 @@ private:
         Method & method,
         TemporaryBlockStreamHolder & out) const;
 
+    /// Parameters for parallel merge workers for single level.
+    struct ParallelMergeWorker
+    {
+        UInt32 worker_id;
+        UInt32 total_worker;
+    };
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -443,18 +450,11 @@ private:
             Table & table_src,
             Arena * arena) const;
 
-    /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
         const;
-
-    /// Similar as above but specialized for parallel merge of FixedHashMap
-    /// Difference compared to above is not have `prefetch` parameter.
-    /// FixedHashMap does not need prefetch anyway.
-    template <typename Method, typename Table>
-    void mergeDataImplFixedMap(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], std::atomic<bool> & is_cancelled, UInt32 worker_id, UInt32 total_worker) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>

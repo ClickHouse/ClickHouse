@@ -1887,6 +1887,7 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
+    ParallelMergeWorker parallel_param{worker_id, total_worker};
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -1901,14 +1902,22 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                mergeDataImplFixedMap<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, is_cancelled, worker_id, total_worker);
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                     getDataVariant<Method>(current).data,
+                     res->aggregates_pool, true,
+                     false, /*prefetch*/
+                    is_cancelled, &parallel_param);
             }
             else
 #endif
             {
-                mergeDataImplFixedMap<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, is_cancelled, worker_id, total_worker);
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                     getDataVariant<Method>(current).data,
+                     res->aggregates_pool, false,
+                      false, /*prefetch*/
+                    is_cancelled, &parallel_param);
             }
         }
         else if (res->without_key)
@@ -2779,7 +2788,8 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch, std::atomic<bool> & is_cancelled) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
+    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
 {
     if (is_simple_count)
     {
@@ -2794,109 +2804,58 @@ void NO_INLINE Aggregator::mergeDataImpl(
                 getInlineCountState(dst) += getInlineCountState(src);
         };
 
+        if (parallel_worker)
+        {
+            if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+                std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+        }
+        else
+        {
+            if (prefetch)
+                table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+            else
+                table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+            table_src.clearAndShrink();
+        }
+        return;
+    }
+
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    PaddedPODArray<AggregateDataPtr> dst_places;
+    PaddedPODArray<AggregateDataPtr> src_places;
+
+    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    {
+        if (!inserted)
+        {
+            dst_places.push_back(dst);
+            src_places.push_back(src);
+        }
+        else
+        {
+            dst = src;
+        }
+
+        src = nullptr;
+    };
+
+    if (parallel_worker)
+    {
+        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+    }
+    else
+    {
         if (prefetch)
             table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
         else
             table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
         table_src.clearAndShrink();
-        return;
     }
-
-    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
-
-    PaddedPODArray<AggregateDataPtr> dst_places;
-    PaddedPODArray<AggregateDataPtr> src_places;
-
-    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
-    {
-        if (!inserted)
-        {
-            dst_places.push_back(dst);
-            src_places.push_back(src);
-        }
-        else
-        {
-            dst = src;
-        }
-
-        src = nullptr;
-    };
-
-    if (prefetch)
-        table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
-    else
-        table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-    table_src.clearAndShrink();
-
-#if USE_EMBEDDED_COMPILER
-    if (use_compiled_functions)
-    {
-        const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-        compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            if (!is_aggregate_function_compiled[i])
-                aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
-        }
-
-        return;
-    }
-#endif
-
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-    {
-        aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
-    }
-}
-
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeDataImplFixedMap(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
-    std::atomic<bool> & is_cancelled, const UInt32 worker_id, const UInt32 total_worker) const
-{
-    if (is_simple_count)
-    {
-        if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            mergeDataNullKeySimpleCount(table_dst, table_src);
-
-        auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
-        {
-            if (inserted)
-                getInlineCountState(dst) = getInlineCountState(src);
-            else
-                getInlineCountState(dst) += getInlineCountState(src);
-        };
-
-        table_src.mergeToViaIndexFilter(table_dst, std::move(merge), worker_id, total_worker);
-        return;
-    }
-
-    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
-
-    PaddedPODArray<AggregateDataPtr> dst_places;
-    PaddedPODArray<AggregateDataPtr> src_places;
-
-    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
-    {
-        if (!inserted)
-        {
-            dst_places.push_back(dst);
-            src_places.push_back(src);
-        }
-        else
-        {
-            dst = src;
-        }
-
-        src = nullptr;
-    };
-
-    table_src.mergeToViaIndexFilter(table_dst, std::move(merge), worker_id, total_worker);
 
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
@@ -2985,7 +2944,6 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
                 return;
             getInlineCountState(dst) += getInlineCountState(src);
         });
-
         table_src.clearAndShrink();
         return;
     }
@@ -3070,6 +3028,8 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         current_data = nullptr;
     }
 }
+
+
 template <typename Method>
 void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const

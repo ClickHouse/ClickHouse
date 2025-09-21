@@ -447,7 +447,6 @@ private:
         return Status::Ready;
     }
 
-
     IProcessor::Status preparePushToOutput()
     {
         if (single_level_chunks.empty())
