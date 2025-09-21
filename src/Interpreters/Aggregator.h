@@ -117,6 +117,8 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
+        bool enable_producing_buckets_out_of_order_in_aggregation = true;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -139,7 +141,8 @@ public:
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
-            const StatsCollectingParams & stats_collecting_params_);
+            const StatsCollectingParams & stats_collecting_params_,
+            bool enable_producing_buckets_out_of_order_in_aggregation_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -412,7 +415,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        const std::unique_ptr<AggregateDataPtr[]> & places,
+        AggregateDataPtr * places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,
