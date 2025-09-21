@@ -1756,7 +1756,6 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 
     chassert(!txn || storage.supportsTransactions());
     chassert(!txn || version->hasStoredMetadata());
-    // chassert(!txn || getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME));
 }
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
