@@ -2359,10 +2359,10 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     }
 
     /// We have mixed ANDs and ORs. Let us transform all to disjuncts
-    /// Don't transform primary key condition. Composite primary key 
+    /// Don't transform primary key condition. Composite primary key
     /// will typically be queried as -
     /// WHERE (lat > 50 and long > 55 AND lat < 51 AND long < 56) AND (name = 'A' OR type = 'B')
-    /// TODO : (primary key expresion) OR (skip index expression)
+    /// TODO : (primary key expression) OR (skip index expression)
 #if 0
     if (indexes->key_condition.getUsedColumns().size() > 0)
         indexes->key_condition.transformToDisjuncts();

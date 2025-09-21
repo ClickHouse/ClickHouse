@@ -4144,7 +4144,8 @@ std::vector<size_t> KeyCondition::getResolvedPositions() const
 
 std::pair<bool, bool> KeyCondition::checkIfOnlyConjunctsOrOnlyDisjuncts(const RPN & rpn)
 {
-    bool only_conjuncts = true, only_disjuncts = true;
+    bool only_conjuncts = true;
+    bool only_disjuncts = true;
     for (const RPNElement & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_AND)
@@ -4156,7 +4157,7 @@ std::pair<bool, bool> KeyCondition::checkIfOnlyConjunctsOrOnlyDisjuncts(const RP
     if (only_conjuncts && only_disjuncts) /// expression with neither AND / OR
         only_disjuncts = false;
 
-    return std::make_pair<>(only_conjuncts, only_disjuncts);
+    return std::make_pair(only_conjuncts, only_disjuncts);
 }
 
 }
