@@ -9,7 +9,7 @@ REGISTER_FUNCTION(FixedString)
 {
     /// toFixedString documentation
     FunctionDocumentation::Description toFixedString_description = R"(
-Converts a String argument to a FixedString(N) type (a string of fixed length N).
+Converts a [`String`](/sql-reference/data-types/string) argument to a [`FixedString(N)`](/sql-reference/data-types/fixedstring) type (a string of fixed length N).
 
 If the string has fewer bytes than N, it is padded with null bytes to the right.
 If the string has more bytes than N, an exception is thrown.
@@ -24,14 +24,12 @@ If the string has more bytes than N, an exception is thrown.
     {
         "Usage example",
         R"(
-SELECT
-    toFixedString('abc', 5),
-    toFixedString('abcdefghij', 8)
+SELECT toFixedString('foo', 8) AS s;
         )",
         R"(
-┌─toFixedString('abc', 5)─┬─toFixedString('abcdefghij', 8)─┐
-│ abc\0\0                 │ abcdefgh                       │
-└─────────────────────────┴────────────────────────────────┘
+┌─s─────────────┐
+│ foo\0\0\0\0\0 │
+└───────────────┘
         )"
     }
     };

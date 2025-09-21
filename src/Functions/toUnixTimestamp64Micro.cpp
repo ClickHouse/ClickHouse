@@ -8,18 +8,18 @@ REGISTER_FUNCTION(ToUnixTimestamp64Micro)
 {
     /// toUnixTimestamp64Micro documentation
     FunctionDocumentation::Description description_toUnixTimestamp64Micro = R"(
-Converts a `DateTime64` to a `Int64` value with fixed microsecond precision.
+Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/data-types/int-uint) value with fixed microsecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+The output value is relative to UTC, not to the timezone of the input value.
 :::
     )";
     FunctionDocumentation::Syntax syntax_toUnixTimestamp64Micro = "toUnixTimestamp64Micro(value)";
     FunctionDocumentation::Arguments arguments_toUnixTimestamp64Micro = {
         {"value", "DateTime64 value with any precision.", {"DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUnixTimestamp64Micro = {"Returns a unix timestamp in microseconds.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toUnixTimestamp64Micro = {"Returns a Unix timestamp in microseconds.", {"Int64"}};
     FunctionDocumentation::Examples examples_toUnixTimestamp64Micro = {
     {
         "Usage example",

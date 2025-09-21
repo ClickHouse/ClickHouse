@@ -148,7 +148,7 @@ REGISTER_FUNCTION(ToStringCutToZero)
 {
     /// toStringCutToZero documentation
     FunctionDocumentation::Description toStringCutToZero_description = R"(
-Accepts a String or FixedString argument and returns a String that contains a copy of the original string truncated at the first null byte.
+Accepts a [String](/sql-reference/data-types/string) or [FixedString](/sql-reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
 
 Null bytes (\\0) are considered as string terminators.
 This function is useful for processing C-style strings or binary data where null bytes mark the end of meaningful content.

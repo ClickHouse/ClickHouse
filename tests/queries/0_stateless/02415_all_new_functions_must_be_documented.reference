@@ -1,4 +1,3 @@
-CAST
 DATE
 JSONKey
 MACNumToString
@@ -14,9 +13,6 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-accurateCast
-accurateCastOrDefault
-accurateCastOrNull
 caseWithExpression
 catboostEvaluate
 countSubstrings
@@ -27,12 +23,6 @@ dotProduct
 evalMLMethod
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
-formatRow
-formatRowNoNewline
-fromUnixTimestamp64Micro
-fromUnixTimestamp64Milli
-fromUnixTimestamp64Nano
-fromUnixTimestamp64Second
 getTypeSerializationStreams
 globalIn
 globalInIgnoreSet
@@ -85,7 +75,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-parseDateTime
 parseDateTime64
 parseDateTime64InJodaSyntax
 parseDateTime64InJodaSyntaxOrNull
@@ -95,8 +84,6 @@ parseDateTime64OrZero
 parseDateTimeInJodaSyntax
 parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
-parseDateTimeOrNull
-parseDateTimeOrZero
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -150,7 +137,6 @@ reinterpretAsUInt8
 reinterpretAsUUID
 sigmoid
 svg
-toBool
 toDate32OrDefault
 toDateOrDefault
 toDateTime64OrDefault
@@ -159,7 +145,6 @@ toDecimal128OrDefault
 toDecimal256OrDefault
 toDecimal32OrDefault
 toDecimal64OrDefault
-toFixedString
 toFloat32OrDefault
 toFloat64OrDefault
 toISOWeek
@@ -169,18 +154,12 @@ toInt256OrDefault
 toInt32OrDefault
 toInt64OrDefault
 toInt8OrDefault
-toLowCardinality
-toStringCutToZero
 toUInt16OrDefault
 toUInt256OrDefault
 toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
 toUUIDOrDefault
-toUnixTimestamp64Micro
-toUnixTimestamp64Milli
-toUnixTimestamp64Nano
-toUnixTimestamp64Second
 transactionLatestSnapshot
 transactionOldestSnapshot
 validateNestedArraySizes

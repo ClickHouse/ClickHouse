@@ -8,18 +8,18 @@ REGISTER_FUNCTION(ToUnixTimestamp64Nano)
 {
     /// toUnixTimestamp64Nano documentation
     FunctionDocumentation::Description description_toUnixTimestamp64Nano = R"(
-Converts a `DateTime64` to a `Int64` value with fixed nanosecond precision.
+Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toint64) value with fixed nanosecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+The output value is relative to UTC, not to the timezone of the input value.
 :::
     )";
     FunctionDocumentation::Syntax syntax_toUnixTimestamp64Nano = "toUnixTimestamp64Nano(value)";
     FunctionDocumentation::Arguments arguments_toUnixTimestamp64Nano = {
         {"value", "DateTime64 value with any precision.", {"DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUnixTimestamp64Nano = {"Returns a unix timestamp in nanoseconds.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toUnixTimestamp64Nano = {"Returns a Unix timestamp in nanoseconds.", {"Int64"}};
     FunctionDocumentation::Examples examples_toUnixTimestamp64Nano = {
     {
         "Usage example",

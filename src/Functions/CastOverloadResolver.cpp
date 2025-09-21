@@ -169,12 +169,14 @@ REGISTER_FUNCTION(CastOverloadResolvers)
 
     /// CAST documentation
     FunctionDocumentation::Description CAST_description = R"(
-Converts a value to a specified data type. Unlike conversion functions, `CAST` allows conversions between a broader set of data type pairs, including potentially unsafe conversions that may result in data loss or exceptions.
-
-The cast can be performed to any target type.
+Converts a value to a specified data type.
+Unlike the reinterpret function, CAST tries to generate the same value in the target type.
+If that is not possible, an exception is raised.    
     )";
     FunctionDocumentation::Syntax CAST_syntax = R"(
-CAST(x, T) | CAST(x AS T) | x::T
+CAST(x, T)
+or CAST(x AS T)
+or x::T
     )";
     FunctionDocumentation::Arguments CAST_arguments = {
         {"x", "A value of any type.", {"Any"}},

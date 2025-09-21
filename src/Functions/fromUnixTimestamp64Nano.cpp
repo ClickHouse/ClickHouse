@@ -8,9 +8,13 @@ REGISTER_FUNCTION(FromUnixTimestamp64Nano)
 {
     /// fromUnixTimestamp64Nano documentation
     FunctionDocumentation::Description description_fromUnixTimestamp64Nano = R"(
-Converts a Unix timestamp in nanoseconds to a `DateTime64` value with nanosecond precision.
+Converts a Unix timestamp in nanoseconds to a [`DateTime64`](/sql-reference/data-types/datetime64) value with nanosecond precision.
 
 The input value is treated as a Unix timestamp with nanosecond precision (number of nanoseconds since 1970-01-01 00:00:00 UTC).
+
+:::note
+Please note that the input value is treated as a UTC timestamp, not the timezone of the input value.
+:::
     )";
     FunctionDocumentation::Syntax syntax_fromUnixTimestamp64Nano = "fromUnixTimestamp64Nano(value[, timezone])";
     FunctionDocumentation::Arguments arguments_fromUnixTimestamp64Nano = {

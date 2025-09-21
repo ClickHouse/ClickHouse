@@ -56,14 +56,14 @@ Converts the input argument to the [LowCardinality](../data-types/lowcardinality
 
 :::tip
 To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#cast) function.
-For example: `CAST(x as String)`.
+For example: `CAST(x AS String)`.
 :::
     )";
     FunctionDocumentation::Syntax toLowCardinality_syntax = "toLowCardinality(expr)";
     FunctionDocumentation::Arguments toLowCardinality_arguments = {
-        {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "Enum", "(U)Int*", "Float*", "Decimal"}}
+        {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue toLowCardinality_returned_value = {"Input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
+    FunctionDocumentation::ReturnedValue toLowCardinality_returned_value = {"Returns the input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
     FunctionDocumentation::Examples toLowCardinality_examples = {
     {
         "Usage example",
