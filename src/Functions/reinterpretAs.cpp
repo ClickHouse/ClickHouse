@@ -536,12 +536,12 @@ using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedStri
 REGISTER_FUNCTION(ReinterpretAs)
 {
     FunctionDocumentation::Description description_reinterpretAsUInt8 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt8.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt8.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
 )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt8 = "reinterpretAsUInt8(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt8 = {
-        {"x", "Value to byte reinterpret as UInt8.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt8.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt8 = {"Returns the reinterpreted value `x`.", {"UInt8"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt8 = {
@@ -549,15 +549,15 @@ Unlike [`CAST`](#cast), the function does not attempt to preserve the original v
         "Usage example",
         R"(
 SELECT
-    toInt8(257) AS x,
-    toTypeName(x),
-    reinterpretAsUInt8(x) AS res,
-    toTypeName(res)
+    toInt8(-1) AS val,
+    toTypeName(val),
+    reinterpretAsUInt8(val) AS res,
+    toTypeName(res);
         )",
         R"(
-┌─x─┬─toTypeName(x)─┬─res─┬─toTypeName(res)─┐
-│ 1 │ Int8          │   1 │ UInt8           │
-└───┴───────────────┴─────┴─────────────────┘
+┌─val─┬─toTypeName(val)─┬─res─┬─toTypeName(res)─┐
+│  -1 │ Int8            │ 255 │ UInt8           │
+└─────┴─────────────────┴─────┴─────────────────┘
         )"
     }
     };
@@ -568,12 +568,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt8>(documentation_reinterpretAsUInt8);
 
     FunctionDocumentation::Description description_reinterpretAsUInt16 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt16.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt16.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt16 = "reinterpretAsUInt16(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt16 = {
-        {"x", "Value to byte reinterpret as UInt16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt16 = {"Returns the reinterpreted value `x`.", {"UInt16"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt16 = {
@@ -600,12 +600,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt16>(documentation_reinterpretAsUInt16);
 
     FunctionDocumentation::Description description_reinterpretAsUInt32 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt32.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt32 = "reinterpretAsUInt32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt32 = {
-        {"x", "Value to byte reinterpret as UInt32.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt32.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt32 = {"Returns the reinterpreted value `x`.", {"UInt32"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt32 = {
@@ -632,12 +632,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt32>(documentation_reinterpretAsUInt32);
 
     FunctionDocumentation::Description description_reinterpretAsUInt64 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt64.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt64 = "reinterpretAsUInt64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt64 = {
-        {"x", "Value to byte reinterpret as UInt64.", {"Int*", "UInt*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt64.", {"Int*", "UInt*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt64 = {"Returns the reinterpreted value of `x`.", {"UInt64"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt64 = {
@@ -664,12 +664,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt64>(documentation_reinterpretAsUInt64);
 
     FunctionDocumentation::Description description_reinterpretAsUInt128 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt128.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt128.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt128 = "reinterpretAsUInt128(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt128 = {
-        {"x", "Value to byte reinterpret as UInt128.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt128.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt128 = {"Returns the reinterpreted value `x`.", {"UInt128"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt128 = {
@@ -696,12 +696,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt128>(documentation_reinterpretAsUInt128);
 
     FunctionDocumentation::Description description_reinterpretAsUInt256 = R"(
-Performs byte reinterpretation by treating the input value as a value of type UInt256.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type UInt256.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt256 = "reinterpretAsUInt256(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt256 = {
-        {"x", "Value to byte reinterpret as UInt256.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as UInt256.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt256 = {"Returns the reinterpreted value `x`.", {"UInt256"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt256 = {
@@ -728,12 +728,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsUInt256>(documentation_reinterpretAsUInt256);
 
     FunctionDocumentation::Description description_reinterpretAsInt8 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int8.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int8.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt8 = "reinterpretAsInt8(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt8 = {
-        {"x", "Value to byte reinterpret as Int8.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int8.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt8 = {"Returns the reinterpreted value `x`.", {"Int8"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt8 = {
@@ -760,12 +760,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt8>(documentation_reinterpretAsInt8);
 
     FunctionDocumentation::Description description_reinterpretAsInt16 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int16.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int16.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt16 = "reinterpretAsInt16(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt16 = {
-        {"x", "Value to byte reinterpret as Int16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt16 = {"Returns the reinterpreted value `x`.", {"Int16"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt16 = {
@@ -792,12 +792,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt16>(documentation_reinterpretAsInt16);
 
     FunctionDocumentation::Description description_reinterpretAsInt32 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int32.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt32 = "reinterpretAsInt32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt32 = {
-        {"x", "Value to byte reinterpret as Int32.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int32.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt32 = {"Returns the reinterpreted value `x`.", {"Int32"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt32 = {
@@ -824,12 +824,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt32>(documentation_reinterpretAsInt32);
 
     FunctionDocumentation::Description description_reinterpretAsInt64 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int64.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt64 = "reinterpretAsInt64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt64 = {
-        {"x", "Value to byte reinterpret as Int64.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int64.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt64 = {"Returns the reinterpreted value `x`.", {"Int64"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt64 = {
@@ -856,12 +856,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt64>(documentation_reinterpretAsInt64);
 
     FunctionDocumentation::Description description_reinterpretAsInt128 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int128.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int128.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt128 = "reinterpretAsInt128(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt128 = {
-        {"x", "Value to byte reinterpret as Int128.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int128.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt128 = {"Returns the reinterpreted value `x`.", {"Int128"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt128 = {
@@ -888,12 +888,12 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt128>(documentation_reinterpretAsInt128);
 
     FunctionDocumentation::Description description_reinterpretAsInt256 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Int256.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Int256.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt256 = "reinterpretAsInt256(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt256 = {
-        {"x", "Value to byte reinterpret as Int256.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+        {"x", "Value to reinterpret as Int256.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsInt256 = {"Returns the reinterpreted value `x`.", {"Int256"}};
     FunctionDocumentation::Examples examples_reinterpretAsInt256 = {
@@ -920,8 +920,8 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsInt256>(documentation_reinterpretAsInt256);
 
     FunctionDocumentation::Description description_reinterpretAsFloat32 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Float32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Float32.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFloat32 = "reinterpretAsFloat32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFloat32 = {
@@ -948,8 +948,8 @@ SELECT reinterpretAsUInt32(toFloat32(0.2)) AS x, reinterpretAsFloat32(x)
     factory.registerFunction<FunctionReinterpretAsFloat32>(documentation_reinterpretAsFloat32);
 
     FunctionDocumentation::Description description_reinterpretAsFloat64 = R"(
-Performs byte reinterpretation by treating the input value as a value of type Float64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Reinterprets the input value as a value of type Float64.
+Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFloat64 = "reinterpretAsFloat64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFloat64 = {
@@ -976,7 +976,7 @@ SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x)
     factory.registerFunction<FunctionReinterpretAsFloat64>(documentation_reinterpretAsFloat64);
 
     FunctionDocumentation::Description description_reinterpretAsDate = R"(
-Accepts a string, fixed string or numeric value and interprets the bytes as a number in host order (little endian). It returns a date from the interpreted number as the number of days since the beginning of the Unix Epoch.
+Reinterprets the input value as a Date value (assuming little endian order) which is the number of days since the beginning of the Unix epoch 1970-01-01
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsDate = "reinterpretAsDate(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsDate = {
@@ -1003,7 +1003,7 @@ SELECT reinterpretAsDate(65), reinterpretAsDate('A')
     factory.registerFunction<FunctionReinterpretAsDate>(documentation_reinterpretAsDate);
 
     FunctionDocumentation::Description description_reinterpretAsDateTime = R"(
-These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). Returns a date with time interpreted as the number of seconds since the beginning of the Unix Epoch.
+Reinterprets the input value as a DateTime value (assuming little endian order) which is the number of days since the beginning of the Unix epoch 1970-01-01
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsDateTime = "reinterpretAsDateTime(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsDateTime = {
@@ -1057,7 +1057,8 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
     factory.registerFunction<FunctionReinterpretAsUUID>(documentation_reinterpretAsUUID);
 
     FunctionDocumentation::Description description_reinterpretAsString = R"(
-This function accepts a number, date or date with time and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+Reinterprets the input value as a string (assuming little endian order).
+Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsString = "reinterpretAsString(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsString = {
@@ -1086,7 +1087,7 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsString>(documentation_reinterpretAsString);
 
     FunctionDocumentation::Description description_reinterpretAsFixedString = R"(
-This function accepts a number, date or date with time and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
+Reinterprets the input value as a fixed string (assuming little endian order). Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.    
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFixedString = "reinterpretAsFixedString(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFixedString = {
@@ -1115,7 +1116,7 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsFixedString>(documentation_reinterpretAsFixedString);
 
     FunctionDocumentation::Description description_reinterpret = R"(
-Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
+Uses the same source in-memory bytes sequence for the provided value `x` and reinterprets it to the destination type.
     )";
     FunctionDocumentation::Syntax syntax_reinterpret = "reinterpret(x, type)";
     FunctionDocumentation::Arguments arguments_reinterpret = {
