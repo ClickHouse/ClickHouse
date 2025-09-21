@@ -336,17 +336,14 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     FunctionDocumentation::Description description = "Classifies input text using a Naive Bayes model with ngrams and Laplace smoothing. "
                                                      "The model must be configured in ClickHouse before use.";
-    FunctionDocumentation::Syntax syntax = "naiveBayesClassifier(model_name, input_text);";
+    FunctionDocumentation::Syntax syntax = "naiveBayesClassifier(model_name, input_text)";
     FunctionDocumentation::Arguments arguments
-        = {{"model_name",
-            "Name of the pre-configured model. [String](../data-types/string.md) The model must be defined in ClickHouse's configuration "
-            "files."},
-           {"input_text",
-            "Text to classify. [String](../data-types/string.md) Input is processed exactly as provided (case/punctuation preserved)."}};
+        = {{"model_name", "Name of the pre-configured model. The model must be defined in ClickHouse's configuration files.", {"String"}},
+           {"input_text", "Text to classify. Input is processed exactly as provided (case/punctuation preserved).", {"String"}}};
     FunctionDocumentation::ReturnedValue returned_value
         = {"Predicted class ID as an unsigned integer. Class IDs correspond to categories defined during model construction.", {"UInt32"}};
     FunctionDocumentation::Examples examples
-        = {{"Example",
+        = {{"Classify the language of a text",
             "SELECT naiveBayesClassifier('language', 'How are you?');",
             R"(
           ┌─naiveBayesClassifier('language', 'How are you?')─┐
@@ -355,7 +352,7 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 
           Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
 
     FunctionDocumentation function_documentation
