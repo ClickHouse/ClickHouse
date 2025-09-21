@@ -1087,7 +1087,8 @@ SELECT
     factory.registerFunction<FunctionReinterpretAsString>(documentation_reinterpretAsString);
 
     FunctionDocumentation::Description description_reinterpretAsFixedString = R"(
-Reinterprets the input value as a fixed string (assuming little endian order). Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.    
+Reinterprets the input value as a fixed string (assuming little endian order).
+    Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFixedString = "reinterpretAsFixedString(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFixedString = {
