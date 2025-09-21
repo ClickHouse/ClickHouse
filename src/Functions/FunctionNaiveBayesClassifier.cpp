@@ -343,8 +343,8 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
             "files."},
            {"input_text",
             "Text to classify. [String](../data-types/string.md) Input is processed exactly as provided (case/punctuation preserved)."}};
-    FunctionDocumentation::ReturnedValue returned_value = "Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md) "
-                                                          "Class IDs correspond to categories defined during model construction.";
+    FunctionDocumentation::ReturnedValue returned_value
+        = {"Predicted class ID as an unsigned integer. Class IDs correspond to categories defined during model construction.", {"UInt32"}};
     FunctionDocumentation::Examples examples
         = {{"Example",
             "SELECT naiveBayesClassifier('language', 'How are you?');",
