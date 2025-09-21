@@ -93,14 +93,13 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
-    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<SharedData>())
         , thread_index(thread_index_)
         , num_threads(num_threads_)
-        , arena(arena_)
     {
     }
 
@@ -110,9 +109,9 @@ protected:
     Chunk generate() override
     {
         if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data,  thread_index, num_threads, shared_data->is_cancelled);
         else
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, arena, params->final, thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
 
         finished = true;
         data.reset();
@@ -129,7 +128,6 @@ private:
     SharedDataPtr shared_data;
     UInt32 thread_index;
     UInt32 num_threads;
-    Arena * arena;
 };
 
 /// Worker which merges buckets for two-level aggregation.
@@ -370,7 +368,6 @@ public:
         }
         else
         {
-            LOG_INFO(getLogger("Aggregator"), "jianfei mergeSingleLevel");
             mergeSingleLevel();
         }
     }
@@ -446,7 +443,6 @@ private:
                 return Status::NeedData;
         }
 
-        LOG_INFO(getLogger("Aggregator"), "jianfei prepareParallelizeSingleLevel, all inputs are finished");
         return Status::Ready;
     }
 
@@ -475,7 +471,6 @@ private:
     {
         auto & output = outputs.front();
 
-        /// NOTE(jianfei): in case of two level, we check the input ports and get the chunk from the input ports.
         for (auto & input : inputs)
         {
             if (!input.isFinished() && input.hasData())
@@ -607,14 +602,11 @@ private:
 
     void createSourcesForFixedHashMap()
     {
-        AggregatedDataVariantsPtr & first = data->at(0);
         processors.reserve(num_threads);
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions
-            Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads);
             processors.emplace_back(std::move(source));
         }
     }

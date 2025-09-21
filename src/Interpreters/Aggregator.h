@@ -446,9 +446,12 @@ private:
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
         const;
 
+    /// Similar as above but specialized for parallel merge of FixedHashMap
+    /// Difference compared to above is not have `prefetch` parameter.
+    /// FixedHashMap does not need prefetch anyway.
     template <typename Method, typename Table>
     void mergeDataImplFixedMap(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool _, std::atomic<bool> & is_cancelled, UInt32 filter_id, UInt32 step_size) const;
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], std::atomic<bool> & is_cancelled, UInt32 worker_id, UInt32 total_worker) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -473,6 +476,13 @@ private:
     template <typename Method>
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
+
+    template <typename Method>
+    void mergeSingleLevelDataImplFixedMap(
+        ManyAggregatedDataVariants & non_empty_data,
+        UInt32 filter_id,
+        UInt32 step_size,
+        std::atomic<bool> & is_cancelled) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
@@ -523,15 +533,6 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
-
-    template <typename Method>
-    void mergeSingleLevelDataImplFixedMap(
-        ManyAggregatedDataVariants & non_empty_data,
-        Arena * arena,
-        bool final,
-        UInt32 filter_id,
-        UInt32 step_size,
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
