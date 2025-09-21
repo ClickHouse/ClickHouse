@@ -858,7 +858,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 std::vector<MarkRanges> selected_ranges_by_index;
                 if (condition_type != KeyCondition::OnlyConjuncts)
                 {
-                    if (was_primary_index_useful)
+                    if (was_primary_index_useful || key_condition.getUsedColumns().size() > 0)
                     {
                         selected_ranges_by_index.push_back(ranges.ranges);
                     }
@@ -916,6 +916,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             vector_similarity_index_cache.get(), rejected_ranges,
                             log);
                     }
+                    else
+                        selected_ranges = ranges.ranges; /// TODO
                     stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (condition_type == KeyCondition::OnlyConjuncts)
                     {
@@ -2367,7 +2369,11 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
         indexes->condition_type = KeyCondition::Mixed;
     }
 
-    //. We have mixed ANDs and ORs. Let us transform all to disjuncts
+    /// We have mixed ANDs and ORs. Let us transform all to disjuncts
+    /// Don't transform primary key condition. Composite primary key 
+    /// will typically be queried as -
+    /// WHERE (lat > 50 and long > 55 AND lat < 51 AND long < 56) AND (name = 'A' OR type = 'B')
+    /// TODO : (primary key expresion) OR (skip index expression)
 #if 0
     if (indexes->key_condition.getUsedColumns().size() > 0)
         indexes->key_condition.transformToDisjuncts();

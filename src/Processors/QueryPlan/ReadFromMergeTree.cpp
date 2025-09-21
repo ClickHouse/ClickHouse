@@ -1778,7 +1778,9 @@ static void buildIndexes(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
     /// Just the skeleton of the predicate - no columns resolved.
-    indexes->rpn_template_condition = KeyCondition{filter_dag, context, {}, primary_key.expression};
+    NamesAndTypesList dummy;
+    /// dummy.emplace_back("dummy",DataTypeUInt32);
+    indexes->rpn_template_condition = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy))};
 
     if (metadata_snapshot->hasPartitionKey())
     {

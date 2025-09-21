@@ -1,5 +1,6 @@
-DROP TABLE IF EXISTS tab1;
+-- Tags: no-random-settings, no-random-merge-tree-settings
 
+DROP TABLE IF EXISTS tab1;
 
 CREATE TABLE tab1
 (
@@ -35,11 +36,6 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%';
 
--- 156
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (id = 5000 OR (v1 = 111 OR v2 = 111))
-) WHERE explain LIKE '%Granules%';
-
 -- 156 (No skip index on v3)
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
@@ -64,12 +60,35 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%';
 
--- Final 3
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (id = 5000 OR (v1 = 111 OR v2 = 111))
-) WHERE explain LIKE '%Granules%';
-
 -- 156 (No skip index on v3)
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
+) WHERE explain LIKE '%Granules%';
+
+DROP TABLE tab1;
+
+DROP TABLE IF EXISTS tab2;
+
+CREATE TABLE tab2
+(
+    x UInt32,
+    y UInt32,
+    v1 UInt32,
+    v2 UInt32,
+    v3 UInt32,
+    INDEX v1_index v1 TYPE minmax,
+    INDEX v2_index v2 TYPE minmax,
+)
+ENGINE = MergeTree
+ORDER BY (x,y)
+SETTINGS index_granularity = 100;
+
+INSERT INTO tab2 SELECT (number+1)/10, (number+1)%100, number+1, (10000 - number), (number * 5) FROM numbers(1000);
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1 SELECT x,y,v1,v2 FROM tab2 WHERE (x < 100 AND y < 20) AND (v1 = 111 OR v2 = 111)
+) WHERE explain LIKE '%Granules%';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1 SELECT x,y,v1,v2 FROM tab2 WHERE (x < 100 AND y < 20) OR v1 = 111 OR v2 = 111
 ) WHERE explain LIKE '%Granules%';
