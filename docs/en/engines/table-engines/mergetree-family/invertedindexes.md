@@ -233,9 +233,9 @@ SELECT count() FROM hackernews WHERE searchAny(comment, ['clickhouse', 'olap']);
 SELECT count() FROM hackernews WHERE searchAll(comment, ['clickhouse', 'olap']);
 ```
 
-## Implementation
+## Implementation {#implementation}
 
-### Index layout
+### Index layout {#index-layout}
 
 Each text index consists of two (abstract) data structures:
 - a dictionary which maps each token to a postings list, and
@@ -262,7 +262,7 @@ The posting lists for all tokens are laid out sequentially in the postings list 
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the cardinality of a posting list is less than 16 (configurable by parameter `max_cardinality_for_embedded_postings`), it is embedded into the dictionary.
 
-### Direct read
+### Direct read {#direct-read}
 
 Certain types of text queries can be sped up significantly by an optimization called "direct read".
 More specifically, if the SELECT query does _not_ project from the text column, the optimization can be applied.
@@ -275,9 +275,9 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-#### Supported functions
+#### Supported functions {#supported-functions}
 
-## Example: Hackernews dataset {#full-text-search-of-the-hacker-news-dataset}
+## Example: Hackernews dataset {#hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
 We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an text index:
