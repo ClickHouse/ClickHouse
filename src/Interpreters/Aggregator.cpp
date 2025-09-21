@@ -1871,15 +1871,12 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 template <typename Method>
 void Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
-    UInt32 filter_id,
-    UInt32 step_size,
+    const UInt32 worker_id,
+    const UInt32 total_worker,
     std::atomic<bool> & is_cancelled) const
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
-
-    // const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
-    //     && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -1895,20 +1892,20 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
             if (compiled_aggregate_functions_holder)
             {
                 mergeDataImplFixedMap<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, is_cancelled, filter_id, step_size);
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, is_cancelled, worker_id, total_worker);
             }
             else
 #endif
             {
                 mergeDataImplFixedMap<Method>(
-                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, is_cancelled, filter_id, step_size);
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, is_cancelled, worker_id, total_worker);
             }
         }
         else if (res->without_key)
         {
-            /// Workaround to ensure only thread 0 is working on these merges, because currently mergeDataNoMoreKeysImpl and
-            //  mergeDataOnlyExistingKeysImpl uses mergeToViaFind which does not support filter yet.
-            if (filter_id == 0)
+            /// Ensure only thread 0 is working on these merges, because currently mergeDataNoMoreKeysImpl and
+            //  mergeDataOnlyExistingKeysImpl uses mergeToViaFind which does not support filter based on worker id as mergeToViaIndexFilter.
+            if (worker_id == 0)
                 mergeDataNoMoreKeysImpl<Method>(
                     getDataVariant<Method>(*res).data,
                     res->without_key,
@@ -1917,12 +1914,11 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         }
         else
         {
-            if (filter_id == 0)
+            if (worker_id == 0)
                 mergeDataOnlyExistingKeysImpl<Method>(
                     getDataVariant<Method>(*res).data,
                     getDataVariant<Method>(current).data,
-                    res->aggregates_pool,
-                    false);
+                    res->aggregates_pool);
         }
 
         /// `current` will not destroy the states of aggregate functions in the destructor
@@ -2030,7 +2026,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 
 template <typename Method, typename Table>
 Aggregator::ConvertToBlockResVariant
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block, bool release_data_memory) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
 {
     if (data.empty())
     {
@@ -2160,8 +2156,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
     }
 
     /// In order to release memory early.
-    if (release_data_memory)
-        data.clearAndShrink();
+    data.clearAndShrink();
 
     return res;
 }
@@ -2853,7 +2848,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImplFixedMap(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], std::atomic<bool> & is_cancelled, UInt32 worker_id, UInt32 total_worker) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
+    std::atomic<bool> & is_cancelled, const UInt32 worker_id, const UInt32 total_worker) const
 {
     if (is_simple_count)
     {
@@ -2970,8 +2966,7 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_dst,
     Table & table_src,
-    Arena * arena,
-    bool clean_table_src) const
+    Arena * arena) const
 {
     if (is_simple_count)
     {
@@ -2985,8 +2980,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
             getInlineCountState(dst) += getInlineCountState(src);
         });
 
-        if (clean_table_src)
-            table_src.clearAndShrink();
+        table_src.clearAndShrink();
         return;
     }
 
@@ -2994,9 +2988,6 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    /// TODO: here.
-    /// I think we can add method to filter the mergeToViaFindWithFilter, first filter by the index first.
-    /// lukciy when no found we don't have to do anything.
     table_src.mergeToViaFind(table_dst,
         [&](AggregateDataPtr dst, AggregateDataPtr & src, bool found)
     {
@@ -3014,9 +3005,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
         src = nullptr;
     });
-    /// TODO: probably not needed after we fix the race condition in this function.
-    if (clean_table_src)
-        table_src.clearAndShrink();
+    table_src.clearAndShrink();
 }
 
 
@@ -3136,9 +3125,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #undef M
 
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, UInt32 filter_id, UInt32 step_size, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(

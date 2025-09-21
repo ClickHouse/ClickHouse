@@ -82,13 +82,14 @@ namespace
     };
 }
 
+/// Worker which merges buckets for single-level aggregation of FixedHashMap.
+/// Each worker is assigned to a subset of the keys, so that we can merge in-place without race conditions.
 class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap final : public ISource
 {
 public:
     struct SharedData
     {
         std::atomic<bool> is_cancelled = false;
-        std::atomic<UInt32> finished_threads = 0;
     };
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
@@ -115,8 +116,6 @@ protected:
 
         finished = true;
         data.reset();
-
-        shared_data->finished_threads.fetch_add(1);
 
         Chunk chunk;
         return chunk;

@@ -466,8 +466,7 @@ private:
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
         Table & table_src,
-        Arena * arena,
-        bool clean_table_src = true) const;
+        Arena * arena) const;
 
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
@@ -480,8 +479,8 @@ private:
     template <typename Method>
     void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
-        UInt32 filter_id,
-        UInt32 step_size,
+        UInt32 worker_id,
+        UInt32 total_worker,
         std::atomic<bool> & is_cancelled) const;
 
     template <bool return_single_block>
@@ -490,7 +489,7 @@ private:
 
     template <typename Method, typename Table>
     ConvertToBlockResVariant
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, bool release_data_memory=true) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
