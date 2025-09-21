@@ -857,7 +857,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 std::vector<MarkRanges> selected_ranges_by_index;
                 if (condition_type != KeyCondition::OnlyConjuncts)
                 {
-                    if (was_primary_index_useful || key_condition.getUsedColumns().size() > 0)
+                    if (was_primary_index_useful || !key_condition.getUsedColumns().empty())
                     {
                         selected_ranges_by_index.push_back(ranges.ranges);
                     }
@@ -2282,7 +2282,8 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     if (!indexes || !indexes->rpn_template_condition)
         return;
 
-    bool only_conjuncts = false, only_disjuncts = false;
+    bool only_conjuncts = false;
+    bool only_disjuncts = false;
     std::tie(only_conjuncts, only_disjuncts) = indexes->rpn_template_condition->checkIfOnlyConjunctsOrOnlyDisjuncts();
 
     if (only_conjuncts)
@@ -2371,12 +2372,10 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     if (indexes->total_offset_condition)
         indexes->total_offset_condition->transformToDisjuncts();
 #endif
-    for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
+    for (auto index_and_condition : indexes->skip_indexes.useful_indices)
     {
-        auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
         index_and_condition.condition->transformToDisjuncts();
     }
-    return;
 }
 
 MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(

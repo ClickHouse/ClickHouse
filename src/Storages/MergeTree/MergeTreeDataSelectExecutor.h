@@ -202,7 +202,7 @@ public:
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
         const std::optional<KeyCondition> & rpn_template_condition,
-        const KeyCondition::RPN & finalSetOfRangesForFilterWithMixedAndOr,
+        const KeyCondition::RPN & rpn_template_for_eval_result,
         KeyCondition::ConditionType condition_type,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
