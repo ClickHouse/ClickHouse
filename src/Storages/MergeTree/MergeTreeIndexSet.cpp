@@ -510,7 +510,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 
 void MergeTreeIndexConditionSet::transformToDisjuncts()
 {
-    return condition.transformToDisjuncts();
+    condition.transformToDisjuncts();
 }
 
 std::vector<size_t> MergeTreeIndexConditionSet::getResolvedPositions() const

@@ -2372,7 +2372,7 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     if (indexes->total_offset_condition)
         indexes->total_offset_condition->transformToDisjuncts();
 #endif
-    for (auto index_and_condition : indexes->skip_indexes.useful_indices)
+    for (auto & index_and_condition : indexes->skip_indexes.useful_indices)
     {
         index_and_condition.condition->transformToDisjuncts();
     }
@@ -2401,7 +2401,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     std::vector< std::unordered_set<size_t> > index_results;
     size_t i = 0;
     index_results.resize(10);
-    for (auto s : skip_index_results)
+    for (auto & s : skip_index_results)
     {
         for (auto r : s)
         {
