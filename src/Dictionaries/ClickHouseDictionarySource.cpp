@@ -200,8 +200,6 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
         context_copy->setCurrentQueryId({});
 
-        LOG_INFO(getLogger("stetsyuk"), "executing query");
-
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
