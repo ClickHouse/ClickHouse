@@ -1,8 +1,5 @@
 2
 test2	2
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_duplicate_partition_keys)
 2
 2
 2

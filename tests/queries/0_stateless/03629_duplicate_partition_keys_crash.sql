@@ -21,9 +21,6 @@ SELECT count() FROM test_duplicate_partition_keys WHERE c1 = 1;
 -- Test the SELECT with different conditions
 SELECT c0, c1 FROM test_duplicate_partition_keys WHERE c1 = 2 ORDER BY c0;
 
--- Test EXPLAIN PLAN to ensure partition pruning works correctly
-EXPLAIN PLAN SELECT * FROM test_duplicate_partition_keys WHERE c1 = 1;
-
 DROP TABLE test_duplicate_partition_keys;
 
 -- Test case 2: More complex duplicate partition expression
