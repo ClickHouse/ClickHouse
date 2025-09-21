@@ -197,6 +197,11 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
+    /// Remove node with <node_name> from outputs.
+    /// Remove unused actions after that.
+    /// Do not remove any inputs.
+    void removeFromOutputs(const std::string & node_name);
+
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
@@ -299,7 +304,9 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error);
+        bool throw_on_error,
+        bool skip_materialize = false
+    );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
     void decorrelate() noexcept;

@@ -3,6 +3,7 @@ description: 'Documentation for UNDROP TABLE'
 sidebar_label: 'UNDROP'
 slug: /sql-reference/statements/undrop
 title: 'UNDROP TABLE'
+doc_type: 'reference'
 ---
 
 # UNDROP TABLE

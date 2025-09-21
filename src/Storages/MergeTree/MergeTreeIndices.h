@@ -76,9 +76,6 @@ class IDataPartStorage;
 struct MergeTreeWriterSettings;
 struct SelectQueryInfo;
 
-class GinIndexStore;
-using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
-
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -323,11 +320,6 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
-
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
-    {
-        return createIndexAggregator(settings);
-    }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
