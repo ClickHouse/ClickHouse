@@ -1930,9 +1930,6 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
                     getDataVariant<Method>(current).data,
                     res->aggregates_pool);
         }
-
-        /// `current` will not destroy the states of aggregate functions in the destructor
-        current.aggregator = nullptr;
     }
 }
 
@@ -3121,10 +3118,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
         }
-
-        /// `current` will not destroy the states of aggregate functions in the destructor
-        current.aggregator = nullptr;
     }
+    resetAggregatorExceptFirst(non_empty_data);
 }
 
 #define M(NAME) \
@@ -3137,6 +3132,13 @@ template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(Ag
     ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
     ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+
+
+void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const
+{
+    for (size_t i = 1, size = data_variants.size(); i < size; ++i)
+        data_variants[i]->aggregator = nullptr;
+}
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(

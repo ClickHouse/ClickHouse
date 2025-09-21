@@ -486,6 +486,10 @@ private:
         UInt32 total_worker,
         std::atomic<bool> & is_cancelled) const;
 
+    /// Set data_variants[1..last] aggregator as nullptr to ensure aggregator destruction only invoked in data_variants[0]'s destructor.
+    /// Used for single level merge.
+    void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
+
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
     using ConvertToBlockResVariant = std::variant<Block, BlocksList>;

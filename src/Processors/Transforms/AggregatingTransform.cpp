@@ -113,16 +113,15 @@ public:
 protected:
     Chunk generate() override
     {
-        if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
+        AggregatedDataVariantsPtr & first = data->at(0);
+        if (first->type == AggregatedDataVariants::Type::key8)
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
         else
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
 
         finished = true;
         data.reset();
-
-        Chunk chunk;
-        return chunk;
+        return Chunk{};
     }
 
 private:
@@ -358,7 +357,6 @@ public:
                 createSources();
         }
 
-        /// TODO: use a proper condition.
         else if (num_threads > 1 &&  (
             data->at(0)->type == AggregatedDataVariants::Type::key8  ||
             data->at(0)->type == AggregatedDataVariants::Type::key16))
@@ -626,10 +624,13 @@ private:
     {
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
-        if (!parallelize_single_level_merge)
+        if (parallelize_single_level_merge)
         {
-
+            params->aggregator.resetAggregatorExceptFirst(*data);
+        }
+        else
+        {
+            // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
             if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
             {
                 finished = true;
