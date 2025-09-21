@@ -162,9 +162,7 @@ Alias: `medianExactHigh`.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- Same with input type.
 
 **Example**
 
@@ -212,9 +210,7 @@ quantileExactExclusive(level)(expr)
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- Same with input type.
 
 **Example**
 
