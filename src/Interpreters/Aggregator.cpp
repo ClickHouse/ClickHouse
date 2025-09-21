@@ -2920,7 +2920,6 @@ void NO_INLINE Aggregator::mergeDataImplFixedMap(
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        // destroy AggregationDataPtr not hash map so it's ok.
         aggregate_functions[i]->mergeAndDestroyBatch(
             dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
     }

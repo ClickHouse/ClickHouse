@@ -86,7 +86,7 @@ namespace
     };
 }
 
-/// Worker which merges buckets for single-level aggregation of FixedHashMap.
+/// Worker which merges states for single-level aggregation of FixedHashMap.
 /// Each worker is assigned to a subset of the keys, so that we can merge in-place without race conditions.
 class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap final : public ISource
 {
@@ -114,7 +114,7 @@ protected:
     Chunk generate() override
     {
         if (data->at(0)->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data,  thread_index, num_threads, shared_data->is_cancelled);
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key8)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
         else
             params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(data->at(0)->key16)::element_type>(*data, thread_index, num_threads, shared_data->is_cancelled);
 
