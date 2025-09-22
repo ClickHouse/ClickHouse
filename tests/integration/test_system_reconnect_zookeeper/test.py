@@ -32,6 +32,7 @@ def test_system_reconnect_zookeeper(start_cluster):
     )
 
     old_zk_connected_time = get_zk_connected_time(instance)
+    time.sleep(2)
     instance.query("SYSTEM RECONNECT ZOOKEEPER;")
     new_zk_connected_time = get_zk_connected_time(instance)
 
