@@ -149,7 +149,6 @@ TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(c
     return it->second;
 }
 
-/// Keep in-sync with MergeTreeIndexConditionText::alwaysUnknownOrTrue
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(

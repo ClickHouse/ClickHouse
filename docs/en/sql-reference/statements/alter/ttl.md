@@ -4,6 +4,7 @@ sidebar_label: 'TTL'
 sidebar_position: 44
 slug: /sql-reference/statements/alter/ttl
 title: 'Manipulations with Table TTL'
+doc_type: 'reference'
 ---
 
 # Manipulations with Table TTL

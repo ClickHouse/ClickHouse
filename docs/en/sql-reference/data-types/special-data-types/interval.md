@@ -4,6 +4,7 @@ sidebar_label: 'Interval'
 sidebar_position: 61
 slug: /sql-reference/data-types/special-data-types/interval
 title: 'Interval'
+doc_type: 'reference'
 ---
 
 # Interval

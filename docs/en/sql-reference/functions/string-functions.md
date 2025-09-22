@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Strings'
 sidebar_label: 'String'
 slug: /sql-reference/functions/string-functions
 title: 'Functions for Working with Strings'
+doc_type: 'reference'
 ---
 
 import VersionBadge from '@theme/badges/VersionBadge';
@@ -128,8 +129,6 @@ Result:
 │                    4 │
 └──────────────────────┘
 ```
-
-
 ## lengthUTF8 {#lengthutf8}
 
 Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
@@ -1062,8 +1061,6 @@ Returns the substring of `s` before `count` occurrences of the delimiter `delim`
 substringIndex(s, delim, count)
 ```
 Alias: `SUBSTRING_INDEX`
-
-
 **Arguments**
 
 - s — The string to extract substring from. [String](../data-types/string.md).
@@ -1582,8 +1579,6 @@ SELECT startsWith('Spider-Man', 'Spi');
 <VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
-
-
 **Example**
 
 ```sql
