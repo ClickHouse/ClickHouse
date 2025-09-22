@@ -646,10 +646,6 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     builder = select.buildQueryPipeline();
 
-    builder.addSimpleTransform([&](const SharedHeader & current_header)
-    {
-        return std::make_shared<MaterializingTransform>(current_header);
-    });
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
