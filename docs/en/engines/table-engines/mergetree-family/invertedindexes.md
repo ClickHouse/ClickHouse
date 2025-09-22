@@ -107,7 +107,7 @@ We do not recommend changing them.
 
 Optional parameter `dictionary_block_size` (default: 128) specifies the size of dictionary blocks in rows.
 
-Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies the enablement of the front-coding compression.
+Optional parameter `dictionary_block_frontcoding_compression` (default: 1) if the dictionary blocks use front coding as compression.
 
 Optional parameter `max_cardinality_for_embedded_postings` (default: 16) specifies the cardinality threshold below which posting lists should be embedded into dictionary blocks.
 

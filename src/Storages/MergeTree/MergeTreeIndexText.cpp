@@ -53,7 +53,7 @@ static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
 enum class TokensSerializationFormat : UInt64
 {
     RawStrings = 0,
-    FrontCodingStrings = 1
+    FrontCodedStrings = 1
 };
 
 UInt32 TokenPostingsInfo::getCardinality() const
@@ -283,11 +283,11 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
     ColumnPtr tokens_column;
     switch (tokens_format)
     {
-        case static_cast<UInt64>(TokensSerializationFormat::FrontCodingStrings):
-            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
-            break;
         case static_cast<UInt64>(TokensSerializationFormat::RawStrings):
             tokens_column = deserializeTokensRaw(istr, num_tokens);
+            break;
+        case static_cast<UInt64>(TokensSerializationFormat::FrontCodedStrings):
+            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
             break;
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
@@ -522,8 +522,8 @@ void serializeTokensRaw(
 
 /*
  * The front coding implementation is based on the idea from following papers.
- * 1. https://kampersanda.github.io/pdf/InnovateData2017.pdf
- * 2. https://openproceedings.org/EDBT/2014/paper_25.pdf
+ * 1. https://doi.org/10.1109/Innovate-Data.2017.9
+ * 2. https://doi.org/10.1145/3448016.345279
  */
 void serializeTokensFrontCoding(
     WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
@@ -566,7 +566,7 @@ DictionarySparseIndex serializeTokensAndPostings(
     sparse_index_offsets_data.reserve(num_blocks);
 
     TokensSerializationFormat tokens_format
-        = dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodingStrings : TokensSerializationFormat::RawStrings;
+        = dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
 
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
@@ -590,11 +590,11 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         switch (tokens_format)
         {
-            case TokensSerializationFormat::FrontCodingStrings:
-                serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
-                break;
             case TokensSerializationFormat::RawStrings:
                 serializeTokensRaw(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                break;
+            case TokensSerializationFormat::FrontCodedStrings:
+                serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
         }
 
