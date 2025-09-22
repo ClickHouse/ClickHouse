@@ -1,3 +1,8 @@
+-- Test: Disjunctions pushdown into JOIN branches
+-- This test exercises the optimizer controlled by the setting `use_join_disjunctions_push_down`.
+-- It checks that disjunctions (OR) over conjunctions can be split and pushed as per-side
+-- pre-join filters without changing query results, and that when the optimization is disabled
+-- such pre-join filters are not produced. It also validates join-order-dependent pushdown
 SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS tp1;
@@ -310,7 +315,7 @@ SELECT
     countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
             AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
             AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
-            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
+             AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
 FROM lines
 FORMAT TSV;
 
