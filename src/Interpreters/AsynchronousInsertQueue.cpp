@@ -817,6 +817,7 @@ try
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
+    // TODO(mstetsyuk): consider whether internal should be set to true
     bool internal = false; // To enable logging this query
     bool async_insert = true;
 
@@ -866,7 +867,8 @@ try
         normalized_query_hash,
         key.query.get(),
         insert_context,
-        start_watch.getStart());
+        start_watch.getStart(),
+        internal);
 
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));

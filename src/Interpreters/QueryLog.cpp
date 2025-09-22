@@ -156,7 +156,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
-        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether the query was executed internally as part of another query."},
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 }
 
