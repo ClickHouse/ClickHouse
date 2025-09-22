@@ -31,6 +31,7 @@
 #include <shellapi.h>
 #endif
 #include <iostream>
+#include <Client/ClientBaseHelpers.h>
 
 namespace DB
 {
@@ -88,7 +89,6 @@ void JWTProvider::deviceCodeLogin()
     std::string audience = getAudience();
 
     std::string device_code;
-    int interval_seconds = 5;
     Poco::Timestamp::TimeVal expires_at_ts = 0;
 
     auto device_code_session = createHTTPSession(device_code_url);
@@ -122,7 +122,7 @@ void JWTProvider::deviceCodeLogin()
     device_code = device_code_object->getValue<std::string>("device_code");
     std::string user_code = device_code_object->getValue<std::string>("user_code");
     std::string verification_uri_complete = device_code_object->getValue<std::string>("verification_uri_complete");
-    interval_seconds = device_code_object->getValue<int>("interval");
+    int interval_seconds = device_code_object->getValue<int>("interval");
     expires_at_ts = Poco::Timestamp().epochTime() + device_code_object->getValue<int>("expires_in");
 
     output_stream << "\nOpening your browser for login. If it doesn't open, visit:"
@@ -193,7 +193,7 @@ void JWTProvider::refreshIdPAccessToken()
     idp_access_token = object->getValue<std::string>("access_token");
     idp_access_token_expires_at = Poco::Timestamp::fromEpochTime(jwt::decode(idp_access_token).get_payload_claim("exp").as_integer());
     if (object->has("refresh_token"))
-            idp_refresh_token = object->getValue<std::string>("refresh_token");
+        idp_refresh_token = object->getValue<std::string>("refresh_token");
 }
 
 std::unique_ptr<Poco::Net::HTTPSClientSession> JWTProvider::createHTTPSession(const Poco::URI & uri)
@@ -250,11 +250,6 @@ Poco::Timestamp JWTProvider::getJwtExpiry(const std::string & token)
     {
         return 0;
     }
-}
-
-bool isCloudEndpoint(const std::string & host)
-{
-    return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
 }
 
 std::unique_ptr<JWTProvider> createJwtProvider(

@@ -25,6 +25,7 @@
 #include <Interpreters/Context.h>
 
 #include <Client/JWTProvider.h>
+#include <Client/ClientBaseHelpers.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -1027,10 +1028,9 @@ void Client::readArguments(
                 port = std::to_string(uri.getPort());
             }
         }
-        catch ([[maybe_unused]] const Poco::URISyntaxException & e)
+        catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
         {
             // intentionally ignored. argv[1] is not a uri, but could be a query.
-            (void)e;
         }
 
         if (isCloudEndpoint(hostname))

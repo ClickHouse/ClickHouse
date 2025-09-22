@@ -3,16 +3,10 @@
 #if USE_JWT_CPP && USE_SSL
 #include <config.h>
 
-#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/Net/SSLManager.h>
 #include <Poco/Timestamp.h>
 #include <Poco/URI.h>
 
-#include <iosfwd>
-#include <map>
-#include <memory>
-#include <string>
 
 namespace DB
 {
@@ -65,7 +59,6 @@ std::unique_ptr<JWTProvider> createJwtProvider(
     std::ostream & out,
     std::ostream & err);
 
-bool isCloudEndpoint(const std::string & host);
 }
 
 #endif
