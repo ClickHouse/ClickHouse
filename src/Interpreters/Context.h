@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Common/ThreadStatus.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
@@ -652,6 +653,7 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
+
 
     ~Context();
 

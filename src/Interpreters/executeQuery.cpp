@@ -451,10 +451,12 @@ QueryLogElement logQueryStart(
 
     elem.client_info = context->getClientInfo();
 
+    elem.is_internal = internal;
+
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
 
-    bool log_queries = settings[Setting::log_queries] && !internal;
+    bool log_queries = settings[Setting::log_queries];
 
     auto query_log = context->getQueryLog();
     if (!query_log)
@@ -595,7 +597,7 @@ void logQueryFinishImpl(
     std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
-    auto log_queries = settings[Setting::log_queries] && !internal;
+    auto log_queries = settings[Setting::log_queries];
 
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
@@ -637,6 +639,8 @@ void logQueryFinishImpl(
         }
 
         elem.query_result_cache_usage = query_result_cache_usage;
+
+        elem.is_internal = internal;
 
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -701,7 +705,7 @@ void logQueryException(
     bool log_error)
 {
     const Settings & settings = context->getSettingsRef();
-    auto log_queries = settings[Setting::log_queries] && !internal;
+    auto log_queries = settings[Setting::log_queries];
 
     elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
     elem.exception_code = getCurrentExceptionCode();
@@ -747,6 +751,8 @@ void logQueryException(
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
 
+    elem.is_internal = internal;
+
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
     logException(context, elem, log_error);
@@ -775,7 +781,8 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_milliseconds)
+    UInt64 elapsed_milliseconds,
+    bool internal)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -833,6 +840,8 @@ void logExceptionBeforeStart(
 
     if (settings[Setting::calculate_text_stack_trace])
         setExceptionStackTrace(elem);
+
+    elem.is_internal = internal;
 
     bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
@@ -1031,6 +1040,7 @@ static BlockIO executeQueryImpl(
 
     const auto & client_info = context->getClientInfo();
 
+    /// NOTE(mstetsyuk): look into this!
     if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
@@ -1220,11 +1230,8 @@ static BlockIO executeQueryImpl(
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         logQuery(query_for_logging, context, internal, stage);
 
-        if (!internal)
-        {
-            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
-        }
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
         throw;
     }
 
@@ -1251,7 +1258,7 @@ static BlockIO executeQueryImpl(
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
         /// (subqueries on remote nodes will receive these "collapsed" settings)
-        if (!internal && settings[Setting::log_queries] && settings[Setting::log_queries_probability] < 1.0)
+        if (settings[Setting::log_queries] && settings[Setting::log_queries_probability] < 1.0)
         {
             std::bernoulli_distribution should_write_log{settings[Setting::log_queries_probability]};
 
@@ -1307,10 +1314,10 @@ static BlockIO executeQueryImpl(
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!internal && !(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
+        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart());
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
@@ -1777,8 +1784,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        if (!internal)
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
 
         throw;
     }

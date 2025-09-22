@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -34,12 +35,14 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type>
 DirectDictionary<dictionary_key_type>::DirectDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
+    , context(std::move(context_))
 {
     if (!source_ptr->supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
@@ -85,49 +88,55 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+    BlockIO io = loadKeys(requested_keys, key_columns);
 
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     Stopwatch watch;
-    Block block;
     size_t block_num = 0;
     size_t rows_num = 0;
-    while (executor.pull(block))
+
+    auto func = [&]()
     {
-        if (block.empty())
-            continue;
-
-        ++block_num;
-        rows_num += block.rows();
-        convertToFullIfSparse(block);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
-            block_key_columns, arena_holder.getComplexKeyArena());
-        auto block_keys = block_keys_extractor.extractAllKeys();
-
-        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+        Block block;
+        while (executor.pull(block))
         {
-            if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            if (block.empty())
                 continue;
 
-            const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
-            fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
-        }
+            ++block_num;
+            rows_num += block.rows();
+            convertToFullIfSparse(block);
 
-        for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
-        {
-            auto block_key = block_keys[block_key_index];
-            key_to_fetched_index[block_key] = fetched_key_index;
-            ++fetched_key_index;
-        }
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < dictionary_keys_size; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-        block_key_columns.clear();
-    }
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
+                block_key_columns, arena_holder.getComplexKeyArena());
+            auto block_keys = block_keys_extractor.extractAllKeys();
+
+            for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+            {
+                if (!request.shouldFillResultColumnWithIndex(attribute_index))
+                    continue;
+
+                const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
+                fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
+            }
+
+            for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
+            {
+                auto block_key = block_keys[block_key_index];
+                key_to_fetched_index[block_key] = fetched_key_index;
+                ++fetched_key_index;
+            }
+
+            block_key_columns.clear();
+        }
+    };
+    io.executeWithCallbacks(std::move(func));
 
     LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
         block_num, rows_num, watch.elapsedMilliseconds());
@@ -252,40 +261,48 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+    BlockIO io = loadKeys(requested_keys, key_columns);
+
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
-    Block block;
-    while (executor.pull(block))
+
+    auto func = [&]()
     {
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        size_t block_keys_size = block_keys_extractor.getKeysSize();
-
-        for (size_t i = 0; i < block_keys_size; ++i)
+        Block block;
+        while (executor.pull(block))
         {
-            auto block_key = block_keys_extractor.extractCurrentKey();
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < dictionary_keys_size; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-            const auto * it = requested_key_to_index.find(block_key);
-            assert(it);
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
+            size_t block_keys_size = block_keys_extractor.getKeysSize();
 
-            auto & result_data_found_indexes = it->getMapped();
-            for (size_t result_data_found_index : result_data_found_indexes)
+            for (size_t i = 0; i < block_keys_size; ++i)
             {
-                /// block_keys_size cannot be used, due to duplicates.
-                keys_found += !result_data[result_data_found_index];
-                result_data[result_data_found_index] = true;
+                auto block_key = block_keys_extractor.extractCurrentKey();
+
+                const auto * it = requested_key_to_index.find(block_key);
+                assert(it);
+
+                auto & result_data_found_indexes = it->getMapped();
+                for (size_t result_data_found_index : result_data_found_indexes)
+                {
+                    /// block_keys_size cannot be used, due to duplicates.
+                    keys_found += !result_data[result_data_found_index];
+                    result_data[result_data_found_index] = true;
+                }
+
+                block_keys_extractor.rollbackCurrentKey();
             }
 
-            block_keys_extractor.rollbackCurrentKey();
+            block_key_columns.clear();
         }
 
-        block_key_columns.clear();
-    }
+    };
+    io.executeWithCallbacks(std::move(func));
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -330,12 +347,19 @@ template <typename TExecutor = PullingPipelineExecutor>
 class SourceFromQueryPipeline : public ISource
 {
 public:
-    explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
+    explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
         : ISource(pipeline_.getSharedHeader())
-        , pipeline(std::move(pipeline_))
-        , executor(pipeline)
+        , executor(pipeline_)
     {
-        pipeline.setConcurrencyControl(false);
+        pipeline_.setConcurrencyControl(false);
+    }
+
+    explicit SourceFromQueryPipeline(BlockIO io)
+        : ISource(io.pipeline.getSharedHeader())
+        , io_holder(std::move(io))
+        , executor(io_holder->pipeline)
+    {
+        io_holder->pipeline.setConcurrencyControl(false);
     }
 
     std::string getName() const override
@@ -343,6 +367,7 @@ public:
         return std::is_same_v<PullingAsyncPipelineExecutor, TExecutor> ? "SourceFromQueryPipelineAsync" : "SourceFromQueryPipeline";
     }
 
+    /// TODO(mstetsyuk): try to wrap in try catch and call io_holder.onException(), and call io_holder.onFinish() in dtor if no exception was thrown
     Chunk generate() override
     {
         Chunk chunk;
@@ -356,57 +381,40 @@ public:
     }
 
 private:
-    QueryPipeline pipeline;
+    std::optional<BlockIO> io_holder;
     TExecutor executor;
 };
 
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
+    QueryPipeline & pipeline,
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
-    Stopwatch watch;
-
-    size_t requested_keys_size = requested_keys.size();
-
-    Pipe pipe;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-    {
-        std::vector<UInt64> ids;
-        ids.reserve(requested_keys_size);
-
-        for (auto key : requested_keys)
-            ids.emplace_back(key);
-
-        auto pipeline = source_ptr->loadIds(ids);
-        if (use_async_executor)
-            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
-        else
-            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
-    }
-    else
-    {
-        std::vector<size_t> requested_rows;
-        requested_rows.reserve(requested_keys_size);
-        for (size_t i = 0; i < requested_keys_size; ++i)
-            requested_rows.emplace_back(i);
-
-        auto pipeline = source_ptr->loadKeys(key_columns, requested_rows);
-        if (use_async_executor)
-            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
-        else
-            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
-    }
-
-    LOG_DEBUG(getLogger("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
-    return pipe;
+    if (use_async_executor)
+        return Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(pipeline));
+    return Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(pipeline));
 }
 
 template <DictionaryKeyType dictionary_key_type>
+BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
+        return source_ptr->loadIds(ids);
+    }
+
+    auto requested_rows = std::views::iota(size_t{0}, requested_keys.size()) | std::ranges::to<std::vector>();
+    return source_ptr->loadKeys(key_columns, requested_rows);
+}
+
+// NOTE(mstetsyuk): this way we don't run io.onFinish or io.onException (and so no logging), but other that this, everything should work
+template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(source_ptr->loadAll()));
+    BlockIO io = source_ptr->loadAll();
+    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(std::move(io)));
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -461,9 +469,10 @@ namespace
                 "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
                 layout_name);
 
-        auto dictionary = std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
-
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        auto dictionary = std::make_unique<DirectDictionary<dictionary_key_type>>(context, dict_id, dict_struct, std::move(source_ptr));
+
         dictionary->applySettings(context->getSettingsRef());
 
         return dictionary;

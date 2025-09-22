@@ -103,7 +103,8 @@ ProcessList::EntryPtr ProcessList::insert(
     UInt64 normalized_query_hash,
     const IAST * ast,
     ContextMutablePtr query_context,
-    UInt64 watch_start_nanoseconds)
+    UInt64 watch_start_nanoseconds,
+    bool is_internal)
 {
     EntryPtr res;
 
@@ -323,7 +324,8 @@ ProcessList::EntryPtr ProcessList::insert(
             std::move(thread_group),
             query_kind,
             settings,
-            watch_start_nanoseconds);
+            watch_start_nanoseconds,
+            is_internal);
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -434,7 +436,8 @@ QueryStatus::QueryStatus(
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
-    UInt64 watch_start_nanoseconds)
+    UInt64 watch_start_nanoseconds,
+    bool is_internal_)
     : WithContext(context_)
     , query(query_)
     , normalized_query_hash(normalized_query_hash_)
@@ -446,6 +449,7 @@ QueryStatus::QueryStatus(
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
+    , is_internal(is_internal_)
 {
     /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
     /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
@@ -737,6 +741,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
+    res.is_internal       = is_internal;
     res.read_rows         = progress_in.read_rows;
     res.read_bytes        = progress_in.read_bytes;
     res.total_rows        = progress_in.total_rows_to_read;

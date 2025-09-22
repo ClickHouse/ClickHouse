@@ -12,6 +12,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -67,6 +68,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -103,6 +105,7 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         auto result = std::make_shared<RangeHashedDictionary>(
+            context,
             getDictionaryID(),
             dict_struct,
             source_ptr->clone(),
@@ -277,6 +280,9 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const RangeHashedDictionaryConfiguration configuration;
+
+    ContextPtr context;
+
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
@@ -328,6 +334,7 @@ namespace impl
 
 template <DictionaryKeyType dictionary_key_type>
 RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -339,6 +346,7 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
+    , context(std::move(context_))
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
@@ -545,15 +553,19 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-        Block block;
+        BlockIO io = source_ptr->loadAll();
 
-        while (executor.pull(block))
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+        auto func = [&]()
         {
-            blockToAttributes(block);
-        }
+            Block block;
+            while (executor.pull(block))
+            {
+                blockToAttributes(block);
+            }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {
@@ -695,44 +707,47 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::updateData()
 {
+    BlockIO io = source_ptr->loadUpdatedAll();
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        while (executor.pull(block))
+        auto func = [&]()
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                convertToFullIfSparse(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {
         static constexpr size_t range_columns_size = 2;
 
-        auto pipe = source_ptr->loadUpdatedAll();
-
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
-            std::move(pipe)));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)

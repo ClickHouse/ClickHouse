@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -eux
+
+# Check if the test script argument is provided
+if [ -z "$1" ]; then
+  echo "Usage: ./run_test.sh <test_script_relative_path>"
+  exit 1
+fi
+
+# Define base directories
+INTEGRATION_DIR="/home/ubuntu/ClickHouse/tests/integration"
+BUILD_DIR="/home/ubuntu/ClickHouse/build/programs"
+
+# Get the absolute paths
+RUNNER="$INTEGRATION_DIR/runner"
+BINARY="$BUILD_DIR/clickhouse"
+TEST_SCRIPT="$1"
+
+# Change directory to the integration directory
+cd "$INTEGRATION_DIR" || {
+  echo "Failed to change directory to $INTEGRATION_DIR"
+  exit 1
+}
+
+# Run the command with absolute paths
+"$RUNNER" --binary "$BINARY" "$TEST_SCRIPT"

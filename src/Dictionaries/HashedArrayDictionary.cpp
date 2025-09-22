@@ -1,6 +1,8 @@
+#include <memory>
 #include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -34,6 +36,7 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -41,6 +44,7 @@ HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedArrayDictionary"))
+    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -477,40 +481,44 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 {
+    BlockIO io = source_ptr->loadUpdatedAll();
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        while (executor.pull(block))
+        auto func = [&]()
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                convertToFullIfSparse(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        };
+        io.executeWithCallbacks(std::move(func));
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe)));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)
@@ -974,13 +982,14 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        std::optional<DictionaryParallelLoaderType> parallel_loader;
+        std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
-            parallel_loader.emplace(*this);
+            parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
+        BlockIO io = source_ptr->loadAll();
+
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
 
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
@@ -989,33 +998,37 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         size_t total_blocks = 0;
         String dictionary_name = getFullName();
 
-        Block block;
-        while (true)
+        auto func = [&]()
         {
-            Stopwatch watch_pull;
-            bool has_data = executor.pull(block);
-            pull_time_microseconds += watch_pull.elapsedMicroseconds();
-
-            if (!has_data)
-                break;
-
-            ++total_blocks;
-            total_rows += block.rows();
-
-            Stopwatch watch_process;
-            resize(total_rows);
-
-            if (parallel_loader)
+            Block block;
+            while (true)
             {
-                parallel_loader->addBlock(std::move(block));
+                Stopwatch watch_pull;
+                bool has_data = executor.pull(block);
+                pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+                if (!has_data)
+                    break;
+
+                ++total_blocks;
+                total_rows += block.rows();
+
+                Stopwatch watch_process;
+                resize(total_rows);
+
+                if (parallel_loader)
+                {
+                    parallel_loader->addBlock(std::move(block));
+                }
+                else
+                {
+                    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+                    blockToAttributes(block, arena_holder, /* shard = */ 0);
+                }
+                process_time_microseconds += watch_process.elapsedMicroseconds();
             }
-            else
-            {
-                DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-                blockToAttributes(block, arena_holder, /* shard = */ 0);
-            }
-            process_time_microseconds += watch_process.elapsedMicroseconds();
-        }
+        };
+        io.executeWithCallbacks(std::move(func));
 
         if (parallel_loader)
             parallel_loader->finish();
@@ -1195,15 +1208,15 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (shards > 1)
-                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (shards > 1)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
+                context, dict_id, dict_struct, std::move(source_ptr), configuration);
         return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
-            dict_id, dict_struct, std::move(source_ptr), configuration);
+            context, dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed_array",
