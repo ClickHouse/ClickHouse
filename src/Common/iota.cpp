@@ -21,6 +21,9 @@ void iota(T * begin, size_t count, T first_value)
     if (isArchSupported(TargetArch::AVX512BW))
         return iotaImplAVX512BW(begin, count, first_value);
 
+    if (isArchSupported(TargetArch::AVX512F))
+        return iotaImplAVX512F(begin, count, first_value);
+
     if (isArchSupported(TargetArch::AVX2))
         return iotaImplAVX2(begin, count, first_value);
 
@@ -45,6 +48,9 @@ void iotaWithStep(T * begin, size_t count, T first_value, T step)
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
         return iotaWithStepImplAVX512BW(begin, count, first_value, step);
+
+    if (isArchSupported(TargetArch::AVX512F))
+        return iotaWithStepImplAVX512F(begin, count, first_value, step);
 
     if (isArchSupported(TargetArch::AVX2))
         return iotaWithStepImplAVX2(begin, count, first_value, step);
