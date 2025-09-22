@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"enable_function_early_short_circuit", false, false, "New setting"},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
