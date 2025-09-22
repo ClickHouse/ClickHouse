@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"delta_lake_log_metadata", false, false, "New setting."},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -54,7 +56,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
