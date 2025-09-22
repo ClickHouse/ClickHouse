@@ -41,10 +41,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
-
+            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
+            {"enable_join_runtime_filters", false, false, "New setting"},
+            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
+            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"delta_lake_log_metadata", false, false, "New setting."},
             {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},

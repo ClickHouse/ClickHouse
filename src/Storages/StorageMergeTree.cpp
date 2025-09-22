@@ -318,7 +318,7 @@ void StorageMergeTree::read(
         local_context,
         max_block_size,
         num_streams,
-        local_context->getPartitionIdToMaxBlock(),
+        local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         enable_parallel_reading);
 
     if (plan)
@@ -777,8 +777,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
             partition_id_to_max_block->emplace(partition_id, block_number);
     }
 
-    context_copy->setPartitionIdToMaxBlock(std::move(partition_id_to_max_block));
-
+    context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partition_id_to_max_block));
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
