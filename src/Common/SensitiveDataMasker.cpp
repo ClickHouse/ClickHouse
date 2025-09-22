@@ -13,9 +13,8 @@
 #include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 
-#ifndef NDEBUG
-#    include <iostream>
-#endif
+
+#include <iostream>
 
 
 namespace ProfileEvents
@@ -67,6 +66,8 @@ public:
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
+        std::cout << "Loaded rule " << name << " (regexp: " << regexp_string << ", replacement: " << replacement_string << ", throw_on_match: " << throw_on_match << ")" << std::endl;
+
         if (!regexp.ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
@@ -79,9 +80,14 @@ public:
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
 
         if (throw_on_match && m > 0)
+        {
+            std::cout << "Trigggered " << regexp_string << " was triggered on the log line " << data << ", throw_on_match: {}" << throw_on_match << std::endl;
+
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "The rule {} was triggered on the log line {}",
-                            name, data);
+                "The rule {} was triggered on the log line {}",
+                name, data);
+        }
+
 
 #ifndef NDEBUG
         matches_count += m;
@@ -142,15 +148,22 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
     LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
+    std::set<std::string> used_rules;
 
     for (const auto & rule : keys)
     {
+        /// Rules names are expected to be unique and be in a form of "rule1", "rule2", etc.
         if (startsWith(rule, "rule"))
         {
             auto rule_config_prefix = config_prefix + "." + rule;
 
-            auto rule_name = config.getString(rule_config_prefix + ".name", rule_config_prefix);
+            if (!used_rules.insert(rule).second)
+            {
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "There are at least two rules with the same prefix '{}' in the query_masking_rules configuration", rule);
+            }
 
+            auto rule_name = config.getString(rule_config_prefix + ".name", rule_config_prefix);
             if (!used_names.insert(rule_name).second)
             {
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
