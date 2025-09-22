@@ -145,7 +145,7 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
-        else if (function->name() == "arrowflight")
+        else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
         {
             findArrowFlightSecretArguments();
         }

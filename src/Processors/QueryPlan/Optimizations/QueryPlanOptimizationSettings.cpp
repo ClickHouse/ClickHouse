@@ -67,6 +67,9 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool enable_join_runtime_filters;
+    extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
+    extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_on_data_read;
@@ -180,6 +183,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
     actions_settings = std::move(actions_settings_);
+
+    enable_join_runtime_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_join_runtime_filters];
+    join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
+    join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
     max_threads = from[Setting::max_threads];
 }
