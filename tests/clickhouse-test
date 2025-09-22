@@ -397,13 +397,13 @@ def read_file_as_binary_string(file_path):
 
 
 # First and last lines of the log
-def trim_for_log(s):
+def trim_for_log(s, limit=10000):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
+    if len(lines) > limit:
+        separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
+        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
     return "\n".join(lines)
 
 
@@ -543,23 +543,34 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 
 def kill_process_group(pgid, fatal_log):
-    print(f"Killing process group {pgid}")
-    print(f"Processes in process group {pgid}:")
-    print(
-        subprocess.check_output(
-            f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8"),
-        end="",
-    )
     try:
+        print(f"Processes left in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
+        if SANITIZED:
+            print("Wait 60 seconds to let sanitizers print the report...")
+            sleep(60)
+
+        print(f"Killing process group {pgid}")
+        print(f"Processes in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            # Wait some time for clickhouse utilities to gather stacktrace
-            if RELEASE_NON_SANITIZED:
-                sleep(0.5)
-            else:
-                sleep(10)
+            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
+            sleep(stacktrace_delay)
 
             # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
             client_printed_stacktrace = False
@@ -1128,13 +1139,14 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
+        "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1209,6 +1221,14 @@ class MergeTreeSettingsRandomizer:
         "enable_block_offset_column": lambda: random.randint(0, 1),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
+        "object_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "object_shared_data_serialization_version": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
+        "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
+        "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
     }
 
     @staticmethod
@@ -1312,9 +1332,6 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_basename}'"
-        )
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -1362,6 +1379,10 @@ class TestCase:
         # Since using CLICKHOUSE_TMP is easier to use in expect.
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
+
+        testcase_args.testcase_client = (
+            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
@@ -1575,6 +1596,10 @@ class TestCase:
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        # RocksDB tests cannot be used with replicated database as, in our CI, the databases share the same user_files
+        if tags and ("use-rocksdb" in tags) and args.replicated_database:
+            return FailureReason.REPLICATED_DB
+
         if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
             return FailureReason.DISTRIBUTED_CACHE
 
@@ -1680,7 +1705,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[-100:])
+            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -1760,7 +1785,7 @@ class TestCase:
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
         ):
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -1981,7 +2006,7 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename}-{args.testcase_database}'
 
         query_params = ""
         if "need-query-parameters" in self.tags:
@@ -2282,7 +2307,7 @@ class TestCase:
                     f"SHOW TABLES FROM {database}",
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
                 .decode()
@@ -2307,7 +2332,7 @@ class TestCase:
                     drop_database_query,
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
             except HTTPError as e:
@@ -2903,6 +2928,8 @@ class BuildFlags:
 
 # Release and non-sanitizer build
 RELEASE_NON_SANITIZED = False
+# Build with any sanitizer
+SANITIZED = False
 
 
 def collect_build_flags(args):
@@ -2915,12 +2942,16 @@ def collect_build_flags(args):
     )
     if b"-fsanitize=thread" in value:
         result.append(BuildFlags.THREAD)
+        SANITIZED = True
     elif b"-fsanitize=address" in value:
         result.append(BuildFlags.ADDRESS)
+        SANITIZED = True
     elif b"-fsanitize=undefined" in value:
         result.append(BuildFlags.UNDEFINED)
+        SANITIZED = True
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+        SANITIZED = True
     elif b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
@@ -3599,6 +3630,10 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
+
     if args.report_logs_stats:
         try:
             reportLogStats(args)
@@ -3612,20 +3647,28 @@ def main(args):
 
 
 def find_binary(name):
-    if os.access(name, os.X_OK):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
         return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
         bin_path = os.path.join(path, name)
-        if os.access(bin_path, os.X_OK):
+        if is_executable(bin_path):
             return bin_path
 
     # maybe it wasn't in PATH
     bin_path = os.path.join("/usr/local/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
         return bin_path
     bin_path = os.path.join("/usr/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
+        return bin_path
+
+    # Default binary path if source folder contains build
+    bin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../build/programs/{name}")
+    if is_executable(bin_path):
         return bin_path
 
     raise TestException(f"{name} was not found in PATH")

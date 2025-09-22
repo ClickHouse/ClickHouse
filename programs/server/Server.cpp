@@ -12,6 +12,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -240,6 +241,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -335,6 +340,10 @@ namespace ServerSetting
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
+    extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
+    extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
+    extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
 namespace ErrorCodes
@@ -930,6 +939,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
+        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
+            "startup_scripts_failure_reason",
+            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+            {"error_name"}
+        );
+        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -1003,10 +1018,6 @@ static std::vector<String> getSanitizerNames()
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
-#endif
-
 #if USE_SSL
     ::ssh::LibSSHInitializer::instance();
     ::ssh::libsshLogger::initialize();
@@ -1016,10 +1027,34 @@ try
 
     Poco::Logger * log = &logger();
 
+    // If the startupLevel is set in the config, we override the root logger level.
+    // Specific loggers can still override it.
+    std::string default_logger_level_config = config().getString("logger.level", "");
+    bool should_restore_default_logger_level = false;
+    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
+    {
+        /// Set the root logger level to the startup level.
+        /// This is useful for debugging startup issues.
+        /// The root logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.level", config().getString("logger.startupLevel"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_default_logger_level = true;
+
+        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
+    }
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+#endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
@@ -1204,6 +1239,9 @@ try
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
     }
 
+    total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
+    total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
+
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
@@ -1217,7 +1255,7 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
         GlobalThreadPool::instance().shutdown();
@@ -1268,7 +1306,7 @@ try
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1428,14 +1466,14 @@ try
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
-    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
-    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
+    auto main_config_zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&] { return global_context->getZooKeeper(); });
+    Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
+            main_config_zk_node_cache.get(), main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -1827,6 +1865,10 @@ try
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
 
+    Names allowed_disks_table_engines;
+    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
+    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
+
     String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
     size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
     double query_condition_cache_size_ratio = server_settings[ServerSetting::query_condition_cache_size_ratio];
@@ -1910,6 +1952,8 @@ try
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(*config);
+
+            DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
@@ -2335,8 +2379,23 @@ try
             async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
+    }
 
+#if USE_SSL
+    /// We may notice that try to reload certificates twice within this function.
+    /// First time here before starting the `servers_to_start_before_tables`, and then
+    /// one more time before starting the `servers`. The problem we're trying to avoid is:
+    /// 1. We create a socket for keeper secure protocol (w/o starting a server yet). That creates a SSL context (in particular, it might be the default context).
+    /// 2. We then start this server a few lines below. While handling the first request, it will access (read) certs.
+    /// 3. A little further down, we reload certificates before starting the rest of the servers.
+    /// 4. `CertificateReloader` will set its custom `cert_cb` to the default context if it is not initialized yet (see `CertificateReloader::init()`).
+    /// 5. Items (2) and (4) are not synchronized, so there might be a data race for example (see https://github.com/ClickHouse/ClickHouse/issues/85412).
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
+    {
+        std::lock_guard lock(servers_lock);
         for (auto & server : servers_to_start_before_tables)
         {
             server.start();
@@ -2541,7 +2600,9 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+
+        global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
+
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
@@ -2716,6 +2777,14 @@ try
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
+            // Restore the root logger level to the default level after the server is fully initialized.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2742,6 +2811,15 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
+            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.level", config().getString("logger.shutdownLevel"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
+            }
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
@@ -2778,6 +2856,8 @@ try
             /// (because killAllQueries() will cancel all running backups/restores).
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
+            else
+                global_context->cancelAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])

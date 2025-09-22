@@ -246,7 +246,7 @@ public:
     LogFrequencyLimiterImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    void log(Poco::Message & message);
+    void log(Poco::Message && msg);
 
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
@@ -284,7 +284,7 @@ public:
     const String & name() const { return logger->name(); }
 
     LogSeriesLimiter * getChannel();
-    void log(Poco::Message & message);
+    void log(Poco::Message && message);
 
     LoggerPtr getLogger() { return logger; }
 };
@@ -306,14 +306,14 @@ public:
     LogToStrImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    void log(Poco::Message & message)
+    void log(Poco::Message && message)
     {
         out_str = message.getText();
         if (!propagate_to_actual_log)
             return;
         if (maybe_nested)
-            maybe_nested->log(message);
+            maybe_nested->log(std::move(message));
         else if (auto * channel = logger->getChannel())
-            channel->log(message);
+            channel->log(std::move(message));
     }
 };

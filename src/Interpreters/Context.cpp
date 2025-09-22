@@ -29,6 +29,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
@@ -61,6 +62,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -127,6 +129,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <filesystem>
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
@@ -314,6 +317,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
@@ -328,7 +332,7 @@ namespace ServerSetting
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
-    extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
+    extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
@@ -337,6 +341,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
 namespace ErrorCodes
@@ -541,6 +546,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
     mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
+    mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
+    mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -555,6 +563,7 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
+    std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
     std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -809,7 +818,12 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
-        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
+        /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
+        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
+        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
+        SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
+
+        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
@@ -838,30 +852,17 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+        std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
 
-        std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
         scope_guard delete_dictionaries_xmls;
         scope_guard delete_user_defined_executable_functions_xmls;
-
-        /// Delete DDLWorker before zookeeper.
-        /// Cause it can call Context::getZooKeeper and resurrect it.
-
-        {
-            std::lock_guard lock(mutex);
-            delete_ddl_worker = std::move(ddl_worker);
-        }
-
-        /// DDLWorker should be deleted without lock, cause its internal thread can
-        /// take it as well, which will cause deadlock.
-        LOG_TRACE(log, "Shutting down DDLWorker");
-        delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
@@ -930,6 +931,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
+            delete_ddl_worker = std::move(ddl_worker);
 
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
@@ -940,7 +942,11 @@ struct ContextSharedPart : boost::noncopyable
 
             /// Stop trace collector if any
             trace_collector.reset();
+        }
+
+        {
             /// Stop zookeeper connection
+            std::lock_guard lock(zookeeper_mutex);
             zookeeper.reset();
         }
 
@@ -1127,6 +1133,7 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -1466,7 +1473,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
 }
 
@@ -1506,8 +1513,21 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
+}
+
+void Context::setTemporaryStorageInDistributedCache([[maybe_unused]] size_t max_size)
+{
+#if ENABLE_DISTRIBUTED_CACHE
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    auto temp_data = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), DistributedCacheTag{});
+    std::lock_guard lock(shared->mutex);
+    shared->root_temp_data_on_disk = std::move(temp_data);
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache for temporary files is not supported");
+#endif
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1531,7 +1551,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
     shared->temporary_volume_legacy = volume;
 }
 
@@ -2272,6 +2292,25 @@ void Context::addQueryAccessInfo(
 {
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
+
+ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+{
+    {
+        SharedLockGuard lock(mutex);
+        if (time_series_tags_collector)
+            return *time_series_tags_collector;
+    }
+    std::lock_guard lock(mutex);
+    if (!time_series_tags_collector)
+        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
+    return *time_series_tags_collector;
+}
+
+const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+{
+    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
+}
+
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
@@ -3084,6 +3123,7 @@ void Context::makeQueryContext()
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    runtime_filter_lookup = createRuntimeFilterLookup();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -3370,6 +3410,12 @@ void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
+}
+
+void Context::cancelAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->cancelAll();
 }
 
 BackupsInMemoryHolder & Context::getBackupsInMemory()
@@ -3943,6 +3989,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -3984,9 +4031,12 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
+    size_t max_parallel_tasks_per_type = static_cast<size_t>(shared->server_settings[ServerSetting::background_schedule_pool_size]
+        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
     callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_schedule_pool_size],
+            max_parallel_tasks_per_type,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -4000,6 +4050,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -4013,6 +4064,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -4126,6 +4178,16 @@ ThrottlerPtr Context::getMergesThrottler() const
     return shared->merges_throttler;
 }
 
+ThrottlerPtr Context::getDistributedCacheReadThrottler() const
+{
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
+{
+    return shared->distributed_cache_write_throttler;
+}
+
 void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
 {
     if (read_bandwidth)
@@ -4231,14 +4293,35 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     std::lock_guard lock(shared->zookeeper_mutex);
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+
     if (!shared->zookeeper)
-        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+    {
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+
+        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+    }
 
     if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+
+        auto old_zookeeper = shared->zookeeper;
+
         shared->zookeeper = shared->zookeeper->startNewSession();
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        {
+            zookeeper_connection_log->addDisconnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+        }
+
         if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
@@ -4316,36 +4399,38 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
-void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 {
-    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
-    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
-    /// instead of pointer to system table and it logs nothing.
-    /// This method explicitly sets correct pointer to system log after its initialization.
-    /// TODO get rid of this if possible
-
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
+    std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
     {
         SharedLockGuard lock(shared->mutex);
         if (!shared->system_logs)
             return;
 
-        zookeeper_log = shared->system_logs->zookeeper_log;
+        zookeeper_connection_log = shared->system_logs->zookeeper_connection_log;
     }
 
-    if (!zookeeper_log)
+    if (!zookeeper_connection_log)
         return;
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
         if (shared->zookeeper)
-            shared->zookeeper->setZooKeeperLog(zookeeper_log);
+        {
+            if (zookeeper_connection_log)
+                zookeeper_connection_log->addConnected(
+                    ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        }
     }
 
     {
         std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
         for (auto & zk : shared->auxiliary_zookeepers)
-            zk.second->setZooKeeperLog(zookeeper_log);
+        {
+            if (zookeeper_connection_log)
+                zookeeper_connection_log->addConnected(
+                    zk.first, *zk.second, ZooKeeperConnectionLog::keeper_init_reason);
+        }
     }
 }
 
@@ -4424,6 +4509,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    const auto config_name = "auxiliary_zookeepers." + name;
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
@@ -4432,18 +4518,33 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
 
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has("auxiliary_zookeepers." + name))
+        if (!config.has(config_name))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
                 "config.xml",
                 name);
 
+        zkutil::ZooKeeperArgs args(config, config_name);
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
     }
     else if (zookeeper->second->expired())
+    {
+        auto old_zookeeper = zookeeper->second;
         zookeeper->second = zookeeper->second->startNewSession();
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        {
+            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
+        }
+    }
 
     return zookeeper->second;
 }
@@ -4460,25 +4561,35 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
     return shared->auxiliary_zookeepers;
 }
 
-void Context::resetZooKeeper() const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    shared->zookeeper.reset();
-}
-
 static void reloadZooKeeperIfChangedImpl(
     const ConfigurationPtr & config,
+    const std::string_view keeper_name,
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
-    bool server_started)
+    std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
+    bool server_started,
+    const Int32 send_receive_os_threads_nice_value)
 {
+    static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
-            zk->finalize("Config changed");
+            zk->finalize(reason);
 
-        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
+        auto old_zk = zk;
+
+        zkutil::ZooKeeperArgs args(*config, config_name);
+        args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
+        zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
+
+        if (zk_concection_log)
+        {
+            zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
+            zk_concection_log->addConnected(keeper_name, *zk, reason);
+        }
+
         if (server_started)
             zk->setServerCompletelyStarted();
     }
@@ -4487,25 +4598,38 @@ static void reloadZooKeeperIfChangedImpl(
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     bool server_started = isServerCompletelyStarted();
+
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), server_started);
+
+    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
     bool server_started = isServerCompletelyStarted();
+    auto zookeeper_connection_log = getZooKeeperConnectionLog();
+
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
     shared->auxiliary_zookeepers_config = config;
 
     for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
     {
-        if (!config->has("auxiliary_zookeepers." + it->first))
+        const auto config_name = "auxiliary_zookeepers." + it->first;
+        LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
+        if (!config->has(config_name))
+        {
+            LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
+            if (zookeeper_connection_log)
+                zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
+
             it = shared->auxiliary_zookeepers.erase(it);
+        }
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), server_started);
+            LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
+            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
             ++it;
         }
     }
@@ -4922,6 +5046,16 @@ std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
     return shared->system_logs->query_metric_log;
 }
 
+std::shared_ptr<ZooKeeperConnectionLog> Context::getZooKeeperConnectionLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->zookeeper_connection_log;
+}
+
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5034,7 +5168,11 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
 
     if (!shared->system_logs)
         return {};
@@ -5136,6 +5274,26 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
+std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->iceberg_metadata_log;
+}
+
+std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->delta_lake_metadata_log;
+}
+
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5143,6 +5301,19 @@ std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
         return {};
 
     return shared->system_logs->dead_letter_queue;
+}
+
+std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() const
+{
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->aggregated_zookeeper_log;
 }
 
 SystemLogs Context::getSystemLogs() const
@@ -5162,6 +5333,7 @@ std::optional<Context::Dashboards> Context::getDashboards() const
         return {};
     return shared->dashboards;
 }
+
 
 namespace
 {
@@ -5422,6 +5594,22 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     }
 
     return *shared->replicated_merge_tree_settings;
+}
+
+const DatabaseReplicatedSettings & Context::getDatabaseReplicatedSettings() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->database_replicated_settings)
+    {
+        const auto & config = shared->getConfigRefWithLock(lock);
+        DatabaseReplicatedSettings db_replicated_settings;
+
+        db_replicated_settings.loadFromConfig("database_replicated", config);
+        shared->database_replicated_settings.emplace(db_replicated_settings);
+    }
+
+    return *shared->database_replicated_settings;
 }
 
 const DistributedSettings & Context::getDistributedSettings() const
@@ -6098,13 +6286,6 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
-void Context::resetZooKeeperMetadataTransaction()
-{
-    assert(metadata_transaction);
-    assert(hasQueryContext());
-    metadata_transaction = nullptr;
-}
-
 void Context::setParentTable(UUID uuid)
 {
     chassert(!parent_table_uuid.has_value());
@@ -6226,6 +6407,12 @@ ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() co
 void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback)
 {
     next_task_callback = callback;
+}
+
+
+bool Context::hasClusterFunctionReadTaskCallback() const
+{
+    return next_task_callback.has_value();
 }
 
 
@@ -6398,12 +6585,18 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initialized, [&] {
-        const auto & config = getConfigRef();
-        shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
-        shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
-        shared->synchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, config);
-    });
+    callOnce(
+        shared->readers_initialized,
+        [&]
+        {
+            const auto & server_settings = getServerSettings();
+            shared->asynchronous_remote_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, server_settings);
+            shared->asynchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, server_settings);
+            shared->synchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, server_settings);
+        });
 
     switch (type)
     {
@@ -6638,6 +6831,26 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
+void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
+{
+    runtime_filter_lookup = filter_lookup;
+}
+
+RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
+{
+    return runtime_filter_lookup;
+}
+
+void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
+{
+    storage_alias_behaviour = storage_alias_behaviour_;
+}
+
+uint8_t Context::getStorageAliasBehaviour() const
+{
+    return storage_alias_behaviour;
+}
+
 UInt64 Context::getClientProtocolVersion() const
 {
     return client_protocol_version;
@@ -6648,14 +6861,15 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
-void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
 {
-    partition_id_to_max_block = std::move(partitions);
+    partition_id_to_max_block[table_uuid] = std::move(partitions);
 }
 
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
 {
-    return partition_id_to_max_block;
+    auto it = partition_id_to_max_block.find(table_uuid);
+    return it != partition_id_to_max_block.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

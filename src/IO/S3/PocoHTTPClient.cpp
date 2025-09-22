@@ -88,6 +88,7 @@ namespace DB::ErrorCodes
     extern const int TOO_MANY_REDIRECTS;
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::S3
@@ -98,7 +99,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     const String & force_region_,
     const RemoteHostFilter & remote_host_filter_,
     unsigned int s3_max_redirects_,
-    unsigned int s3_retry_attempts_,
+    RetryStrategy retry_strategy_,
     bool s3_slow_all_threads_after_network_error_,
     bool s3_slow_all_threads_after_retryable_error_,
     bool enable_s3_requests_logging_,
@@ -111,7 +112,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
-    , s3_retry_attempts(s3_retry_attempts_)
+    , retry_strategy(retry_strategy_)
     , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
@@ -123,6 +124,13 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
     /// This is used to identify configurations created by us.
     userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
+    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
+    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
+    {
+        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
+        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
+    }
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -716,7 +724,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, S3LatencyType::Connect, connect_time);
             observeLatency(request, first_byte_latency_type, first_byte_time);
         }
-        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        LOG_DEBUG(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
@@ -730,7 +738,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, S3LatencyType::Connect, connect_time);
             observeLatency(request, first_byte_latency_type, first_byte_time);
         }
-        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        LOG_DEBUG(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));

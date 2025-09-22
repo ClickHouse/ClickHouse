@@ -11,9 +11,8 @@
 #include <Core/Field.h>
 
 #include <cstdint>
-#include <variant>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 enum class ManifestEntryStatus : uint8_t
@@ -26,14 +25,18 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
+    POSITION_DELETE = 1,
+    EQUALITY_DELETE = 2
 };
 
-struct DataFileEntry
+
+enum class ManifestFileContentType
 {
-    String file_name;
+    DATA = 0,
+    DELETE = 1
 };
+
+String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
 {
@@ -43,20 +46,35 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
-using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
+struct PartitionSpecsEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
+    // It's a processed file path to be used by Object Storage
+    String file_path;
+
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
     Int64 snapshot_id;
     Int64 schema_id;
 
-    FileEntry file;
     DB::Row partition_key_value;
+    PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+
+    String file_format;
+    std::optional<String> reference_data_file_path; // For position delete files only.
+    std::optional<std::vector<Int32>> equality_ids;
 };
 
 /**
@@ -85,7 +103,7 @@ struct ManifestFileEntry
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
-class ManifestFileContent
+class ManifestFileContent : public boost::noncopyable
 {
 public:
     explicit ManifestFileContent(
@@ -93,13 +111,14 @@ public:
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
-        const DB::IcebergSchemaProcessor & schema_processor,
+        IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntry> & getFiles() const;
+    const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -109,25 +128,39 @@ public:
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
-    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
-    std::optional<Int64> getBytesCountInAllDataFiles() const;
+    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+    std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
+    const String & getPathToManifestFile() const { return path_to_manifest_file; }
+
+    ManifestFileContent(ManifestFileContent &&) = delete;
+    ManifestFileContent & operator=(ManifestFileContent &&) = delete;
 
 private:
-    void sortManifestEntriesBySchemaId();
+
+    PartitionSpecification common_partition_specification;
+    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files);
 
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> files;
+    std::vector<ManifestFileEntry> data_files_without_deleted;
+    // Partition level deletes files
+    std::vector<ManifestFileEntry> position_deletes_files_without_deleted;
+    std::vector<ManifestFileEntry> equality_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
-
+    String path_to_manifest_file;
 };
 
-using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
 
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
+bool operator<(const DB::Row & lhs, const DB::Row & rhs);
+
+
+std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
 }
 
 #endif

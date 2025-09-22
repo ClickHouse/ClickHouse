@@ -118,7 +118,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             auth_settings[S3AuthSetting::region],
             RemoteHostFilter(),
             s3_max_redirects,
-            s3_retry_attempts,
+            S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
             s3_slow_all_threads_after_network_error,
             s3_slow_all_threads_after_retryable_error,
             enable_s3_requests_logging,

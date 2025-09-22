@@ -31,13 +31,13 @@ An exception is thrown when dividing by zero or when dividing a minimal
 negative number by minus one.
     )";
     FunctionDocumentation::Syntax syntax = "functionName(x, y)";
-    FunctionDocumentation::Arguments arguments = 
+    FunctionDocumentation::Arguments arguments =
     {
         {"x", "First integer", {"(U)Int*"}},
         {"y", "Second integer", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the greatest common divisor of `x` and `y`.", {"(U)Int*"}};
-    FunctionDocumentation::Examples examples = 
+    FunctionDocumentation::Examples examples =
     {
         {"Usage example", "SELECT gcd(12, 18)", "6"};
     };
