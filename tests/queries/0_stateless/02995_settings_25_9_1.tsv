@@ -37,6 +37,7 @@ allow_experimental_database_materialized_postgresql	0
 allow_experimental_database_replicated	1
 allow_experimental_database_unity_catalog	0
 allow_experimental_delta_kernel_rs	1
+allow_experimental_delta_lake_writes	0
 allow_experimental_dynamic_type	1
 allow_experimental_full_text_index	0
 allow_experimental_funnel_functions	0
@@ -258,6 +259,7 @@ database_replicated_always_detach_permanently	0
 database_replicated_ddl_output	1
 database_replicated_enforce_synchronous_settings	0
 database_replicated_initial_query_timeout_sec	300
+datalake_disk_name	
 date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands	0
 date_time_input_format	basic
 date_time_output_format	simple
@@ -273,6 +275,8 @@ default_temporary_table_engine	Memory
 default_view_definer	CURRENT_USER
 delta_lake_enable_engine_predicate	1
 delta_lake_enable_expression_visitor_logging	0
+delta_lake_insert_max_bytes_in_data_file	1073741824
+delta_lake_insert_max_rows_in_data_file	100000
 delta_lake_snapshot_version	-1
 delta_lake_throw_on_engine_predicate_error	0
 describe_compact_output	0
@@ -366,6 +370,7 @@ enable_parallel_blocks_marshalling	1
 enable_parallel_replicas	0
 enable_parsing_to_custom_serialization	1
 enable_positional_arguments	1
+enable_producing_buckets_out_of_order_in_aggregation	1
 enable_reads_from_query_cache	1
 enable_s3_requests_logging	0
 enable_scalar_subquery_optimization	1
@@ -517,8 +522,10 @@ http_skip_not_found_url_for_globs	1
 http_wait_end_of_query	0
 http_write_exception_in_output_format	1
 http_zlib_compression_level	3
+iceberg_delete_data_on_drop	0
 iceberg_engine_ignore_schema_evolution	0
 iceberg_metadata_compression_method	
+iceberg_metadata_log_level	none
 iceberg_snapshot_id	0
 iceberg_timestamp_ms	0
 idle_connection_timeout	3600
@@ -631,6 +638,7 @@ input_format_parquet_use_native_reader	0
 input_format_parquet_use_native_reader_v3	0
 input_format_parquet_use_offset_index	1
 input_format_protobuf_flatten_google_wrappers	0
+input_format_protobuf_oneof_presence	0
 input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference	0
 input_format_record_errors_file_path	
 input_format_skip_unknown_fields	1
@@ -672,6 +680,8 @@ insert_shard_id	0
 interactive_delay	100000
 intersect_default_mode	ALL
 interval_output_format	numeric
+jemalloc_collect_profile_samples_in_trace_log	0
+jemalloc_enable_profiler	0
 join_algorithm	direct,parallel_hash,hash
 join_any_take_last_row	0
 join_default_strictness	ALL
@@ -762,6 +772,8 @@ max_final_threads	\'auto(32)\'
 max_http_get_redirects	0
 max_hyperscan_regexp_length	0
 max_hyperscan_regexp_total_length	0
+max_iceberg_data_file_bytes	1073741824
+max_iceberg_data_file_rows	1000
 max_insert_block_size	1048449
 max_insert_delayed_streams_for_parallel_write	0
 max_insert_threads	0
@@ -965,6 +977,8 @@ optimize_use_projection_filtering	1
 optimize_use_projections	1
 optimize_using_constraints	0
 os_thread_priority	0
+os_threads_nice_value_materialized_view	0
+os_threads_nice_value_query	0
 output_format_arrow_compression_method	lz4_frame
 output_format_arrow_fixed_string_as_fixed_byte_array	1
 output_format_arrow_low_cardinality_as_dictionary	0
@@ -1117,6 +1131,7 @@ prefetch_buffer_size	1048576
 print_pretty_type_names	1
 priority	0
 promql_database	
+promql_evaluation_time	auto
 promql_table	
 push_external_roles_in_interserver_queries	1
 query_cache_compress_entries	1
@@ -1131,11 +1146,15 @@ query_cache_store_results_of_queries_with_nondeterministic_functions	0
 query_cache_system_table_handling	throw
 query_cache_tag	
 query_cache_ttl	60
+query_condition_cache_selectivity_threshold	1
 query_condition_cache_store_conditions_as_plaintext	0
 query_metric_log_interval	-1
 query_plan_aggregation_in_order	1
+query_plan_convert_any_join_to_semi_or_anti_join	1
 query_plan_convert_join_to_in	0
 query_plan_convert_outer_join_to_inner_join	1
+query_plan_direct_read_from_text_index	1
+query_plan_display_internal_aliases	0
 query_plan_enable_multithreading_after_window_functions	1
 query_plan_enable_optimizations	1
 query_plan_execute_functions_after_sorting	1
@@ -1146,9 +1165,11 @@ query_plan_lift_up_array_join	1
 query_plan_lift_up_union	1
 query_plan_max_limit_for_lazy_materialization	10
 query_plan_max_optimizations_to_apply	10000
+query_plan_max_step_description_length	500
 query_plan_merge_expressions	1
 query_plan_merge_filter_into_join_condition	1
 query_plan_merge_filters	1
+query_plan_optimize_join_order_limit	1
 query_plan_optimize_lazy_materialization	1
 query_plan_optimize_prewhere	1
 query_plan_optimize_primary_key	1
@@ -1233,6 +1254,7 @@ s3_request_timeout_ms	30000
 s3_retry_attempts	100
 s3_skip_empty_files	1
 s3_slow_all_threads_after_network_error	1
+s3_slow_all_threads_after_retryable_error	1
 s3_strict_upload_part_size	0
 s3_throw_on_zero_files_match	0
 s3_truncate_on_insert	0
@@ -1296,6 +1318,7 @@ tcp_keep_alive_timeout	290
 temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds	600000
 temporary_files_codec	LZ4
 temporary_live_view_timeout	1
+text_index_use_bloom_filter	1
 throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert	1
 throw_if_no_data_to_insert	1
 throw_on_error_from_cache_on_write_operations	0
@@ -1339,6 +1362,7 @@ use_roaring_bitmap_iceberg_positional_deletes	0
 use_skip_indexes	1
 use_skip_indexes_if_final	1
 use_skip_indexes_if_final_exact_mode	1
+use_skip_indexes_on_data_read	0
 use_structure_from_insertion_table_in_table_functions	2
 use_uncompressed_cache	0
 use_variant_as_common_type	0
