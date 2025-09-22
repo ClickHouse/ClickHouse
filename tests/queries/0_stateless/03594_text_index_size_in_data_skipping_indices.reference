@@ -7,14 +7,21 @@ type:                    text
 type_full:               text(tokenizer = 'ngram', ngram_size = 3)
 expr:                    str
 granularity:             1
-data_compressed_bytes:   132
-data_uncompressed_bytes: 99
-marks_bytes:             150
+data_compressed_bytes:   133
+data_uncompressed_bytes: 100
+marks_bytes:             72
 Row 1:
 ──────
 partition:                            tuple()
 name:                                 all_1_1_0
-bytes_on_disk:                        510
-secondary_indices_compressed_bytes:   177
-secondary_indices_uncompressed_bytes: 121
-secondary_indices_marks_bytes:        200
+secondary_indices_compressed_bytes:   178
+secondary_indices_uncompressed_bytes: 122
+secondary_indices_marks_bytes:        96
+
+Row 2:
+──────
+partition:                            tuple()
+name:                                 all_1_1_1
+secondary_indices_compressed_bytes:   178
+secondary_indices_uncompressed_bytes: 122
+secondary_indices_marks_bytes:        96

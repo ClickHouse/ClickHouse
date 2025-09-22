@@ -9,15 +9,26 @@ CREATE TABLE tab
     INDEX set_idx str TYPE set(10) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS compress_marks = 0;
 
 INSERT INTO tab (str) VALUES ('I am inverted');
+
+SYSTEM START MERGES tab;
+OPTIMIZE TABLE tab FINAL;
+
+-- to double check: `ll -h $(find . -name "*text_idx*")` from build dir
+-- sum up .mrk* or .cmrk* files to get markes_bytes
+-- sum up .idx files for data_compressed_bytes
+-- note that `du` rounds to nearest 4KB so it is not accurate here
+-- also note that different runs of db might all show up, only sum up one set
 SELECT * FROM system.data_skipping_indices WHERE database = currentDatabase() AND type = 'text' FORMAT Vertical;
 
+-- to double check: `ll -h $(find . -name "*skp_idx*")` from build dir
+-- see above notes
 SELECT
     partition,
     name,
-    bytes_on_disk,
     secondary_indices_compressed_bytes,
     secondary_indices_uncompressed_bytes,
     secondary_indices_marks_bytes
@@ -25,5 +36,3 @@ FROM system.parts
 FORMAT Vertical;
 
 DROP TABLE tab;
-
-SET allow_experimental_full_text_index = 0;
