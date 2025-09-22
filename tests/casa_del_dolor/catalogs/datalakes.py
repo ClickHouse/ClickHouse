@@ -238,11 +238,11 @@ def get_spark(
 
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3://warehouse-glue",
+                "s3a://warehouse-glue",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-glue",
+                "s3a://warehouse-glue",
             )
     elif catalog == LakeCatalogs.Hive:
         builder.config(
@@ -285,10 +285,10 @@ def get_spark(
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
-            builder.config("spark.sql.warehouse.dir", "s3://warehouse-rest")
+            builder.config("spark.sql.warehouse.dir", "s3a://warehouse-rest")
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-rest",
+                "s3a://warehouse-rest",
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
@@ -634,7 +634,7 @@ logger.jetty.level = warn
                             "s3.connection-ssl.enabled": "false",
                         }
                     )
-                    next_warehouse = f"s3://{cluster.minio_bucket}/{catalog_name}"
+                    next_warehouse = f"s3a://{catalog_name}"
                 elif next_storage == TableStorage.Azure:
                     kwargs.update(
                         {
