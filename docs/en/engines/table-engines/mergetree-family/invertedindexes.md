@@ -85,10 +85,10 @@ If parameter `split` is not specified, a single whitespace `[' ']` is used by de
 :::note
 The `split` tokenizer applies the split separators left-to-right.
 This can create ambiguities.
-For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21ac']`.
+For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
 In the most cases, you want that matching prefers longer separators first.
 This can generally be done by passing the separator strings in order of descending length.
-If the separator strings form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
 :::
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
