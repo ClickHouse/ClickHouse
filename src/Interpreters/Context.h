@@ -125,7 +125,6 @@ class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
 class IcebergMetadataLog;
-class DeltaMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -273,10 +272,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
-
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -383,8 +378,7 @@ protected:
     UInt64 client_protocol_version = 0;
 
     /// Max block numbers in partitions to read from MergeTree tables.
-    /// Saved separately for each table uuid used in the query.
-    std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
+    PartitionIdToMaxBlockPtr partition_id_to_max_block;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -537,9 +531,6 @@ protected:
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
-
-    /// Used at query runtime to save per-query runtime filters and find them by names
-    RuntimeFilterLookupPtr runtime_filter_lookup;
 
     /// indicates how the query operates storage alias:
     /// 0: operate on original storage
@@ -1389,7 +1380,6 @@ public:
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
-    std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1603,14 +1593,11 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
-    void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
-    RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
-
     void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
     uint8_t getStorageAliasBehaviour() const;
 
-    void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
-    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
+    void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
+    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
 
     const ServerSettings & getServerSettings() const;
 

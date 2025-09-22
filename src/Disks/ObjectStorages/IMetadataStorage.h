@@ -53,16 +53,11 @@ using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOut
 class IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    void commit() { commit(NoCommitOptions{}); }
+    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
 
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) // NOLINT
     {
         throwNotImplemented();
-    }
-    TransactionCommitOutcomeVariant tryCommit()
-    {
-        return tryCommit(NoCommitOptions{});
     }
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;

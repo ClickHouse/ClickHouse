@@ -165,9 +165,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
-arrowFlight
 ArrowCompression
-ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -3083,10 +3081,8 @@ toJSONString
 tokenbf
 tokenization
 tokenize
-tokenizes
 tokenized
 tokenizer
-tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

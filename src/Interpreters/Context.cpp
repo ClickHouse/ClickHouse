@@ -3123,7 +3123,6 @@ void Context::makeQueryContext()
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
-    runtime_filter_lookup = createRuntimeFilterLookup();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -5284,16 +5283,6 @@ std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
     return shared->system_logs->iceberg_metadata_log;
 }
 
-std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->delta_lake_metadata_log;
-}
-
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -6831,16 +6820,6 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
-void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
-{
-    runtime_filter_lookup = filter_lookup;
-}
-
-RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
-{
-    return runtime_filter_lookup;
-}
-
 void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
 {
     storage_alias_behaviour = storage_alias_behaviour_;
@@ -6861,15 +6840,14 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
-void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
+void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
 {
-    partition_id_to_max_block[table_uuid] = std::move(partitions);
+    partition_id_to_max_block = std::move(partitions);
 }
 
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
 {
-    auto it = partition_id_to_max_block.find(table_uuid);
-    return it != partition_id_to_max_block.end() ? it->second : nullptr;
+    return partition_id_to_max_block;
 }
 
 const ServerSettings & Context::getServerSettings() const
