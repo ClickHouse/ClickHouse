@@ -184,6 +184,13 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     assert len(select_cluster) == 600
 
     create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster_iceberg_with_spark, "(a Int32, b String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
+    iceberg_query = query_id = TABLE_NAME_2 + "_" + str(i) + "_" + get_uuid_str()
 
-    assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
+    print("Inserting into second table from table function, query id: {}".format(iceberg_query))
+
+    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1}, query_id = query_id)
+
+    print("First table num rows: ", instance.query(f"SELECT count() FROM (SELECT * FROM {table_function_expr_cluster} ORDER BY ALL)"))
+    print("Second table num rows: ", instance.query(f"SELECT count() FROM (SELECT * FROM {TABLE_NAME_2} ORDER BY ALL)"))
+
+    assert instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL") == instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL")

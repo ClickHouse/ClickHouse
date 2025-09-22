@@ -3,6 +3,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -82,6 +83,9 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 bool ExecutionThreadContext::executeTask()
 {
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
+
+    LOG_DEBUG(
+        &Poco::Logger::get("PipelineExecutor"), "Thread {} starts executing task, UniqID: {}", thread_number, node->processor->getUniqID());
 
     if (trace_processors)
     {

@@ -1303,7 +1303,11 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
+    const IStorageCluster & src_storage_cluster,
+    const ASTInsertQuery & query,
+    ContextPtr local_context,
+    StorageMetadataPtr metadata_snapshot) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1386,7 +1390,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline>
+StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context, StorageMetadataPtr metadata_snapshot) 
 {
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
@@ -1424,7 +1429,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
+        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context, metadata_snapshot);
     }
 
     return {};

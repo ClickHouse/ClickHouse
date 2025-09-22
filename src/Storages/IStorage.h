@@ -461,7 +461,8 @@ public:
       */
     virtual std::optional<QueryPipeline> distributedWrite(
         const ASTInsertQuery & /*query*/,
-        ContextPtr /*context*/);
+        ContextPtr /*context*/,
+        StorageMetadataPtr /*metadata_snapshot*/  );
 
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).

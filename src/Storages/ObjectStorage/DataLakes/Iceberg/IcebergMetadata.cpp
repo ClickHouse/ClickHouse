@@ -989,6 +989,7 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    LOG_DEBUG(log, "Iceberg write from place: {}", StackTrace().toString());
     if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
     {
         return std::make_shared<IcebergStorageSink>(

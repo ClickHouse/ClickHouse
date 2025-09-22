@@ -891,15 +891,27 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
-            auto distributed = table->distributedWrite(query, context);
+            auto distributed = table->distributedWrite(query, context, metadata_snapshot);
             if (distributed)
             {
                 res.pipeline = std::move(*distributed);
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context, metadata_snapshot))
+                auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context, metadata_snapshot);
+                LOG_DEBUG(
+                    logger,
+                    "Trying to build distributed insert select pipeline into ReplicatedMergeTree or DataLake from cluster storage: "
+                    "table={}, pipeline was initialized: {}",
+                    query.getTable(),
+                    pipeline.has_value());
+                if (pipeline)
                     res.pipeline = std::move(*pipeline);
+                LOG_DEBUG(
+                    logger,
+                    "Trying to build distributed insert select pipeline into ReplicatedMergeTree or DataLake from cluster storage: "
+                    "res.pipeline.initialized(): {}",
+                    res.pipeline.initialized());
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
@@ -920,6 +932,8 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
+
+    LOG_DEBUG(&Poco::Logger::get("Adding node from here"), "{}", StackTrace().toString());
 
     return res;
 }

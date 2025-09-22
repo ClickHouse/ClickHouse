@@ -46,6 +46,9 @@ public:
 
     Chunk generate() override;
 
+    Chunk generateImpl();
+
+
     void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(

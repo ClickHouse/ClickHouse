@@ -116,7 +116,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    std::optional<QueryPipeline>
+    distributedWrite(const ASTInsertQuery & query, ContextPtr context, StorageMetadataPtr metadata_snapshot) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -227,7 +228,11 @@ private:
 
     void delayInsertOrThrowIfNeeded() const;
 
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(
+        const IStorageCluster & src_storage_cluster,
+        const ASTInsertQuery & query,
+        ContextPtr context,
+        StorageMetadataPtr metadata_snapshot) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();

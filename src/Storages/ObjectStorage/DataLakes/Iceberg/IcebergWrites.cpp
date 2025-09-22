@@ -49,6 +49,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
+#include <Common/logger_useful.h>
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -1310,6 +1312,11 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
 {
     configuration->update(object_storage, context, true);
+    LOG_DEBUG(
+        &Poco::Logger::get("creating the sink"),
+        "IcebergStorageSink with table id {} created, stacktrace: {}",
+        table_id_.getFullTableName(),
+        StackTrace().toString());
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
@@ -1363,6 +1370,11 @@ IcebergStorageSink::IcebergStorageSink(
 
 void IcebergStorageSink::consume(Chunk & chunk)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("consuming the block"),
+        "IcebergStorageSink consume chunk with {} rows, stacktrace: {}",
+        chunk.getNumRows(),
+        StackTrace().toString());
     if (isCancelled())
         return;
     total_rows += chunk.getNumRows();
