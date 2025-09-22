@@ -37,7 +37,7 @@
 * Support Azure for data lakes disks. [#87173](https://github.com/ClickHouse/ClickHouse/pull/87173) ([scanhex12](https://github.com/scanhex12)).
 * Support `Unity` catalog on top of Azure blob storage. [#80013](https://github.com/ClickHouse/ClickHouse/pull/80013) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
 * Support more formats (`ORC`, `Avro`) in `Iceberg` writes. This closes [#86179](https://github.com/ClickHouse/ClickHouse/issues/86179). [#87277](https://github.com/ClickHouse/ClickHouse/pull/87277) ([scanhex12](https://github.com/scanhex12)).
-* Support table engine `Alias`. [#76569](https://github.com/ClickHouse/ClickHouse/pull/76569) ([RinChanNOW](https://github.com/RinChanNOWWW)).
+* ⚠️WTF, revert this feature before the release! Support table engine `Alias`. [#76569](https://github.com/ClickHouse/ClickHouse/pull/76569) ([RinChanNOW](https://github.com/RinChanNOWWW)).
 * Add a new system table `database_replicas` with information about database replicas. [#83408](https://github.com/ClickHouse/ClickHouse/pull/83408) ([Konstantin Morozov](https://github.com/k-morozov)).
 * Added function `arrayExcept` that subtracts one array as a set from another. [#82368](https://github.com/ClickHouse/ClickHouse/pull/82368) ([Joanna Hulboj](https://github.com/jh0x)).
 * Adds a new `system.aggregated_zookeeper_log` table. The table contains statistics (e.g. number of operations, average latency, errors) of ZooKeeper operations grouped by session id, parent path and operation type, and periodically flushed to disk. [#85102](https://github.com/ClickHouse/ClickHouse/pull/85102) [#87208](https://github.com/ClickHouse/ClickHouse/pull/87208) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
