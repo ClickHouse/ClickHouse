@@ -689,7 +689,8 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
 
 bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, TableOrFunction * tof)
 {
-    bool is_url = false, cluster_or_remote = false;
+    bool is_url = false;
+    bool cluster_or_remote = false;
     const std::optional<String> & cluster = t.getCluster();
     const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
     const uint32_t remote_func = 5;

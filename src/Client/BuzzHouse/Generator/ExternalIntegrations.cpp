@@ -1544,7 +1544,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
     sv2->set_property("warehouse");
     sv2->set_value("'" + d.getSparkCatalogName() + "'");
-    if (d.catalog != LakeCatalog::Unity && d.format != LakeFormat::Iceberg)
+    if (d.catalog != LakeCatalog::Unity || d.format != LakeFormat::Iceberg)
     {
         de->add_params()->set_svalue(minio.user);
         de->add_params()->set_svalue(minio.password);
