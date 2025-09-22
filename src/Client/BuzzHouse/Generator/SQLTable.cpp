@@ -12,15 +12,24 @@ String StatementGenerator::nextComment(RandomGenerator & rg) const
     return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextStrlen());
 }
 
+static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
+{
+    /// Skip LowCardinality type
+    if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+    {
+        tp = dynamic_cast<LowCardinality *>(tp)->subtype;
+    }
+    if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    {
+        next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
+        paths.push_back(next);
+        next.path.pop_back();
+    }
+}
+
 void collectColumnPaths(
     const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
-    ArrayType * at = nullptr;
-    MapType * mt = nullptr;
-    TupleType * ttp = nullptr;
-    NestedType * ntp = nullptr;
-    JSONType * jt = nullptr;
-
     checkStackSize();
     /// Append this node to the path
     next.path.emplace_back(ColumnPathChainEntry(cname, tp));
@@ -29,41 +38,59 @@ void collectColumnPaths(
     {
         paths.push_back(next);
     }
-    if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    collectNullable(tp, flags, next, paths);
+    if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
-        next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
-        paths.push_back(next);
-        next.path.pop_back();
+        /// JSON type can be inside nullable
+        tp = dynamic_cast<Nullable *>(tp)->subtype;
     }
-    else if ((flags & collect_generated) != 0 && ((at = dynamic_cast<ArrayType *>(tp)) || (mt = dynamic_cast<MapType *>(tp))))
+    if ((flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
     {
-        uint32_t i = 1;
-
         next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
         paths.push_back(next);
         next.path.pop_back();
-        while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
+        if (tp->getTypeClass() == SQLTypeClass::ARRAY)
         {
-            next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
-            paths.push_back(next);
-            next.path.pop_back();
-            i++;
+            uint32_t i = 1;
+            ArrayType * at = dynamic_cast<ArrayType *>(tp);
+            ArrayType * at2 = at;
+            ArrayType * at3 = nullptr;
+
+            while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
+            {
+                next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
+                paths.push_back(next);
+                next.path.pop_back();
+                i++;
+            }
+            /// Array null values
+            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype)))
+            {
+                at2 = at3;
+            }
+            if (at2)
+            {
+                collectNullable(at2->subtype, flags, next, paths);
+            }
         }
-        if (mt)
+        else
         {
+            MapType * mt = dynamic_cast<MapType *>(tp);
+
             next.path.emplace_back(ColumnPathChainEntry("keys", mt->key));
             paths.push_back(next);
             next.path.pop_back();
             next.path.emplace_back(ColumnPathChainEntry("values", mt->value));
             paths.push_back(next);
+            collectNullable(mt->value, flags, next, paths);
             next.path.pop_back();
         }
     }
-    else if ((flags & flat_tuple) != 0 && (ttp = dynamic_cast<TupleType *>(tp)))
+    else if ((flags & flat_tuple) != 0 && tp->getTypeClass() == SQLTypeClass::TUPLE)
     {
         uint32_t i = 1;
 
-        for (const auto & entry : ttp->subtypes)
+        for (const auto & entry : dynamic_cast<TupleType *>(tp)->subtypes)
         {
             collectColumnPaths(
                 entry.cname.has_value() ? ("c" + std::to_string(entry.cname.value())) : std::to_string(i),
@@ -74,9 +101,9 @@ void collectColumnPaths(
             i++;
         }
     }
-    else if ((flags & flat_nested) != 0 && (ntp = dynamic_cast<NestedType *>(tp)))
+    else if ((flags & flat_nested) != 0 && tp->getTypeClass() == SQLTypeClass::NESTED)
     {
-        for (const auto & entry : ntp->subtypes)
+        for (const auto & entry : dynamic_cast<NestedType *>(tp)->subtypes)
         {
             const String nsub = "c" + std::to_string(entry.cname);
 
@@ -92,9 +119,9 @@ void collectColumnPaths(
             }
         }
     }
-    else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
+    else if ((flags & flat_json) != 0 && tp->getTypeClass() == SQLTypeClass::JSON)
     {
-        for (const auto & entry : jt->subcols)
+        for (const auto & entry : dynamic_cast<JSONType *>(tp)->subcols)
         {
             next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
             paths.push_back(next);
