@@ -5,7 +5,7 @@
 
 #include <atomic>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -53,8 +53,8 @@ namespace DB::Histogram
         const Labels & getLabels() const;
 
     private:
-        mutable std::shared_mutex mutex;
-        MetricsMap metrics;
+        mutable std::mutex mutex;
+        MetricsMap metrics TSA_GUARDED_BY(mutex);
         const Buckets buckets;
         const Labels labels;
     };

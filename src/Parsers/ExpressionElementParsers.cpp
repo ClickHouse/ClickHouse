@@ -125,11 +125,6 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
-        if (ASTPtr explained_query = explain_query.getExplainedQuery())
-            if (const auto * explained_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(explained_query.get()))
-                if (explained_query_with_output->hasOutputOptions())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
-
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
@@ -510,10 +505,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    auto res = parser_definition.parse(pos, function.window_definition, expected);
-    if (function.window_definition)
-        function.children.push_back(function.window_definition);
-    return res;
+    return parser_definition.parse(pos, function.window_definition, expected);
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
@@ -569,7 +561,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
         {
-            node->children.push_back(node->frame_begin_offset);
             // We will evaluate the expression for offset expression later.
             node->frame_begin_type = WindowFrame::BoundaryType::Offset;
         }
@@ -617,7 +608,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_expression.parse(pos, node->frame_end_offset, expected))
             {
-                node->children.push_back(node->frame_end_offset);
                 // We will evaluate the expression for offset expression later.
                 node->frame_end_type = WindowFrame::BoundaryType::Offset;
             }
@@ -1233,7 +1223,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         return makeStringLiteral(pos, node, "");
 
     PODArray<UInt8> res;
-    res.resize((str_end - str_begin + word_size - 1) / word_size);
+    res.resize((pos->size() + word_size) / word_size + 1);
     char * res_begin = reinterpret_cast<char *>(res.data());
     char * res_pos = res_begin;
 
@@ -1246,7 +1236,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2199,18 +2189,6 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     ASTPtr expr_elem;
     if (!elem_p.parse(pos, expr_elem, expected))
-        return false;
-
-    /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-    /// does not expect an alias after the expression. However, in certain cases,
-    /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-    /// This is the case when it parses a single expression in parentheses, e.g.,
-    /// it does not allow
-    /// 1 AS x
-    /// but it can parse
-    /// (1 AS x)
-    /// which we should not allow as well.
-    if (!expr_elem->tryGetAlias().empty())
         return false;
 
     if (!allow_order)

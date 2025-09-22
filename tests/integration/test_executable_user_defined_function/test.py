@@ -302,7 +302,6 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_always_error_throw_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: User defined function 'test_function_always_error_throw_python' failed" in str(ex)
         assert "DB::Exception: Executable generates stderr: Fake error" in str(ex)
 
     query_id = uuid.uuid4().hex
@@ -342,7 +341,6 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_exit_error_fail_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: User defined function 'test_function_exit_error_fail_python' failed" in str(ex)
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
 
 def test_executable_function_query_cache(started_cluster):

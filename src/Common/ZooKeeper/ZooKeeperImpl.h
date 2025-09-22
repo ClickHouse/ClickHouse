@@ -89,7 +89,6 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
-    class AggregatedZooKeeperLog;
 }
 
 namespace Coordination
@@ -109,8 +108,7 @@ public:
     ZooKeeper(
         const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
@@ -197,8 +195,6 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    void getACL(const String & path, GetACLCallback callback) override;
-
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
@@ -215,18 +211,14 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
-    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     void setServerCompletelyStarted();
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
 private:
-    const Int32 send_receive_os_threads_nice_value;
-
     ACLs default_acls;
-    zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
     zkutil::ZooKeeperArgs args;
     std::atomic<int8_t> original_index{-1};
@@ -276,7 +268,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024, "zookeeper-client"};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -349,9 +341,6 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
-    /// Observes the operation in Aggregated ZooKeeper Log.
-    void observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds);
-
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
     void initFeatureFlags();
@@ -359,7 +348,6 @@ private:
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
-    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

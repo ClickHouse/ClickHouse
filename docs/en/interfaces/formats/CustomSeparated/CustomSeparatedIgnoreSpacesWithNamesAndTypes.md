@@ -11,9 +11,9 @@ title: 'CustomSeparatedIgnoreSpacesWithNamesAndTypes'
 
 ## Description {#description}
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using the following txt file, named as `football.txt`:
 
@@ -37,4 +37,4 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedIgnoreSpacesWithNamesAndTypes;
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

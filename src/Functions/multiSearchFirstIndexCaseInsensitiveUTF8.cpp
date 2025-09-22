@@ -1,7 +1,7 @@
-#include <Functions/FunctionsMultiStringSearch.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/MultiSearchFirstIndexImpl.h>
-#include <Functions/PositionImpl.h>
+#include "FunctionsMultiStringSearch.h"
+#include "FunctionFactory.h"
+#include "MultiSearchFirstIndexImpl.h"
+#include "PositionImpl.h"
 
 
 namespace DB

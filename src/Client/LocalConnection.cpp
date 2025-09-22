@@ -1,4 +1,4 @@
-#include <Client/LocalConnection.h>
+#include "LocalConnection.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -23,7 +23,6 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
-#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace DB
 {
@@ -33,16 +32,13 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsString promql_database;
-    extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -204,9 +200,8 @@ void LocalConnection::sendQuery(
         if (dialect == Dialect::kusto)
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            parser
+                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -245,7 +240,7 @@ void LocalConnection::sendQuery(
         auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const SharedHeader & header)
+            pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
             });
@@ -350,7 +345,7 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     if (state->pushing_async_executor)
@@ -499,7 +494,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             totals = state->executor->getTotalsBlock();
 
-        if (!totals.empty())
+        if (totals)
         {
             next_packet_type = Protocol::Server::Totals;
             state->block.emplace(totals);
@@ -515,7 +510,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             extremes = state->executor->getExtremesBlock();
 
-        if (!extremes.empty())
+        if (extremes)
         {
             next_packet_type = Protocol::Server::Extremes;
             state->block.emplace(extremes);
@@ -555,7 +550,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && !state->block.value().empty())
+    if (state->block && state->block.value())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -623,11 +618,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block.empty() && next_read)
+    if (!block && next_read)
     {
         return true;
     }
-    if (!block.empty() && !state->io.null_format)
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -671,7 +666,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && !state->block.value().empty())
+            if (state->block && state->block.value())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();

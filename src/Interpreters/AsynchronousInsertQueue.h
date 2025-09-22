@@ -6,7 +6,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
-#include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
@@ -93,9 +92,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<TrackedString, Block>
+    struct DataChunk : public std::variant<String, Block>
     {
-        using std::variant<TrackedString, Block>::variant;
+        using std::variant<String, Block>::variant;
 
         size_t byteSize() const
         {
@@ -126,7 +125,7 @@ private:
             }, *this);
         }
 
-        const TrackedString * asString() const { return std::get_if<TrackedString>(this); }
+        const String * asString() const { return std::get_if<String>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 

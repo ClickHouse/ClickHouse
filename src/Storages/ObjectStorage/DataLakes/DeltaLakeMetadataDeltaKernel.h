@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
@@ -23,27 +22,24 @@ namespace DB
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
-        ContextPtr context);
+        ConfigurationObserverPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
-
-    bool supportsWrites() const override { return true; }
 
     bool update(const ContextPtr & context) override;
 
     NamesAndTypesList getTableSchema() const override;
 
-    ReadFromFormatInfo prepareReadingFromFormat(
+    DB::ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
+        const DB::StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns,
-        bool supports_tuple_elements) override;
+        bool supports_subset_of_columns) override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
 
@@ -51,11 +47,11 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr context)
+        ConfigurationObserverPtr configuration,
+        ContextPtr /* context */)
     {
         auto configuration_ptr = configuration.lock();
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, context);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
 
     ObjectIterator iterate(
@@ -64,22 +60,9 @@ public:
         size_t list_batch_size,
         ContextPtr context) const override;
 
-    DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
-
-    SinkToStoragePtr write(
-        SharedHeader sample_block,
-        const StorageID & table_id,
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
-
 private:
     const LoggerPtr log;
-    const DeltaLake::KernelHelperPtr kernel_helper;
-    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
-    mutable std::mutex table_snapshot_mutex;
+    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
 };
 
 }

@@ -3,8 +3,8 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include "KernelHelper.h"
+#include "KernelUtils.h"
 #include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
@@ -163,7 +163,7 @@ namespace S3AuthSetting
 }
 
 DeltaLake::KernelHelperPtr getKernelHelper(
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorage::ConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage)
 {
     switch (configuration->getType())
@@ -172,14 +172,14 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             return std::make_shared<DeltaLake::S3KernelHelper>(
-                s3_conf->url,
+                s3_conf->getURL(),
                 object_storage->getS3StorageClient(),
                 s3_conf->getAuthSettings());
         }
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPathForRead().path);
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPath());
         }
         default:
         {
