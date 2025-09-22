@@ -47,10 +47,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
+            {"delta_lake_log_metadata", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
-            {"delta_lake_log_metadata", false, false, "New setting."},
             {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
@@ -887,6 +887,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
