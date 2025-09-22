@@ -34,6 +34,8 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
+    void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const override;
+
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override;
     void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override;
     void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override;
