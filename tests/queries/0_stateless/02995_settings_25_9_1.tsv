@@ -733,7 +733,7 @@ materialize_skip_indexes_on_insert	1
 materialize_statistics_on_insert	1
 materialize_ttl_after_modify	1
 materialized_views_ignore_errors	0
-max_alter_threads	\'auto(48)\'
+max_alter_threads	\'auto(32)\'
 max_analyze_depth	5000
 max_ast_depth	1000
 max_ast_elements	50000
@@ -768,7 +768,7 @@ max_execution_time	0
 max_execution_time_leaf	0
 max_expanded_ast_elements	500000
 max_fetch_partition_retries_count	5
-max_final_threads	\'auto(48)\'
+max_final_threads	\'auto(32)\'
 max_http_get_redirects	0
 max_hyperscan_regexp_length	0
 max_hyperscan_regexp_total_length	0
@@ -796,7 +796,7 @@ max_os_cpu_wait_time_ratio_to_throw	0
 max_parallel_replicas	1000
 max_parser_backtracks	1000000
 max_parser_depth	1000
-max_parsing_threads	\'auto(48)\'
+max_parsing_threads	\'auto(32)\'
 max_partition_size_to_drop	50000000000
 max_partitions_per_insert_block	100
 max_partitions_to_read	-1
@@ -837,7 +837,7 @@ max_temporary_columns	0
 max_temporary_data_on_disk_size_for_query	0
 max_temporary_data_on_disk_size_for_user	0
 max_temporary_non_const_columns	0
-max_threads	\'auto(48)\'
+max_threads	\'auto(32)\'
 max_threads_for_annoy_index_creation	4
 max_threads_for_indexes	0
 max_untracked_memory	4194304
