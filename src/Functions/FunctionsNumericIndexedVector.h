@@ -772,7 +772,7 @@ public:
             AggregateDataPtr data_ptr = is_column_const ? container[0] : container[i];
             auto lhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(data_ptr);
             String lhs_str = FuncImpl::apply(*lhs);
-            col_to->insertData(lhs_str.c_str(), lhs_str.length());
+            col_to->insertData(lhs_str.data(), lhs_str.length());
         }
         return col_to;
     }

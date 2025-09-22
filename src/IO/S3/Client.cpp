@@ -50,7 +50,12 @@ namespace ProfileEvents
     extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
+    extern const Event DiskS3WriteRequestAttempts;
+    extern const Event DiskS3WriteRequestRetryableErrors;
+
     extern const Event DiskS3ReadRequestsErrors;
+    extern const Event DiskS3ReadRequestAttempts;
+    extern const Event DiskS3ReadRequestRetryableErrors;
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
@@ -222,7 +227,6 @@ Client::Client(
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(getLogger("S3Client"))
-    , limited_log(std::make_shared<LogSeriesLimiter>(log, 1, 100))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -705,8 +709,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            if (!isClientForDisk())
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
@@ -732,9 +737,11 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    if (!isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(
+                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                    if (isClientForDisk())
                         incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
@@ -745,10 +752,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
-                else
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
@@ -806,7 +812,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward", sleep_ms);
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {} ('{}')", sleep_ms, error.GetResponseCode(), error.GetMessage());
             break;
         }
     }
@@ -825,7 +831,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TEST(limited_log, "Retry time has passed; proceeding without delay");
+                LOG_TEST(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;
@@ -1108,7 +1114,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
     {
         auto configuration = client_configuration.retry_strategy;
-        configuration.max_retries = 0;
+        configuration.max_retries = 1;
         client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(configuration);
     }
     else

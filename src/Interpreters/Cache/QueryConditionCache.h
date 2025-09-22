@@ -1,15 +1,15 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <base/defines.h>
 
 namespace DB
 {
 
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
-/// Given the table + part IDs and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
+/// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
 /// match the predicate. This allows to skip the scan if the same predicate is evaluated on the same data again. Note that this doesn't work
 /// the other way round: we can't tell if _all_ rows in the mark match the predicate.
 ///
@@ -22,8 +22,8 @@ namespace DB
 class QueryConditionCache
 {
 public:
-    /// False means none of the rows in the mark match the predicate. We can skip such marks.
-    /// True means at least one row in the mark matches the predicate. We need to read such marks.
+    /// False means no row in the mark matches the predicate. We can skip such marks.
+    /// True means rows in the mark potentially match the predicate. We need to read such marks.
     using Entry = std::vector<bool>;
     using EntryPtr = std::shared_ptr<Entry>;
 
@@ -99,15 +99,27 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
 private:
+    struct CacheEntry
+    {
+        SharedMutex mutex;
+        QueryConditionCache::Entry entry;
+
+        explicit CacheEntry(size_t marks_count);
+        explicit CacheEntry(const QueryConditionCache::Entry & entry_);
+    };
+
+    using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
     void finalize();
 
     QueryConditionCache & query_condition_cache;
+
+    SharedMutex mutex;
+    std::unordered_map<QueryConditionCache::Key, CacheEntryPtr, QueryConditionCache::KeyHasher> new_entries;
+
     const size_t condition_hash;
     const String condition;
     const double selectivity_threshold;
-
-    std::unordered_map<QueryConditionCache::Key, QueryConditionCache::Entry, QueryConditionCache::KeyHasher> new_entries TSA_GUARDED_BY(mutex);
-    std::mutex mutex;
 
     LoggerPtr logger = getLogger("QueryConditionCache");
 };

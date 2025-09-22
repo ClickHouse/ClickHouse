@@ -371,7 +371,6 @@ public:
                 WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
-            chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
         else
@@ -772,26 +771,13 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTimeText(value, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTimeBestEffort(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTimeBestEffortUS(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-        }
+        if (tryReadTimeText(value, buf, date_lut) && buf.eof())
+            return true;
 
         return false;
     }
@@ -1010,26 +996,13 @@ public:
         return true;
     }
 
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTime64BestEffort(value, scale, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTime64BestEffortUS(value, scale, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-        }
+        if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
+            return true;
 
         return false;
     }
@@ -1042,7 +1015,7 @@ template <typename JSONParser, typename Type>
 class EnumNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_) : name_value_pairs(name_value_pairs_)
+    explicit EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_, Type default_value_) : name_value_pairs(name_value_pairs_), default_value(default_value_)
     {
         for (const auto & name_value_pair : name_value_pairs)
         {
@@ -1058,19 +1031,19 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
+        auto & col_vec = assert_cast<ColumnVector<Type> &>(column);
+
         if (element.isNull())
         {
             if (format_settings.null_as_default)
             {
-                column.insertDefault();
+                col_vec.insertValue(default_value);
                 return true;
             }
 
             error = "cannot convert null to Enum value";
             return false;
         }
-
-        auto & col_vec = assert_cast<ColumnVector<Type> &>(column);
 
         if (element.isInt64())
         {
@@ -1116,6 +1089,7 @@ private:
     std::vector<std::pair<String, Type>> name_value_pairs;
     std::unordered_map<std::string_view, Type> name_to_value_map;
     std::unordered_set<Type> only_values;
+    Type default_value;
 };
 
 template <typename JSONParser>
@@ -1604,37 +1578,41 @@ public:
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
-        /// Try to insert element into current variants but with no types conversion.
-        /// We want to avoid inferring the type on each row, so if we can insert this element into
-        /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
-        /// we will do it and won't try to infer the type.
-        auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-        auto insert_settings_with_no_type_conversion = insert_settings;
-        insert_settings_with_no_type_conversion.allow_type_conversion = false;
-
-        /// Check if we already have variants order for this Variant type in cache.
-        auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
-        if (variants_order_it == variants_order_cache.end())
-            variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
-
-        for (size_t i : variants_order_it->second)
+        if (insert_settings.try_existing_variants_in_dynamic_first)
         {
-            if (i != shared_variant_discr)
-            {
-                auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
-                if (it == json_extract_nodes_cache.end())
-                    it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+            /// Try to insert element into current variants but with no types conversion.
+            /// We want to avoid inferring the type on each row, so if we can insert this element into
+            /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
+            /// we will do it and won't try to infer the type.
+            auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+            auto insert_settings_with_no_type_conversion = insert_settings;
+            insert_settings_with_no_type_conversion.allow_type_conversion = false;
 
-                if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+            /// Check if we already have variants order for this Variant type in cache.
+            auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
+            if (variants_order_it == variants_order_cache.end())
+                variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+
+            for (size_t i : variants_order_it->second)
+            {
+                if (i != shared_variant_discr)
                 {
-                    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
-                    variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
-                    return true;
+                    auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
+                    if (it == json_extract_nodes_cache.end())
+                        it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+
+                    if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                    {
+                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
+                        variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
+                        return true;
+                    }
                 }
             }
         }
 
-        /// We couldn't insert element into current variants, infer ClickHouse type for this element and add it as a new variant.
+        /// We couldn't insert element into current variants (or skipped it intentionally),
+        /// infer ClickHouse type for this element and add it as a new variant.
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
@@ -1777,11 +1755,13 @@ class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     ObjectJSONNode(
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & type_of_nested_objects)
-        : typed_path_nodes(std::move(typed_path_nodes_))
+        : typed_paths_types(typed_paths_types_)
+        , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
@@ -1813,7 +1793,9 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        /// Temporary Dynamic column that will be used to create and serialize values in shared data.
+        MutableColumnPtr tmp_dynamic_column;
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, tmp_dynamic_column, true))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1845,10 +1827,10 @@ public:
         column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         /// Fill remaining typed and dynamic paths.
-        for (auto & [_, typed_column] : column_object.getTypedPaths())
+        for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
         {
             if (typed_column->size() == prev_size)
-                typed_column->insertDefault();
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
         }
 
         for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
@@ -1870,6 +1852,7 @@ private:
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
         String & error,
+        MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
         if (shouldSkipPath(current_path))
@@ -1883,7 +1866,10 @@ private:
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
-                path += key;
+                if (insert_settings.escape_dots_in_json_keys)
+                    path += escapeDotInJSONKey(String(key));
+                else
+                    path += key;
 
                 if (!visited_keys.insert(key).second)
                 {
@@ -1893,7 +1879,7 @@ private:
                     return false;
                 }
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, tmp_dynamic_column, false))
                     return false;
             }
 
@@ -1955,9 +1941,15 @@ private:
         /// Otherwise this path should go to the shared data.
         else
         {
-            auto tmp_dynamic_column = ColumnDynamic::create();
-            tmp_dynamic_column->reserve(1);
-            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings, format_settings, error))
+            if (!tmp_dynamic_column)
+                tmp_dynamic_column = ColumnDynamic::create();
+
+            JSONExtractInsertSettings insert_settings_for_shared_data = insert_settings;
+            /// We use single temporary Dynamic column for all shared data paths because
+            /// creating it every time is very slow. And so we need to always infer
+            /// new type for new value and don't reuse existing variants.
+            insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
@@ -1967,7 +1959,7 @@ private:
             WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
             /// Use default format settings for binary serialization. Non-default settings may change
             /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
         }
 
         return true;
@@ -2000,6 +1992,7 @@ private:
         return settings;
     }
 
+    std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
@@ -2074,9 +2067,15 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::Decimal256:
             return std::make_unique<DecimalNode<JSONParser, Decimal256>>(type);
         case TypeIndex::Enum8:
-            return std::make_unique<EnumNode<JSONParser, Int8>>(assert_cast<const DataTypeEnum8 &>(*type).getValues());
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*type);
+            return std::make_unique<EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
+        }
         case TypeIndex::Enum16:
-            return std::make_unique<EnumNode<JSONParser, Int16>>(assert_cast<const DataTypeEnum16 &>(*type).getValues());
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum16 &>(*type);
+            return std::make_unique<EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
+        }
         case TypeIndex::LowCardinality:
         {
             /// To optimize inserting into LowCardinality we have special nodes for LowCardinality of numeric and string types.
@@ -2169,6 +2168,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             {
                 case DataTypeObject::SchemaFormat::JSON:
                     return std::make_unique<ObjectJSONNode<JSONParser>>(
+                        typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),

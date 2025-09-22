@@ -46,6 +46,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
+        data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
@@ -144,20 +145,6 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         file->finalize();
         if (sync)
             file->sync();
-    }
-
-    /// TODO: this code looks really stupid. It's because DiskTransaction is
-    /// unable to see own write operations. When we merge part with column TTL
-    /// and column completely outdated we first write empty column and after
-    /// remove it. In case of single DiskTransaction it's impossible because
-    /// remove operation will not see just written files. That is why we finish
-    /// one transaction and start new...
-    ///
-    /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
-    if (!files_to_remove_after_finish.empty())
-    {
-        part->getDataPartStorage().commitTransaction();
-        part->getDataPartStorage().beginTransaction();
     }
 
     for (const auto & file_name : files_to_remove_after_finish)

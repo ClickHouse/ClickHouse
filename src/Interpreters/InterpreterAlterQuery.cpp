@@ -43,7 +43,7 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
-    extern const SettingsBool allow_experimental_lightweight_update;
+    extern const SettingsBool enable_lightweight_update;
 }
 
 namespace ServerSetting
@@ -219,8 +219,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto supports_lightweight_update = [&] -> std::expected<void, PreformattedMessage>
         {
-            if (!settings[Setting::allow_experimental_lightweight_update])
-                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'allow_experimental_lightweight_update = 1' to allow them"));
+            if (!settings[Setting::enable_lightweight_update])
+                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
 
             if (!alter_commands.empty() || !partition_commands.empty() || !mutation_commands.hasOnlyUpdateCommands())
                 return std::unexpected(PreformattedMessage::create("Query has non UPDATE commands"));

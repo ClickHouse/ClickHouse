@@ -197,56 +197,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    /*
-     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
-     * There is no need to read from the file's path.
-     *
-     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
-     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
-     */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-    }
-    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-           columns,
-           hive_partition_columns_to_read_from_file_path,
-           sample_path,
-           columns_in_table_or_function_definition.empty(),
-           format_settings,
-           context);
-    }
-
-    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
-    }
-
-    if (configuration->partition_columns_in_data_file)
-    {
-        file_columns = columns;
-    }
-    else
-    {
-        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
-
-        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
-        {
-            hive_partition_columns_to_read_from_file_path_set.insert(name);
-        }
-
-        for (const auto & [name, type] : columns.getAllPhysical())
-        {
-            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-            {
-                file_columns.add({name, type});
-            }
-        }
-    }
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        format_settings,
+        context);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -255,6 +212,8 @@ StorageObjectStorage::StorageObjectStorage(
             "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
             sample_path);
     }
+
+    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -291,6 +250,25 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
+bool StorageObjectStorage::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+
+bool StorageObjectStorage::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
+{
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+}
+
+IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
+{
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+}
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
@@ -384,18 +362,19 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    auto all_file_columns = file_columns.getAll();
-
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements=*/ supports_prewhere,
         local_context,
-        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-                                 && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+    const bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())
@@ -535,6 +514,8 @@ void StorageObjectStorage::drop()
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
         catalog->dropTable(namespace_name, table_name);
     }
+    /// We cannot use query context here, because drop is executed in the background.
+    configuration->drop(Context::getGlobalContextInstance());
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -659,7 +640,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     configuration->alter(params, context);
 
-    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    DatabaseCatalog::instance()
+        .getDatabase(storage_id.database_name)
+        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 

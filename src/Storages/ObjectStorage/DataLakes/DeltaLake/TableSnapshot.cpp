@@ -84,6 +84,7 @@ public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
         const std::string & data_prefix_,
+        const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
@@ -97,6 +98,7 @@ public:
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
         , data_prefix(data_prefix_)
+        , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
@@ -348,6 +350,7 @@ public:
         {
             auto parsed_transform = visitScanCallbackExpression(
                 transform,
+                context->read_schema,
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
@@ -385,6 +388,7 @@ private:
     std::optional<DB::ActionsDAG> filter;
 
     const std::string data_prefix;
+    DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::ObjectStoragePtr object_storage;
@@ -530,6 +534,7 @@ DB::ObjectIterator TableSnapshot::iterate(
     return std::make_shared<TableSnapshot::Iterator>(
         kernel_snapshot_state,
         helper->getDataPath(),
+        getReadSchema(),
         getTableSchema(),
         getPhysicalNamesMap(),
         getPartitionColumns(),

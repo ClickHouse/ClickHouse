@@ -15,18 +15,22 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -46,6 +50,7 @@ namespace DB::Iceberg
 
 static constexpr const char * block_datafile_path = "_path";
 static constexpr const char * block_row_number = "_row_number";
+static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
 struct DeleteFileWriteResult
 {
@@ -54,9 +59,49 @@ struct DeleteFileWriteResult
     Int32 total_bytes;
 };
 
-using DeleteFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
+using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
+using DataFileStatisticsByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher>;
 
-DeleteFileWriteResultByPartitionKey writeDataFiles(
+struct DataFileWriteResultWithStats
+{
+    DataFileWriteResultByPartitionKey delete_file;
+    DataFileStatisticsByPartitionKey delete_statistic;
+};
+
+struct WriteDataFilesResult
+{
+    DataFileWriteResultWithStats delete_file;
+    std::optional<DataFileWriteResultWithStats> data_file;
+};
+
+static Block getPositionDeleteFileSampleBlock()
+{
+    ColumnsWithTypeAndName delete_file_columns_desc;
+    delete_file_columns_desc.push_back(
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), IcebergPositionDeleteTransform::data_file_path_column_name));
+    delete_file_columns_desc.push_back(
+        ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), IcebergPositionDeleteTransform::positions_column_name));
+
+    return Block(delete_file_columns_desc);
+}
+
+static Block getNonVirtualColumns(const Block & block)
+{
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    std::unordered_set<String> virtual_columns;
+    for (const auto & column_desc : virtual_columns_desc)
+        virtual_columns.insert(column_desc);
+    ColumnsWithTypeAndName columns;
+    for (size_t i = 0; i < block.getNames().size(); ++i)
+    {
+        if (virtual_columns.contains(block.getNames()[i]))
+            continue;
+        columns.push_back(ColumnWithTypeAndName(block.getColumns()[i], block.getDataTypes()[i], block.getNames()[i]));
+    }
+    return Block(columns);
+}
+
+std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -65,39 +110,42 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
     StorageObjectStorageConfigurationPtr configuration,
     FileNamesGenerator & generator,
     const std::optional<FormatSettings> & format_settings,
-    ChunkPartitioner & chunk_partitioner)
+    ChunkPartitioner & chunk_partitioner,
+    Poco::JSON::Object::Ptr data_schema)
 {
-    if (commands.empty())
-        return {};
-
     chassert(commands.size() == 1);
 
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
-    DeleteFileWriteResultByPartitionKey result;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
+    DataFileWriteResultByPartitionKey delete_data_result;
+    DataFileStatisticsByPartitionKey delete_data_statistics;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> delete_data_writers;
 
-    if (commands.front().type == MutationCommand::Type::DELETE)
+    DataFileWriteResultByPartitionKey update_data_result;
+    DataFileStatisticsByPartitionKey update_data_statistics;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
+
+    if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
         MutationsInterpreter::Settings settings(true);
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, commands, context, settings);
+        auto delete_commands = commands;
+        delete_commands[0].type = MutationCommand::DELETE;
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
 
-        ColumnsWithTypeAndName delete_file_columns_desc;
-        delete_file_columns_desc.push_back(
-            ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), IcebergPositionDeleteTransform::positions_column_name));
-        delete_file_columns_desc.push_back(
-            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), IcebergPositionDeleteTransform::data_file_path_column_name));
-
         Block block;
+        bool has_any_rows = false;
         while (executor.pull(block))
         {
+            has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = chunk_partitioner.partitionChunk(chunk);
 
@@ -116,11 +164,14 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
-                if (!writers.contains(partition_key))
+                if (!delete_data_statistics.contains(partition_key))
+                    delete_data_statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
+
+                if (!delete_data_writers.contains(partition_key))
                 {
                     auto delete_file_info = generator.generatePositionDeleteFile();
 
-                    result[partition_key].path = delete_file_info;
+                    delete_data_result[partition_key].path = delete_file_info;
                     auto write_buffer = object_storage->writeObject(
                         StoredObject(delete_file_info.path_in_storage),
                         WriteMode::Rewrite,
@@ -128,7 +179,7 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
                         DBMS_DEFAULT_BUFFER_SIZE,
                         context->getWriteSettings());
 
-                    Block delete_file_sample_block(delete_file_columns_desc);
+                    auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
                     ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
                     std::unordered_map<String, Int64> field_ids;
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
@@ -138,8 +189,8 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
                     auto output_format = FormatFactory::instance().getOutputFormat(
                         configuration->format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
-                    write_buffers[partition_key] = std::move(write_buffer);
-                    writers[partition_key] = std::move(output_format);
+                    delete_data_write_buffers[partition_key] = std::move(write_buffer);
+                    delete_data_writers[partition_key] = std::move(output_format);
                 }
 
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
@@ -155,36 +206,107 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
                     if (cur_value.safeGet<String>().starts_with(configuration->getNamespace()))
                         path_without_namespace = cur_value.safeGet<String>().substr(configuration->getNamespace().size());
 
-                    if (!path_without_namespace.starts_with(configuration->getPathForRead().path))
-                    {
-                        if (path_without_namespace.starts_with('/'))
-                            path_without_namespace = path_without_namespace.substr(1);
-                        else
-                            path_without_namespace = "/" + path_without_namespace;
-                    }
+                    if (!path_without_namespace.starts_with('/'))
+                        path_without_namespace = "/" + path_without_namespace;
                     col_data_filename_without_namespaces->insert(path_without_namespace);
                 }
                 col_data_filename.column = std::move(col_data_filename_without_namespaces);
-                Block delete_file_block({col_position, col_data_filename});
-                result[partition_key].total_rows += delete_file_block.rows();
-                writers[partition_key]->write(delete_file_block);
+                Columns chunk_pos_delete;
+                chunk_pos_delete.push_back(col_data_filename.column);
+                chunk_pos_delete.push_back(col_position.column);
+                auto stats_chunk = Chunk(chunk_pos_delete, partition_chunk.getNumRows());
+                delete_data_statistics.at(partition_key).update(stats_chunk);
+
+                Block delete_file_block({col_data_filename, col_position});
+                delete_data_result[partition_key].total_rows += delete_file_block.rows();
+                delete_data_writers[partition_key]->write(delete_file_block);
             }
         }
 
-        for (const auto & [partition_key, _] : result)
+        if (!has_any_rows)
+            return std::nullopt;
+
+        for (const auto & [partition_key, _] : delete_data_result)
         {
-            writers[partition_key]->flush();
-            writers[partition_key]->finalize();
-            write_buffers[partition_key]->finalize();
-            result[partition_key].total_bytes = static_cast<Int32>(write_buffers[partition_key]->count());
+            delete_data_writers[partition_key]->flush();
+            delete_data_writers[partition_key]->finalize();
+            delete_data_write_buffers[partition_key]->finalize();
+            delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_data_write_buffers[partition_key]->count());
         }
-        return result;
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg supports only delete mutations");
+
+    if (commands[0].type == MutationCommand::UPDATE)
+    {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, commands, context, settings);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto header = interpreter->getUpdatedHeader();
+
+        Block block;
+        while (executor.pull(block))
+        {
+            auto data_block = getNonVirtualColumns(block);
+            Chunk chunk(data_block.getColumns(), data_block.rows());
+            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+
+            for (const auto & [partition_key, partition_chunk] : partition_result)
+            {
+                if (!update_data_statistics.contains(partition_key))
+                    update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
+
+                auto it = update_data_writers.find(partition_key);
+                if (it == update_data_writers.end())
+                {
+                    auto data_file_info = generator.generateDataFileName();
+                    update_data_result[partition_key].path = data_file_info;
+                    auto data_write_buffer = object_storage->writeObject(
+                        StoredObject(data_file_info.path_in_storage),
+                        WriteMode::Rewrite,
+                        std::nullopt,
+                        DBMS_DEFAULT_BUFFER_SIZE,
+                        context->getWriteSettings());
+
+                    auto data_output_format = FormatFactory::instance().getOutputFormat(
+                        configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
+
+                    update_data_write_buffers[partition_key] = std::move(data_write_buffer);
+                    it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
+                }
+
+                update_data_result[partition_key].total_rows += data_block.rows();
+                it->second->write(data_block);
+                update_data_statistics.at(partition_key).update(chunk);
+            }
+        }
+
+        for (const auto & [partition_key, _] : update_data_result)
+        {
+            update_data_writers[partition_key]->flush();
+            update_data_writers[partition_key]->finalize();
+            update_data_write_buffers[partition_key]->finalize();
+            update_data_result[partition_key].total_bytes = static_cast<Int32>(update_data_write_buffers[partition_key]->count());
+        }
+    }
+
+    if (commands[0].type == MutationCommand::DELETE)
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, std::nullopt};
+    else
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
 }
 
-bool writeMetadataFiles(
-    DeleteFileWriteResultByPartitionKey & delete_filenames,
+struct WriteMetadataResult
+{
+    bool success;
+    std::function<void()> cleanup;
+};
+
+WriteMetadataResult writeMetadataFiles(
+    DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
@@ -194,7 +316,9 @@ bool writeMetadataFiles(
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
-    ChunkPartitioner & chunk_partitioner)
+    ChunkPartitioner & chunk_partitioner,
+    Iceberg::FileContentType content_type,
+    SharedHeader sample_block)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -203,27 +327,62 @@ bool writeMetadataFiles(
 
     Int32 total_rows = 0;
     Int32 total_bytes = 0;
-    for (const auto & [_, delete_filename] : delete_filenames)
+    for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
         total_rows += delete_filename.total_rows;
         total_bytes += delete_filename.total_bytes;
     }
 
-    auto [new_snapshot, manifest_list_name, storage_manifest_list_name]
-        = MetadataGenerator(metadata).generateNextMetadata(filename_generator, metadata_name, parent_snapshot, /* added_files */0, /* added_records */0, total_bytes, /* num_partitions */1, /* added_delete_files */1, total_rows);
+    Poco::JSON::Object::Ptr new_snapshot;
+    String manifest_list_name;
+    String storage_manifest_list_name;
+    if (content_type == Iceberg::FileContentType::POSITION_DELETE)
+    {
+        auto result_generation_metadata = MetadataGenerator(metadata)
+            .generateNextMetadata(
+                filename_generator,
+                metadata_name,
+                parent_snapshot,
+                /* added_files */0,
+                /* added_records */0,
+                total_bytes,
+                /* num_partitions */1,
+                /* added_delete_files */1,
+                total_rows);
+        new_snapshot = result_generation_metadata.snapshot;
+        manifest_list_name = result_generation_metadata.metadata_path;
+        storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
+    }
+    else
+    {
+        auto result_generation_metadata = MetadataGenerator(metadata)
+            .generateNextMetadata(
+                filename_generator,
+                metadata_name,
+                parent_snapshot,
+                /* added_files */1,
+                /* added_records */total_rows,
+                total_bytes,
+                /* num_partitions */1,
+                /* added_delete_files */0,
+                /*num_deleted_rows*/0);
+        new_snapshot = result_generation_metadata.snapshot;
+        manifest_list_name = result_generation_metadata.metadata_path;
+        storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
 
-    Strings manifest_entries_in_storage;
+    }
+    auto manifest_entries_in_storage = std::make_shared<Strings>();
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
 
-    auto cleanup = [&]()
+    auto cleanup = [object_storage, delete_filenames, manifest_entries_in_storage, storage_manifest_list_name, storage_metadata_name]()
     {
         try
         {
-            for (const auto & [_, data_file] : delete_filenames)
+            for (const auto & [_, data_file] : delete_filenames.delete_file)
                 object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
 
-            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+            for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
@@ -237,10 +396,10 @@ bool writeMetadataFiles(
 
     try
     {
-        for (const auto & [partition_key, delete_filename] : delete_filenames)
+        for (const auto & [partition_key, delete_filename] : delete_filenames.delete_file)
         {
             auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
-            manifest_entries_in_storage.push_back(storage_manifest_entry_name);
+            manifest_entries_in_storage->push_back(storage_manifest_entry_name);
             manifest_entries.push_back(manifest_entry_name);
 
             auto buffer_manifest_entry = object_storage->writeObject(
@@ -257,12 +416,14 @@ bool writeMetadataFiles(
                     partition_key,
                     chunk_partitioner.getResultTypes(),
                     {delete_filename.path.path_in_metadata},
+                    delete_filenames.delete_statistic.at(partition_key),
+                    sample_block,
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
-                    Iceberg::FileContentType::POSITION_DELETE);
+                    content_type);
                 buffer_manifest_entry->finalize();
                 manifest_lengths += buffer_manifest_entry->count();
             }
@@ -292,7 +453,7 @@ bool writeMetadataFiles(
                     new_snapshot,
                     manifest_lengths,
                     *buffer_manifest_list,
-                    Iceberg::FileContentType::POSITION_DELETE);
+                    content_type);
                 buffer_manifest_list->finalize();
             }
             catch (...)
@@ -315,7 +476,7 @@ bool writeMetadataFiles(
             if (object_storage->exists(StoredObject(storage_metadata_name)))
             {
                 cleanup();
-                return false;
+                return {false, cleanup};
             }
 
             Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
@@ -335,7 +496,7 @@ bool writeMetadataFiles(
                 {
                     cleanup();
                     object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                    return false;
+                    return {false, cleanup};
                 }
             }
         }
@@ -345,7 +506,7 @@ bool writeMetadataFiles(
         cleanup();
         throw;
     }
-    return true;
+    return {true, cleanup};
 }
 
 void mutate(
@@ -358,7 +519,10 @@ void mutate(
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    auto common_path = configuration->getRawPath().path;
+    if (!common_path.starts_with('/'))
+        common_path = "/" + common_path;
+    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
 
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
@@ -394,10 +558,30 @@ void mutate(
 
     const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
-    auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
+    auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+    if (mutation_files)
     {
+        int max_retries = MAX_TRANSACTION_RETRIES;
+        while (--max_retries > 0)
+        {
+            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
+            if (!result_delete_files_metadata.success)
+                continue;
+            if (mutation_files->data_file)
+            {
+                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
+                if (!result_data_files_metadata.success)
+                {
+                    result_delete_files_metadata.cleanup();
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if (max_retries == 0)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
     }
 }
 
@@ -410,7 +594,7 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());

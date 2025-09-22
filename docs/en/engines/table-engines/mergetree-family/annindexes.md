@@ -4,13 +4,12 @@ keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index',
 sidebar_label: 'Exact and Approximate Vector Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Vector Search'
+doc_type: 'guide'
 ---
-
-import BetaBadge from '@theme/badges/BetaBadge';
 
 # Exact and approximate vector search
 
-The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
+The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
 - Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
@@ -69,14 +68,10 @@ returns
 
 ## Approximate vector search {#approximate-nearest-neighbor-search}
 
-<BetaBadge/>
-
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
-Vector similarity indexes are currently beta.
-To enable them, please first run `SET enable_vector_similarity_index = 1`.
-A usable/testable version of vector similarity indexes is available in ClickHouse version 25.8 and onwards.
+Vector similarity indexes are available in ClickHouse version 25.8 and higher.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -152,6 +147,47 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+
+**Estimating storage and memory consumption**
+
+A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
+Thus, a single vector value can have a memory consumption of multiple kilobyte.
+Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use below two formula:
+
+Storage consumption of the vector column in the table (uncompressed):
+
+```text
+Storage consumption = Number of vectors * Dimension * Size of column data type
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
+```
+
+The vector similarity index must be fully loaded from disk into main memory to perform searches.
+Similarly, the vector index is also constructed fully in memory and then saved to disk.
+
+Memory consumption required to load a vector index:
+
+```text
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+
+Memory consumption: mv + mg
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+
+Memory consumption = 3072 + 512 = 3584 MB
+```
+
+Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
 ### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -549,6 +585,12 @@ returns
 3. │  8 │ [0,2.2] │
    └────┴─────────┘
 ```
+
+Further example datasets that use approximate vector search:
+- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
+- [LAION-5B](../../../getting-started/example-datasets/laion-5b-dataset)
+- [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
+- [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
 ## References {#references}
 

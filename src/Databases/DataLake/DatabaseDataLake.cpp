@@ -6,6 +6,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -59,6 +60,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsString datalake_disk_name;
 }
 namespace DataLakeStorageSetting
 {
@@ -240,6 +242,12 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
                     return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                case DB::DatabaseDataLakeStorageType::Azure:
+                {
+                    return std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
@@ -751,8 +759,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Iceberg Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_iceberg");
+                                    "DatabaseDataLake with Iceberg Rest catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
                 }
 
                 engine_func->name = "Iceberg";
@@ -764,8 +772,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Glue catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_glue_catalog");
+                                    "DatabaseDataLake with Glue catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
                 engine_func->name = "Iceberg";
@@ -777,8 +785,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DataLake database with Unity catalog catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_unity_catalog");
+                                    "DataLake database with Unity catalog catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
                 engine_func->name = "DeltaLake";

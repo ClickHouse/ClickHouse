@@ -66,9 +66,8 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ThreadGroup
 {
 public:
-    ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
 
     /// The first thread created this thread group
@@ -79,6 +78,8 @@ public:
     const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
+
+    const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
@@ -117,9 +118,11 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
+    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
+    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
-    static ThreadGroupPtr createForMaterializedView();
+    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -144,6 +147,8 @@ private:
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
+
+    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
 
 /**
@@ -197,8 +202,6 @@ class ThreadStatus : public boost::noncopyable
 public:
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     const UInt64 thread_id = 0;
-    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
-    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -242,6 +245,8 @@ protected:
     bool performance_counters_finalized = false;
 
     String query_id;
+
+    [[maybe_unused]] bool jemalloc_profiler_enabled = false;
 
     struct TimePoint
     {

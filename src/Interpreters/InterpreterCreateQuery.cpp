@@ -56,7 +56,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
@@ -114,7 +113,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_statistics;
-    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -795,8 +793,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
-                if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_vector_similarity_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The vector similarity index feature is disabled. Enable the setting 'enable_vector_similarity_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -1508,8 +1504,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
-                        "Temporary tables cannot be inside a database. "
-                        "You should not specify a database for a temporary table.");
+                        "Temporary objects (tables/views) cannot be inside a database. "
+                        "You should not specify a database for a temporary objects.");
+
+    if (create.temporary && !create.cluster.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -2384,9 +2385,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
     else if (create.isView())
     {
-        assert(!create.temporary);
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
+        else if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }
@@ -2436,7 +2438,9 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
 {
-    if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
+    if (create.is_dictionary
+        || storage->getName() == "Alias"
+        || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
     auto ast_storage = std::make_shared<ASTStorage>();
