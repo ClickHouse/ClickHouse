@@ -2,7 +2,7 @@
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;
 
-CREATE TABLE t_skip_index_insert
+CREATE TABLE tab
 (
     a UInt64,
     b UInt64,
@@ -11,95 +11,118 @@ CREATE TABLE t_skip_index_insert
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100)
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100)
 SETTINGS exclude_materialize_skip_indexes_on_insert='!@#$^#$&#$$%$,,.,3.45,45.';  -- { serverError CANNOT_PARSE_TEXT }
 
-SET enable_analyzer = 1;
+CREATE VIEW explain_indexes
+AS SELECT trimLeft(explain) AS explain
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN', 'indexes = 1', (
+        SELECT count()
+        FROM tab
+        WHERE (a >= 90) AND (a < 110) AND (b = 2)
+    ))
+)
+WHERE (explain LIKE '%Name%') OR (explain LIKE '%Description%') OR (explain LIKE '%Parts%') OR (explain LIKE '%Granules%') OR (explain LIKE '%Range%');
+
 SET exclude_materialize_skip_indexes_on_insert='idx_a';
 
-SYSTEM STOP MERGES t_skip_index_insert;
+SYSTEM STOP MERGES tab;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100);
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100);
 
 SELECT 'idx_a is excluded, so it should perform no filtering, while `id,x_b` should perform filtering since it is included';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-SYSTEM START MERGES t_skip_index_insert;
-OPTIMIZE TABLE t_skip_index_insert FINAL;
+SYSTEM START MERGES tab;
+OPTIMIZE TABLE tab FINAL;
 
+SELECT '';
 SELECT 'After START MERGES and OPTIMIZE TABLE both indexes should participate in filtering';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-TRUNCATE TABLE t_skip_index_insert;
+TRUNCATE TABLE tab;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100);
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100);
 
 SET mutations_sync = 2;
 
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a;
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX `id,x_b`;
+ALTER TABLE tab MATERIALIZE INDEX idx_a;
+ALTER TABLE tab MATERIALIZE INDEX `id,x_b`;
 
+SELECT '';
 SELECT 'MATERIALIZE INDEX should also cause both indexes to participate in filtering despite exclude setting';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-TRUNCATE TABLE t_skip_index_insert;
+TRUNCATE TABLE tab;
 
-SYSTEM STOP MERGES t_skip_index_insert;
+SYSTEM STOP MERGES tab;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='`id,x_b`';
 
+SELECT '';
 SELECT 'query-level session setting should override session setting at file level, so id,x_b should not be updated';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
 SYSTEM FLUSH LOGS query_log;
 
+SELECT '';
+SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
 WHERE current_database = currentDatabase()
-    AND query LIKE 'INSERT INTO t_skip_index_insert SELECT%'
+    AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 
-TRUNCATE TABLE t_skip_index_insert;
+TRUNCATE TABLE tab;
 
 SET exclude_materialize_skip_indexes_on_insert='idx_a, `id,x_b`';
 
-SYSTEM STOP MERGES t_skip_index_insert;
+SYSTEM STOP MERGES tab;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100);
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100);
 
+SELECT '';
 SELECT 'Both indexes are excluded, so neither should participate in filtering';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-SYSTEM START MERGES t_skip_index_insert;
-OPTIMIZE TABLE t_skip_index_insert FINAL;
+SYSTEM START MERGES tab;
+OPTIMIZE TABLE tab FINAL;
 
+SELECT '';
 SELECT 'After START MERGES and OPTIMIZE TABLE both indexes should participate in filtering';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-TRUNCATE TABLE t_skip_index_insert;
+TRUNCATE TABLE tab;
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100);
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100);
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100);
 
 SET mutations_sync = 2;
 
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a;
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX `id,x_b`;
+ALTER TABLE tab MATERIALIZE INDEX idx_a;
+ALTER TABLE tab MATERIALIZE INDEX `id,x_b`;
 
+SELECT '';
 SELECT 'MATERIALIZE INDEX should also cause both indexes to participate in filtering despite exclude setting';
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 90 AND a < 110 AND b = 2;
+SELECT * FROM explain_indexes;
 
-DROP TABLE t_skip_index_insert;
+DROP TABLE tab;
+DROP VIEW explain_indexes;
 
 SYSTEM FLUSH LOGS query_log;
 
+SELECT '';
+SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
 WHERE current_database = currentDatabase()
-    AND query LIKE 'INSERT INTO t_skip_index_insert SELECT%'
+    AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 
