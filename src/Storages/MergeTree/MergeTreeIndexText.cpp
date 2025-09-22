@@ -510,6 +510,8 @@ size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 void serializeTokensRaw(
     WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
 {
+    /// Write tokens the same as in SerializationString::serializeBinaryBulk
+    /// to be able to read them later with SerializationString::deserializeBinaryBulk.
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
