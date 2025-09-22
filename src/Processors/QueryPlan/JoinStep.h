@@ -55,7 +55,11 @@ public:
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
     void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
 
+    bool isOptimized() const { return optimized; }
+    void setOptimized() { optimized = true; }
+
 private:
+    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin

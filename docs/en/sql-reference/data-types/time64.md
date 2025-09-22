@@ -5,6 +5,7 @@ slug: /sql-reference/data-types/time64
 sidebar_position: 17
 sidebar_label: 'Time64'
 title: 'Time64'
+doc_type: 'reference'
 ---
 
 # Time64

@@ -6,6 +6,7 @@ sidebar_label: 'JSON'
 sidebar_position: 63
 slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
+doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
@@ -295,6 +296,10 @@ Probably the passed UUID is unquoted:
 while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CAST(__table1.json.a.g, 'UUID'_String) UUID : 0'. 
 (NOT_IMPLEMENTED)
 ```
+
+:::note
+To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](../../operations/settings/merge-tree-settings.md#write_marks_for_substreams_in_compact_parts) is enabled.
+:::
 
 ## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
 
@@ -825,12 +830,12 @@ Note: because of storing some additional information inside the data structure, 
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
-- [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
-- [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
-- [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
-- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
-- [`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
-- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
+- [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
+- [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
+- [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
+- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
+- [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
+- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
 - [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
 - [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 

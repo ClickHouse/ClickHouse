@@ -216,6 +216,10 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
+                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
+                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
+                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
+                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -491,12 +495,20 @@ class Runner:
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
+                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
+                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
+                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+                assert url_secret and user_secret and passwd_secret
+                # request all secret at once to avoid rate limiting
+                url, user, pwd = (
+                    url_secret.join_with(user_secret)
+                    .join_with(passwd_secret)
+                    .get_value()
+                )
                 ci_db = CIDB(
-                    url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
-                    passwd=workflow.get_secret(
-                        Settings.SECRET_CI_DB_PASSWORD
-                    ).get_value(),
+                    url=url,
+                    user=user,
+                    passwd=pwd,
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()

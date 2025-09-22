@@ -5,6 +5,7 @@ sidebar_label: 'SQLite'
 sidebar_position: 185
 slug: /engines/table-engines/integrations/sqlite
 title: 'SQLite'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

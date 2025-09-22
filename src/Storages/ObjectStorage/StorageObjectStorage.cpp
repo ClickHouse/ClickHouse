@@ -514,6 +514,8 @@ void StorageObjectStorage::drop()
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
         catalog->dropTable(namespace_name, table_name);
     }
+    /// We cannot use query context here, because drop is executed in the background.
+    configuration->drop(Context::getGlobalContextInstance());
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -638,7 +640,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     configuration->alter(params, context);
 
-    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    DatabaseCatalog::instance()
+        .getDatabase(storage_id.database_name)
+        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 
