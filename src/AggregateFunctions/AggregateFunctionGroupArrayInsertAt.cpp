@@ -176,14 +176,16 @@ public:
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
         Array & arr = data(place).value;
-
         arr.resize(size);
+
+        FormatSettings format_settings;
+
         for (size_t i = 0; i < size; ++i)
         {
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf, {});
+                serialization->deserializeBinary(arr[i], buf, format_settings);
         }
     }
 

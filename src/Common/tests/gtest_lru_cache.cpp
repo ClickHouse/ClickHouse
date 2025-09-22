@@ -1,24 +1,33 @@
 #include <iomanip>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
+
+/// Use MarkCache* for tests (to avoid introducing one more metric)
+namespace CurrentMetrics
+{
+    extern const Metric MarkCacheBytes;
+    extern const Metric MarkCacheFiles;
+}
 
 TEST(LRUCache, set)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(2, std::make_shared<int>(3));
 
-    auto w = lru_cache.sizeInBytes();
-    auto n = lru_cache.count();
-    ASSERT_EQ(w, 2);
-    ASSERT_EQ(n, 2);
+    ASSERT_EQ(lru_cache.sizeInBytes(), 2);
+    ASSERT_EQ(lru_cache.count(), 2);
+
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::MarkCacheBytes), 2);
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::MarkCacheFiles), 2);
 }
 
 TEST(LRUCache, update)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(1, std::make_shared<int>(3));
     auto val = lru_cache.get(1);
@@ -29,7 +38,7 @@ TEST(LRUCache, update)
 TEST(LRUCache, get)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(2, std::make_shared<int>(3));
     SimpleCacheBase::MappedPtr value = lru_cache.get(1);
@@ -49,7 +58,7 @@ struct ValueWeight
 TEST(LRUCache, evictOnSize)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 20, /*max_count*/ 3, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 3, /*size_ratio*/ 0.5);
     lru_cache.set(1, std::make_shared<size_t>(2));
     lru_cache.set(2, std::make_shared<size_t>(3));
     lru_cache.set(3, std::make_shared<size_t>(4));
@@ -65,7 +74,7 @@ TEST(LRUCache, evictOnSize)
 TEST(LRUCache, evictOnWeight)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     lru_cache.set(1, std::make_shared<size_t>(2));
     lru_cache.set(2, std::make_shared<size_t>(3));
     lru_cache.set(3, std::make_shared<size_t>(4));
@@ -73,9 +82,11 @@ TEST(LRUCache, evictOnWeight)
 
     auto n = lru_cache.count();
     ASSERT_EQ(n, 2);
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::MarkCacheFiles), 2);
 
     auto w = lru_cache.sizeInBytes();
     ASSERT_EQ(w, 9);
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::MarkCacheBytes), 9);
 
     auto value = lru_cache.get(1);
     ASSERT_TRUE(value == nullptr);
@@ -86,7 +97,7 @@ TEST(LRUCache, evictOnWeight)
 TEST(LRUCache, getOrSet)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     size_t x = 10;
     auto load_func = [&] { return std::make_shared<size_t>(x); };
     auto [value, loaded] = lru_cache.getOrSet(1, load_func);
@@ -94,3 +105,18 @@ TEST(LRUCache, getOrSet)
     ASSERT_TRUE(*value == 10);
 }
 
+
+TEST(LRUCache, noOnRemoveEntryCallback)
+{
+    DB::LRUCachePolicy<std::string, size_t> lru_cache = {CurrentMetrics::end(), CurrentMetrics::end(), 10, 1, {}};
+    lru_cache.set("key1", std::make_shared<size_t>(10));
+    auto value = lru_cache.get("key1");
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(*value == 10);
+    lru_cache.set("key2", std::make_shared<size_t>(20));
+    value = lru_cache.get("key1");
+    ASSERT_TRUE(value == nullptr);
+    value = lru_cache.get("key2");
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(*value == 20);
+}

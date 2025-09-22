@@ -387,7 +387,33 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
 REGISTER_FUNCTION(ArrayReduceInRanges)
 {
-    factory.registerFunction<FunctionArrayReduceInRanges>();
+    FunctionDocumentation::Description description = R"(
+Applies an aggregate function to array elements in the given ranges and returns an array containing the result corresponding to each range.
+The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayReduceInRanges(agg_f, ranges, arr1 [, arr2, ... ,arrN)])";
+    FunctionDocumentation::Arguments arguments = {
+        {"agg_f", "The name of the aggregate function to use.", {"String"}},
+        {"ranges", "The range over which to aggregate. An array of tuples, `(i, r)` containing the index `i` from which to begin from and the range `r` over which to aggregate.", {"Array(T)", "Tuple(T)"}},
+        {"arr1 [, arr2, ... ,arrN)]", "N arrays as arguments to the aggregate function.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array containing results of the aggregate function over the specified ranges", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", R"(
+SELECT arrayReduceInRanges(
+    'sum',
+    [(1, 5), (2, 3), (3, 4), (4, 4)],
+    [1000000, 200000, 30000, 4000, 500, 60, 7]
+) AS res)", R"(
+┌─res─────────────────────────┐
+│ [1234500,234000,34560,4567] │
+└─────────────────────────────┘
+)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayReduceInRanges>(documentation);
 }
 
 }

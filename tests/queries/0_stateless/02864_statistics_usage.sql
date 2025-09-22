@@ -15,7 +15,8 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0; -- DDL with statistics doesn't work reliably with packed parts
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
@@ -26,7 +27,7 @@ SELECT 'After drop statistic';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks b first, then a (statistics not used)
 
 ALTER TABLE tab ADD STATISTICS a, b TYPE tdigest;
-ALTER TABLE tab MATERIALIZE STATISTICS a, b;
+ALTER TABLE tab MATERIALIZE STATISTICS ALL;
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After add and materialize statistic';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)

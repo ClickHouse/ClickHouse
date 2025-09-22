@@ -27,7 +27,7 @@ public:
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
+    /// Bytes of strings, laid in succession. The strings are stored without a trailing zero byte.
     /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
       * Used in `packFixed` function (AggregationCommon.h)
       */
@@ -216,11 +216,14 @@ public:
         return false;
     }
 
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
     bool canBeInsideNullable() const override { return true; }
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return n; }
     std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }

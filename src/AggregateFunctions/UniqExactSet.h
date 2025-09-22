@@ -15,6 +15,13 @@ namespace ErrorCodes
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+enum class SetLevelHint
+{
+    singleLevel,
+    twoLevel,
+    unknown,
+};
+
 template <typename SingleLevelSet, typename TwoLevelSet>
 class UniqExactSet
 {
@@ -24,13 +31,30 @@ class UniqExactSet
 public:
     using value_type = typename SingleLevelSet::value_type;
 
-    template <typename Arg, bool use_single_level_hash_table = true>
+    template <typename Arg, SetLevelHint hint>
     auto ALWAYS_INLINE insert(Arg && arg)
     {
-        if constexpr (use_single_level_hash_table)
+        if constexpr (hint == SetLevelHint::singleLevel)
+        {
             asSingleLevel().insert(std::forward<Arg>(arg));
-        else
+        }
+        else if constexpr (hint == SetLevelHint::twoLevel)
+        {
             asTwoLevel().insert(std::forward<Arg>(arg));
+        }
+        else
+        {
+            if (isSingleLevel())
+            {
+                auto && [_, inserted] = asSingleLevel().insert(std::forward<Arg>(arg));
+                if (inserted && worthConvertingToTwoLevel(asSingleLevel().size()))
+                    convertToTwoLevel();
+            }
+            else
+            {
+                asTwoLevel().insert(std::forward<Arg>(arg));
+            }
+        }
     }
 
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
@@ -93,6 +117,12 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
+        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
+        {
+            two_level_set = other.getTwoLevelSet();
+            return;
+        }
+
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
 
@@ -102,7 +132,11 @@ public:
         }
         else
         {
-            auto & lhs = asTwoLevel();
+            auto & lhs = asTwoLevelChecked();
+
+            if (other.isSingleLevel())
+                return lhs.merge(other.asSingleLevel());
+
             const auto rhs_ptr = other.getTwoLevelSet();
             const auto & rhs = *rhs_ptr;
             if (!thread_pool)
@@ -119,7 +153,7 @@ public:
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
                     {
                         while (true)
                         {
@@ -135,13 +169,13 @@ public:
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
                         runner(thread_func, Priority{});
-                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
                 catch (...)
                 {
                     is_cancelled->store(true);
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                    throw;
                 }
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
         }
     }
@@ -191,6 +225,7 @@ public:
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
     {
+        doDeepCopyIfNeeded();
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
     }
 
@@ -209,10 +244,28 @@ private:
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 
+    TwoLevelSet & asTwoLevelChecked()
+    {
+        doDeepCopyIfNeeded();
+        return *two_level_set;
+    }
+
     TwoLevelSet & asTwoLevel() { return *two_level_set; }
     const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
 
+    /// Needed when a row can participate in more than one merge, e.g., ROLLUP/CUBE
+    void doDeepCopyIfNeeded() const
+    {
+        if (two_level_set && two_level_set.use_count() > 1)
+        {
+            auto copy = std::make_shared<TwoLevelSet>(two_level_set->size());
+            for (size_t i = 0; i < two_level_set->NUM_BUCKETS; ++i)
+                copy->impls[i].merge(two_level_set->impls[i]);
+            two_level_set = std::move(copy);
+        }
+    }
+
     SingleLevelSet single_level_set;
-    std::shared_ptr<TwoLevelSet> two_level_set;
+    mutable std::shared_ptr<TwoLevelSet> two_level_set;
 };
 }

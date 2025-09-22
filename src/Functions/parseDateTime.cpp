@@ -21,7 +21,7 @@
 
 #include <expected>
 
-#include "StringHelpers.h"
+#include <Functions/StringHelpers.h>
 
 namespace DB
 {
@@ -29,6 +29,7 @@ namespace Setting
 {
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
 }
 
 namespace ErrorCodes
@@ -642,6 +643,7 @@ namespace
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
+        const bool mysql_e_requires_space_padding;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -649,13 +651,14 @@ namespace
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
+            , mysql_e_requires_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
         {
         }
 
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -674,11 +677,15 @@ namespace
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
             if constexpr (return_type == ReturnType::DateTime)
+            {
                 data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            }
             else
             {
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
+                {
                     data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
+                }
                 else
                 {
                     /// The precision of the return type is the number of 'S' placeholders.
@@ -1160,15 +1167,30 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            static PosOrError mysqlDayOfMonthMandatorySpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthMandatorySpacePadding requires size >= 2", fragment))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
 
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
+
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
+                return cur;
+            }
+
+            [[nodiscard]]
+            static PosOrError mysqlDayOfMonthOptionalSpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            {
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfMonthOptionalSpacePadding requires size >= 1", fragment))
+
+                while (cur < end && *cur == ' ')
+                    ++cur;
+
+                Int32 day_of_month = 0;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, day_of_month))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
@@ -1817,12 +1839,7 @@ namespace
             [[nodiscard]]
             static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                String read_time_zone;
-                while (cur <= end)
-                {
-                    read_time_zone += *cur;
-                    ++cur;
-                }
+                std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
@@ -1830,7 +1847,7 @@ namespace
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
                     parsed_value.time_zone_offset = timezone_offset;
-                    return cur;
+                    return end;
                 }
                 else
                     RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to parse date time from timezone {}", read_time_zone)
@@ -1951,9 +1968,12 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlAmericanDate));
                             break;
 
-                        // Day of month, space-padded ( 1-31)  23
+                        // Day of month
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
+                            if (mysql_e_requires_space_padding)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthMandatorySpacePadding)); /// ' 1' - '31'
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthOptionalSpacePadding));  /// '1' (or ' 1') - '31'
                             break;
 
                         // Fractional seconds

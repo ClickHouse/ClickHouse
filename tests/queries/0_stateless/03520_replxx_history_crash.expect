@@ -1,0 +1,84 @@
+#!/usr/bin/expect -f
+
+# Regression test for heap-use-after-free in replxx::History::erase
+# https://github.com/AmokHuginnsson/replxx/pull/160
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 1\r"
+expect ":) "
+send -- "SELECT 2\r"
+expect ":) "
+
+send -- "SELECT '1'\r"
+expect ":) "
+send -- "SELECT '2'\r"
+expect ":) "
+
+# Now rewrite:
+# - SELECT 2 -> SELECT '2'
+# - SELECT 1 -> SELECT '1'
+# This is needed to overlap the entries via scratch
+
+# Used key codes:
+# - "\033\[A" -> UP
+# - "\x7f" -> backspace
+
+# SELECT 2 -> SELECT '2'
+send -- "\033\[A"
+expect "SELECT '2'"
+send -- "\033\[A"
+expect "SELECT '1'"
+send -- "\033\[A"
+expect "SELECT 2"
+send -- "\x7f"
+send -- "'2'"
+expect "SELECT '2'"
+# SELECT 1 -> SELECT '1'
+send -- "\033\[A"
+expect "SELECT 1"
+send -- "\x7f"
+send -- "'1'"
+expect "SELECT '1'"
+# Commit
+send -- "\r"
+expect ":) "
+
+send -- "SELECT '2'\r"
+expect ":) "
+send -- "SELECT 2\r"
+expect ":) "
+send -- "SELECT '2'\r"
+expect ":) "
+send -- "\033\[A"
+expect "SELECT '2'"
+send -- "\033\[A"
+expect "SELECT 2"
+# This should trigger heap-use-after-free in replxx::History::erase()
+send -- "\r"
+expect ":) "
+
+send -- "exit\r"
+expect eof

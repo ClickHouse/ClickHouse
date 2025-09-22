@@ -6,11 +6,14 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -39,7 +42,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -55,7 +57,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -70,6 +72,8 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace ProfileEvents
 {
@@ -104,6 +108,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -1013,6 +1018,27 @@ bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool StorageFile::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+bool StorageFile::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
+{
+    /// Currently don't support prewhere for virtual columns and columns with default expressions.
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+}
+
+IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
+{
+    /// Reporting some fake sizes to enable prewhere optimization.
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+}
+
 bool StorageFile::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1098,6 +1124,12 @@ StorageFile::StorageFile(CommonArguments args)
 {
     if (format_name != "Distributed" && format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
+
+    /// What happens if this constructor is called directly, and format_name == "auto"?
+    /// Will the "auto" be propagated all the way to FormatFactory::getInput and throw exception?
+    /// Is this constructor meant to only be called from the other constructors, which then call
+    /// setStorageMetadata, which detects format and assigns format_name?
+    /// If you know answers to these questions, consider adding a comment or something.
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -1139,8 +1171,21 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    const auto sample_path = paths.empty() ? "" : paths[0];
+
+    auto & storage_columns = storage_metadata.columns;
+
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        sample_path,
+        args.columns.empty(),
+        format_settings,
+        args.getContext());
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
+
+    supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
 }
 
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
@@ -1159,26 +1204,32 @@ StorageFileSource::FilesIterator::FilesIterator(
     std::optional<StorageFile::ArchiveInfo> archive_info_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
     const ContextPtr & context_,
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
     if (filter_dag)
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, context_);
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, hive_columns, context_);
     }
 }
 
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-        return getContext()->getReadTaskCallback()();
+    {
+        auto task = getContext()->getClusterFunctionReadTaskCallback()();
+        if (!task || task->isEmpty())
+            return {};
+        return task->path;
+    }
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
@@ -1204,16 +1255,22 @@ StorageFileSource::StorageFileSource(
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
-    bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
+    bool need_only_count_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_)
+    : ISource(std::make_shared<const Block>(info.source_header), false)
+    , WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1280,11 +1337,6 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
-}
-
 
 bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 {
@@ -1300,10 +1352,10 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
     /// Instead, we use special ConstChunkGenerator that will generate chunks
     /// with max_block_size rows until total number of rows is reached.
-    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
+    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
     QueryPipelineBuilder builder;
     builder.init(Pipe(const_chunk_generator));
-    builder.addSimpleTransform([&](const Block & header)
+    builder.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
@@ -1429,8 +1481,6 @@ Chunk StorageFileSource::generate()
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
-            const Settings & settings = getContext()->getSettingsRef();
-
             size_t file_num = 0;
             if (storage->archive_info)
                 file_num = storage->archive_info->paths_to_archives.size();
@@ -1439,15 +1489,20 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            const auto max_parsing_threads = std::max<size_t>(settings[Setting::max_parsing_threads] / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
-                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
-                max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                format_filter_info,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1457,7 +1512,7 @@ Chunk StorageFileSource::generate()
 
             if (columns_description.hasDefaults())
             {
-                builder.addSimpleTransform([&](const Block & header)
+                builder.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                 });
@@ -1465,7 +1520,7 @@ Chunk StorageFileSource::generate()
 
             /// Add ExtractColumnsTransform to extract requested columns/subcolumns
             /// from chunk read by IInputFormat.
-            builder.addSimpleTransform([&](const Block & header)
+            builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
             });
@@ -1486,6 +1541,16 @@ Chunk StorageFileSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    current_path);
+            }
+
             /// Enrich with virtual columns.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
@@ -1503,7 +1568,8 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1556,19 +1622,19 @@ public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1599,6 +1665,14 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
         predicate = filter_actions_dag->getOutputs().at(0);
 
     createIterator(predicate);
+}
+
+void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
+    output_header = std::make_shared<const Block>(info.source_header);
 }
 
 void StorageFile::read(
@@ -1637,8 +1711,18 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        context,
+        supportsSubsetOfColumns(context),
+        /*supports_tuple_elements=*/ supports_prewhere,
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -1646,7 +1730,6 @@ void StorageFile::read(
         query_info,
         storage_snapshot,
         context,
-        read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
@@ -1666,6 +1749,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info,
         predicate,
         storage->getVirtualsList(),
+        info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
 }
@@ -1696,6 +1780,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -1713,9 +1801,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count);
+            need_only_count,
+            parser_shared_resources,
+            format_filter_info);
 
-        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1726,7 +1815,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -1750,7 +1839,7 @@ public:
         const String format_name_,
         const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1778,7 +1867,7 @@ public:
         const String format_name_,
         const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1842,7 +1931,9 @@ public:
 
     void onFinish() override
     {
-        chassert(!isCancelled());
+        if (isCancelled())
+            return;
+
         finalizeBuffers();
     }
 
@@ -1902,7 +1993,7 @@ class PartitionedStorageFileSink : public PartitionedSink
 {
 public:
     PartitionedStorageFileSink(
-        const ASTPtr & partition_by,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
@@ -1913,7 +2004,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1929,19 +2020,19 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+        std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
-        fs::create_directories(fs::path(partition_path).parent_path());
+        fs::create_directories(fs::path(filepath).parent_path());
 
-        PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
+        validatePartitionKey(filepath, true);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
             -1,
             /* use_table_fd */false,
             base_path,
-            partition_path,
+            filepath,
             compression_method,
             format_settings,
             format_name,
@@ -1991,8 +2082,18 @@ SinkToStoragePtr StorageFile::write(
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
-        return std::make_shared<PartitionedStorageFileSink>(
+        auto partition_strategy = PartitionStrategyFactory::get(
+            PartitionStrategyFactory::StrategyType::WILDCARD,
             insert_query->partition_by,
+            metadata_snapshot->getColumns().getAll(),
+            context,
+            format_name,
+            is_path_with_globs,
+            has_wildcards,
+            /* partition_columns_in_data_file */true);
+
+        return std::make_shared<PartitionedStorageFileSink>(
+            partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
@@ -2039,7 +2140,8 @@ SinkToStoragePtr StorageFile::write(
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
                     "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
-                    " You can configure ClickHouse to create a new file "
+                    " You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting,"
+                    " or you can configure ClickHouse to create a new file "
                     "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
                     path, format_name);
         }
@@ -2130,7 +2232,7 @@ void registerStorageFile(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::FILE,
+        .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
@@ -2138,9 +2240,10 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
-                WithContext(factory_args.getContext()),
+                WithContext(context),
                 factory_args.table_id,
                 {},
                 {},
@@ -2227,7 +2330,7 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_fd, storage_args);
 
             /// User's file
-            return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
+            return std::make_shared<StorageFile>(source_path, context->getUserFilesPath(), false, storage_args);
         },
         storage_features);
 }

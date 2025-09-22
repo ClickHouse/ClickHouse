@@ -41,6 +41,8 @@ class MetaClasses:
                 return [cls.to_dict(i) for i in obj]
             elif isinstance(obj, dict):
                 return {k: cls.to_dict(v) for k, v in obj.items()}
+            elif isinstance(obj, Path):
+                return str(obj)
             else:
                 return obj
 
@@ -172,6 +174,7 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             executable="/bin/bash",
+            errors="ignore",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -182,7 +185,7 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True):
+    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -191,8 +194,12 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="ignore",
         )
-        return res.returncode, res.stdout.strip(), res.stderr.strip()
+        if strip:
+            return res.returncode, res.stdout.strip(), res.stderr.strip()
+        else:
+            return res.returncode, res.stdout, res.stderr
 
     @classmethod
     def check(
@@ -297,8 +304,14 @@ class Shell:
         stdin_str=None,
         timeout=None,
         retries=1,
+        retry_errors: Union[List[str], str] = "",
         **kwargs,
     ):
+        if retry_errors and retries < 2:
+            retries = 2
+            if isinstance(retry_errors, str):
+                retry_errors = [retry_errors]
+
         # Dry-run
         if dry_run:
             print(f"Dry-run. Would run command [{command}]")
@@ -323,6 +336,7 @@ class Shell:
                         start_new_session=True,  # Start a new process group for signal handling
                         bufsize=1,  # Line-buffered
                         errors="backslashreplace",
+                        executable="/bin/bash",
                         **kwargs,
                     )
 
@@ -366,8 +380,22 @@ class Shell:
                     else:
                         if verbose:
                             print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
+                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
                             )
+                        if retry_errors:
+                            should_retry = False
+                            for err in retry_errors:
+                                if any(err in err_line for err_line in err_output):
+                                    print(
+                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
+                                    )
+                                    should_retry = True
+                                    break
+                            if not should_retry:
+                                print(
+                                    f"No retryable errors found, stopping retry attempts"
+                                )
+                                break
             except Exception as e:
                 if verbose:
                     print(
@@ -378,11 +406,11 @@ class Shell:
                 if strict and retry == retries - 1:
                     raise e
 
-            if strict and (not proc or proc.returncode != 0):
-                err = "\n   ".join(err_output).strip()
-                raise RuntimeError(
-                    f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
-                )
+        if strict and (not proc or proc.returncode != 0):
+            err = "\n   ".join(err_output).strip()
+            raise RuntimeError(
+                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+            )
 
         return proc.returncode if proc else 1  # Return 1 if the process never started
 
@@ -431,7 +459,7 @@ class Utils:
     @staticmethod
     def is_amd():
         arch = platform.machine()
-        if "x86_64" in arch.lower() or "amd64" in arch.lower():
+        if "x86" in arch.lower() or "amd" in arch.lower():
             return True
         return False
 
@@ -448,8 +476,32 @@ class Utils:
             )
 
     @staticmethod
+    def terminate_process(pid, force=False):
+        try:
+            if not force:
+                os.kill(pid, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
+
+    @staticmethod
     def set_env(key, val):
         os.environ[key] = val
+
+    @staticmethod
+    def physical_memory() -> int:
+        """
+        Returns the total physical memory in bytes.
+        """
+        try:
+            # for linux
+            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except ValueError:
+            # for MacOS
+            return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
     @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):
@@ -615,40 +667,71 @@ class Utils:
         return res
 
     @classmethod
-    def compress_file_zst(cls, path):
+    def compress_zst(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
         path_out = ""
+
         if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(
-                f"rm -f {path_out} && zstd < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.zst"
+                Shell.check(
+                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.zst"
+                Shell.check(
+                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    verbose=True,
+                    strict=True,
+                )
         return path_out
 
     @classmethod
-    def compress_file(cls, path):
+    def compress_gz(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
+        path_out = ""
+
+        if Shell.check("which gzip"):
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.gz"
+                Shell.check(
+                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.gz"
+                Shell.check(
+                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
+                    verbose=True,
+                    strict=True,
+                )
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path, no_strict=False):
         if Shell.check("which zstd"):
-            return cls.compress_file_zst(path)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && pigz < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_zst(path)
         elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_gz(path)
         else:
             path_out = path
-            Utils.raise_with_error(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
+            if not no_strict:
+                raise RuntimeError(
+                    f"Failed to compress file [{path}] no zstd or gz installed"
+                )
         return path_out
 
     @classmethod
@@ -693,6 +776,32 @@ class Utils:
         @property
         def duration(self) -> float:
             return datetime.now().timestamp() - self.start_time
+
+    class Tee:
+        def __init__(self, stdout=None):
+            self.original_stdout = sys.stdout
+            self.stdout = stdout
+
+        def __enter__(self):
+            class DualWriter:
+                def __init__(self, original, duplicate):
+                    self.original = original
+                    self.duplicate = duplicate
+
+                def write(self, message):
+                    self.original.write(message)
+                    self.duplicate.write(message)
+
+                def flush(self):
+                    self.original.flush()
+                    self.duplicate.flush()
+
+            if self.stdout:
+                sys.stdout = DualWriter(self.original_stdout, self.stdout)
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            sys.stdout = self.original_stdout
 
 
 class TeePopen:
@@ -793,14 +902,4 @@ class TeePopen:
 
 if __name__ == "__main__":
 
-    @dataclasses.dataclass
-    class Test(MetaClasses.Serializable):
-        name: str
-
-        @staticmethod
-        def file_name_static(name):
-            return f"/tmp/{Utils.normalize_string(name)}.json"
-
-    Test(name="dsada").dump()
-    t = Test.from_fs("dsada")
-    print(t)
+    Utils.compress_gz("/tmp/test/")

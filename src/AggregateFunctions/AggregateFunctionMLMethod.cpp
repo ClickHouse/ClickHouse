@@ -1,16 +1,13 @@
-#include "AggregateFunctionMLMethod.h"
-
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <Columns/ColumnArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "AggregateFunctionFactory.h"
-#include "FactoryHelpers.h"
-#include "Helpers.h"
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -90,7 +87,7 @@ namespace
         }
         else
         {
-            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_asssert in constexpr if until template instantiation
+            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_assert in constexpr if until template instantiation
         }
 
         return std::make_shared<Method>(

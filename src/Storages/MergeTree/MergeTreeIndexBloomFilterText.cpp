@@ -369,6 +369,10 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "notEquals" ||
                  function_name == "has" ||
                  function_name == "mapContains" ||
+                 function_name == "mapContainsKey" ||
+                 function_name == "mapContainsKeyLike" ||
+                 function_name == "mapContainsValue" ||
+                 function_name == "mapContainsValueLike" ||
                  function_name == "match" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
@@ -387,7 +391,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                 if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out))
                     return true;
             }
-            else if (left_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+            else if (left_argument.tryGetConstant(const_value, const_type) &&
+                (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
             {
                 if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out))
                     return true;
@@ -414,6 +419,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
+    const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
 
     if (key_node.isFunction())
     {
@@ -480,12 +486,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         return true;
     }
 
-    if (!key_index && !map_key_index)
+    if (!key_index && !map_key_index && !map_value_index)
         return false;
 
     if (map_key_index)
     {
-        if (function_name == "has" || function_name == "mapContains")
+        if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContains")
         {
             out.key_column = *key_index;
             out.function = RPNElement::FUNCTION_HAS;
@@ -494,10 +500,61 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
+        if (function_name == "mapContainsKeyLike")
+        {
+            out.key_column = *key_index;
+            out.function = RPNElement::FUNCTION_HAS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            auto & value = const_value.safeGet<String>();
+            token_extractor->stringLikeToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+            return true;
+        }
         // When map_key_index is set, we shouldn't use ngram/token bf for other functions
         return false;
     }
+    if (map_value_index)
+    {
+        if (function_name == "mapContainsValue")
+        {
+            out.key_column = *map_value_index;
+            out.function = RPNElement::FUNCTION_HAS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            auto & value = const_value.safeGet<String>();
+            token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+            return true;
+        }
+        if (function_name == "mapContainsValueLike")
+        {
+            out.key_column = *map_value_index;
+            out.function = RPNElement::FUNCTION_HAS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            auto & value = const_value.safeGet<String>();
+            token_extractor->stringLikeToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+            return true;
+        }
+        // When map_value_index is set, we shouldn't use ngram/token bf for other functions
+        return false;
+    }
+    if ((function_name == "has" && value_data_type.isArray()) || function_name == "hasAny" || function_name == "hasAll")
+    {
+        out.key_column = *key_index;
+        out.function = function_name == "hasAll" ? RPNElement::FUNCTION_HAS_ALL : RPNElement::FUNCTION_HAS_ANY;
 
+        // 2d vector is not needed here but is used because already exists for FUNCTION_IN
+        std::vector<std::vector<BloomFilter>> bloom_filters;
+        bloom_filters.emplace_back();
+        for (const auto & element : const_value.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                return false;
+
+            bloom_filters.back().emplace_back(params);
+            const auto & value = element.safeGet<String>();
+            token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
+        }
+        out.set_bloom_filters = std::move(bloom_filters);
+        return true;
+    }
     if (function_name == "has")
     {
         out.key_column = *key_index;
@@ -507,7 +564,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-
     if (function_name == "notEquals")
     {
         out.key_column = *key_index;
@@ -562,12 +618,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
-    if (function_name == "multiSearchAny" || function_name == "hasAny" || function_name == "hasAll")
+    if (function_name == "multiSearchAny")
     {
         out.key_column = *key_index;
-        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH
-                     : function_name == "hasAny"         ? RPNElement::FUNCTION_HAS_ANY
-                                                         : RPNElement::FUNCTION_HAS_ALL;
+        out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
@@ -579,15 +633,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             bloom_filters.back().emplace_back(params);
             const auto & value = element.safeGet<String>();
-
-            if (function_name == "multiSearchAny")
-            {
-                token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
-            }
-            else
-            {
-                token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
-            }
+            token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
         }
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
@@ -599,22 +645,18 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
-        String required_substring;
-        bool dummy_is_trivial;
-        bool dummy_required_substring_is_prefix;
-        std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
+        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
-        if (required_substring.empty() && alternatives.empty())
+        if (result.required_substring.empty() && result.alternatives.empty())
             return false;
 
         /// out.set_bloom_filters means alternatives exist
         /// out.bloom_filter means required_substring exists
-        if (!alternatives.empty())
+        if (!result.alternatives.empty())
         {
             std::vector<std::vector<BloomFilter>> bloom_filters;
             bloom_filters.emplace_back();
-            for (const auto & alternative : alternatives)
+            for (const auto & alternative : result.alternatives)
             {
                 bloom_filters.back().emplace_back(params);
                 token_extractor->substringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back(), false, false);
@@ -622,7 +664,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.set_bloom_filters = std::move(bloom_filters);
         }
         else
-            token_extractor->substringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter, false, false);
+        {
+            token_extractor->substringToBloomFilter(
+                result.required_substring.data(), result.required_substring.size(), *out.bloom_filter, false, false);
+        }
 
         return true;
     }
@@ -737,12 +782,12 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == SplitTokenExtractor::getName())
+    if (index.type == DefaultTokenExtractor::getName())
     {
         BloomFilterParameters params(
             index.arguments[0].safeGet<size_t>(), index.arguments[1].safeGet<size_t>(), index.arguments[2].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<SplitTokenExtractor>();
+        auto tokenizer = std::make_unique<DefaultTokenExtractor>();
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
@@ -777,7 +822,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         if (index.arguments.size() != 4)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
     }
-    else if (index.type == SplitTokenExtractor::getName())
+    else if (index.type == DefaultTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");

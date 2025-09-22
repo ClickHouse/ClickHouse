@@ -420,7 +420,6 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
         auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
         writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
     }
-    chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);
 }
@@ -450,7 +449,7 @@ The function returns a value of type String.
                 {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            .category{"Random Numbers"}
+            .category = FunctionDocumentation::Category::RandomNumber
         });
 }
 

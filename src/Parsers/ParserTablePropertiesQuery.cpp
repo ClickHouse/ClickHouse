@@ -32,6 +32,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     bool exists_view = false;
 
     bool temporary = false;
+
     if (s_exists.ignore(pos, expected))
     {
         if (s_database.ignore(pos, expected))
@@ -39,17 +40,17 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             query = std::make_shared<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
         }
-        else if (s_view.ignore(pos, expected))
-        {
-            query = std::make_shared<ASTExistsViewQuery>();
-            exists_view = true;
-        }
         else
         {
             if (s_temporary.ignore(pos, expected))
                 temporary = true;
 
-            if (s_table.checkWithoutMoving(pos, expected))
+            if (s_view.ignore(pos, expected))
+            {
+                query = std::make_shared<ASTExistsViewQuery>();
+                exists_view = true;
+            }
+            else if (s_table.checkWithoutMoving(pos, expected))
                 query = std::make_shared<ASTExistsTableQuery>();
             else if (s_dictionary.checkWithoutMoving(pos, expected))
                 query = std::make_shared<ASTExistsDictionaryQuery>();
@@ -66,6 +67,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             has_create = true;
             s_create.ignore(pos, expected);
         }
+
+        // Check for TEMPORARY keyword after SHOW [CREATE]
+        if (s_temporary.ignore(pos, expected))
+            temporary = true;
 
         if (s_database.ignore(pos, expected))
         {
@@ -94,7 +99,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         return false;
     }
-
     if (parse_only_database_name)
     {
         if (!name_p.parse(pos, database, expected))
@@ -110,6 +114,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
+
+        query->temporary = temporary;
+
         if (!name_p.parse(pos, table, expected))
             return false;
         if (s_dot.ignore(pos, expected))

@@ -121,7 +121,37 @@ using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameR
 
 REGISTER_FUNCTION(RandConstant)
 {
-    factory.registerFunction<FunctionBuilderRandConstant>();
+    FunctionDocumentation::Description description = R"(
+Generates a single random value that remains constant across all rows in the current query execution.
+
+This function:
+- Returns the same random value for every row within a single query
+- Produces different values across separate query executions
+
+It is useful for applying consistent random seeds or identifiers across all rows in a dataset
+    )";
+    FunctionDocumentation::Syntax syntax = "randConstant([x])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a column of type `UInt32` containing the same random value in each row.", {"UInt32"}};
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", "SELECT randConstant() AS random_value;", R"(
+| random_value |
+|--------------|
+| 1234567890   |
+        )"},
+        {"Usage with parameter", "SELECT randConstant(10) AS random_value;", R"(
+| random_value |
+|--------------|
+| 9876543210   |
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBuilderRandConstant>(documentation);
 }
 
 }

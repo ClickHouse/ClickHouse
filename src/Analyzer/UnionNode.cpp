@@ -132,7 +132,7 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
-void UnionNode::addCorrelatedColumn(ColumnNodePtr correlated_column)
+void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 {
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
@@ -232,7 +232,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 
     ASTPtr result_query = std::move(select_with_union_query);
-    bool set_subquery_cte_name = true;
+    bool set_subquery_cte_name = options.set_subquery_cte_name;
 
     if (recursive_cte_table)
     {

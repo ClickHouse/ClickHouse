@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 import time
 
+# This HTTP server acts as a mock S3 endpoint.
+# It's implemented in Python using the Bottle framework.
+# This framework is single-threaded, so it can only handle one request at a time.
+# All the sleeps will affect all consequent requests: https://www.bottlepy.org/docs/0.13/deployment.html
 from bottle import request, response, route, run
 
 total = 0
@@ -9,7 +13,7 @@ total = 0
 def throttle_and_count():
     global total
     total += 1
-    time.sleep(1)
+    time.sleep(0.5)
 
 
 # Handle for MultipleObjectsDelete.

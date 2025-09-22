@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -71,6 +70,10 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
+    virtual bool canSkipMark(size_t, size_t) { return false; }
+
+    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
+
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
@@ -85,6 +88,7 @@ protected:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// The same as above, but for subcolumns.
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map_for_subcolumns;
+    DeserializeBinaryBulkStateMap cached_deserialize_binary_bulk_state_map_for_subcolumns;
 
    /// Actual columns description in part.
     const ColumnsDescription & part_columns;
@@ -100,7 +104,7 @@ protected:
     MergeTreeReaderSettings settings;
 
     const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    MarkRanges all_mark_ranges;
 
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
@@ -122,8 +126,12 @@ protected:
     AlterConversionsPtr alter_conversions;
 
 private:
+    friend class MergeTreeReaderIndex;
+    friend class MergeTreeReaderTextIndex;
+
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
+    std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
@@ -153,5 +161,12 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+struct MergeTreeIndexWithCondition;
+
+MergeTreeReaderPtr createMergeTreeReaderIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read);
 
 }

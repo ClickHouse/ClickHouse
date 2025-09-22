@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Parsers/IAST_fwd.h>
 
 #include <Common/CurrentThread.h>
@@ -20,7 +21,8 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         LoadingStrictnessLevel mode,
-        const String & comment);
+        const String & comment,
+        bool is_restore_from_backup);
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
@@ -100,6 +102,7 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void finalizeRestoreFromBackup() override;
     bool supportsBackupPartition() const override;
 
     static String generateInnerTableName(const StorageID & view_id);
@@ -107,6 +110,13 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
+
+    std::optional<String> getCoordinationPath() const
+    {
+        if (!refresher.ptr)
+            return std::nullopt;
+        return refresher.ptr->getCoordinationPath();
+    }
 
 private:
     mutable std::mutex target_table_id_mutex;

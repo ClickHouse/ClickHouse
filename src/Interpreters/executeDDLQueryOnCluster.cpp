@@ -32,7 +32,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_distributed_ddl;
-    extern const SettingsBool database_replicated_enforce_synchronous_settings;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -208,7 +207,7 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
     if (context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
         || context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
-        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
 
     return io;
 }

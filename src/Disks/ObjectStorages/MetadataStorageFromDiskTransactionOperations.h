@@ -202,6 +202,64 @@ private:
     std::string temp_path_to;
 };
 
+
+struct WriteInlineDataOperation final : public IMetadataOperation
+{
+    WriteInlineDataOperation(
+        const std::string & path_,
+        const std::string & inline_data_,
+        IDisk & disk_,
+        const MetadataStorageFromDisk & metadata_storage_)
+        : path(path_)
+        , inline_data(inline_data_)
+        , disk(disk_)
+        , metadata_storage(metadata_storage_)
+    {}
+
+    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+
+private:
+    std::string path;
+    String inline_data;
+    IDisk & disk;
+    const MetadataStorageFromDisk & metadata_storage;
+
+    std::unique_ptr<WriteFileOperation> write_operation;
+};
+
+
+struct RewriteFileOperation final : public IMetadataOperation
+{
+    RewriteFileOperation(
+        const std::string & path_,
+        ObjectStorageKey object_key_,
+        uint64_t size_in_bytes_,
+        IDisk & disk_,
+        const MetadataStorageFromDisk & metadata_storage_)
+        : path(path_)
+        , object_key(std::move(object_key_))
+        , size_in_bytes(size_in_bytes_)
+        , disk(disk_)
+        , metadata_storage(metadata_storage_)
+    {}
+
+    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+
+private:
+    std::string path;
+    ObjectStorageKey object_key;
+    uint64_t size_in_bytes;
+    IDisk & disk;
+    const MetadataStorageFromDisk & metadata_storage;
+
+    std::unique_ptr<WriteFileOperation> write_operation;
+};
+
+
 struct AddBlobOperation final : public IMetadataOperation
 {
     AddBlobOperation(

@@ -2,12 +2,12 @@
 
 #include <base/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include "Sources.h"
-#include "Sinks.h"
+#include <Functions/GatherUtils/Sources.h>
+#include <Functions/GatherUtils/Sinks.h>
 #include <Core/AccurateComparison.h>
-#include "GatherUtils.h"
-#include "sliceEqualElements.h"
-#include "sliceHasImplAnyAll.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/sliceEqualElements.h>
+#include <Functions/GatherUtils/sliceHasImplAnyAll.h>
 
 
 namespace DB::ErrorCodes

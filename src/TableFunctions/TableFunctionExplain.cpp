@@ -46,7 +46,11 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Explain"; }
+    const char * getStorageEngineName() const override
+    {
+        /// No underlying storage engine
+        return "";
+    }
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
@@ -167,9 +171,6 @@ Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
-    if (blocks.size() == 1)
-        return blocks[0];
-
     return concatenateBlocks(blocks);
 }
 
@@ -208,7 +209,8 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
         }});
 }
 
