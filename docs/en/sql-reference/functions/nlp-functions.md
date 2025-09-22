@@ -1,15 +1,15 @@
 ---
 description: 'Documentation for Natural Language Processing (NLP) Functions'
 sidebar_label: 'NLP'
+sidebar_position: 130
 slug: /sql-reference/functions/nlp-functions
 title: 'Natural Language Processing (NLP) Functions'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Natural language processing (NLP) functions
+# Natural Language Processing (NLP) Functions
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -94,6 +94,8 @@ fr
 ## detectLanguageMixed {#detectlanguagemixed}
 
 Similar to the `detectLanguage` function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+
+
 *Syntax*
 
 ```sql
@@ -107,6 +109,8 @@ detectLanguageMixed('text_to_be_analyzed')
 *Returned value*
 
 - `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
+
+
 *Examples*
 
 Query:
@@ -161,6 +165,8 @@ Result:
 ## detectLanguageUnknown {#detectlanguageunknown}
 
 Similar to the `detectLanguage` function, except the `detectLanguageUnknown` function works with non-UTF8-encoded strings. Prefer this version when your character set is UTF-16 or UTF-32.
+
+
 *Syntax*
 
 ```sql
@@ -303,7 +309,7 @@ stem('language', word)
 Query:
 
 ```sql
-SELECT arrayMap(x -> stem('en', x), ['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) AS res;
+SELECT arrayMap(x -> stem('en', x), ['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) as res;
 ```
 
 Result:

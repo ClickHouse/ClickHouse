@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include "Storages/MergeTree/MergeTreeBlockReadUtils.h"
+#include "Storages/MergeTree/MergeTreeReadTask.h"
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <base/range.h>
@@ -39,7 +39,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
@@ -52,7 +51,6 @@ MergeTreeReadPool::MergeTreeReadPool(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
         storage_snapshot_,
         prewhere_info_,
         actions_settings_,

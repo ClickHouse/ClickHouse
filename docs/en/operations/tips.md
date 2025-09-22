@@ -4,7 +4,6 @@ sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
 slug: /operations/tips
 title: 'Usage Recommendations'
-doc_type: 'guide'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';

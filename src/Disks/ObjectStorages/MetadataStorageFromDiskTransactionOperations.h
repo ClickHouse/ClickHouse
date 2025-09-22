@@ -8,7 +8,6 @@
 namespace DB
 {
 class MetadataStorageFromDisk;
-class MetadataStorageFromDiskTransaction;
 class IDisk;
 
 /**
@@ -347,11 +346,11 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
 
     TruncateMetadataFileOperation(
         const std::string & path_,
-        size_t size_,
+        size_t target_size_,
         const MetadataStorageFromDisk & metadata_storage_,
         IDisk & disk_)
         : path(path_)
-        , size(size_)
+        , target_size(target_size_)
         , metadata_storage(metadata_storage_)
         , disk(disk_)
     {
@@ -363,7 +362,7 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
 
 private:
     std::string path;
-    size_t size;
+    size_t target_size;
 
     const MetadataStorageFromDisk & metadata_storage;
     IDisk & disk;

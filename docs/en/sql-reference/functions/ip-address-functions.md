@@ -1,12 +1,12 @@
 ---
 description: 'Documentation for Functions for Working with IPv4 and IPv6 Addresses'
 sidebar_label: 'IP Addresses'
+sidebar_position: 95
 slug: /sql-reference/functions/ip-address-functions
 title: 'Functions for Working with IPv4 and IPv6 Addresses'
-doc_type: 'reference'
 ---
 
-# Functions for working with IPv4 and IPv6 addresses
+# Functions for Working with IPv4 and IPv6 Addresses
 
 ## IPv4NumToString {#IPv4NumToString}
 
@@ -285,7 +285,7 @@ Query:
 
 ```sql
 WITH
-    '171.225.130.45' AS IPv4_string
+    '171.225.130.45' as IPv4_string
 SELECT
     hex(IPv4StringToNum(IPv4_string)),
     hex(toIPv4(IPv4_string))
@@ -298,6 +298,8 @@ Result:
 │ ABE1822D                          │ ABE1822D                 │
 └───────────────────────────────────┴──────────────────────────┘
 ```
+
+
 Query:
 
 ```sql

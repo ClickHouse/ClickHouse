@@ -3,7 +3,6 @@ description: 'Calculates the moving sum of input values.'
 sidebar_position: 144
 slug: /sql-reference/aggregate-functions/reference/grouparraymovingsum
 title: 'groupArrayMovingSum'
-doc_type: 'reference'
 ---
 
 # groupArrayMovingSum

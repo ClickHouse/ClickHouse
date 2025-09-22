@@ -1,6 +1,6 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Common/Exception.h>
+#include "Common/Exception.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -9,8 +9,6 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
-
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
@@ -116,18 +114,14 @@ AzureObjectStorage::AzureObjectStorage(
     AzureBlobStorage::AuthMethod auth_method_,
     ClientPtr && client_,
     SettingsPtr && settings_,
-    const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
-    const String & description_,
-    const String & common_key_prefix_)
+    const String & description_)
     : name(name_)
     , auth_method(std::move(auth_method_))
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
-    , common_key_prefix(common_key_prefix_)
-    , connection_params(connection_params_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -214,6 +208,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
@@ -328,35 +323,26 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
-    const ReadSettings & read_settings,
+    const ReadSettings &,
     const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto object_metadata = getObjectMetadata(object_from.remote_path);
+    auto dest_blob_client = client_ptr->GetBlobClient(object_to.remote_path);
+    auto source_blob_client = client_ptr->GetBlobClient(object_from.remote_path);
+
+    Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+    if (object_to_attributes.has_value())
+    {
+        for (const auto & [key, value] : *object_to_attributes)
+            copy_options.Metadata[key] = value;
+    }
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
-    LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "AzureObjCopy");
-
-    copyAzureBlobStorageFile(
-        client_ptr,
-        client_ptr,
-        connection_params.getContainer(),
-        object_from.remote_path,
-        0,
-        object_metadata.size_bytes,
-        connection_params.getContainer(),
-        object_to.remote_path,
-        settings_ptr,
-        read_settings,
-        object_to_attributes,
-        true,
-        scheduler);
+    dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
 }
 
 void AzureObjectStorage::applyNewSettings(
@@ -377,7 +363,7 @@ void AzureObjectStorage::applyNewSettings(
     {
         .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
         .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
+        .client_options = AzureBlobStorage::getClientOptions(*settings.get(), is_client_for_disk),
     };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
@@ -385,9 +371,24 @@ void AzureObjectStorage::applyNewSettings(
 }
 
 
-ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
+std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
+    const std::string & new_namespace,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context)
 {
-    return DB::getAzureObjectStorageConnectionInfo(connection_params);
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
+    bool is_client_for_disk = client.get()->IsClientForDisk();
+
+    AzureBlobStorage::ConnectionParams params
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+        .client_options = AzureBlobStorage::getClientOptions(*new_settings, is_client_for_disk),
+    };
+
+    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
+    return std::make_unique<AzureObjectStorage>(name, params.auth_method, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getServiceEndpoint());
 }
 
 }

@@ -372,15 +372,3 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
-[submodule "contrib/ai-sdk-cpp"]
-	path = contrib/ai-sdk-cpp
-	url = https://github.com/ClickHouse/ai-sdk-cpp
-[submodule "contrib/nlohmann-json"]
-	path = contrib/nlohmann-json
-	url = https://github.com/nlohmann/json.git
-[submodule "contrib/crc32c"]
-	path = contrib/crc32c
-	url = https://github.com/google/crc32c.git
-[submodule "contrib/antlr4-cpp-runtime"]
-	path = contrib/antlr4-cpp-runtime
-	url = https://github.com/antlr/antlr4.git

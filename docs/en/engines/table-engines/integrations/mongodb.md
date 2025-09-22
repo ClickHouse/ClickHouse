@@ -5,7 +5,6 @@ sidebar_label: 'MongoDB'
 sidebar_position: 135
 slug: /engines/table-engines/integrations/mongodb
 title: 'MongoDB'
-doc_type: 'guide'
 ---
 
 # MongoDB
@@ -15,7 +14,7 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -61,10 +60,10 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 | MongoDB                 | ClickHouse                                                            |
 |-------------------------|-----------------------------------------------------------------------|
-| bool, int32, int64      | *any numeric type except Decimals*, Boolean, String                   |
+| bool, int32, int64      | *any numeric type*, String                                            |
 | double                  | Float64, String                                                       |
 | date                    | Date, Date32, DateTime, DateTime64, String                            |
-| string                  | String, *any numeric type(except Decimals) if formatted correctly*    |
+| string                  | String                                                                |
 | document                | String(as JSON)                                                       |
 | array                   | Array, String(as JSON)                                                |
 | oid                     | String                                                                |
@@ -152,7 +151,9 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 
 :::
 
-## Usage example {#usage-example}
+
+## Usage Example {#usage-example}
+
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
 
@@ -169,7 +170,7 @@ CREATE TABLE sample_mflix_table
     writers Array(String),
     released Date,
     imdb String,
-    year String
+    year String,
 ) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
 ```
 
@@ -217,9 +218,9 @@ released:  1989-11-22
 
 ```sql
 -- Find top 3 movies based on Cormac McCarthy's books
-SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table
-WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
+WHERE arrayExists(x -> x like 'Cormac McCarthy%', writers)
 ORDER BY rating DESC
 LIMIT 3;
 ```
