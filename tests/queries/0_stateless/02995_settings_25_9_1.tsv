@@ -1182,8 +1182,8 @@ query_plan_reuse_storage_ordering_for_window_functions	1
 query_plan_split_filter	1
 query_plan_try_use_vector_search	1
 query_plan_use_new_logical_join_step	1
-query_profiler_cpu_time_period_ns	0
-query_profiler_real_time_period_ns	0
+query_profiler_cpu_time_period_ns	1000000000
+query_profiler_real_time_period_ns	1000000000
 queue_max_wait_ms	0
 rabbitmq_max_wait_ms	5000
 read_backoff_max_throughput	1048576
