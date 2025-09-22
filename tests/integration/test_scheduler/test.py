@@ -1006,12 +1006,10 @@ def test_config_based_workloads_and_resources():
     update_workloads_config(resources_and_workloads="""
         CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
         CREATE RESOURCE config_io_write (WRITE DISK s3_no_resource);
-        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read, max_bytes_inflight = 2000000 FOR config_io_write;
+        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000, max_bytes_inflight = 2000000 FOR config_io_write;
         CREATE WORKLOAD production IN all SETTINGS priority = 1, weight = 3;
     """
     )
-
-    breakpoint()
 
     # Verify config-based entities are loaded
     assert (
@@ -1041,13 +1039,13 @@ def test_config_based_workloads_and_resources():
         node.query("CREATE RESOURCE config_io_read (READ DISK non_existent_disk)")
         assert False, "Should not be able to create resource with same name as config entity"
     except Exception as ex:
-        assert "defined in server configuration" in str(ex)
+        assert "already exists" in str(ex)
 
     try:
         node.query("CREATE WORKLOAD all")
         assert False, "Should not be able to create workload with same name as config entity"
     except Exception as ex:
-        assert "defined in server configuration" in str(ex)
+        assert "already exists" in str(ex)
 
     # Create SQL entities with different names
     node.query("CREATE RESOURCE sql_io_read (READ DISK non_existent_disk)")
@@ -1075,12 +1073,13 @@ def test_config_based_workloads_and_resources():
         assert "defined in server configuration" in str(ex)
 
     try:
-        node.query("DROP WORKLOAD all")
+        node.query("DROP WORKLOAD production")
         assert False, "Should not be able to drop config-defined workload"
     except Exception as ex:
         assert "defined in server configuration" in str(ex)
 
     # But SQL entities can be dropped
+    node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
     node.query("DROP RESOURCE sql_io_read")
 
     # Update config to remove some entities

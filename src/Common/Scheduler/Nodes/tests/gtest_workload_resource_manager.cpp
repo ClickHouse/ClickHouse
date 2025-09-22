@@ -66,9 +66,10 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
+    bool loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         UNUSED(config);
+        return true;
     }
 
     void executeQuery(const String & query)

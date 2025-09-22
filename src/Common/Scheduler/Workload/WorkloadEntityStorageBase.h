@@ -78,10 +78,11 @@ protected:
     /// Note that subscribers will be notified with a sequence of events.
     /// It is guaranteed that all itermediate states (between every pair of consecutive events)
     /// will be consistent (all references between entities will be valid)
-    void setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    /// Returns true if entities were changed, false if new_entities are the same as current entities
+    bool setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
 
     /// Serialize `entities` stored in memory plus one optional `change` into multiline string
-    String serializeAllEntities(std::optional<Event> change = {});
+    String serializeAllEntities(std::optional<Event> change);
 
     /// Shared parsing function for both keeper and config storage
     static std::vector<std::pair<String, ASTPtr>> parseEntitiesFromString(const String & data, LoggerPtr log);
@@ -91,7 +92,7 @@ private:
     void applyEvent(std::unique_lock<std::recursive_mutex> & lock, const Event & event);
 
     /// Notify subscribers about changes describe by vector of events `tx`
-    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, std::vector<Event> tx);
+    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 
     /// Return true iff `references` has a path from `source` to `target`
     bool isIndirectlyReferenced(const String & target, const String & source);

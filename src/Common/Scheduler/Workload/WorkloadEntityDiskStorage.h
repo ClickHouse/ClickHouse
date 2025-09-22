@@ -16,7 +16,7 @@ class WorkloadEntityDiskStorage : public WorkloadEntityStorageBase
 {
 public:
     WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
-    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
+    bool loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
     OperationResult storeEntityImpl(
@@ -35,13 +35,13 @@ private:
         bool throw_if_not_exists) override;
 
     void createDirectory();
-    void loadEntitiesImpl();
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name);
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & file_path, bool check_file_exists);
     String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
     String dir_path;
-    
+    bool initialized = false;
+
     /// Config-based entities storage
     std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
 };

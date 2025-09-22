@@ -96,30 +96,32 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
         createRootNodes(zookeeper);
 
         auto lock = getLock();
-        refreshEntities(zookeeper);
+        refreshEntities(zookeeper, false);
     }
 
     return zookeeper;
 }
 
-void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+bool WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    /// loadEntities() may be called multiple times during config reloads, so we need to be careful not to stop on errors.
-    /// The watching thread must be started only once and will be reused for subsequent calls.
-
     // Load config entities first
-    config_storage->loadEntities(config);
+    bool config_changed = config_storage->loadEntities(config);
+    bool changed = false;
 
     try
     {
         auto lock = getLock();
-        refreshEntities(getZooKeeper());
+        changed = refreshEntities(getZooKeeper(), config_changed);
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to load workload entities");
     }
+
+    // Start watching thread (if not started yet)
     startWatchingThread();
+
+    return changed;
 }
 
 
@@ -144,7 +146,7 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
             }
 
             auto lock = getLock();
-            refreshEntities(getZooKeeper());
+            refreshEntities(getZooKeeper(), false);
         }
         catch (...)
         {
@@ -196,7 +198,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
     if (code != Coordination::Error::ZOK)
     {
-        refreshEntities(zookeeper);
+        refreshEntities(zookeeper, false);
         return OperationResult::Retry;
     }
 
@@ -231,7 +233,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
     if (code != Coordination::Error::ZOK)
     {
-        refreshEntities(zookeeper);
+        refreshEntities(zookeeper, false);
         return OperationResult::Retry;
     }
 
@@ -255,11 +257,11 @@ std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const z
     return {data, stat.version};
 }
 
-void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper)
+bool WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool config_changed)
 {
     auto [data, version] = getDataAndSetWatch(zookeeper);
-    if (version == current_version)
-        return;
+    if (version == current_version && !config_changed)
+        return false;
 
     LOG_DEBUG(log, "Refreshing workload entities from keeper");
 
@@ -268,16 +270,12 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     // First, add entities from config (they take precedence)
     auto config_entities = config_storage->getAllEntities();
     for (const auto & [name, ast] : config_entities)
-    {
         new_entities.emplace_back(name, ast);
-    }
 
     // Create a set of config entity names for quick lookup
     std::unordered_set<String> config_entity_names;
     for (const auto & [name, ast] : config_entities)
-    {
         config_entity_names.insert(name);
-    }
 
     // Then parse and add ZooKeeper entities, but skip those that exist in config
     auto keeper_entities = parseEntitiesFromString(data, log);
@@ -290,10 +288,12 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             new_entities.emplace_back(entity_name, query);
     }
 
-    setAllEntities(new_entities);
+    bool changed = setAllEntities(new_entities);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");
+
+    return changed;
 }
 
 }

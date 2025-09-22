@@ -552,7 +552,7 @@ String WorkloadEntityStorageBase::getQueryResourceName()
 
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
-    std::vector<Event> tx)
+    const std::vector<Event> & tx)
 {
     if (tx.empty())
         return;
@@ -583,7 +583,7 @@ std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() cons
     return std::unique_lock{mutex};
 }
 
-void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
+bool WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
 {
     std::unordered_map<String, ASTPtr> new_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
@@ -634,6 +634,8 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
 
     // Notify subscribers
     unlockAndNotify(lock, tx);
+
+    return !tx.empty();
 }
 
 void WorkloadEntityStorageBase::applyEvent(
@@ -820,7 +822,7 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
 std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesFromString(const String & data, LoggerPtr log)
 {
     std::vector<std::pair<String, ASTPtr>> result;
-    
+
     // Parse multiple SQL statements from data
     ASTs queries;
     ParserCreateWorkloadEntity parser;
@@ -848,7 +850,7 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesF
 
         result.emplace_back(entity_name, query);
     }
-    
+
     return result;
 }
 

@@ -120,35 +120,25 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 }
 
 
-void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+bool WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    // Always load config entities (they may have changed)
-    config_storage->loadEntities(config);
+    // Load config entities
+    if (!config_storage->loadEntities(config) && initialized)
+        return false; // No need in updating if config entities didn't change and disk entities are already loaded
 
-    // Always load disk entities and merge with config entities
-    loadEntitiesImpl();
-}
-
-
-void WorkloadEntityDiskStorage::loadEntitiesImpl()
-{
     LOG_INFO(log, "Loading workload entities from {}", dir_path);
 
     std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
 
-    // First, load entities from config (they take precedence)
+    // First, take entities from config (they take precedence)
     auto config_entities = config_storage->getAllEntities();
     for (const auto & [name, ast] : config_entities)
-    {
         entities_name_and_queries.emplace_back(name, ast);
-    }
 
     // Create a set of config entity names for quick lookup
     std::unordered_set<String> config_entity_names;
     for (const auto & [name, ast] : config_entities)
-    {
         config_entity_names.insert(name);
-    }
 
     // Then load entities from disk, but skip those that exist in config
     if (std::filesystem::exists(dir_path))
@@ -195,9 +185,12 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
         LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: loading only config entities", dir_path);
     }
 
-    setAllEntities(entities_name_and_queries);
+    bool changed = setAllEntities(entities_name_and_queries);
 
     LOG_DEBUG(log, "Workload entities loaded");
+    initialized = true;
+
+    return changed;
 }
 
 

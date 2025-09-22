@@ -24,7 +24,7 @@ public:
     bool isReplicated() const override { return true; }
     String getReplicationID() const override { return zookeeper_path; }
 
-    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
+    bool loadEntities(const Poco::Util::AbstractConfiguration & config) override;
     void stopWatching() override;
 
 private:
@@ -52,7 +52,7 @@ private:
 
     void createRootNodes(const zkutil::ZooKeeperPtr & zookeeper);
     std::pair<String, Int32> getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper);
-    void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
+    bool refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool config_changed);
 
     zkutil::ZooKeeperCachingGetter zookeeper_getter;
     String zookeeper_path;
@@ -69,7 +69,7 @@ private:
     };
     std::shared_ptr<WatchEvent> watch;
     Coordination::WatchCallbackPtr zookeeper_watch;
-    
+
     /// Config-based entities storage
     std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
 };

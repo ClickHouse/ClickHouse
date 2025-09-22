@@ -35,7 +35,8 @@ public:
     virtual String getReplicationID() const { return ""; }
 
     /// Loads all entities. Can be called once - if entities are already loaded the function does nothing.
-    virtual void loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
+    /// Returns true if entities were loaded, false if they were already loaded before.
+    virtual bool loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Get entity by name. If no entity stored with entity_name throws exception.
     virtual ASTPtr get(const String & entity_name) const = 0;
