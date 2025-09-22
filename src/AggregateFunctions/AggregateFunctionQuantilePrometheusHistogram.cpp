@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Value, typename CumulativeHistogramValue>
-struct QuantileHistogram
+struct QuantilePrometheusHistogram
 {
     using UnderlyingType = NativeType<Value>;
     using Hasher = HashCRC32<UnderlyingType>;
@@ -40,7 +40,7 @@ struct QuantileHistogram
             map[x] += cumulative_histogram_value;
     }
 
-    void merge(const QuantileHistogram & rhs)
+    void merge(const QuantilePrometheusHistogram & rhs)
     {
         for (const auto & pair : rhs.map)
             map[pair.getKey()] += pair.getMapped();
@@ -188,19 +188,19 @@ private:
 };
 
 template <typename Value, typename CumulativeHistogramValue>
-using FuncQuantileHistogram = AggregateFunctionQuantile<
+using FuncQuantilePrometheusHistogram = AggregateFunctionQuantile<
     Value,
-    QuantileHistogram<Value, CumulativeHistogramValue>,
-    NameQuantileHistogram,
+    QuantilePrometheusHistogram<Value, CumulativeHistogramValue>,
+    NameQuantilePrometheusHistogram,
     CumulativeHistogramValue,
     void,
     false,
     false>;
 template <typename Value, typename CumulativeHistogramValue>
-using FuncQuantilesHistogram = AggregateFunctionQuantile<
+using FuncQuantilesPrometheusHistogram = AggregateFunctionQuantile<
     Value,
-    QuantileHistogram<Value, CumulativeHistogramValue>,
-    NameQuantilesHistogram,
+    QuantilePrometheusHistogram<Value, CumulativeHistogramValue>,
+    NameQuantilesPrometheusHistogram,
     CumulativeHistogramValue,
     void,
     true,
@@ -243,14 +243,14 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileHistogram(AggregateFunctionFactory & factory)
+void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileHistogram::name, createAggregateFunctionQuantile<FuncQuantileHistogram>);
+    factory.registerFunction(NameQuantilePrometheusHistogram::name, createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>);
     factory.registerFunction(
-        NameQuantilesHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesHistogram>, properties});
+        NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, properties});
 }
 
 }

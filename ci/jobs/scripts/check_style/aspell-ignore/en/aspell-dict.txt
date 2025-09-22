@@ -2721,7 +2721,7 @@ quantileExactLow
 quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
-quantileHistogram
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantileTDigest
 quantileTDigestWeighted

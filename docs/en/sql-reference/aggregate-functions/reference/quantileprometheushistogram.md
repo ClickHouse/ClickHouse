@@ -1,11 +1,11 @@
 ---
 description: 'Computes quantile of a histogram using linear interpolation.'
 sidebar_position: 364
-slug: /sql-reference/aggregate-functions/reference/quantileHistogram
-title: 'quantileHistogram'
+slug: /sql-reference/aggregate-functions/reference/quantilePrometheusHistogram
+title: 'quantilePrometheusHistogram'
 ---
 
-# quantileHistogram
+# quantilePrometheusHistogram
 
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a histogram using linear interpolation, taking into account the cumulative value and upper bounds of each histogram bucket.
 
@@ -14,7 +14,7 @@ To get the interpolated value, all the passed values are combined into an array,
 **Syntax**
 
 ```sql
-quantileHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
+quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 ```
 
 **Arguments**
@@ -53,9 +53,9 @@ Input table:
 Result:
 
 ```text
-   ┌─quantileHistogram(bucket_upper_bound, cumulative_bucket_value)─┐
-1. │                                                           0.35 │
-   └────────────────────────────────────────────────────────────────┘
+   ┌─quantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value)─┐
+1. │                                                                     0.35 │
+   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **See Also**
