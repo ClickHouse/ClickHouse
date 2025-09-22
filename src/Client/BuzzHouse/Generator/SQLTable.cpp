@@ -17,7 +17,9 @@ static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain 
     /// Skip LowCardinality type
     if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
     {
-        tp = dynamic_cast<LowCardinality *>(tp)->subtype;
+        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
+
+        tp = lc->subtype;
     }
     if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
@@ -42,7 +44,9 @@ void collectColumnPaths(
     if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
         /// JSON type can be inside nullable
-        tp = dynamic_cast<Nullable *>(tp)->subtype;
+        Nullable * nl = dynamic_cast<Nullable *>(tp);
+
+        tp = nl->subtype;
     }
     if ((flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
     {
@@ -89,8 +93,9 @@ void collectColumnPaths(
     else if ((flags & flat_tuple) != 0 && tp->getTypeClass() == SQLTypeClass::TUPLE)
     {
         uint32_t i = 1;
+        TupleType * ttp = dynamic_cast<TupleType *>(tp);
 
-        for (const auto & entry : dynamic_cast<TupleType *>(tp)->subtypes)
+        for (const auto & entry : ttp->subtypes)
         {
             collectColumnPaths(
                 entry.cname.has_value() ? ("c" + std::to_string(entry.cname.value())) : std::to_string(i),
@@ -103,7 +108,9 @@ void collectColumnPaths(
     }
     else if ((flags & flat_nested) != 0 && tp->getTypeClass() == SQLTypeClass::NESTED)
     {
-        for (const auto & entry : dynamic_cast<NestedType *>(tp)->subtypes)
+        NestedType * nt = dynamic_cast<NestedType *>(tp);
+
+        for (const auto & entry : nt->subtypes)
         {
             const String nsub = "c" + std::to_string(entry.cname);
 
@@ -121,7 +128,9 @@ void collectColumnPaths(
     }
     else if ((flags & flat_json) != 0 && tp->getTypeClass() == SQLTypeClass::JSON)
     {
-        for (const auto & entry : dynamic_cast<JSONType *>(tp)->subcols)
+        JSONType * jt = dynamic_cast<JSONType *>(tp);
+
+        for (const auto & entry : jt->subcols)
         {
             next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
             paths.push_back(next);
