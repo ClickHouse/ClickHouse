@@ -88,6 +88,7 @@ def find_keys_for_local_path(node, local_path):
     ).split("\n")
     return [x for x in remote if x]
 
+
 def test_version(cluster):
     old_node = cluster.instances["old_node"]
 
@@ -100,71 +101,85 @@ def test_version(cluster):
     assert version == "25.8.4.13", version
 
 
+@contextmanager
+def drop_table_scope(nodes, tables, create_statements = []):
+    try:
+        for node in nodes:
+            for statement in create_statements:
+                node.query(statement)
+        yield
+    finally:
+        for node in nodes:
+            for table in tables:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_read_new_format(cluster):
     old_node = cluster.instances["old_node"]
 
-    old_node.query(
-        """
+    crete_table_statement = """
         CREATE TABLE test_read_new_format (
             id Int64,
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
         """
-    )
 
-    old_node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
+    with drop_table_scope(
+        [old_node], ["test_read_new_format"], [crete_table_statement]
+    ):
+        old_node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
 
-    part_name = get_first_part_name(old_node, "test_read_new_format")
-    part_path = get_part_path(old_node, "test_read_new_format", part_name)
-    primary_idx = os.path.join(part_path, "primary.cidx")
+        part_name = get_first_part_name(old_node, "test_read_new_format")
+        part_path = get_part_path(old_node, "test_read_new_format", part_name)
+        primary_idx = os.path.join(part_path, "primary.cidx")
 
-    remote = find_keys_for_local_path(old_node, primary_idx)
-    assert len(remote) == 1
-    remote = remote[0]
+        remote = find_keys_for_local_path(old_node, primary_idx)
+        assert len(remote) == 1
+        remote = remote[0]
 
-    old_node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
+        old_node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
 
-    detached_primary_idx = os.path.join(
-        os.path.dirname(part_path), "detached", part_name, "primary.cidx"
-    )
+        detached_primary_idx = os.path.join(
+            os.path.dirname(part_path), "detached", part_name, "primary.cidx"
+        )
 
-    # manually change the metadata format and see that CH reads it correctly
-    meta_data = read_file(old_node, detached_primary_idx)
-    lines = meta_data.split("\n")
-    object_size, object_key = lines[2].split("\t")
-    assert remote.endswith(object_key), object_key
-    assert remote != object_key
-    lines[2] = f"{object_size}\t{remote}"
-    lines[0] = "5"
+        # manually change the metadata format and see that CH reads it correctly
+        meta_data = read_file(old_node, detached_primary_idx)
+        lines = meta_data.split("\n")
+        object_size, object_key = lines[2].split("\t")
+        assert remote.endswith(object_key), object_key
+        assert remote != object_key
+        lines[2] = f"{object_size}\t{remote}"
+        lines[0] = "5"
 
-    write_file(old_node, detached_primary_idx, "\n".join(lines))
+        write_file(old_node, detached_primary_idx, "\n".join(lines))
 
-    active_count = old_node.query(
-        f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
-    ).strip()
-    assert active_count == "0", active_count
+        active_count = old_node.query(
+            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+        ).strip()
+        assert active_count == "0", active_count
 
-    old_node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
+        old_node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
 
-    active_count = old_node.query(
-        f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
-    ).strip()
-    assert active_count == "1", active_count
+        active_count = old_node.query(
+            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+        ).strip()
+        assert active_count == "1", active_count
 
-    values = old_node.query(f"SELECT * FROM test_read_new_format").split("\n")
-    values = [x for x in values if x]
-    assert values == ["1\tHello"], values
+        values = old_node.query(f"SELECT * FROM test_read_new_format").split("\n")
+        values = [x for x in values if x]
+        assert values == ["1\tHello"], values
 
-    # part name has changed after attach
-    part_name = get_first_part_name(old_node, "test_read_new_format")
-    part_path = get_part_path(old_node, "test_read_new_format", part_name)
-    primary_idx = os.path.join(part_path, "primary.cidx")
+        # part name has changed after attach
+        part_name = get_first_part_name(old_node, "test_read_new_format")
+        part_path = get_part_path(old_node, "test_read_new_format", part_name)
+        primary_idx = os.path.join(part_path, "primary.cidx")
 
-    new_remote = find_keys_for_local_path(old_node, primary_idx)
-    assert len(new_remote) == 1
-    new_remote = new_remote[0]
-    assert remote == new_remote
+        new_remote = find_keys_for_local_path(old_node, primary_idx)
+        assert len(new_remote) == 1
+        new_remote = new_remote[0]
+        assert remote == new_remote
 
 
 def test_write_new_format(cluster):
@@ -202,19 +217,6 @@ def test_write_new_format(cluster):
     object_size, object_key = lines[2].split("\t")
     assert remote.endswith(object_key), object_key
     assert remote == object_key
-
-
-@contextmanager
-def drop_table_scope(nodes, tables, create_statements):
-    try:
-        for node in nodes:
-            for statement in create_statements:
-                node.query(statement)
-        yield
-    finally:
-        for node in nodes:
-            for table in tables:
-                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 @pytest.mark.parametrize(
