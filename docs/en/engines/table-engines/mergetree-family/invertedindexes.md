@@ -167,7 +167,7 @@ In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.m
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE comment LIKE 'support%';
+SELECT count() FROM tab WHERE comment LIKE 'support%';
 ```
 
 `support` in the example could match `support`, `supports`, `supporting` etc.
@@ -176,7 +176,7 @@ This kind of query is a substring query and it cannot be sped up by a text index
 To leverage a text index for LIKE queries, the LIKE pattern must be rewritten in the following way:
 
 ```sql
-SELECT count() FROM hackernews WHERE comment LIKE ' support %'; -- or `% support %`
+SELECT count() FROM tab WHERE comment LIKE ' support %'; -- or `% support %`
 ```
 
 The spaces left and right of `support` make sure that the term can be extracted as a token.
@@ -188,7 +188,7 @@ Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functi
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE startsWith(comment, 'clickhouse support');
+SELECT count() FROM tab WHERE startsWith(comment, 'clickhouse support');
 ```
 
 In the example, only `clickhouse` is considered a token.
@@ -203,7 +203,7 @@ startsWith(comment, 'clickhouse supports ')`
 Similarly, `endsWith` should be used with a leading space:
 
 ```sql
-SELECT count() FROM hackernews WHERE endsWith(comment, ' olap engine');
+SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
 ```
 
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
@@ -215,7 +215,7 @@ Unlike the previously mentioned functions, they do not tokenize the search term 
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE hasToken(comment, 'clickhouse');
+SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
 ```
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
@@ -229,9 +229,9 @@ Like `hasToken`, no tokenization of the search terms takes place.
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE searchAny(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 
-SELECT count() FROM hackernews WHERE searchAll(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
 ```
 
 ## Implementation {#implementation}
