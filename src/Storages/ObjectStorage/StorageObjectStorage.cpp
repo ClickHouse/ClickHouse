@@ -479,12 +479,12 @@ bool StorageObjectStorage::optimize(
 }
 
 void StorageObjectStorage::truncate(
-    const ASTPtr &,
+    const ASTPtr & /* query */,
     const StorageMetadataPtr &,
     ContextPtr,
     TableExclusiveLockHolder &)
 {
-    const auto raw = configuration->getRawPath();
+    const auto raw_path = configuration->getRawPath();
 
     if (configuration->isArchive())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -499,7 +499,9 @@ void StorageObjectStorage::truncate(
     const auto read_prefix = configuration->getPathForRead().path;
 
     auto it = object_storage->iterate(read_prefix, 0); // backend default
-
+    
+    // Delete all objects found by iterating storage backend
+    // Process in batches to handle large numbers of objects efficiently
     static constexpr size_t DELETE_BATCH = 1000;
     StoredObjects batch; batch.reserve(DELETE_BATCH);
 
@@ -518,6 +520,8 @@ void StorageObjectStorage::truncate(
     if (!batch.empty())
         object_storage->removeObjectsIfExist(batch);
 
+    // Also attempt to delete any explicitly configured paths.
+    // Handle cases where configured paths differ from discovered paths.
     if (!configuration->getPaths().empty())
     {
         StoredObjects configured;
