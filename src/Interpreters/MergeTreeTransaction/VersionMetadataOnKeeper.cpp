@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int CORRUPTED_DATA;
 extern const int METADATA_MISMATCH;
 extern const int NOT_FOUND_NODE;
 }

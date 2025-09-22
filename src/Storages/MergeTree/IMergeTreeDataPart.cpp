@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadataOnKeeper.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -383,8 +384,21 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part_name(parent_part ? parent_part->name : "")
     , mutable_name(name_)
 {
-
-    version = std::make_unique<VersionMetadataOnDisk>(this);
+    if (Context::getGlobalContextInstance()->hasZooKeeper())
+    {
+        auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+        String version_path
+            = fmt::format("/clickhouse/txn/version/{}|{}|{}|{}", storage.getStorageID().uuid, info.getPartitionId(), info.level, name);
+        zookeeper->createAncestors("/clickhouse/txn/version");
+        zookeeper->createIfNotExists("/clickhouse/txn/version", "");
+        zookeeper->createIfNotExists(version_path, "");
+        auto get_zk_func = []() { return Context::getGlobalContextInstance()->getZooKeeper(); };
+        version = std::make_unique<VersionMetadataOnKeeper>(this, get_zk_func, version_path + "/txn_metadata", version_path + "/lock");
+    }
+    else
+    {
+        version = std::make_unique<VersionMetadataOnDisk>(this);
+    }
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
