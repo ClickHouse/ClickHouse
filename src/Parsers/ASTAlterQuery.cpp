@@ -238,12 +238,17 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         ostr << "MATERIALIZE STATISTICS ";
-        statistics_decl->format(ostr, settings, state, frame);
-        if (partition)
+        if (statistics_decl)
         {
-            ostr << " IN PARTITION ";
-            partition->format(ostr, settings, state, frame);
+            statistics_decl->format(ostr, settings, state, frame);
+            if (partition)
+            {
+                ostr << " IN PARTITION ";
+                partition->format(ostr, settings, state, frame);
+            }
         }
+        else
+            ostr << " ALL";
     }
     else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
     {

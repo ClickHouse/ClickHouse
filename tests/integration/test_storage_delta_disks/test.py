@@ -275,6 +275,7 @@ def create_delta_table(
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
+
 def create_initial_data_file(
     cluster, node, query, table_name, compression_method="none", node_name="node1"
 ):
