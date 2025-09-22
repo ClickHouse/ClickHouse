@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 
@@ -56,6 +57,8 @@ def test_local_fs_threadpool_reader(start_cluster):
         """,
         query_id=query_id,
     )
+    # Make sure query scope is destroyed
+    time.sleep(2)
 
     node.query("system flush logs query_thread_log")
 
@@ -105,6 +108,8 @@ def test_remote_fs_threadpool_reader(start_cluster):
         """,
         query_id=query_id,
     )
+    # Make sure query scope is destroyed
+    time.sleep(2)
 
     node.query("system flush logs query_thread_log")
 

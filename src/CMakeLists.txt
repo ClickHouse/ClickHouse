@@ -136,6 +136,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
+
+add_headers_and_sources(dbms Core/YTsaurus)
+add_headers_and_sources(dbms Storages/YTsaurus)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -281,6 +285,7 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
+add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
 # https://github.com/ClickHouse/ClickHouse/issues/65745

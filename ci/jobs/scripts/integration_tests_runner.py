@@ -45,6 +45,7 @@ TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 NO_CHANGES_MSG = "Nothing to run"
 
 JOB_TIMEOUT_TEST_NAME = "Job Timeout Expired"
+OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 
 
 # Search test by the common prefix.
@@ -805,7 +806,7 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
+                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(30)))
                     AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
                     AND (test_name != '')
@@ -1029,8 +1030,6 @@ class ClickhouseIntegrationTestsRunner:
         except Exception as e:
             logging.error("Can't split tests by execution time: %s", e)
             logging.error(e)
-            # TODO remove after testing
-            raise
 
         # Fallback in case play server doesn't work
         # Split tests in groups by number of tests in group
@@ -1217,7 +1216,15 @@ def run():
     if is_ci:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
-        subprocess.check_call("sudo -E dmesg -T", shell=True)
+        subprocess.check_call("sudo -E dmesg -T | tee dmesg.log", shell=True)
+        with open("dmesg.log", "rb") as dmesg:
+            dmesg = dmesg.read()
+            if (
+                b"Out of memory: Killed process" in dmesg
+                or b"oom_reaper: reaped process" in dmesg
+                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
+            ):
+                test_results.insert(0, (OOM_IN_DMESG_TEST_NAME, "FAIL", "", ""))
 
     status = (state, description)
     out_results_file = os.path.join(runner.path(), "test_results.tsv")

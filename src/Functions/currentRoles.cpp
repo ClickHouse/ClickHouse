@@ -93,9 +93,78 @@ namespace
 
 REGISTER_FUNCTION(CurrentRoles)
 {
-    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>();
+    FunctionDocumentation::Description description_currentRoles = R"(
+Returns an array of the roles which are assigned to the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_currentRoles = "currentRoles()";
+    FunctionDocumentation::Arguments arguments_currentRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_currentRoles = {"Returns an array of the roles which are assigned to the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_currentRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT currentRoles();
+        )",
+        R"(
+┌─currentRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_currentRoles = {21, 9};
+    FunctionDocumentation::Category category_currentRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_currentRoles = {description_currentRoles, syntax_currentRoles, arguments_currentRoles, returned_value_currentRoles, examples_currentRoles, introduced_in_currentRoles, category_currentRoles};
+
+    FunctionDocumentation::Description description_enabledRoles = R"(
+Returns an array of the roles which are enabled for the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_enabledRoles = "enabledRoles()";
+    FunctionDocumentation::Arguments arguments_enabledRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_enabledRoles = {"Returns an array of role names which are enabled for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_enabledRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT enabledRoles();
+        )",
+        R"(
+┌─enabledRoles()─────────────────────────────────────────────────┐
+│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_enabledRoles = {21, 9};
+    FunctionDocumentation::Category category_enabledRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_enabledRoles = {description_enabledRoles, syntax_enabledRoles, arguments_enabledRoles, returned_value_enabledRoles, examples_enabledRoles, introduced_in_enabledRoles, category_enabledRoles};
+
+    FunctionDocumentation::Description description_defaultRoles = R"(
+Returns an array of default roles for the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_defaultRoles = "defaultRoles()";
+    FunctionDocumentation::Arguments arguments_defaultRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_defaultRoles = {"Returns an array of default roles for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_defaultRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT defaultRoles();
+        )",
+        R"(
+┌─defaultRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultRoles = {21, 9};
+    FunctionDocumentation::Category category_defaultRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
+
+    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>(documentation_currentRoles);
+    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>(documentation_enabledRoles);
+    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>(documentation_defaultRoles);
 }
 
 }

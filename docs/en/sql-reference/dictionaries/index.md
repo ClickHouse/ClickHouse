@@ -4,6 +4,7 @@ sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 slug: /sql-reference/dictionaries
 title: 'Dictionaries'
+doc_type: 'Reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -992,7 +993,7 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 
 For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronous and asynchronous updates are supported.
 
-It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
+It is also possible for `Flat`, `Hashed`, `HashedArray`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
 - If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 - If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.

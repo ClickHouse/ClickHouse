@@ -4,6 +4,7 @@ description: 'Returns the exponentially smoothed weighted moving average of valu
 sidebar_position: 133
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg
 title: 'exponentialTimeDecayedAvg'
+doc_type: 'reference'
 ---
 
 ## exponentialTimeDecayedAvg {#exponentialtimedecayedavg}

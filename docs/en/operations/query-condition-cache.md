@@ -4,12 +4,13 @@ sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
 title: 'Query condition cache'
+doc_type: 'guide'
 ---
 
 # Query condition cache
 
 :::note
-The query condition cache only works when [allow_experimental_analyzer](https://clickhouse.com/docs/operations/settings/settings#allow_experimental_analyzer) is set to true, which is the default value.
+The query condition cache only works when [enable_analyzer](https://clickhouse.com/docs/operations/settings/settings#enable_analyzer) is set to true, which is the default value.
 :::
 
 Many real-world workloads involve repeated queries against the same or almost the same data (for instance, previously existing data plus new data).
@@ -21,7 +22,7 @@ The second approach may return stale results (as the query cache is transactiona
 
 The query condition cache provides an elegant solution for both problems.
 It is based on the idea that evaluating a filter condition (e.g., `WHERE col = 'xyz'`) on the same data will always return the same results.
-More specifically, the query condition cache remembers for each each evaluated filter and each granule (= a block of 8192 rows by default) if no row in the granule satisfy the filter condition.
+More specifically, the query condition cache remembers for each evaluated filter and each granule (= a block of 8192 rows by default) if no row in the granule satisfy the filter condition.
 The information is recorded as a single bit: a 0 bit represents that no row matches the filter whereas a 1 bit means that at least one matching row exists.
 In the former case, ClickHouse may skip the corresponding granule during filter evaluation, in the latter case, the granule must be loaded and evaluated.
 

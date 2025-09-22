@@ -5,12 +5,6 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
-namespace ProfileEvents
-{
-    extern const Event QueryConditionCacheHits;
-    extern const Event QueryConditionCacheMisses;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric QueryConditionCacheBytes;
@@ -59,8 +53,6 @@ QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, c
 
     if (auto entry = cache.get(key))
     {
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
-
         LOG_TEST(
             logger,
             "Read entry for table_uuid: {}, part: {}, condition_hash: {}",
@@ -72,8 +64,6 @@ QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, c
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
-
         LOG_TEST(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
@@ -123,51 +113,81 @@ QueryConditionCacheWriter::~QueryConditionCacheWriter()
     finalize();
 }
 
+/// The addRanges method tries to avoid exclusive locking like the plague. Shared locking is fine. The reason is that Clickhouse scan ranges
+/// in parallel: addRanges method is frequently called and we need to avoid lock contention.
 void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & part_name, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     QueryConditionCache::Key key = {table_id, part_name, condition_hash, condition};
 
-    std::lock_guard<std::mutex> lock(mutex);
-
-    bool is_insert;
-
-    /// ClickHouse scans ranges within the same part in parallel.
-    /// The first scan thread which calls addRanges creates and inserts an entry.
-    /// The other scan threads update existing entry and update it.
-    if (auto it = new_entries.find(key); it == new_entries.end())
+    /// First, check if a cache entry is already registered for the key
+    CacheEntryPtr cache_entry;
     {
-        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
-        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
-        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
-        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
-        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
-        /// Even if there is an exception, future scans will not skip them.
-        QueryConditionCache::Entry entry(marks_count, true);
+        std::shared_lock new_entries_lock(mutex);
 
-        for (const auto & mark_range : mark_ranges)
-            std::fill(entry.begin() + mark_range.begin, entry.begin() + mark_range.end, false);
+        auto it = new_entries.find(key);
+        if (it != new_entries.end())
+            cache_entry = it->second;
 
-        if (has_final_mark)
-            entry[marks_count - 1] = false;
+        /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+        if (cache_entry)
+        {
+            std::shared_lock entry_lock(cache_entry->mutex);
 
-        new_entries[key] = std::move(entry);
+            auto & entry = cache_entry->entry;
 
+            bool need_not_update_marks = true;
+            for (const auto & mark_range : mark_ranges)
+            {
+                /// If the bits are already in the desired state (false), we don't need to update them.
+                need_not_update_marks = std::all_of(entry.begin() + mark_range.begin,
+                                                    entry.begin() + mark_range.end,
+                                                    [](auto b) { return b == false; });
+                if (!need_not_update_marks)
+                    break;
+            }
+
+            /// Do we either have no final mark or final mark is already in the desired state?
+            bool need_not_update_final_mark = !has_final_mark || entry[marks_count - 1] == false;
+
+            if (need_not_update_marks && need_not_update_final_mark)
+                return;
+        }
+    }
+
+    bool is_insert = false;
+
+    /// Create and insert an entry if not found
+    if (!cache_entry)
+    {
+        std::lock_guard new_entries_lock(mutex); /// (*)
+
+        /// If another thread created the entry in the meantime, emplace will do nothing.
+        auto [it, inserted] = new_entries.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(key),
+            std::forward_as_tuple(std::make_shared<CacheEntry>(marks_count))
+        );
+
+        cache_entry = it->second;
         is_insert = true;
     }
-    else
-    {
-        QueryConditionCache::Entry & matching_marks = it->second;
 
-        chassert(marks_count == matching_marks.size());
+    /// Finally update the entry
+    {
+        std::lock_guard lock(cache_entry->mutex); /// (*)
+
+        auto & entry = cache_entry->entry;
+
+        chassert(marks_count == entry.size());
 
         /// The input mark ranges are the areas which the scan can skip later on.
         for (const auto & mark_range : mark_ranges)
-            std::fill(matching_marks.begin() + mark_range.begin, matching_marks.begin() + mark_range.end, false);
+            std::fill(entry.begin() + mark_range.begin,
+                      entry.begin() + mark_range.end,
+                      false);
 
         if (has_final_mark)
-            matching_marks[marks_count - 1] = false;
-
-        is_insert = false;
+            cache_entry->entry[marks_count - 1] = false;
     }
 
     LOG_TEST(
@@ -182,12 +202,27 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
         has_final_mark);
 }
 
+QueryConditionCacheWriter::CacheEntry::CacheEntry(const QueryConditionCache::Entry & entry_)
+    : entry(entry_)
+{
+}
+
+/// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
+/// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
+/// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
+/// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
+/// Even if there is an exception, future scans will not skip them.
+QueryConditionCacheWriter::CacheEntry::CacheEntry(size_t marks_count)
+    : entry(marks_count, true)
+{
+}
+
 void QueryConditionCacheWriter::finalize()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
-    for (const auto & [key, entry] : new_entries)
+    std::lock_guard lock(mutex);
+    for (const auto & [key, cache_entry] : new_entries)
     {
+        auto & entry = cache_entry->entry;
         if (entry.empty())
             continue;
 

@@ -68,19 +68,13 @@ StorageFileCluster::StorageFileCluster(
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        const std::string sample_path = paths.empty() ? "" : paths.front();
-
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            storage_columns,
-            hive_partition_columns_to_read_from_file_path,
-            sample_path,
-            columns_.empty(),
-            std::nullopt,
-            context
-        );
-    }
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        paths.empty() ? "" : paths.front(),
+        columns_.empty(),
+        std::nullopt,
+        context);
 
     storage_metadata.setConstraints(constraints_);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));

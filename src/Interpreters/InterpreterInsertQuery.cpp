@@ -31,6 +31,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -435,8 +436,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(1);
 
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert;
+    if (should_squash)
     {
+        /// Squashing cannot work with const and non-const blocks
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            /// Sparse columns will be converted to full in the InsertDependenciesBuilder,
+            /// and for squashing we don't need to convert column to full since it will do it by itself
+            bool remove_sparse = false;
+            return std::make_shared<MaterializingTransform>(in_header, remove_sparse);
+        });
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & in_header) -> ProcessorPtr
             {
@@ -485,7 +496,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(sink_streams_size);
 
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    if (should_squash)
     {
         pipeline.addSimpleTransform(
             [&](const SharedHeader & in_header) -> ProcessorPtr
@@ -743,13 +754,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
 
 std::optional<QueryPipeline>
-InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
+InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
+    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
@@ -860,9 +871,9 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
+    table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
-
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
@@ -887,7 +898,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context))
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
