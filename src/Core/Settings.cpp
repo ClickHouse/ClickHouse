@@ -6974,7 +6974,7 @@ Possible values: -20 to 19.
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
-    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
+    DECLARE(Bool, inject_random_order_for_select_without_order_by, true, R"(
 If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.

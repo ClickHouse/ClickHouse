@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
+            {"inject_random_order_for_select_without_order_by", false, true, "New setting"},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
