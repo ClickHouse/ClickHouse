@@ -111,6 +111,8 @@ private:
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
 
+    void updateSleepTime();
+
     SyncGuardPtr getDirectorySyncGuard(const std::string & path);
 
     std::string getLoggerName() const;
