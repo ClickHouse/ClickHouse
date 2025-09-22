@@ -113,12 +113,13 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
     # Clean up
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
-def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark):
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_position_deletes_out_of_order_" + get_uuid_str()
-    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes=0;")
+    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps};")
     instance.query(f"SET input_format_parquet_use_native_reader_v3=1;")
 
     # There are a few flaky hacks chained together here.
@@ -148,7 +149,7 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, additional_settings=["input_format_parquet_use_native_reader_v3=1", f"use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps}"])
 
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} PREWHERE NOT sleepEachRow(1/100) order by id")) == list(range(10, 103)) + [104]
 

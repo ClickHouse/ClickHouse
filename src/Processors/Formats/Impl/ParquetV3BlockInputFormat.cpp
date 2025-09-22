@@ -105,9 +105,10 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
-    Chunk chunk;
-    std::tie(chunk, previous_block_missing_values, previous_approx_bytes_read_for_chunk) = reader->read();
-    return chunk;
+    auto res = reader->read();
+    previous_block_missing_values = res.block_missing_values;
+    previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
+    return std::move(res.chunk);
 }
 
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const

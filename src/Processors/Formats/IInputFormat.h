@@ -33,16 +33,16 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// that was used for filtering, from which row numbers can be recovered.
 struct ChunkInfoRowNumbers : public ChunkInfo
 {
-    explicit ChunkInfoRowNumbers(size_t row_num_offset_, IColumnFilter applied_filter_ = {});
+    explicit ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_ = std::nullopt);
 
     Ptr clone() const override;
 
     const size_t row_num_offset;
-    /// If empty, row numbers are consecutive.
+    /// If nullopt, row numbers are consecutive.
     /// If not empty, the number of '1' elements is equal to the number of rows in the chunk;
     /// row i in the chunk has row number:
     /// row_num_offset + {index of the i-th '1' element in applied_filter}.
-    IColumnFilter applied_filter;
+    std::optional<IColumnFilter> applied_filter;
 };
 
 /** Input format is a source, that reads data from ReadBuffer.

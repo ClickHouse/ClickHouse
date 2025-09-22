@@ -144,19 +144,22 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
     size_t row_num_offset = chunk_info->row_num_offset;
     const auto & applied_filter = chunk_info->applied_filter;
-    size_t num_indices = applied_filter.empty() ? num_rows : applied_filter.size();
+    size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
+    size_t idx_in_chunk = 0;
     for (size_t i = 0; i < num_indices; i++)
     {
-        if (applied_filter.empty() || applied_filter[i])
+        if (!applied_filter.has_value() || applied_filter.value()[i])
         {
             size_t row_idx = row_num_offset + i;
+            idx_in_chunk += 1;
             if (bitmap.rb_contains(row_idx))
             {
-                delete_vector[i] = false;
+                delete_vector[idx_in_chunk] = false;
                 num_rows_after_filtration--;
             }
         }
     }
+    chassert(idx_in_chunk == num_rows);
 
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
@@ -232,8 +235,15 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     if (!chunk_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
 
-    size_t num_indices = chunk_info->applied_filter.empty() ? chunk.getNumRows() : chunk_info->applied_filter.size();
+    size_t num_indices = chunk_info->applied_filter.has_value() ? chunk_info->applied_filter->size() : chunk.getNumRows();
 
+    /// We get chunks in order of increasing row number because:
+    ///  * this transform should be immediately after the IInputFormat
+    ///    (typically ParquetV3BlockInputFormat) in the pipeline,
+    ///  * IInputFormat outputs chunks in order of row number even if it uses multiple threads
+    ///    internally; for parquet IcebergMetadata::modifyFormatSettings sets
+    ///    `format_settings.parquet.preserve_order = true` to ensure this, other formats return
+    ///    chunks in order by default.
     if (previous_chunk_end_offset && previous_chunk_end_offset.value() > chunk_info->row_num_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");
     previous_chunk_end_offset = chunk_info->row_num_offset + num_indices;
@@ -241,7 +251,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t idx_in_chunk = 0;
     for (size_t i = 0; i < num_indices; i++)
     {
-        if (chunk_info->applied_filter.empty() || chunk_info->applied_filter[i])
+        if (!chunk_info->applied_filter.has_value() || chunk_info->applied_filter.value()[i])
         {
             size_t row_idx = chunk_info->row_num_offset + i;
 
@@ -277,6 +287,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
             idx_in_chunk += 1;
         }
     }
+    chassert(idx_in_chunk == chunk.getNumRows());
 
     auto columns = chunk.detachColumns();
     for (auto & column : columns)

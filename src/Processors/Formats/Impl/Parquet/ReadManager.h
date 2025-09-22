@@ -44,8 +44,15 @@ public:
 
     ~ReadManager();
 
+    struct ReadResult
+    {
+        Chunk chunk;
+        BlockMissingValues block_missing_values;
+        size_t virtual_bytes_read = 0;
+    };
+
     /// Not thread safe.
-    std::tuple<Chunk, BlockMissingValues, /*virtual_bytes_read*/ size_t> read();
+    ReadResult read();
 
     void cancel() noexcept;
 
@@ -64,7 +71,7 @@ private:
         size_t column_idx = UINT64_MAX;
         size_t cost_estimate_bytes = 0;
 
-        struct Greater
+        struct Comparator
         {
             bool operator()(const Task & x, const Task & y) const
             {
@@ -99,7 +106,7 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, std::vector<Task>, Task::Greater> delivery_queue;
+    std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
 

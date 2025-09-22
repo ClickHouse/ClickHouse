@@ -6,12 +6,15 @@
 namespace DB
 {
 
-ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, IColumnFilter applied_filter_)
+ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
 
 ChunkInfoRowNumbers::Ptr ChunkInfoRowNumbers::clone() const
 {
-    return std::make_shared<ChunkInfoRowNumbers>(row_num_offset, IColumnFilter(applied_filter.begin(), applied_filter.end()));
+    auto res = std::make_shared<ChunkInfoRowNumbers>(row_num_offset);
+    if (applied_filter.has_value())
+        res->applied_filter.emplace(applied_filter->begin(), applied_filter->end());
+    return res;
 }
 
 IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)

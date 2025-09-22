@@ -834,7 +834,7 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
         col.column_and_offsets_memory.reset(&diff);
 }
 
-std::tuple<Chunk, BlockMissingValues, size_t> ReadManager::read()
+ReadManager::ReadResult ReadManager::read()
 {
     Task task;
     {
@@ -864,7 +864,10 @@ std::tuple<Chunk, BlockMissingValues, size_t> ReadManager::read()
             {
                 /// All done. Check for memory accounting leaks.
                 /// First join the threads because they might still be decrementing memory_usage.
+                lock.unlock();
                 shutdown->shutdown();
+                lock.lock();
+
                 for (const RowGroup & row_group : reader.row_groups)
                 {
                     chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
@@ -934,9 +937,17 @@ std::tuple<Chunk, BlockMissingValues, size_t> ReadManager::read()
     Chunk chunk(std::move(row_subgroup.output), row_subgroup.filter.rows_pass);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
-    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(
-        row_subgroup.start_row_idx + row_group.start_global_row_idx,
-        std::move(row_subgroup.filter.filter)));
+    auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
+        row_subgroup.start_row_idx + row_group.start_global_row_idx);
+    if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+    {
+        chassert(row_subgroup.filter.rows_pass > 0);
+        chassert(!row_subgroup.filter.filter.empty());
+        chassert(std::accumulate(row_subgroup.filter.filter.begin(), row_subgroup.filter.filter.end(), size_t(0)) == chunk.getNumRows());
+
+        row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+    }
+    chunk.getChunkInfos().add(std::move(row_numbers_info));
 
     /// This is a terrible hack to make progress indication kind of work.
     ///
