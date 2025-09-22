@@ -79,6 +79,7 @@ public:
             .password = options.contains("password") ? std::make_optional(options["password"].as<std::string>()) : std::nullopt,
             .database = options.contains("database") ? std::make_optional(options["database"].as<std::string>()) : std::nullopt,
             .secure = options.contains("secure") ? std::make_optional(true) : std::nullopt,
+            .accept_invalid_certificate = options.contains("accept-invalid-certificate") ? std::make_optional(true) : std::nullopt,
             .quota_key = options.contains("quota_key") ? std::make_optional(options["quota_key"].as<std::string>()) : std::nullopt,
             .proto_send_chunked = proto_send_chunked,
             .proto_recv_chunked = proto_recv_chunked,
@@ -160,12 +161,20 @@ public:
                 connection_arguments.ports.emplace({overrides.port.value()});
             if (overrides.secure.has_value() && !connection_arguments.secure.has_value())
                 connection_arguments.secure.emplace(overrides.secure.value());
+            if (overrides.accept_invalid_certificate.has_value() && !connection_arguments.accept_invalid_certificate.has_value())
+                connection_arguments.accept_invalid_certificate.emplace(overrides.accept_invalid_certificate.value());
             if (overrides.user.has_value() && !connection_arguments.user.has_value())
                 connection_arguments.user.emplace(overrides.user.value());
             if (overrides.password.has_value() && !connection_arguments.password.has_value())
                 connection_arguments.password.emplace(overrides.password.value());
             if (overrides.database.has_value() && !connection_arguments.database.has_value())
                 connection_arguments.database.emplace(overrides.database.value());
+        }
+
+        if (connection_arguments.accept_invalid_certificate.value_or(false))
+        {
+            config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+            config().setString("openSSL.client.verificationMode", "none");
         }
 
         makeConnections();
@@ -191,6 +200,7 @@ private:
         std::optional<String> password;
         std::optional<String> database;
         std::optional<bool> secure;
+        std::optional<bool> accept_invalid_certificate;
 
         std::optional<String> quota_key;
         const String proto_send_chunked;
@@ -839,6 +849,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("roundrobin",    "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
             ("cumulative",    "prints cumulative data instead of data per interval")
             ("secure,s",      "Use TLS connection")
+            ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters " "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
             ("user,u",        value<std::string>(), "")
             ("password",      value<std::string>(), "")
             ("quota_key",     value<std::string>(), "")
