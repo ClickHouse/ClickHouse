@@ -31,6 +31,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 
@@ -210,10 +211,28 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
 {
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
+
     if (rocksdb_dir.empty())
     {
-        rocksdb_dir = context_->getPath() + relative_data_path_;
+        /// We used to create databases under the database directory by default instead of user files. Check first if it exists there
+        auto old_path = context_->getPath() + relative_data_path_;
+        if (mode >= LoadingStrictnessLevel::ATTACH && fs::exists(old_path))
+            rocksdb_dir = old_path;
+        else
+            rocksdb_dir = fs::path{getContext()->getUserFilesPath()} / relative_data_path_;
     }
+    else
+    {
+        bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
+        fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+        if (fs::path(rocksdb_dir).is_relative())
+            rocksdb_dir = user_files_path / rocksdb_dir;
+        rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
+
+        if (!is_local && !pathStartsWith(fs::path(rocksdb_dir), user_files_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
+    }
+
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
         fs::create_directories(rocksdb_dir);

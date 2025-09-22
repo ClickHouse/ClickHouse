@@ -5,6 +5,7 @@ sidebar_position: 65
 slug: /operations/caches
 title: 'Cache types'
 keywords: ['cache']
+doc_type: 'reference'
 ---
 
 # Cache types

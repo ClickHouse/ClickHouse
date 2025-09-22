@@ -165,7 +165,9 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ArrowCompression
+ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -256,6 +258,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked
@@ -3080,8 +3083,10 @@ toJSONString
 tokenbf
 tokenization
 tokenize
+tokenizes
 tokenized
 tokenizer
+tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek
