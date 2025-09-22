@@ -110,7 +110,7 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
     /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
     /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
     using SimpleCacheBase = DB::CacheBase<std::string, bool>;
-    static auto bcrypt_cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
+    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
 
     auto password_digest = encodeSHA256(password);
     auto cache_key = fmt::format(
