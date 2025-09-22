@@ -45,7 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
-            {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
         });
@@ -58,7 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
