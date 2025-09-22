@@ -33,15 +33,13 @@ ObjectInfo getObjectInfo(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false,
-    bool throw_on_error = true);
+    bool with_metadata = false);
 
 size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id = {},
-    bool throw_on_error = true);
+    const String & version_id = {});
 
 bool objectExists(
     const S3::Client & client,
