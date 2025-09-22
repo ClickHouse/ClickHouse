@@ -60,9 +60,9 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
     {
         if constexpr (is_data_lake)
         {
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO
@@ -272,8 +272,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         context->hasClusterFunctionReadTaskCallback();
 
     ObjectStoragePtr object_storage_;
-    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
-        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
+    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
+        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::disk].value)->getObjectStorage();
     else
         object_storage_ = getObjectStorage(context, !is_insert_query);
 

@@ -13,7 +13,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsString datalake_disk_name;
+    extern const SettingsString disk;
 }
 
 namespace ErrorCodes
@@ -70,8 +70,8 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    if (local_context->getSettingsRef()[Setting::datalake_disk_name].changed && !local_context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
-        configuration_to_initialize.fromDisk(local_context->getSettingsRef()[Setting::datalake_disk_name].value, engine_args, local_context, with_table_structure);
+    if (local_context->getSettingsRef()[Setting::disk].changed && !local_context->getSettingsRef()[Setting::disk].value.empty())
+        configuration_to_initialize.fromDisk(local_context->getSettingsRef()[Setting::disk].value, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
@@ -116,7 +116,7 @@ void StorageObjectStorageConfiguration::initialize(
 
     /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
     /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
-    if (!local_context->getSettingsRef()[Setting::datalake_disk_name].changed)
+    if (!local_context->getSettingsRef()[Setting::disk].changed)
         configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
     configuration_to_initialize.initialized = true;
 }

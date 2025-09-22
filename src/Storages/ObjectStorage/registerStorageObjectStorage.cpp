@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
-    extern const SettingsString datalake_disk_name;
+    extern const SettingsString disk;
 }
 
 namespace
@@ -203,9 +203,9 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -240,9 +240,9 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -272,9 +272,9 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Azure:
@@ -320,9 +320,9 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Local:
@@ -359,9 +359,9 @@ void registerStorageDeltaLake(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -397,9 +397,9 @@ void registerStorageDeltaLake(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -431,9 +431,9 @@ void registerStorageDeltaLake(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Azure:
@@ -461,9 +461,9 @@ void registerStorageDeltaLake(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            if (context->getSettingsRef()[Setting::disk].changed && !context->getSettingsRef()[Setting::disk].value.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::disk].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Local:
