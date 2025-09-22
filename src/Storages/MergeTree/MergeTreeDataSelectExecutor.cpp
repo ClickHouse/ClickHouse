@@ -694,8 +694,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             parts_with_ranges.begin(),
             parts_with_ranges.end(),
             [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
-        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts
-            || (!is_handling_projection_parts && metadata_snapshot->hasProjections()));
+        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts || metadata_snapshot->hasProjections());
 
         if (!support_projection_optimization)
             // Skip index analysis and return parts with all marks
