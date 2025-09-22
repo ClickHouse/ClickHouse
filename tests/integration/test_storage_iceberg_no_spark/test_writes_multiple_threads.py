@@ -21,3 +21,4 @@ def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_versio
     query_id = get_uuid_str()
     instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_experimental_insert_into_iceberg": 1, "max_iceberg_data_file_rows" : 4000000, "query_id": query_id, "max_insert_threads": 2})
     instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == '4000000\n'
