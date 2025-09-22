@@ -35,3 +35,4 @@ subquery	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	Sel
 subquery	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	4	4
 
+
