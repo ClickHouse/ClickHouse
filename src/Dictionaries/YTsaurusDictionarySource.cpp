@@ -32,6 +32,7 @@ namespace ErrorCodes
 namespace YTsaurusSetting
 {
     extern const YTsaurusSettingsBool encode_utf8;
+    extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
 }
 
 
@@ -137,7 +138,8 @@ YTsarususDictionarySource::YTsarususDictionarySource(
         {
             .http_proxy_urls = configuration->http_proxy_urls,
             .oauth_token = configuration->oauth_token,
-            .encode_utf8 = configuration->settings[YTsaurusSetting::encode_utf8]
+            .encode_utf8 = configuration->settings[YTsaurusSetting::encode_utf8],
+            .enable_heavy_proxy_redirection = configuration->settings[YTsaurusSetting::enable_heavy_proxy_redirection],
         }))
 {
 }

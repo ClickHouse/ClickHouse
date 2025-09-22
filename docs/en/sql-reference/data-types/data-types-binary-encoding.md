@@ -4,6 +4,7 @@ sidebar_label: 'Data types binary encoding specification.'
 sidebar_position: 56
 slug: /sql-reference/data-types/data-types-binary-encoding
 title: 'Data types binary encoding specification'
+doc_type: 'reference'
 ---
 
 # Data types binary encoding specification

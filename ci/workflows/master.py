@@ -12,6 +12,7 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
+        *JobConfigs.release_build_jobs,
         *[
             job.set_dependency(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
