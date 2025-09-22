@@ -748,8 +748,9 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final)
-        flags |= 1;
+    // `final` value differs for `AggregatingStep` in single-node and distributed query plans. This breaks matching by hash.
+    // if (final)
+    //     flags |= 1;
     if (params.overflow_row)
         flags |= 2;
     if (group_by_use_nulls)
