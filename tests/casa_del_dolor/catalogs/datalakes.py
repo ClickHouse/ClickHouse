@@ -238,11 +238,11 @@ def get_spark(
 
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3://warehouse-glue/data",
+                "s3://warehouse-glue",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-glue/data",
+                "s3://warehouse-glue",
             )
     elif catalog == LakeCatalogs.Hive:
         builder.config(
@@ -253,11 +253,11 @@ def get_spark(
         if storage == TableStorage.S3:
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3a://warehouse-hms/data",
+                "s3a://warehouse-hms",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3a://warehouse-hms/data",
+                "s3a://warehouse-hms",
             )
     elif catalog == LakeCatalogs.REST or (
         catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
@@ -285,10 +285,10 @@ def get_spark(
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
-            builder.config("spark.sql.warehouse.dir", "s3://warehouse-rest/data")
+            builder.config("spark.sql.warehouse.dir", "s3://warehouse-rest")
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-rest/data",
+                "s3://warehouse-rest",
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")

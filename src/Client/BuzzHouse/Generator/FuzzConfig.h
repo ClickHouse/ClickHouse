@@ -74,7 +74,7 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, path, region;
+    String client_hostname, server_hostname, path, region, warehouse;
     uint32_t port;
 
     Catalog()
@@ -82,6 +82,7 @@ public:
         , server_hostname("localhost")
         , path()
         , region()
+        , warehouse()
         , port(0)
     {
     }
@@ -91,11 +92,13 @@ public:
         const String & server_hostname_,
         const String & path_,
         const String & region_,
+        const String & warehouse_,
         const uint32_t port_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , path(path_)
         , region(region_)
+        , warehouse(warehouse_)
         , port(port_)
     {
     }

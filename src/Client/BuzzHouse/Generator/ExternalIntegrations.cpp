@@ -1507,7 +1507,6 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
-    const ServerCredentials & minio = fc.minio_server.value();
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
     SetValue * sv2 = svs->add_other_values();
 
@@ -1543,15 +1542,22 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             chassert(0);
     }
     sv2->set_property("warehouse");
-    sv2->set_value("'" + d.getSparkCatalogName() + "'");
-    if (d.catalog != LakeCatalog::Unity || d.format != LakeFormat::Iceberg)
+    sv2->set_value("'" + d.getName() + "'");
+    if (d.storage == LakeStorage::S3)
     {
+        const ServerCredentials & minio = fc.minio_server.value();
+
         de->add_params()->set_svalue(minio.user);
         de->add_params()->set_svalue(minio.password);
 
         SetValue * sv3 = svs->add_other_values();
         sv3->set_property("storage_endpoint");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, d.getName()));
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+    }
+    else
+    {
+        /// I don't know how to set for other storages
+        chassert(0);
     }
     if (!cat->region.empty())
     {
@@ -1631,7 +1637,6 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
         sv3->set_property("object_storage_endpoint");
         sv4->set_property("storage_catalog_url");
         sv2->set_value("'" + t.getDatabaseName() + "'");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, t.getDatabaseName()));
         switch (catalog)
         {
             case LakeCatalog::Glue:
@@ -1657,6 +1662,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
                 break;
             default:
                 chassert(0);
+        }
+        if (t.isOnS3())
+        {
+            const ServerCredentials & minio = fc.minio_server.value();
+            sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+        }
+        else
+        {
+            /// I don't know how to set for other storages
+            chassert(0);
         }
         if (!cat->region.empty())
         {

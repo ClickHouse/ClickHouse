@@ -161,23 +161,27 @@ class BuzzHouseGenerator(Generator):
                     "server_hostname": "glue",
                     "region": "us-east-1",
                     "port": 3000,
+                    "warehouse": "warehouse-glue",
                 }
             if args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
                     "port": 9083,
+                    "warehouse": "warehouse-hms",
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
                     "port": 8181,
                     "path": "/v1",
+                    "warehouse": "warehouse-rest",
                 }
             if args.with_unity:
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "localhost",
                     "port": 8081,
                     "path": "/api/2.1/unity-catalog",
+                    "warehouse": "unity",
                 }
 
         with open(self.temp.name, "w+") as file2:
