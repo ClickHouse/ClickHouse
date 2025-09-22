@@ -92,9 +92,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"output_format_parquet_date_as_uint16", true, false, "(Actually added in 25.8 and backported into here.)"},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
