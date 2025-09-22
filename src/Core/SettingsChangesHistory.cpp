@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"delta_lake_log_metadata", false, false, "New setting."},
+            {"show_processlist_include_internal", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
