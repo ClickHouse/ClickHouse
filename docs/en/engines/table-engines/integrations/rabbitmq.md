@@ -4,7 +4,6 @@ sidebar_label: 'RabbitMQ'
 sidebar_position: 170
 slug: /engines/table-engines/integrations/rabbitmq
 title: 'RabbitMQ Engine'
-doc_type: 'guide'
 ---
 
 # RabbitMQ engine

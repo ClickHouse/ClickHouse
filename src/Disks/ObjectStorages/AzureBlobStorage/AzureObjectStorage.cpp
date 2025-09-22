@@ -9,8 +9,6 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
-
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
@@ -214,6 +212,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
@@ -328,35 +327,26 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
-    const ReadSettings & read_settings,
+    const ReadSettings &,
     const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto object_metadata = getObjectMetadata(object_from.remote_path);
+    auto dest_blob_client = client_ptr->GetBlobClient(object_to.remote_path);
+    auto source_blob_client = client_ptr->GetBlobClient(object_from.remote_path);
+
+    Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+    if (object_to_attributes.has_value())
+    {
+        for (const auto & [key, value] : *object_to_attributes)
+            copy_options.Metadata[key] = value;
+    }
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
-    LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "AzureObjCopy");
-
-    copyAzureBlobStorageFile(
-        client_ptr,
-        client_ptr,
-        connection_params.getContainer(),
-        object_from.remote_path,
-        0,
-        object_metadata.size_bytes,
-        connection_params.getContainer(),
-        object_to.remote_path,
-        settings_ptr,
-        read_settings,
-        object_to_attributes,
-        true,
-        scheduler);
+    dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
 }
 
 void AzureObjectStorage::applyNewSettings(

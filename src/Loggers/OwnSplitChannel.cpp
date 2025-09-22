@@ -7,7 +7,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/IO.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
@@ -132,7 +131,6 @@ void logToSystemTextLogQueue(
 
 #undef SET_VALUE_IF_EXISTS
 
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     text_log_locked->push(std::move(elem));
 }
 }

@@ -4,7 +4,6 @@ sidebar_label: 'Restrictions on query complexity'
 sidebar_position: 59
 slug: /operations/settings/query-complexity
 title: 'Restrictions on query complexity'
-doc_type: 'reference'
 ---
 
 # Restrictions on query complexity

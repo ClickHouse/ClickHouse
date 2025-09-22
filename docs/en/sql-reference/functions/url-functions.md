@@ -3,7 +3,6 @@ description: 'Documentation for Functions for Working with URLs'
 sidebar_label: 'URLs'
 slug: /sql-reference/functions/url-functions
 title: 'Functions for Working with URLs'
-doc_type: 'reference'
 ---
 
 # Functions for Working with URLs

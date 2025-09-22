@@ -5,7 +5,6 @@ sidebar_label: 'sparkbar'
 sidebar_position: 187
 slug: /sql-reference/aggregate-functions/reference/sparkbar
 title: 'sparkbar'
-doc_type: 'reference'
 ---
 
 # sparkbar

@@ -4,7 +4,6 @@ sidebar_label: 'Named collections'
 sidebar_position: 69
 slug: /operations/named-collections
 title: 'Named collections'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -368,6 +367,8 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
+
+
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐

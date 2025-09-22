@@ -9,7 +9,6 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
-#include <memory>
 #include <shared_mutex>
 
 namespace DB
@@ -139,7 +138,7 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override;
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };

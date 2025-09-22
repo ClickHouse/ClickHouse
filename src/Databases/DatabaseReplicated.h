@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <optional>
 
 #include <Databases/DatabaseAtomic.h>
@@ -29,7 +28,6 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-
 struct ReplicaInfo
 {
     bool is_active;
@@ -47,21 +45,6 @@ public:
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
     static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
-    /** For the system table database replicas. */
-    struct ReplicatedStatus
-    {
-        bool is_readonly;
-        bool is_session_expired;
-        UInt32 max_log_ptr;
-        String replica_name;
-        String replica_path;
-        String zookeeper_path;
-        String shard_name;
-        UInt32 log_ptr;
-        UInt32 total_replicas;
-        String zookeeper_exception;
-    };
-
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
@@ -75,6 +58,12 @@ public:
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
+    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                           const String & table_metadata_tmp_path, const String & table_metadata_path,
+                           ContextPtr query_context) override;
+    void commitAlterTable(const StorageID & table_id,
+                          const String & table_metadata_tmp_path, const String & table_metadata_path,
+                          const String & statement, ContextPtr query_context) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
@@ -98,8 +87,6 @@ public:
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
-
-    void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
 
     /// Returns cluster consisting of database replicas
     ClusterPtr tryGetCluster() const;
@@ -128,15 +115,6 @@ public:
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
-
-protected:
-    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                           const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           ContextPtr query_context) override;
-    void commitAlterTable(const StorageID & table_id,
-                          const String & table_metadata_tmp_path, const String & table_metadata_path,
-                          const String & statement, ContextPtr query_context) override;
-
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);

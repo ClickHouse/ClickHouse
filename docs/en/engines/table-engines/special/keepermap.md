@@ -5,7 +5,6 @@ sidebar_label: 'KeeperMap'
 sidebar_position: 150
 slug: /engines/table-engines/special/keeper-map
 title: 'KeeperMap'
-doc_type: 'reference'
 ---
 
 # KeeperMap {#keepermap}

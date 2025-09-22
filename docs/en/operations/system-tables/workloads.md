@@ -4,7 +4,6 @@ description: 'System table containing information for workloads residing on the 
 keywords: ['system table', 'workloads']
 slug: /operations/system-tables/workloads
 title: 'system.workloads'
-doc_type: 'reference'
 ---
 
 # system.workloads
