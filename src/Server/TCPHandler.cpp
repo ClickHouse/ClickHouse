@@ -802,6 +802,9 @@ void TCPHandler::runImpl()
             else
             {
                 query_state->io.onFinish();
+
+                sendProgress(query_state.value());
+                sendSelectProfileEvents(query_state.value());
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
