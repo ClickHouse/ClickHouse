@@ -218,16 +218,19 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
-    std::error_code ec;
-    if (fs::equivalent(path, prefix_path, ec))
-        return true;
     auto rel = std::filesystem::relative(path, prefix_path);
-    return (!rel.empty() && rel.native()[0] != '.');
+    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
-    return pathStartsWith(path, prefix_path);
+    /// Differs from pathStartsWith in how `path` is normalized before comparison.
+    /// Make `path` absolute if it was relative and put it into normalized form: remove
+    /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
+    /// not be a path of a symlink itself.
+
+    auto rel = path.lexically_relative(std::filesystem::weakly_canonical(prefix_path));
+    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)
