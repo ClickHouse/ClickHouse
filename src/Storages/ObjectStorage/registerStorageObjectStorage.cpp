@@ -183,7 +183,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
     UNUSED(factory);
 }
 
-#if USE_AWS_S3 || USE_AVRO
+#if USE_AVRO || USE_AWS_S3 || (USE_PARQUET && USE_DELTA_KERNEL_RS)
 static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
@@ -197,7 +197,6 @@ static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & 
 
 void registerStorageIceberg(StorageFactory & factory)
 {
-#if USE_AWS_S3
     factory.registerStorage(
         IcebergDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
@@ -210,9 +209,11 @@ void registerStorageIceberg(StorageFactory & factory)
                 auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
+#if USE_AWS_S3
                 case ObjectStorageType::S3:
                     configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                     break;
+#endif
 #if USE_AZURE_BLOB_STORAGE
                 case ObjectStorageType::Azure:
                     configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
@@ -236,7 +237,7 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
-
+#if USE_AWS_S3
     factory.registerStorage(
         IcebergS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
