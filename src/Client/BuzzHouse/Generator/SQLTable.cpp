@@ -15,13 +15,13 @@ String StatementGenerator::nextComment(RandomGenerator & rg) const
 static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
     /// Skip LowCardinality type
-    if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+    if (tp && tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
     {
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
         tp = lc->subtype;
     }
-    if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
         next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
         paths.push_back(next);
@@ -41,14 +41,14 @@ void collectColumnPaths(
         paths.push_back(next);
     }
     collectNullable(tp, flags, next, paths);
-    if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
         /// JSON type can be inside nullable
         Nullable * nl = dynamic_cast<Nullable *>(tp);
 
         tp = nl->subtype;
     }
-    if ((flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
+    if (tp && (flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
     {
         next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
         paths.push_back(next);
@@ -90,7 +90,7 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
-    else if ((flags & flat_tuple) != 0 && tp->getTypeClass() == SQLTypeClass::TUPLE)
+    else if (tp && (flags & flat_tuple) != 0 && tp->getTypeClass() == SQLTypeClass::TUPLE)
     {
         uint32_t i = 1;
         TupleType * ttp = dynamic_cast<TupleType *>(tp);
@@ -106,7 +106,7 @@ void collectColumnPaths(
             i++;
         }
     }
-    else if ((flags & flat_nested) != 0 && tp->getTypeClass() == SQLTypeClass::NESTED)
+    else if (tp && (flags & flat_nested) != 0 && tp->getTypeClass() == SQLTypeClass::NESTED)
     {
         NestedType * nt = dynamic_cast<NestedType *>(tp);
 
@@ -126,7 +126,7 @@ void collectColumnPaths(
             }
         }
     }
-    else if ((flags & flat_json) != 0 && tp->getTypeClass() == SQLTypeClass::JSON)
+    else if (tp && (flags & flat_json) != 0 && tp->getTypeClass() == SQLTypeClass::JSON)
     {
         JSONType * jt = dynamic_cast<JSONType *>(tp);
 
