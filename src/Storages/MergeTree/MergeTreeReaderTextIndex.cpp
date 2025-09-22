@@ -33,6 +33,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         columns_,
         /*virtual_fields=*/ {},
         main_reader_->storage_snapshot,
+        main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
