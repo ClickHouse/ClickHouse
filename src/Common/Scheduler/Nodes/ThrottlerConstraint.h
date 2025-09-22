@@ -100,9 +100,8 @@ public:
         if (request)
         {
             // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
-            ResourceCost cost = request->ignore_throttling ? 0 : request->cost;
-            updateBucket(cost);
-            incrementDequeued(cost);
+            updateBucket(request->cost);
+            incrementDequeued(request->cost);
             return {request, active()};
         }
         return {nullptr, false};

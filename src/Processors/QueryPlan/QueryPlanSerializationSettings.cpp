@@ -43,7 +43,6 @@ namespace DB
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, "How many entries hash table statistics collected during aggregation is allowed to have", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before aggregation", 0) \
-    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -55,7 +54,6 @@ namespace DB
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, "Maximum size of right-side table if limit is required but max_bytes_in_join is not set.", 0) \
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.", 0) \
-    DECLARE(UInt64, max_joined_block_size_bytes, 4 * 1024 * 1024, "Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     \
@@ -81,10 +79,7 @@ namespace DB
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.", 0) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.", 0) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys", 0) \
-    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.", 0) \
-    \
-    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
-    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
+    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.", 0)
 
 
 // clang-format on

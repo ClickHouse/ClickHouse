@@ -274,24 +274,6 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
-void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)
-{
-    if (!sharding_key_ast)
-        return;
-
-    auto sharding_expr = buildShardingKeyExpression(sharding_key_ast, context, columns, true);
-    const Block & block = sharding_expr->getSampleBlock();
-
-    if (block.columns() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Sharding expression must return exactly one column");
-
-    auto type = block.getByPosition(0).type;
-
-    if (!type->isValueRepresentedByInteger())
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding expression has type {}, but should be one of integer type",
-            type->getName());
-}
-
 bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
@@ -405,7 +387,6 @@ StorageDistributed::StorageDistributed(
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
-    , sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
@@ -1341,8 +1322,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster);
+        predicate, filter.get(), local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1456,10 +1438,6 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             }
         }
     }
-
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    commands.apply(new_metadata, local_context);
-    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
@@ -1469,7 +1447,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     checkAlterIsPossible(params, local_context);
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -2110,7 +2088,7 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
         String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
 
-        const auto & sharding_key_ast = engine_args.size() >= 4 ? engine_args[3] : nullptr;
+        const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
         {
@@ -2119,7 +2097,20 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_ast, context, args.columns.getAllPhysical());
+        if (sharding_key)
+        {
+            auto sharding_expr = buildShardingKeyExpression(sharding_key, context, args.columns.getAllPhysical(), true);
+            const Block & block = sharding_expr->getSampleBlock();
+
+            if (block.columns() != 1)
+                throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Sharding expression must return exactly one column");
+
+            auto type = block.getByPosition(0).type;
+
+            if (!type->isValueRepresentedByInteger())
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding expression has type {}, but should be one of integer type",
+                    type->getName());
+        }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
         DistributedSettings distributed_settings = context->getDistributedSettings();
@@ -2160,7 +2151,7 @@ void registerStorageDistributed(StorageFactory & factory)
             remote_table,
             cluster_name,
             context,
-            sharding_key_ast,
+            sharding_key,
             storage_policy,
             args.relative_data_path,
             distributed_settings,

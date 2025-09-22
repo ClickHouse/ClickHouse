@@ -17,7 +17,6 @@ struct AccessRightsElement
     String table;
     Strings columns;
     String parameter;
-    String filter;
 
     bool wildcard = false;
     bool default_database = false;
@@ -53,7 +52,6 @@ struct AccessRightsElement
     bool anyTable() const { return table.empty(); }
     bool anyColumn() const { return columns.empty(); }
     bool anyParameter() const { return parameter.empty(); }
-    bool hasFilter() const { return !filter.empty(); }
 
     auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
@@ -61,7 +59,7 @@ struct AccessRightsElement
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
-        return sameDatabaseAndTable(other) && sameParameter(other) && (wildcard == other.wildcard) && (filter == other.filter);
+        return sameDatabaseAndTable(other) && sameParameter(other) && (wildcard == other.wildcard);
     }
 
     bool sameParameter(const AccessRightsElement & other) const
@@ -107,7 +105,6 @@ struct AccessRightsElement
     String toStringWithoutOptions() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
-    void formatFilter(WriteBuffer & buffer) const;
     void formatONClause(WriteBuffer & buffer) const;
 };
 

@@ -38,14 +38,14 @@ class ResultBase;
 class Value
 {
 public:
-    /** Parameter res_ is used only for generating detailed information in exceptions.
-      * You can pass NULL - then there will be no detailed information in exceptions.
+    /** Параметр res_ используется только для генерации подробной информации в исключениях.
+      * Можно передать NULL - тогда подробной информации в исключениях не будет.
       */
     Value(const char * data_, size_t length_, const ResultBase * res_) : m_data(data_), m_length(length_), res(res_)
     {
     }
 
-    /// Get bool value.
+    /// Получить значение bool.
     bool getBool() const
     {
         if (unlikely(isNull()))
@@ -54,7 +54,7 @@ public:
         return m_length > 0 && m_data[0] != '0';
     }
 
-    /// Get unsigned integer.
+    /// Получить беззнаковое целое.
     UInt64 getUInt() const
     {
         if (unlikely(isNull()))
@@ -63,13 +63,13 @@ public:
         return readUIntText(m_data, m_length);
     }
 
-    /// Get signed integer or date or date-time (as unix timestamp according to current time zone).
+    /// Получить целое со знаком или дату или дату-время (в unix timestamp согласно текущей тайм-зоне).
     Int64 getInt() const
     {
         return getIntOrDateTime();
     }
 
-    /// Get floating point number.
+    /// Получить число с плавающей запятой.
     double getDouble() const
     {
         if (unlikely(isNull()))
@@ -78,19 +78,19 @@ public:
         return readFloatText(m_data, m_length);
     }
 
-    /// Get date-time (from value like '2011-01-01 00:00:00').
+    /// Получить дату-время (из значения вида '2011-01-01 00:00:00').
     LocalDateTime getDateTime() const
     {
         return LocalDateTime(data(), size());
     }
 
-    /// Get date (from value like '2011-01-01' or '2011-01-01 00:00:00').
+    /// Получить дату (из значения вида '2011-01-01' или '2011-01-01 00:00:00').
     LocalDate getDate() const
     {
         return LocalDate(data(), size());
     }
 
-    /// Get string.
+    /// Получить строку.
     std::string getString() const
     {
         if (unlikely(isNull()))
@@ -99,21 +99,21 @@ public:
         return std::string(m_data, m_length);
     }
 
-    /// Is NULL.
+    /// Является ли NULL.
     bool isNull() const
     {
         return m_data == nullptr;
     }
 
-    /// For compatibility (use isNull() method instead)
+    /// Для совместимости (используйте вместо этого метод isNull())
     bool is_null() const { return isNull(); } /// NOLINT
 
-    /** Get any supported type (for template code).
-      * Basic types are supported, as well as any types with constructor from Value (for convenient extension).
+    /** Получить любой поддерживаемый тип (для шаблонного кода).
+      * Поддерживаются основные типы, а также любые типы с конструктором от Value (для удобства расширения).
       */
     template <typename T> T get() const;
 
-    /// For compatibility. Not recommended for use as it's inconvenient (ambiguities often arise).
+    /// Для совместимости. Не рекомендуется к использованию, так как неудобен (часто возникают неоднозначности).
     template <typename T> operator T() const { return get<T>(); } /// NOLINT
 
     const char * data() const     { return m_data; }
@@ -158,16 +158,16 @@ private:
     Int64 getIntOrDate() const;
 
 
-    /// Read unsigned integer in simple format from non-0-terminated string.
+    /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
     UInt64 readUIntText(const char * buf, size_t length) const;
 
-    /// Read signed integer in simple format from non-0-terminated string.
+    /// Прочитать знаковое целое в простом формате из не-0-terminated строки.
     Int64 readIntText(const char * buf, size_t length) const;
 
-    /// Read floating point number in simple format, with rough rounding, from non-0-terminated string.
+    /// Прочитать число с плавающей запятой в простом формате, с грубым округлением, из не-0-terminated строки.
     double readFloatText(const char * buf, size_t length) const;
 
-    /// Throw exception with detailed information
+    /// Выкинуть исключение с подробной информацией
     [[noreturn]] void throwException(const char * text) const;
 };
 

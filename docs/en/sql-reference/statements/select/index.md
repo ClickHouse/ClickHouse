@@ -4,7 +4,6 @@ sidebar_label: 'SELECT'
 sidebar_position: 32
 slug: /sql-reference/statements/select/
 title: 'SELECT Query'
-doc_type: 'reference'
 ---
 
 # SELECT Query
@@ -65,6 +64,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 [Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
+
 
 ### Dynamic column selection {#dynamic-column-selection}
 
@@ -284,8 +284,6 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
 Other ways to make settings see [here](/operations/settings/overview).
-
-For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 **Example**
 

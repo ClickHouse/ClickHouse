@@ -59,6 +59,16 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     dag = std::move(split_result.second);
 
     const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
+    auto filter_type = removeLowCardinality(split_filter_node->result_type);
+    if (!filter_type->onlyNull() && !isUInt8(removeNullable(filter_type)))
+    {
+        DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
+        if (filter_type->isNullable())
+            cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
+
+        split_filter_node = &split_result.first.addCast(*split_filter_node, cast_type, {});
+    }
+
     split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_filter_node);
     auto name = split_filter_node->result_name;
     return ActionsAndName{std::move(split_result.first), std::move(name)};
@@ -163,7 +173,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, query_condition_cache_writer);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -238,9 +248,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_)
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
 {
-    query_condition_cache_writer = query_condition_cache_writer_;
+    condition = {condition_hash_, condition_};
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
