@@ -32,7 +32,7 @@ SELECT
     secondary_indices_compressed_bytes,
     secondary_indices_uncompressed_bytes,
     secondary_indices_marks_bytes
-FROM system.parts
+FROM system.parts WHERE active = 1
 FORMAT Vertical;
 
 DROP TABLE tab;

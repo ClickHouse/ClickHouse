@@ -13,14 +13,6 @@ marks_bytes:             72
 Row 1:
 ──────
 partition:                            tuple()
-name:                                 all_1_1_0
-secondary_indices_compressed_bytes:   178
-secondary_indices_uncompressed_bytes: 122
-secondary_indices_marks_bytes:        96
-
-Row 2:
-──────
-partition:                            tuple()
 name:                                 all_1_1_1
 secondary_indices_compressed_bytes:   178
 secondary_indices_uncompressed_bytes: 122
