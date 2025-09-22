@@ -522,12 +522,14 @@ ColumnPtr FuzzJSONSource::createColumn()
         auto data = out.str();
         size_t data_len = data.size();
 
-        IColumn::Offset next_offset = offset + data_len;
+        IColumn::Offset next_offset = offset + data_len + 1;
         data_to.resize(next_offset);
 
         std::copy(data.begin(), data.end(), &data_to[offset]);
 
+        data_to[offset + data_len] = 0;
         offsets_to[row_num] = next_offset;
+
         offset = next_offset;
     }
 

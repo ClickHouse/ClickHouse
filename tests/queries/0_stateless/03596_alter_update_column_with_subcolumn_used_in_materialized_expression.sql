@@ -1,3 +1,5 @@
+set output_format_json_quote_64bit_integers=0;
+
 drop table if exists test;
 create table test (t Tuple(a UInt32), a UInt32 materialized t.a) engine=MergeTree() order by tuple();
 insert into test select tuple(1);

@@ -457,7 +457,6 @@ using CheckCallback = std::function<void(const CheckResponse &)>;
 using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
-using GetACLCallback = std::function<void(const GetACLResponse &)>;
 
 /// For watches.
 enum State
@@ -602,8 +601,6 @@ public:
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
-
-    virtual void getACL(const String & path, GetACLCallback  callback) = 0;
 
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 

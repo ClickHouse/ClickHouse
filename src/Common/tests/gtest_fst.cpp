@@ -30,7 +30,7 @@ TEST(FST, SimpleTest)
     std::vector<UInt8> buffer;
     {
         DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-        DB::FST::Builder builder(wbuf);
+        DB::FST::FstBuilder builder(wbuf);
 
         for (auto & [term, output] : indexed_data)
             builder.add(term, output);
@@ -55,8 +55,8 @@ TEST(FST, SimpleTest)
 TEST(FST, TestForLongTerms)
 {
     /// Test long terms within limitation
-    String term1(DB::FST::MAX_TOKEN_LENGTH - 1, 'A');
-    String term2(DB::FST::MAX_TOKEN_LENGTH, 'B');
+    String term1(DB::FST::MAX_TERM_LENGTH - 1, 'A');
+    String term2(DB::FST::MAX_TERM_LENGTH, 'B');
 
     DB::FST::Output output1 = 100;
     DB::FST::Output output2 = 200;
@@ -64,7 +64,7 @@ TEST(FST, TestForLongTerms)
     std::vector<UInt8> buffer;
     {
         DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-        DB::FST::Builder builder(wbuf);
+        DB::FST::FstBuilder builder(wbuf);
 
         builder.add(term1, output1);
         builder.add(term2, output2);
@@ -83,12 +83,12 @@ TEST(FST, TestForLongTerms)
     ASSERT_EQ(result2, output2);
 
     /// Test exception case when term length exceeds limitation
-    String term3(DB::FST::MAX_TOKEN_LENGTH + 1, 'C');
+    String term3(DB::FST::MAX_TERM_LENGTH + 1, 'C');
     DB::FST::Output output3 = 300;
 
     std::vector<UInt8> buffer3;
     DB::WriteBufferFromVector<std::vector<UInt8>> wbuf3(buffer3);
-    DB::FST::Builder builder3(wbuf3);
+    DB::FST::FstBuilder builder3(wbuf3);
 
     EXPECT_THROW(builder3.add(term3, output3), DB::Exception);
 }

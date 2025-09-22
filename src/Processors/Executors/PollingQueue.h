@@ -60,7 +60,6 @@ public:
 class PollingQueue
 {
 public:
-    size_t size() const { return 0; }
     bool empty() { return true; }
     void finish() {}
 };

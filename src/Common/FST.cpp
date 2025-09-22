@@ -96,40 +96,28 @@ UInt64 LabelsAsBitmap::getIndex(char label) const
 
 UInt64 LabelsAsBitmap::serialize(WriteBuffer & write_buffer)
 {
-    size_t written_bytes = 0;
-
     writeVarUInt(data.items[0], write_buffer);
-    written_bytes += getLengthOfVarUInt(data.items[0]);
-
     writeVarUInt(data.items[1], write_buffer);
-    written_bytes += getLengthOfVarUInt(data.items[1]);
-
     writeVarUInt(data.items[2], write_buffer);
-    written_bytes += getLengthOfVarUInt(data.items[2]);
-
     writeVarUInt(data.items[3], write_buffer);
-    written_bytes += getLengthOfVarUInt(data.items[3]);
 
-    return written_bytes;
+    return getLengthOfVarUInt(data.items[0])
+        + getLengthOfVarUInt(data.items[1])
+        + getLengthOfVarUInt(data.items[2])
+        + getLengthOfVarUInt(data.items[3]);
 }
 
 UInt64 LabelsAsBitmap::deserialize(ReadBuffer & read_buffer)
 {
-    size_t read_bytes = 0;
-
     readVarUInt(data.items[0], read_buffer);
-    read_bytes += getLengthOfVarUInt(data.items[0]);
-
     readVarUInt(data.items[1], read_buffer);
-    read_bytes += getLengthOfVarUInt(data.items[1]);
-
     readVarUInt(data.items[2], read_buffer);
-    read_bytes += getLengthOfVarUInt(data.items[2]);
-
     readVarUInt(data.items[3], read_buffer);
-    read_bytes += getLengthOfVarUInt(data.items[3]);
 
-    return read_bytes;
+    return getLengthOfVarUInt(data.items[0])
+        + getLengthOfVarUInt(data.items[1])
+        + getLengthOfVarUInt(data.items[2])
+        + getLengthOfVarUInt(data.items[3]);
 }
 
 UInt64 State::hash() const
@@ -243,14 +231,14 @@ void State::readFlag(ReadBuffer & read_buffer)
     read_buffer.readStrict(reinterpret_cast<char &>(flag));
 }
 
-Builder::Builder(WriteBuffer & write_buffer_) : write_buffer(write_buffer_)
+FstBuilder::FstBuilder(WriteBuffer & write_buffer_) : write_buffer(write_buffer_)
 {
     for (auto & temp_state : temp_states)
         temp_state = std::make_shared<State>();
 }
 
 /// See FindMinimized in the paper pseudo code l11-l21.
-StatePtr Builder::findMinimized(const State & state, bool & found)
+StatePtr FstBuilder::findMinimized(const State & state, bool & found)
 {
     found = false;
     auto hash = state.hash();
@@ -287,7 +275,7 @@ size_t getCommonPrefixLength(std::string_view word1, std::string_view word2)
 }
 
 /// See the paper pseudo code l33-39 and l70-72(when down_to is 0).
-void Builder::minimizePreviousWordSuffix(Int64 down_to)
+void FstBuilder::minimizePreviousWordSuffix(Int64 down_to)
 {
     for (Int64 i = static_cast<Int64>(previous_word.size()); i >= down_to; --i)
     {
@@ -320,18 +308,18 @@ void Builder::minimizePreviousWordSuffix(Int64 down_to)
     }
 }
 
-void Builder::add(std::string_view current_word, Output current_output)
+void FstBuilder::add(std::string_view current_word, Output current_output)
 {
-    /// We assume word size is no greater than MAX_TOKEN_LENGTH(256).
+    /// We assume word size is no greater than MAX_TERM_LENGTH(256).
     /// FSTs without word size limitation would be inefficient and easy to cause memory bloat
     /// Note that when using "split" tokenizer, if a granule has tokens which are longer than
-    /// MAX_TOKEN_LENGTH, the granule cannot be dropped and will be fully-scanned. It doesn't affect "ngram" tokenizers.
+    /// MAX_TERM_LENGTH, the granule cannot be dropped and will be fully-scanned. It doesn't affect "ngram" tokenizers.
     /// Another limitation is that if the query string has tokens which exceed this length
     /// it will fallback to default searching when using "split" tokenizers.
     size_t current_word_len = current_word.size();
 
-    if (current_word_len > MAX_TOKEN_LENGTH)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot build text index: The maximum term length is {}, this is exceeded by term {}", MAX_TOKEN_LENGTH, current_word_len);
+    if (current_word_len > MAX_TERM_LENGTH)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot build text index: The maximum term length is {}, this is exceeded by term {}", MAX_TERM_LENGTH, current_word_len);
 
     size_t prefix_length_plus1 = getCommonPrefixLength(current_word, previous_word) + 1;
 
@@ -381,7 +369,7 @@ void Builder::add(std::string_view current_word, Output current_output)
     previous_word = current_word;
 }
 
-UInt64 Builder::build()
+UInt64 FstBuilder::build()
 {
     minimizePreviousWordSuffix(0);
 
@@ -405,12 +393,9 @@ void FiniteStateTransducer::clear()
     data.clear();
 }
 
-FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view term)
+std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
 {
-    if (data.empty())
-        return {0, false};
-
-    FiniteStateTransducer::Output result;
+    std::pair<UInt64, bool> result(0, false);
 
     /// Read index of initial state
     ReadBufferFromMemory read_buffer(data.data(), data.size());
@@ -438,7 +423,7 @@ FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view 
         temp_state.readFlag(read_buffer);
         if (i == term.size())
         {
-            result.found = temp_state.isFinal();
+            result.second = temp_state.isFinal();
             break;
         }
 
@@ -499,7 +484,7 @@ FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view 
             }
         }
         /// Accumulate the output value
-        result.offset += arc_output;
+        result.first += arc_output;
     }
     return result;
 }
