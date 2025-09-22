@@ -1,21 +1,21 @@
 #pragma once
 
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-
 namespace DB
 {
 
-/// Loads workload entities from a specified folder.
-class WorkloadEntityDiskStorage : public WorkloadEntityStorageBase
+/// Loads RESOURCE and WORKLOAD sql objects from configuration.
+/// Similar to WorkloadEntityKeeperStorage but loads from config instead of ZooKeeper.
+class WorkloadEntityConfigStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
+    WorkloadEntityConfigStorage(const ContextPtr & global_context_);
+
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
@@ -34,16 +34,7 @@ private:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    void createDirectory();
-    void loadEntitiesImpl();
-    ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name);
-    ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & file_path, bool check_file_exists);
-    String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
-    String dir_path;
-    
-    /// Config-based entities storage
-    std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
 };
 
 }

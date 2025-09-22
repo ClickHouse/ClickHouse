@@ -2,10 +2,14 @@
 
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/logger_useful.h>
+#include <Common/StringUtils.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ParserCreateWorkloadEntity.h>
+#include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
@@ -811,6 +815,41 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
         buf.write(";\n", 2);
     }
     return buf.str();
+}
+
+std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesFromString(const String & data, LoggerPtr log)
+{
+    std::vector<std::pair<String, ASTPtr>> result;
+    
+    // Parse multiple SQL statements from data
+    ASTs queries;
+    ParserCreateWorkloadEntity parser;
+    const char * begin = data.data(); /// begin of current query
+    const char * pos = begin; /// parser moves pos from begin to the end of current query
+    const char * end = begin + data.size();
+    while (pos < end)
+    {
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+        while (isWhitespaceASCII(*pos) || *pos == ';')
+            ++pos;
+    }
+
+    /// Parse each query and extract entity name
+    for (const auto & query : queries)
+    {
+        LOG_TRACE(log, "Parsed entity definition: {}", query->formatForLogging());
+        String entity_name;
+        if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
+            entity_name = create_workload_query->getWorkloadName();
+        else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
+            entity_name = create_resource_query->getResourceName();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query: {}", query->getID());
+
+        result.emplace_back(entity_name, query);
+    }
+    
+    return result;
 }
 
 }
