@@ -311,6 +311,7 @@ CREATE TABLE system.functions
     `description` String,
     `syntax` String,
     `arguments` String,
+    `parameters` String,
     `returned_value` String,
     `examples` String,
     `introduced_in` String,
