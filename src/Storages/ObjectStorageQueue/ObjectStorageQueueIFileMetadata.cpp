@@ -436,8 +436,14 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     file_status->onProcessed();
 
     set_processing = false;
-    chassert(!ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_path));
-    chassert(ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processed_node_path));
+
+    chassert(
+        !ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_path),
+        fmt::format("Expected path {} not to exist", processing_node_path));
+
+    chassert(
+        ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processed_node_path),
+        fmt::format("Expected path {} to exist", processed_node_path));
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }

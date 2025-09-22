@@ -40,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
+    extern const SettingsUInt64 keeper_max_retries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -1294,11 +1295,20 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     Coordination::Responses responses;
 
     auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    const auto & settings = getContext()->getSettingsRef();
     Coordination::Error code;
+    size_t try_num = 0;
     zk_retries.retryLoop([&]
     {
+        ++try_num;
         code = zk_client->tryMulti(requests, responses);
+    }, []{}, [&]
+    {
+        LOG_TRACE(
+            log, "Failed to commit processed files at try {}/{}",
+            try_num, toString(settings[Setting::keeper_max_retries].value));
     });
+
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperMultiException(code, requests, responses);
 

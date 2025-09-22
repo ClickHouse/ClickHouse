@@ -853,8 +853,7 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
-    },
-    [&]
+    }, []{}, [&]
     {
         LOG_TRACE(
             log, "Failed to commit processed files at try {}/{}",

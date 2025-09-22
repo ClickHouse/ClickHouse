@@ -49,7 +49,12 @@ public:
 
     void retryLoop(auto && f)
     {
-        retryLoop(f, []() {});
+        retryLoop(f, []() {}, []() {});
+    }
+
+    void retryLoop(auto && f, auto && iteration_cleanup)
+    {
+        retryLoop(f, iteration_cleanup, []() {});
     }
 
     /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retryable error is encountered
@@ -64,7 +69,7 @@ public:
     ///
     /// It is possible to use it multiple times (it will share nº of errors over the total amount of calls)
     /// Each retryLoop is independent and it will execute f at least once
-    void retryLoop(auto && f, auto && iteration_cleanup)
+    void retryLoop(auto && f, auto && iteration_cleanup, auto && on_error)
     {
         current_iteration = 0;
         current_backoff_ms = retries_info.initial_backoff_ms;
@@ -80,6 +85,7 @@ public:
             }
             catch (const zkutil::KeeperException & e)
             {
+                on_error();
                 iteration_cleanup();
 
                 if (!Coordination::isHardwareError(e.code))
@@ -89,6 +95,7 @@ public:
             }
             catch (...)
             {
+                on_error();
                 iteration_cleanup();
                 throw;
             }
