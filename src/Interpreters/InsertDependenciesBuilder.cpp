@@ -788,6 +788,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
 namespace
 {
+
 struct SquashingTransformContext
 {
     size_t num_squashing_transforms = 0;
@@ -822,6 +823,9 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
         insert_chains.emplace_back(createChainWithDependencies());
         if (!deduplicate_blocks_in_dependent_materialized_views)
         {
+            /// Collect total amount of squashing transforms for each destination table so we can create
+            /// shrink/expand processors with enough input/output ports.
+            /// Collect all squashing processors for each chain so we don't need to recreate same chain for each destination table.
             for (const auto & [view_id, apply_squashing_processors] : squashing_processors)
             {
                 has_squashing_transforms |= !apply_squashing_processors.empty();
@@ -834,6 +838,15 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
     if (deduplicate_blocks_in_dependent_materialized_views || !has_squashing_transforms)
         return insert_chains;
 
+    /// We need to extract processors from chain and modify it.
+    /// For each destination table we do the following:
+    ///   - In first chain with it, we will add new chain of processors consisting of
+    ///     shrink processor -> PlanSquashingTransform -> expand processor
+    ///     We also connect the output and input ports of shrink and expand processors.
+    ///   - For every other chain with the same destination table we won't add new processors,
+    ///     we will connect processors created in first chain using the input and output port
+    ///     of shrink and expand processors.
+    /// We can create the chains only after processing all other chains because all ports need to be connected.
     std::vector<std::pair<std::list<ProcessorPtr>, QueryPlanResourceHolder>> result_data;
     result_data.reserve(insert_chains.size());
 
@@ -846,6 +859,9 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
         {
             auto & squashing_context = views_to_squashing_context.at(view_id);
             std::list<ProcessorPtr> squashing_processors_list;
+            /// First time we saw this destination table.
+            /// Add required processors, connect it and store it's output and input port iterator so other
+            /// chains with the same destination table can use it.
             if (!squashing_context.squashing_transform_added)
             {
                 const auto & output_header = output_headers.at(view_id);
