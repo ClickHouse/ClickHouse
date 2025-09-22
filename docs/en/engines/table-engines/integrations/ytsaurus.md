@@ -5,6 +5,7 @@ sidebar_position: 185
 slug: /engines/table-engines/integrations/ytsaurus
 title: 'YTsaurus'
 keywords: ['YTsaurus', 'table engine']
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
