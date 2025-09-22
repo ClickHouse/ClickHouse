@@ -66,8 +66,6 @@ public:
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
-        std::cout << "Loaded rule " << name << " (regexp: " << regexp_string << ", replacement: " << replacement_string << ", throw_on_match: " << throw_on_match << ")" << std::endl;
-
         if (!regexp.ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
@@ -81,8 +79,6 @@ public:
 
         if (throw_on_match && m > 0)
         {
-            std::cout << "Trigggered " << regexp_string << " was triggered on the log line " << data << ", throw_on_match: {}" << throw_on_match << std::endl;
-
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "The rule {} was triggered on the log line {}",
                 name, data);
