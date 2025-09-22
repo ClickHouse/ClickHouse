@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Core/Types.h>
+#include "Types.h"
 
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Coordination/KeeperConstants.h>
 
 #include <future>
 #include <memory>
@@ -35,7 +33,6 @@ namespace CurrentMetrics
 namespace DB
 {
 class ZooKeeperLog;
-class AggregatedZooKeeperLog;
 class ZooKeeperWithFaultInjection;
 class BackgroundSchedulePoolTaskHolder;
 
@@ -188,10 +185,34 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+
+    /** Config of the form:
+        <zookeeper>
+            <node>
+                <host>example1</host>
+                <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
+            </node>
+            <node>
+                <host>example2</host>
+                <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
+            </node>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <!-- Optional. Chroot suffix. Should exist. -->
+            <root>/path/to/zookeeper/node</root>
+            <!-- Optional. Zookeeper digest ACL string. -->
+            <identity>user:password</identity>
+        </zookeeper>
+    */
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// See addCheckSessionOp
     void initSession();
@@ -204,9 +225,9 @@ public:
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
-    static Ptr create(ZooKeeperArgs args_,
-                      std::shared_ptr<DB::ZooKeeperLog> zk_log_,
-                      std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+    static Ptr create(const Poco::Util::AbstractConfiguration & config,
+                      const std::string & config_name,
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -265,7 +286,7 @@ public:
     MultiExistsResponse exists(TIter start, TIter end)
     {
         return multiRead<Coordination::ExistsResponse, true>(
-            start, end, [&](const auto & path) { return zkutil::makeExistsRequest(path); }, [&](const auto & path) { return asyncExists(path); });
+            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
     }
 
     MultiExistsResponse exists(const std::vector<std::string> & paths)
@@ -286,7 +307,7 @@ public:
     MultiGetResponse get(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, false>(
-            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncGet(path); });
+            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
     }
 
     MultiGetResponse get(const std::vector<std::string> & paths)
@@ -321,7 +342,7 @@ public:
     MultiTryGetResponse tryGet(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, true>(
-            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncTryGet(path); });
+            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
     }
 
     MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
@@ -416,16 +437,6 @@ public:
         return tryGetChildren(paths.begin(), paths.end(), list_request_type);
     }
 
-    Coordination::ACLs getACL(const std::string & path, Coordination::Stat * stat = nullptr);
-
-    /// Doesn't not throw in the following cases:
-    /// * The node doesn't exist. Returns false in this case.
-    bool tryGetACL(
-        const std::string & path,
-        Coordination::ACLs & res,
-        Coordination::Stat * stat = nullptr,
-        Coordination::Error * code = nullptr);
-
     /// Performs several operations in a transaction.
     /// Throws on every error.
     /// For check_session_valid see addCheckSessionOp
@@ -441,7 +452,7 @@ public:
 
     Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
-    Int64 getClientID() const;
+    Int64 getClientID();
 
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
@@ -478,7 +489,6 @@ public:
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
-    void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,
@@ -550,11 +560,6 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureSync asyncTrySyncNoThrow(const std::string & path);
 
-    using FutureGetACL = std::future<Coordination::GetACLResponse>;
-    FutureGetACL asyncGetACL(const std::string & path);
-    /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGetACL asyncTryGetACLNoThrow(const std::string & path);
-
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
     ///
@@ -582,6 +587,8 @@ public:
         int32_t version = -1);
 
     void finalize(const String & reason);
+
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
@@ -631,7 +638,6 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
-    Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
     /// returns error code with optional reason
     std::pair<Coordination::Error, std::string>
@@ -689,7 +695,6 @@ private:
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-    std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     AtomicStopwatch session_uptime;
 
@@ -805,7 +810,20 @@ bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
-template <class Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path);
+template <typename Client>
+void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
+{
+    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
+    {
+        auto request = std::make_shared<Coordination::CheckRequest>();
+        request->path = path;
+        request->not_exists = true;
+        requests.push_back(std::move(request));
+        return;
+    }
+
+    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
+    requests.push_back(makeRemoveRequest(path, -1));
+}
 
 }

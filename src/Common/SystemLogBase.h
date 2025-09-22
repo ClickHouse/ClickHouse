@@ -7,9 +7,9 @@
 #include <base/types.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
-
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
@@ -31,15 +31,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement) \
-    M(DeadLetterQueueElement) \
-    M(ZooKeeperConnectionLogElement) \
-    M(IcebergMetadataLogElement) \
-
-#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
-    M(DistributedCacheLogElement) \
-    M(DistributedCacheServerLogElement) \
-
+    M(QueryMetricLogElement)
 
 namespace Poco
 {
@@ -66,9 +58,6 @@ public:
 
     virtual String getName() const = 0;
 
-    /// For implementations that buffer data in memory and flush it to the log periodically,
-    /// this method forces an immediate write to the log.
-    virtual void flushBufferToLog(std::chrono::system_clock::time_point /* current_time */) {}
     /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
@@ -94,8 +83,6 @@ public:
     virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
-
-    virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;

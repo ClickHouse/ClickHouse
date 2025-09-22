@@ -8,8 +8,8 @@ title: 'USE Statement'
 
 # USE Statement
 
-```sql
-USE [DATABASE] db
+``` sql
+USE db
 ```
 
 Lets you set the current database for the session.

@@ -1,13 +1,13 @@
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
 
 void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << "OPTIMIZE TABLE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
 
     if (database)
     {
@@ -22,22 +22,22 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (partition)
     {
-        ostr << " PARTITION ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
         partition->format(ostr, settings, state, frame);
     }
 
     if (final)
-        ostr << " FINAL";
+        ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
 
     if (deduplicate)
-        ostr << " DEDUPLICATE";
+        ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
 
     if (cleanup)
-        ostr << " CLEANUP";
+        ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
 
     if (deduplicate_by_columns)
     {
-        ostr << " BY ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
         deduplicate_by_columns->format(ostr, settings, state, frame);
     }
 }

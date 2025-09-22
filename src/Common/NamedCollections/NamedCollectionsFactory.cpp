@@ -6,7 +6,6 @@
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -16,7 +15,6 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
-    extern const int LOGICAL_ERROR;
 }
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
@@ -202,8 +200,8 @@ namespace
                 keys.emplace(path.substr(collection_prefix.size() + 1));
         }
 
-        return NamedCollectionFromConfig::create(
-            config, collection_name, collection_prefix, keys);
+        return NamedCollection::create(
+            config, collection_name, collection_prefix, keys, NamedCollection::SourceId::CONFIG, /* is_mutable */false);
     }
 
     NamedCollectionsMap getNamedCollections(const Poco::Util::AbstractConfiguration & config)
@@ -323,37 +321,33 @@ void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & 
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    auto collection_name = query.collection_name;
-    if (!exists(collection_name, lock))
+    if (!exists(query.collection_name, lock))
     {
         if (query.if_exists)
             return;
 
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-            "Cannot update collection `{}`, because it doesn't exist",
-            collection_name);
-    }
-    auto updated_collection_ptr = metadata_storage->update(query);
-
-    auto it = loaded_named_collections.find(collection_name);
-    if (it == loaded_named_collections.end())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "The named collection {} unexpectedly does not exist.",
-            collection_name);
+            "Cannot remove collection `{}`, because it doesn't exist",
+            query.collection_name);
     }
 
-    if (!it->second->isMutable())
+    metadata_storage->update(query);
+
+    auto collection = getMutable(query.collection_name, lock);
+    auto collection_lock = collection->lock();
+
+    for (const auto & [name, value] : query.changes)
     {
-        throw Exception(
-            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
-            "Cannot get collection `{}` for modification, "
-            "because collection was defined as immutable",
-            collection_name);
+        auto it_override = query.overridability.find(name);
+        if (it_override != query.overridability.end())
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+        else
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
     }
-    it->second = updated_collection_ptr;
+
+    for (const auto & key : query.delete_keys)
+        collection->remove<true>(key);
 }
 
 void NamedCollectionFactory::reloadFromSQL()
