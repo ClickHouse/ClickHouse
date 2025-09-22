@@ -67,7 +67,7 @@ namespace DB
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_use_fc_compression = 1; /// enabled by default
+    size_t dictionary_block_frontcoding_compression = 1; /// enabled by default
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;

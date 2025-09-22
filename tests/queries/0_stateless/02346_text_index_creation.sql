@@ -213,14 +213,14 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test dictionary_block_use_fc_compression argument.';
+SELECT 'Test dictionary_block_frontcoding_compression argument.';
 
-SELECT '-- dictionary_block_use_fc_compression must be an integer.';
+SELECT '-- dictionary_block_frontcoding_compression must be an integer.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = 1024.0)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1024.0)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -228,7 +228,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = '1024')
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = '1024')
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -236,18 +236,18 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = 1)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- dictionary_block_use_fc_compression must be 0 or 1.';
+SELECT '-- dictionary_block_frontcoding_compression must be 0 or 1.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = 2)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 2)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -255,7 +255,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = -1)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = -1)
 )
 ENGINE = MergeTree
 ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
@@ -263,7 +263,7 @@ ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_use_fc_compression = 0)
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 0)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
