@@ -62,8 +62,6 @@ struct QueryPlanOptimizationSettings
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
-    /// Maximum number of tables in query graph to reorder
-    UInt64 query_plan_optimize_join_order_limit;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
@@ -74,7 +72,6 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
-    double query_condition_cache_selectivity_threshold;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -93,8 +90,6 @@ struct QueryPlanOptimizationSettings
     /// ------------------------------------------------------
 
     /// Other settings related to plan-level optimizations
-
-    size_t max_step_description_length = 0;
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;

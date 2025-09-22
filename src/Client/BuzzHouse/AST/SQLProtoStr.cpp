@@ -77,11 +77,9 @@ CONV_FN(Database, db)
     ret += db.database();
 }
 
-void TableToString(String & ret, const bool quote, const Table & tab)
+CONV_FN(Table, tab)
 {
-    ret += quote ? "`" : "";
     ret += tab.table();
-    ret += quote ? "`" : "";
 }
 
 CONV_FN(Function, func)
@@ -195,7 +193,7 @@ CONV_FN(ExprSchemaTable, st)
         DatabaseToString(ret, st.database());
         ret += ".";
     }
-    TableToString(ret, true, st.table());
+    TableToString(ret, st.table());
 }
 
 CONV_FN_QUOTE(TypeName, top);
@@ -296,7 +294,7 @@ CONV_FN(ExprSchemaTableColumn, stc)
     }
     if (stc.has_table())
     {
-        TableToString(ret, true, stc.table());
+        TableToString(ret, stc.table());
         ret += ".";
     }
     ExprColumnToString(ret, stc.col());
@@ -1672,7 +1670,7 @@ CONV_FN(ComplicatedExpr, expr)
             ret += ")";
             break;
         case ExprType::kTable:
-            TableToString(ret, true, expr.table());
+            TableToString(ret, expr.table());
             ret += ".*";
             break;
         case ExprType::kLambda:
@@ -1753,23 +1751,17 @@ CONV_FN(JoinConstraint, jc)
 CONV_FN(JoinCore, jcc)
 {
     const bool has_cross_or_paste = jcc.join_op() > JoinType::J_FULL;
-    const bool has_join_const = !has_cross_or_paste && jcc.has_join_const();
 
     if (jcc.global())
     {
         ret += " GLOBAL";
     }
-    if (has_join_const && !jcc.const_on_right())
-    {
-        ret += " ";
-        ret += JoinConst_Name(jcc.join_const()).substr(2);
-    }
-    if (jcc.has_join_op())
+    if (jcc.join_op() != JoinType::J_INNER || !jcc.has_join_const() || jcc.join_const() < JoinConst::J_SEMI)
     {
         ret += " ";
         ret += JoinType_Name(jcc.join_op()).substr(2);
     }
-    if (has_join_const && jcc.const_on_right())
+    if (!has_cross_or_paste && jcc.has_join_const())
     {
         ret += " ";
         ret += JoinConst_Name(jcc.join_const()).substr(2);
@@ -1931,7 +1923,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
         ret += "default";
     }
     ret += separator;
-    TableToString(ret, false, est.table());
+    TableToString(ret, est.table());
     ret += "'";
 }
 
@@ -2426,7 +2418,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
     if (jtf.has_table_alias())
     {
         ret += " AS ";
-        TableToString(ret, false, jtf.table_alias());
+        TableToString(ret, jtf.table_alias());
     }
     if (jtf.col_aliases_size())
     {
@@ -2747,7 +2739,7 @@ CONV_FN(CTEquery, cteq)
     {
         ret += "RECURSIVE ";
     }
-    TableToString(ret, false, cteq.table());
+    TableToString(ret, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());
     ret += ")";
@@ -3089,20 +3081,13 @@ CONV_FN(TableDefItem, tdef)
     }
 }
 
-CONV_FN(TableDef, tdef)
+CONV_FN(TableDef, ct)
 {
-    if (tdef.table_defs_size() > 0)
+    ColumnDefToString(ret, ct.col_def());
+    for (int i = 0; i < ct.other_defs_size(); i++)
     {
-        ret += " (";
-        for (int i = 0; i < tdef.table_defs_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            TableDefItemToString(ret, tdef.table_defs(i));
-        }
-        ret += ")";
+        ret += ", ";
+        TableDefItemToString(ret, ct.other_defs(i));
     }
 }
 
@@ -3164,7 +3149,7 @@ CONV_FN(TableEngineParam, tep)
             DatabaseToString(ret, tep.database());
             break;
         case TableEngineParamType::kTable:
-            TableToString(ret, true, tep.table());
+            TableToString(ret, tep.table());
             break;
         case TableEngineParamType::kNum:
             ret += std::to_string(tep.num());
@@ -3337,7 +3322,6 @@ CONV_FN(TableEngine, te)
 
 CONV_FN(CreateTableAs, create_table)
 {
-    ret += " ";
     if (create_table.clone())
     {
         ret += "CLONE ";
@@ -3392,9 +3376,12 @@ CONV_FN(CreateTable, create_table)
     {
         ClusterToString(ret, true, create_table.cluster());
     }
+    ret += " ";
     if (create_table.has_table_def())
     {
+        ret += "(";
         TableDefToString(ret, create_table.table_def());
+        ret += ")";
     }
     else if (create_table.has_table_as())
     {
@@ -3441,7 +3428,7 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
-    if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
+    if (is_table && dt.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3868,10 +3855,6 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
-    {
-        ret += "TEMPORARY ";
-    }
     if (replace)
     {
         ret += "TABLE";
@@ -4494,8 +4477,10 @@ CONV_FN(AlterItem, alter)
 
 CONV_FN(Alter, alter)
 {
+    const bool is_table = alter.sobject() == SQLObject::TABLE;
+
     ret += "ALTER ";
-    if ((alter.sobject() == SQLObject::TABLE || alter.sobject() == SQLObject::VIEW) && alter.is_temp())
+    if (is_table && alter.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4903,7 +4888,7 @@ CONV_FN(BackupRestoreObject, bobject)
 {
     const bool is_table = bobject.sobject() == SQLObject::TABLE;
 
-    if ((is_table || bobject.sobject() == SQLObject::VIEW) && bobject.is_temp())
+    if (is_table && bobject.is_temp())
     {
         ret += "TEMPORARY ";
     }

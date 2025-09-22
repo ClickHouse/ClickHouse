@@ -299,7 +299,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
         return;
     }
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -314,7 +314,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
         return variant_col.getValueNameAndType(n);
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -1377,7 +1377,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column during merges.
+    /// to extend selected variants on inerts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 

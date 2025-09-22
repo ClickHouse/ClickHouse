@@ -19,7 +19,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    auto configuration = Base::getConfiguration(context);
+    auto configuration = Base::getConfiguration();
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
@@ -131,13 +131,6 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     UNUSED(factory);
 
 #if USE_AWS_S3
-    factory.registerFunction<TableFunctionIcebergCluster>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on store from disk in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""},{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
@@ -173,7 +166,7 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionDeltaLakeCluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster.)",
-            .examples{{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster, url, access_key_id, secret_access_key)", ""},{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""}},
+            .examples{{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster, url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }

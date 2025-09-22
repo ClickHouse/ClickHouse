@@ -82,7 +82,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int UNSUPPORTED_METHOD;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
@@ -367,33 +366,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-DatabaseAndTable DatabaseCatalog::getByUUID(const UUID & uuid) const
-{
-    auto res = tryGetByUUID(uuid);
-    if (!res.first || !res.second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", toString(uuid));
-    return res;
-}
-
-DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
-    const StorageID & table_id,
-    ContextPtr context_,
-    std::optional<Exception> * exception) const
-{
-    auto database_and_table = getTableImpl(table_id, context_, exception);
-    auto & table = database_and_table.second;
-    if (table)
-    {
-        if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        {
-            if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ORIGINAL_TABLE))
-                database_and_table.second = alias_storage->getReferenceTable(context_);
-            else if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Storage Alias is unsupported in this query");
-        }
-    }
-    return database_and_table;
-}
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
@@ -1070,7 +1042,7 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -1078,13 +1050,13 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr).second;
+    return getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1092,7 +1064,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr);
+    return getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()

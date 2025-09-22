@@ -6,7 +6,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -128,7 +127,7 @@ public:
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback,
-        WatchCallbackPtrOrEventPtr watch = {});
+        WatchCallbackPtr watch = nullptr);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -153,12 +152,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtrOrEventPtr watch) override;
+        WatchCallbackPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtrOrEventPtr watch) override;
+        WatchCallbackPtr watch) override;
 
     void set(
         const String & path,
@@ -170,7 +169,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch) override;
+        WatchCallbackPtr watch) override;
 
     void check(
         const String & path,
@@ -221,8 +220,6 @@ public:
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
 private:
-    const Int32 send_receive_os_threads_nice_value;
-
     ACLs default_acls;
     zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
@@ -268,7 +265,7 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtrOrEventPtr watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
@@ -282,7 +279,11 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
+    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
+
     Watches watches TSA_GUARDED_BY(watches_mutex);
+    std::mutex watches_mutex;
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
