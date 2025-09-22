@@ -431,21 +431,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_materialize_statistics.ignore(pos, expected))
             {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    return false;
+
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTICS;
                 command->detach = false;
-                if (!ParserKeyword(Keyword::ALL).ignore(pos, expected))
+
+                if (s_in_partition.ignore(pos, expected))
                 {
-                    if (s_if_exists.ignore(pos, expected))
-                        command->if_exists = true;
-
-                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
-
-                    if (s_in_partition.ignore(pos, expected))
-                    {
-                        if (!parser_partition.parse(pos, command_partition, expected))
-                            return false;
-                    }
                 }
             }
             else if (s_add_projection.ignore(pos, expected))

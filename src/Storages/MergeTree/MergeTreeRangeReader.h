@@ -24,12 +24,11 @@ struct PrewhereExprStep
 {
     enum Type
     {
-        None,
         Filter,
         Expression,
     };
 
-    Type type = Type::None;
+    Type type = Type::Filter;
     ExpressionActionsPtr actions;
     String filter_column_name;
 
@@ -75,19 +74,10 @@ public:
         return performance_counters[step];
     }
 
-    ReadStepPerformanceCountersPtr getCounterForIndexStep()
-    {
-        if (!index_performance_counter)
-            index_performance_counter = std::make_shared<ReadStepPerformanceCounters>();
-        return index_performance_counter;
-    }
-
     const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-    const ReadStepPerformanceCountersPtr & getIndexCounter() const { return index_performance_counter; }
 
 private:
     std::vector<ReadStepPerformanceCountersPtr> performance_counters;
-    ReadStepPerformanceCountersPtr index_performance_counter;
 };
 
 class FilterWithCachedCount

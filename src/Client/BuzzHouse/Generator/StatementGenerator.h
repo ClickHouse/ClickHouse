@@ -103,7 +103,7 @@ public:
     std::unordered_map<uint32_t, SQLView> views;
     std::unordered_map<uint32_t, SQLDictionary> dictionaries;
     /// Backup a system table
-    std::optional<String> system_table_schema, system_table_name, partition_id;
+    std::optional<String> system_table, partition_id;
 
     CatalogBackup() = default;
 };
@@ -127,9 +127,7 @@ enum class TableRequirement
 class StatementGenerator
 {
 public:
-    static const std::vector<std::vector<OutFormat>> outFormats;
     static const std::unordered_map<OutFormat, InFormat> outIn;
-    static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
     FuzzConfig & fc;
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();
@@ -301,7 +299,6 @@ public:
 
 private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
-    uint32_t getIdentifierFromString(const String & tname) const;
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void entryOrConstant(RandomGenerator & rg, const ColumnPathChain & entry, Expr * expr);
@@ -412,8 +409,8 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
-    void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
+    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos, bool escape);
+    void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, bool allow_chaos, const SQLTable & t, TableFunction * tfunc);
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(
@@ -446,7 +443,7 @@ private:
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
     std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint64_t allowed_types);
-    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg, uint64_t allowed_types);
+    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint64_t allowed_types) const;
     SQLType * randomTimeType(RandomGenerator & rg, uint64_t allowed_types, TimeTp * dt) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint64_t allowed_types, DateTimeTp * dt) const;
@@ -477,7 +474,7 @@ private:
     static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
 
     template <typename T, typename U>
-    void setObjectStoreParams(RandomGenerator & rg, T & b, U * source)
+    void setObjectStoreParams(RandomGenerator & rg, T & b, bool allow_chaos, U * source)
     {
         uint32_t added_path = 0;
         uint32_t added_format = 0;
@@ -486,15 +483,13 @@ private:
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format = (b.file_format.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 91;
-        const uint32_t toadd_compression = (b.file_comp.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy
-            = (b.partition_strategy.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_partition_columns_in_data_file
-            = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
+        const uint32_t toadd_format
+            = (std::is_same_v<U, TableEngine> || b.file_format.has_value() || allow_chaos) && rg.nextMediumNumber() < 91;
+        const uint32_t toadd_compression
+            = (std::is_same_v<U, TableEngine> || b.file_comp.has_value() || allow_chaos) && rg.nextMediumNumber() < 51;
+        const uint32_t toadd_partition_strategy = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_partition_columns_in_data_file = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_structure;
 
@@ -524,18 +519,27 @@ private:
             if (add_path && nopt < (add_path + 1))
             {
                 /// Path to the bucket
+                bool no_change = false;
+
                 next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
-                next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    no_change = true;
+                }
+                next->set_value(b.getTablePath(rg, fc, no_change));
                 added_path++;
             }
             else if (add_format && nopt < (add_path + add_format + 1))
             {
                 /// Format
-                const InOutFormat next_format
-                    = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                const InOutFormat next_format = (b.file_format.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
                     : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    b.file_format = next_format;
+                }
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));
                 added_format++;
@@ -543,10 +547,14 @@ private:
             else if (add_compression && nopt < (add_path + add_format + add_compression + 1))
             {
                 /// Compression
-                const String next_compression = (b.file_comp.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                const String next_compression = (b.file_comp.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.file_comp.value()
                     : rg.pickRandomly(compressionMethods);
 
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    b.file_comp = next_compression;
+                }
                 next->set_key("compression");
                 next->set_value(next_compression);
                 added_compression++;
@@ -554,10 +562,14 @@ private:
             else if (add_partition_strategy && nopt < (add_path + add_format + add_compression + add_partition_strategy + 1))
             {
                 /// Partition strategy
-                const String next_ps = (b.partition_strategy.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                const String next_ps = (b.partition_strategy.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.partition_strategy.value()
                     : (rg.nextBool() ? "wildcard" : "hive");
 
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    b.partition_strategy = next_ps;
+                }
                 next->set_key("partition_strategy");
                 next->set_value(next_ps);
                 added_partition_strategy++;
@@ -567,11 +579,14 @@ private:
                 && nopt < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + 1))
             {
                 /// Partition columns in data file
-                const String next_pcdf
-                    = (b.partition_columns_in_data_file.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                const String next_pcdf = (b.partition_columns_in_data_file.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.partition_columns_in_data_file.value()
                     : (rg.nextBool() ? "1" : "0");
 
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    b.partition_columns_in_data_file = next_pcdf;
+                }
                 next->set_key("partition_columns_in_data_file");
                 next->set_value(next_pcdf);
                 added_partition_columns_in_data_file++;
@@ -590,7 +605,7 @@ private:
                 }
                 else
                 {
-                    next->set_value(getTableStructure(rg, b, true));
+                    next->set_value(getTableStructure(rg, b, allow_chaos, true));
                 }
                 added_structure++;
             }
@@ -621,8 +636,6 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
-    const std::function<bool(const SQLTable &)> attached_tables_for_external_call
-        = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };

@@ -104,10 +104,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        if (command->statistics_decl)
-        {
-            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
-        }
+        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)

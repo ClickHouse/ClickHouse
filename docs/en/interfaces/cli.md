@@ -4,7 +4,6 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
-doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';
@@ -662,11 +661,6 @@ openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
-
-## Environment variable options {#environment-variable-options}
-
-The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
-Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 

@@ -5,9 +5,6 @@ SET allow_experimental_full_text_index = 1;
 SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
--- Affects the number of read rows.
-SET use_skip_indexes_on_data_read = 0;
-
 ----------------------------------------------------
 SELECT 'Test text(tokenizer="ngram", ngram_size = 2)';
 

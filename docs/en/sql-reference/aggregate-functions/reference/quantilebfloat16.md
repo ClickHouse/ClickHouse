@@ -4,7 +4,6 @@ description: 'Computes an approximate quantile of a sample consisting of bfloat1
 sidebar_position: 171
 slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
 title: 'quantileBFloat16'
-doc_type: 'reference'
 ---
 
 # quantileBFloat16Weighted

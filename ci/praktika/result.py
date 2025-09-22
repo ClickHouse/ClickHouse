@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -176,9 +177,6 @@ class Result(MetaClasses.Serializable):
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
         )
-
-    def is_failure(self):
-        return self.status in (Result.Status.FAILED)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
@@ -468,22 +466,19 @@ class Result(MetaClasses.Serializable):
         command_args=None,
         command_kwargs=None,
         retries=1,
-        retry_errors: Union[List[str], str] = "",
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
 
-        :param name: The name of the check.
-        :param command: A shell command (str) or Python callable, or list of them.
+        :param name: Check name
+        :param command: Shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
-        :param with_log: Whether to log output to a file.
-        :param with_info: Whether to fill in Result.info from command output.
-        :param with_info_on_failure: Whether to fill in Result.info from command output on failure only.
-        :param fail_fast: Whether to stop execution if one command fails.
+        :param with_log: Boolean flag to log output to a file.
+        :param with_info: Fill in Result.info from command output
+        :param with_info_on_failure: Fill in Result.info from command output on failure only
+        :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
-        :param retries: The number of times to retry the command if it fails.
-        :param retry_errors: The errors to retry on. Support for shell command(s) only.
         :return: Result object with status and optional log file.
         """
 
@@ -529,11 +524,7 @@ class Result(MetaClasses.Serializable):
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
-                        command_,
-                        verbose=True,
-                        log_file=log_file,
-                        retries=retries,
-                        retry_errors=retry_errors,
+                        command_, verbose=True, log_file=log_file, retries=retries
                     )
                     log_output = Shell.get_output(
                         f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
@@ -565,19 +556,17 @@ class Result(MetaClasses.Serializable):
             ),
         )
 
-    def do_not_block_pipeline_on_failure(self):
-        return self.ext.get("do_not_block_pipeline_on_failure", False)
+    def skip_dependee_jobs_dropping(self):
+        return self.ext.get("skip_dependee_jobs_dropping", False)
 
-    def complete_job(
-        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
-    ):
+    def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
-        if do_not_block_pipeline_on_failure and not self.is_ok():
-            self.ext["do_not_block_pipeline_on_failure"] = True
+        if force_ok_exit:
+            self.ext["skip_dependee_jobs_dropping"] = True
         self.dump()
         print(self.to_stdout_formatted())
-        if not self.is_ok():
+        if not self.is_ok() and not force_ok_exit:
             sys.exit(1)
         else:
             sys.exit(0)
@@ -728,16 +717,7 @@ class _ResultS3:
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
-        # Deduplicate files by normalizing paths to absolute strings
-        unique_files = {}
         for file in result.files:
-            # Convert to Path and resolve to absolute path
-            file_path = Path(file).resolve()
-            file_str = str(file_path)
-            if file_str not in unique_files:
-                unique_files[file_str] = file  # Keep original file reference
-
-        for file_str, file in unique_files.items():
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")

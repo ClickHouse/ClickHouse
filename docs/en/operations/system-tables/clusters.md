@@ -4,7 +4,6 @@ description: 'System table containing information about clusters available in th
 keywords: ['system table', 'clusters']
 slug: /operations/system-tables/clusters
 title: 'system.clusters'
-doc_type: 'reference'
 ---
 
 Contains information about clusters available in the config file and the servers in them.

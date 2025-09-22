@@ -4,7 +4,6 @@ sidebar_label: 'ODBC Driver'
 sidebar_position: 35
 slug: /interfaces/odbc
 title: 'ODBC Driver'
-doc_type: 'reference'
 ---
 
 # ODBC driver

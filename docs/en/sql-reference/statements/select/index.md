@@ -4,7 +4,6 @@ sidebar_label: 'SELECT'
 sidebar_position: 32
 slug: /sql-reference/statements/select/
 title: 'SELECT Query'
-doc_type: 'reference'
 ---
 
 # SELECT Query
@@ -284,8 +283,6 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
 Other ways to make settings see [here](/operations/settings/overview).
-
-For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 **Example**
 

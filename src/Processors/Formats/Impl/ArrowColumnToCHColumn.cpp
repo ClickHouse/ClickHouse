@@ -78,7 +78,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
@@ -1557,18 +1556,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
         auto arrow_field = table->schema()->GetFieldByName(column_name);
 
         if (parquet_columns_to_clickhouse)
-        {
-            auto column_name_it = parquet_columns_to_clickhouse->find(column_name);
-            if (column_name_it == parquet_columns_to_clickhouse->end())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Column '{}' is not presented in input data. Column name mapping is: {}",
-                    column_name,
-                    parquet_columns_to_clickhouse->size());
-            }
-            column_name = column_name_it->second;
-        }
+            column_name = parquet_columns_to_clickhouse->at(column_name);
 
         if (case_insensitive_matching)
             boost::to_lower(column_name);

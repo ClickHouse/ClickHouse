@@ -2,7 +2,6 @@ import pytest
 import uuid
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import arrowflight_user, arrowflight_pass
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -19,18 +18,6 @@ def start_cluster():
 
 
 def test_table_function():
-    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')")
-    assert result == TSV(
-        [
-            ["test_value_1", "data1"],
-            ["abcadbc", "text_text_text"],
-            ["123456789", "data3"],
-        ]
-    )
-
-
-def test_table_function_old_name():
-    # "arrowflight" is an obsolete name.
     result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
     assert result == TSV(
         [
@@ -38,29 +25,6 @@ def test_table_function_old_name():
             ["abcadbc", "text_text_text"],
             ["123456789", "data3"],
         ]
-    )
-
-
-def test_table_function_with_auth():
-    result = node.query(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', '{arrowflight_pass}')"
-    )
-    assert result == TSV(
-        [
-            ["test_value_1", "data1"],
-            ["abcadbc", "text_text_text"],
-            ["123456789", "data3"],
-        ]
-    )
-
-    assert "No credentials supplied" in node.query_and_get_error(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC')"
-    )
-    assert "Unknown user" in node.query_and_get_error(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'default', '')"
-    )
-    assert "Wrong password" in node.query_and_get_error(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', 'qwe123')"
     )
 
 
@@ -105,7 +69,7 @@ def test_arrowflight_storage():
     )
 
     table_func_result = node.query(
-        f"SELECT * FROM arrowFlight('arrowflight1:5005', '{dataset}') ORDER BY column1"
+        f"SELECT * FROM arrowflight('arrowflight1:5005', '{dataset}') ORDER BY column1"
     )
     assert table_func_result == TSV(
         [

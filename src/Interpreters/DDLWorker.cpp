@@ -22,7 +22,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -665,10 +664,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
-                    auto query_context = Context::createCopy(context);
-                    StorageAlias::modifyContextByQueryAST(task.query, query_context);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -795,7 +791,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     String executed_by;
 
-    Coordination::EventPtr event = std::make_shared<Poco::Event>();
+    zkutil::EventPtr event = std::make_shared<Poco::Event>();
     /// We must use exists request instead of get, because zookeeper will not setup event
     /// for non existing node after get request
     if (zookeeper->exists(is_executed_path, nullptr, event))
@@ -822,7 +818,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     /// but DDL worker can continue processing other queries.
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
-        StorageReplicatedMergeTree::ReplicatedStatus status;
+        ReplicatedTableStatus status;
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 

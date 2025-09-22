@@ -4,7 +4,6 @@ keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index',
 sidebar_label: 'Exact and Approximate Vector Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Vector Search'
-doc_type: 'guide'
 ---
 
 # Exact and approximate vector search
@@ -173,7 +172,7 @@ Memory consumption required to load a vector index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
-Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * 2 * 4
 
 Memory consumption: mv + mg
 ```
@@ -588,9 +587,7 @@ returns
 
 Further example datasets that use approximate vector search:
 - [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
-- [LAION-5B](../../../getting-started/example-datasets/laion-5b-dataset)
 - [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
-- [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
 ## References {#references}
 
