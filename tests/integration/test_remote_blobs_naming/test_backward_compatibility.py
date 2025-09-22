@@ -185,38 +185,39 @@ def test_read_new_format(cluster):
 def test_write_new_format(cluster):
     new_node = cluster.instances["new_node"]
 
-    new_node.query(
-        """
-        CREATE TABLE test_read_new_format (
+    create_table_statement = """
+        CREATE TABLE test_write_new_format (
             id Int64,
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
         """
-    )
 
-    new_node.query("INSERT INTO test_read_new_format VALUES (1, 'Hello')")
+    with drop_table_scope(
+        [new_node], ["test_write_new_format"], [create_table_statement]
+    ):
+        new_node.query("INSERT INTO test_write_new_format VALUES (1, 'Hello')")
 
-    part_name = get_first_part_name(new_node, "test_read_new_format")
-    part_path = get_part_path(new_node, "test_read_new_format", part_name)
-    primary_idx = os.path.join(part_path, "primary.cidx")
+        part_name = get_first_part_name(new_node, "test_write_new_format")
+        part_path = get_part_path(new_node, "test_write_new_format", part_name)
+        primary_idx = os.path.join(part_path, "primary.cidx")
 
-    remote = find_keys_for_local_path(new_node, primary_idx)
-    assert len(remote) == 1
-    remote = remote[0]
+        remote = find_keys_for_local_path(new_node, primary_idx)
+        assert len(remote) == 1
+        remote = remote[0]
 
-    new_node.query(f"ALTER TABLE test_read_new_format DETACH PART '{part_name}'")
+        new_node.query(f"ALTER TABLE test_write_new_format DETACH PART '{part_name}'")
 
-    detached_primary_idx = os.path.join(
-        os.path.dirname(part_path), "detached", part_name, "primary.cidx"
-    )
+        detached_primary_idx = os.path.join(
+            os.path.dirname(part_path), "detached", part_name, "primary.cidx"
+        )
 
-    # manually change the metadata format and see that CH reads it correctly
-    meta_data = read_file(new_node, detached_primary_idx)
-    lines = meta_data.split("\n")
-    object_size, object_key = lines[2].split("\t")
-    assert remote.endswith(object_key), object_key
-    assert remote == object_key
+        # manually change the metadata format and see that CH reads it correctly
+        meta_data = read_file(new_node, detached_primary_idx)
+        lines = meta_data.split("\n")
+        object_size, object_key = lines[2].split("\t")
+        assert remote.endswith(object_key), object_key
+        assert remote == object_key
 
 
 @pytest.mark.parametrize(
