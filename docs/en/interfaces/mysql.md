@@ -5,6 +5,7 @@ sidebar_label: 'MySQL Interface'
 sidebar_position: 25
 slug: /interfaces/mysql
 title: 'MySQL Interface'
+doc_type: 'guide'
 ---
 
 import Image from '@theme/IdealImage';
