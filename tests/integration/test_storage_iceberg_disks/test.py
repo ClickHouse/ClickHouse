@@ -226,6 +226,7 @@ def test_many_tables(started_cluster, format_version, storage_type):
     instance.query(f"DROP TABLE {table_name_2}")
     instance.query(f"DROP TABLE {table_name}")
 
+
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_cluster_table_function(started_cluster, storage_type):
 
@@ -312,3 +313,4 @@ def test_cluster_table_function(started_cluster, storage_type):
 
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster} SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")) == 100 * 3
+

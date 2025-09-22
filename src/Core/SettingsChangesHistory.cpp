@@ -39,6 +39,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.10",
+        {
+            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
+            {"enable_join_runtime_filters", false, false, "New setting"},
+            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
+            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+            {"delta_lake_log_metadata", false, false, "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"datalake_disk_name", "", "", "New setting."},
@@ -54,6 +62,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"query_plan_convert_any_join_to_semi_or_anti_join", true, true, "New setting."},
+            {"text_index_use_bloom_filter", true, true, "New setting."},
+            {"query_plan_direct_read_from_text_index", true, true, "New setting."},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
             {"jemalloc_enable_profiler", false, false, "New setting"},
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
@@ -874,6 +885,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},

@@ -522,7 +522,7 @@ void mutate(
     auto common_path = configuration->getRawPath().path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
-    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None);
+    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
 
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
@@ -594,7 +594,7 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
