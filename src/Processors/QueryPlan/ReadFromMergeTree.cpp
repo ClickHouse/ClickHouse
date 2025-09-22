@@ -183,6 +183,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
 }
 
 namespace MergeTreeSetting
@@ -1776,6 +1777,11 @@ static void buildIndexes(
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
+    /// Just the skeleton of the predicate - no columns resolved.
+    NamesAndTypesList dummy;
+    /// dummy.emplace_back("dummy",DataTypeUInt32);
+    indexes->rpn_template_condition = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy))};
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -1878,7 +1884,6 @@ static void buildIndexes(
         if (!condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
-
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -1935,6 +1940,7 @@ static void buildIndexes(
     }
 
     indexes->skip_indexes = std::move(skip_indexes);
+
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2011,6 +2017,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
+    if (settings[Setting::use_skip_indexes_on_disjuncts])
+        MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(indexes);
+
     if (indexes->key_condition.alwaysUnknownOrTrue())
     {
         if (settings[Setting::force_primary_key])
@@ -2078,6 +2087,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->rpn_template_condition,
+            indexes->rpn_template_for_eval_result,
+            indexes->condition_type,
             indexes->skip_indexes,
             reader_settings,
             log,

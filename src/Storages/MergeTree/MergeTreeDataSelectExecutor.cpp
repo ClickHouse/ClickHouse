@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
 }
 
 namespace MergeTreeSetting
@@ -144,7 +145,8 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        bool was_primary_index_useful = false;
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, was_primary_index_useful, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -671,6 +673,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
+    const std::optional<KeyCondition> & rpn_template_condition,
+    const KeyCondition::RPN & rpn_template_for_eval_result,
+    KeyCondition::ConditionType condition_type,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
@@ -684,6 +689,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
+
+    LOG_TRACE(getLogger(""), "RPN Template Condition = {}", rpn_template_condition->toString());
 
     /// If parallel_replicas_support_projection is enabled, selected_marks will be used to determine the optimal projection.
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
@@ -744,6 +751,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
 
+    std::atomic<size_t> sum_marks_finalized = 0;
+
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -753,6 +762,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+
 
     /// Let's find what range to read from each part.
     {
@@ -768,6 +778,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
+            MarkRanges initial_ranges = ranges.ranges;
+            bool was_primary_index_useful = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -785,6 +797,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
+                    was_primary_index_useful,
                     log);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
@@ -839,6 +852,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
+                /// To support mixed AND and OR conditions, we track ranges selected by each index.
+                /// Let us start with the ranges selected by PK or _part_offsets
+                std::vector<MarkRanges> selected_ranges_by_index;
+                if (condition_type != KeyCondition::OnlyConjuncts)
+                {
+                    if (was_primary_index_useful || !key_condition.getUsedColumns().empty())
+                    {
+                        selected_ranges_by_index.push_back(ranges.ranges);
+                    }
+                    else
+                    {
+                        selected_ranges_by_index.push_back(MarkRanges{});
+                    }
+                    ranges.ranges = initial_ranges;
+                }
+
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
@@ -866,10 +895,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
+                    std::optional<MarkRanges> rejected_ranges;
+                    if (condition_type != KeyCondition::OnlyConjuncts)
+                        rejected_ranges = MarkRanges{};
+
+                    MarkRanges selected_ranges;
                     /// Vector similarity indexes are not applicable on data reads.
                     if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                     {
-                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                        std::tie(selected_ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition,
                             ranges.data_part,
@@ -878,15 +912,37 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
+                            vector_similarity_index_cache.get(), rejected_ranges,
                             log);
                     }
+                    else
+                        selected_ranges = ranges.ranges; /// TODO
+                    stat.granules_dropped.fetch_add(total_granules - selected_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    if (condition_type == KeyCondition::OnlyConjuncts)
+                    {
+                        ranges.ranges = std::move(selected_ranges); /// INTERSECTION approach
+                    }
+                    else
+                    {
+                        selected_ranges_by_index.emplace_back(selected_ranges);
+                        if (condition_type == KeyCondition::OnlyDisjuncts)
+                            ranges.ranges = std::move(rejected_ranges.value()); /// UNION optimization
+                    }
 
-                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
+                }
+
+                /// Finalize ranges if condition was only ORs or mixed AND / OR
+                if (condition_type != KeyCondition::OnlyConjuncts)
+                {
+                    ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
+                                        rpn_template_condition, condition_type,
+                                        rpn_template_for_eval_result, selected_ranges_by_index);
+                    sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -1033,6 +1089,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
+        }
+        if (condition_type != KeyCondition::OnlyConjuncts)
+        {
+            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                .type = ReadFromMergeTree::IndexType::Skip,
+                .name = "<Final>",
+                .description = "Final list of ranges after AND/OR processing",
+                .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+                .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
         }
     }
 
@@ -1378,6 +1443,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
     const Settings & settings,
+    bool & was_index_useful,
     LoggerPtr log)
 {
     const auto & part = part_with_ranges.data_part;
@@ -1401,8 +1467,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         else
             res.push_back(MarkRange(0, marks_count));
 
+        was_index_useful = false;
         return res;
     }
+
+    was_index_useful = true; /// either of PK / part_offset / total_offset
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -1745,6 +1814,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    std::optional<MarkRanges> & rejected,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1906,7 +1976,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     bool result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
+                    {
+                        if (rejected)
+                        {
+                            MarkRange data_range(
+                                std::max(ranges[i].begin, index_mark * index_granularity),
+                                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+
+                            rejected->push_back(data_range);
+                        }
                         continue;
+                    }
 
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * index_granularity),
@@ -2195,5 +2275,200 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
 }
+
+void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
+    std::optional<ReadFromMergeTree::Indexes> & indexes)
+{
+    if (!indexes || !indexes->rpn_template_condition)
+        return;
+
+    bool only_conjuncts = false;
+    bool only_disjuncts = false;
+    std::tie(only_conjuncts, only_disjuncts) = indexes->rpn_template_condition->checkIfOnlyConjunctsOrOnlyDisjuncts();
+
+    if (only_conjuncts)
+    {
+        indexes->condition_type = KeyCondition::OnlyConjuncts;
+        return;
+    }
+
+    /// It gets a bit complex now. We need to figure out how the columns in the
+    /// condition have resolved to indexes. Indexes can be skip indexes or primary
+    /// key index (or _part_offset).
+
+    std::unordered_map<size_t, size_t> resolved_positions;
+
+    auto v = indexes->key_condition.getResolvedPositions();
+    for (auto i : v)
+        resolved_positions[i] = 0; /// primary key index is index 0
+    if (indexes->part_offset_condition)
+    {
+        v = indexes->part_offset_condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = 0; /// index 0 - evaluated alongwith PK
+    }
+    if (indexes->total_offset_condition)
+    {
+        v = indexes->total_offset_condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = 0; /// index 0 - evaluated alongwith PK
+    }
+
+    for (size_t idx = 0; idx < indexes->skip_indexes.useful_indices.size(); ++idx)
+    {
+        auto & index_and_condition = indexes->skip_indexes.useful_indices[idx];
+        v = index_and_condition.condition->getResolvedPositions();
+        for (auto i : v)
+            resolved_positions[i] = idx + 1; /// index 0 is primary key index
+    }
+
+    const auto & rpn = indexes->rpn_template_condition->getRPN();
+    bool some_unknowns = false;
+    const size_t max_idx = indexes->skip_indexes.useful_indices.size() + 1;
+    for (size_t idx = 0; idx < rpn.size(); ++idx)
+    {
+        indexes->rpn_template_for_eval_result.emplace_back(rpn[idx]);
+        if (rpn[idx].function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+        {
+            if (resolved_positions.find(idx) == resolved_positions.end())
+            {
+                LOG_TRACE(getLogger(""), "Position {} not resolved in {}",
+                          idx, indexes->rpn_template_condition->toString());
+                some_unknowns = true;
+                indexes->rpn_template_for_eval_result.back().key_column = max_idx;
+                continue;
+            }
+            indexes->rpn_template_for_eval_result.back().key_column = resolved_positions.find(idx)->second;
+        }
+    }
+
+    if (only_disjuncts)
+    {
+        if (some_unknowns)
+        {
+            indexes->condition_type = KeyCondition::OnlyDisjunctsFullScan;
+            return;
+        }
+        else
+        {
+            indexes->condition_type = KeyCondition::OnlyDisjuncts;
+        }
+    }
+    else
+    {
+        indexes->condition_type = KeyCondition::Mixed;
+    }
+
+    /// We have mixed ANDs and ORs. Let us transform all to disjuncts
+    /// Don't transform primary key condition. Composite primary key
+    /// will typically be queried as -
+    /// WHERE (lat > 50 and long > 55 AND lat < 51 AND long < 56) AND (name = 'A' OR type = 'B')
+    /// TODO : (primary key expression) OR (skip index expression)
+#if 0
+    if (indexes->key_condition.getUsedColumns().size() > 0)
+        indexes->key_condition.transformToDisjuncts();
+    if (indexes->part_offset_condition)
+        indexes->part_offset_condition->transformToDisjuncts();
+    if (indexes->total_offset_condition)
+        indexes->total_offset_condition->transformToDisjuncts();
+#endif
+    for (auto & index_and_condition : indexes->skip_indexes.useful_indices)
+    {
+        index_and_condition.condition->transformToDisjuncts();
+    }
+}
+
+MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
+    MergeTreeData::DataPartPtr part,
+    const std::optional<KeyCondition> &,
+    KeyCondition::ConditionType condition_type,
+    const KeyCondition::RPN & rpn_template_for_eval_result, const std::vector<MarkRanges> & skip_index_results)
+{
+    MarkRanges res;
+
+    /// Optimization first
+    if (condition_type == KeyCondition::OnlyDisjuncts)
+    {
+        for (auto mr : skip_index_results)
+        {
+            res.insert(res.end(), mr.begin(), mr.end());
+        }
+        std::sort(res.begin(), res.end());
+        return res;
+    }
+
+    /// TODO - below is just something quick, not optimal
+    std::vector< std::unordered_set<size_t> > index_results;
+    size_t i = 0;
+    index_results.resize(10);
+    for (const auto & s : skip_index_results)
+    {
+        for (auto r : s)
+        {
+            for (size_t mark = r.begin; mark < r.end; mark++)
+                index_results[i].insert(mark);
+        }
+        i++;
+    }
+
+    auto isRangeSelectedByIndex = [&](size_t idx, size_t range_begin)
+    {
+        if (idx < skip_index_results.size())
+            return index_results[idx].find(range_begin) != index_results[idx].end();
+        else
+            return true; /// UNKNOWN
+    };
+
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+
+    /// Evaluate the RPN over all the ranges.
+    for (size_t range_begin = 0; range_begin < marks_count; range_begin++)
+    {
+        std::vector<bool> rpn_stack;
+        for (const auto & element : rpn_template_for_eval_result)
+        {
+            if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+            {
+                rpn_stack.emplace_back(isRangeSelectedByIndex(element.key_column, range_begin));
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            {
+                rpn_stack.back() = !rpn_stack.back();
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 || arg2;
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 && arg2;
+            }
+            else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.emplace_back(true);
+            }
+            else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+            {
+                rpn_stack.emplace_back(false);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForConditionWithORs()", element.function);
+        }
+
+        if (rpn_stack.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForConditionWithORs()", rpn_stack.size());
+
+        if (rpn_stack[0])
+            res.push_back({range_begin, range_begin + 1}); /// TODO - range coalesce
+    }
+    return res;
+}
+
 
 }

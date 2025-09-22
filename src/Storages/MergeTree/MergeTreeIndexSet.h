@@ -110,6 +110,10 @@ public:
 
     FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 
+    void transformToDisjuncts() override;
+
+    std::vector<size_t> getResolvedPositions() const override;
+
     ~MergeTreeIndexConditionSet() override = default;
 
 private:

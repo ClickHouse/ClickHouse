@@ -197,6 +197,16 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
 }
 
+void MergeTreeIndexConditionMinMax::transformToDisjuncts()
+{
+    condition.transformToDisjuncts();
+}
+
+std::vector<size_t> MergeTreeIndexConditionMinMax::getResolvedPositions() const
+{
+    return condition.getResolvedPositions();
+}
+
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
