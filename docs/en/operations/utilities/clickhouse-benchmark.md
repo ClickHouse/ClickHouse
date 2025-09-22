@@ -48,6 +48,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--query_id_prefix=ID_PREFIX` — Query Id Prefix.
 - `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 - `-C N`, `--max_concurrency=N` — Gradually increases number of parallel queries up to specified value, making one report for every concurrency level.
+- `--precise` — Enables precise per-interval reporting with weighted metrics.
 - `-d N`, `--delay=N` — Interval in seconds between intermediate reports (to disable reports set 0). Default value: 1.
 - `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
 - `-i N`, `--iterations=N` — Total number of queries. Default value: 0 (repeat forever).
