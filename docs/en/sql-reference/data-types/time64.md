@@ -22,31 +22,32 @@ Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: 0..9. Commo
 Time64(precision)
 ```
 
-Internally, `Time64` stores a signed 64-bit decimal (Decimal64) number of fractional seconds since 00:00:00.
+Internally, `Time64` stores a signed 64-bit decimal (Decimal64) number of fractional seconds.
 The tick resolution is determined by the `precision` parameter.
 Time zones are not supported: specifying a time zone with `Time64` will throw an error.
 
 Unlike `DateTime64`, `Time64` does not store a date component.
 See also [`Time`](../../sql-reference/data-types/time.md).
 
-Displayed range of values: 00:00:00.000 to 999:59:59.999 for `precision = 3` (the number of fractional digits depends on `precision`).
+Text representation range: [-999:59:59.000, 999:59:59.999] for `precision = 3`. In general, the minimum is `-999:59:59` and the maximum is `999:59:59` with up to `precision` fractional digits (for `precision = 9`, the minimum is `-999:59:59.999999999`).
 
 ## Implementation details {#implementation-details}
 
 **Representation**.
-Signed `Decimal64` value counting fractional seconds since 00:00:00 with `precision` fractional digits.
+Signed `Decimal64` value counting fractional second with `precision` fractional digits.
 
 **Normalization**.
 When parsing strings to `Time64`, the time components are normalized and not validated.
 For example, `25:70:70` is interpreted as `26:11:10`.
 
-**Negative values**
+**Negative values**.
 Leading minus signs are supported and preserved.
 Negative values typically arise from arithmetic operations on `Time64` values.
-When parsing text to `Time64`, negative inputs are clamped to `00:00:00`; numeric inputs preserve the sign.
+For `Time64`, negative inputs are preserved for both text (e.g., `'-01:02:03.123'`) and numeric inputs (e.g., `-3723.123`).
 
-**Display saturation**.
-When formatting values for output, hours above 999 are saturated to `999:59:59.xxx`.
+**Saturation**.
+The time-of-day component is capped to the range [-999:59:59.xxx, 999:59:59.xxx] when converting to components or serialising to text.
+The stored numeric value may exceed this range; however, any component extraction (hours, minutes, seconds) and textual representation use the saturated value.
 
 **Time zones**.
 `Time64` does not support time zones.
@@ -92,11 +93,9 @@ SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
 ``` text
    ┌─event_id─┬────────time─┐
 1. │        1 │ 14:30:25.000 │
-3. │        3 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
    └──────────┴──────────────┘
 ```
-
-Unlike `Time`, `Time64` values are not converted from `String` automatically.
 
 ``` sql
 SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
