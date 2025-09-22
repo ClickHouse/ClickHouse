@@ -1949,6 +1949,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
+    /// Collect REPLACE transformer mappings to apply to WHERE and HAVING clauses
+    std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
+
     QueryTreeNodesWithNames matched_expression_nodes_with_names;
 
     if (matcher_node_typed.isQualified())
@@ -2092,6 +2095,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
 
+                /// Collect mapping for WHERE and HAVING clause processing
+                replace_transformer_mappings[column_name] = replace_expression;
+
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -2199,6 +2205,62 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     matcher_node = std::move(list);
     if (original_ast)
         matcher_node->setOriginalAST(original_ast);
+
+    /// Apply REPLACE transformer mappings to WHERE and HAVING clauses of the current query
+    if (!replace_transformer_mappings.empty())
+    {
+        auto * query_scope = scope.getNearestQueryScope();
+        if (query_scope && query_scope->scope_node)
+        {
+            auto * query_node = query_scope->scope_node->as<QueryNode>();
+            if (query_node)
+            {
+                /// Inline replacement function to avoid separate visitor class
+                auto replaceIdentifiersInNode = [&](QueryTreeNodePtr & node) -> void {
+                    if (!node) return;
+
+                    /// Simple recursive replacement logic
+                    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void {
+                        if (!current) return;
+
+                        if (auto * identifier = current->as<IdentifierNode>())
+                        {
+                            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
+                            if (it != replace_transformer_mappings.end())
+                            {
+                                current = it->second->clone();
+                                return; /// No need to recurse further after replacement
+                            }
+                        }
+
+                        /// Recursively process child nodes (for function calls, lists, etc.)
+                        if (auto * function_node = current->as<FunctionNode>())
+                        {
+                            auto & arguments = function_node->getArguments().getNodes();
+                            for (auto & arg : arguments)
+                                replace_recursive(arg);
+                        }
+                    };
+
+                    replace_recursive(node);
+                };
+
+                if (query_node->getWhere())
+                {
+                    auto where_node = query_node->getWhere();
+                    replaceIdentifiersInNode(where_node);
+                    query_node->getWhere() = where_node;
+                }
+
+                if (query_node->hasHaving())
+                {
+                    auto having_node = query_node->getHaving();
+                    replaceIdentifiersInNode(having_node);
+                    query_node->getHaving() = having_node;
+                }
+            }
+        }
+    }
 
     return result_projection_names;
 }
