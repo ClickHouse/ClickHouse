@@ -250,7 +250,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}{disk_suffix}'
+            SETTINGS disk = 'disk_s3_{use_delta_kernel}{disk_suffix}'
             """
         )
 
@@ -260,7 +260,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_azure{disk_suffix}'
+            SETTINGS disk = 'disk_azure{disk_suffix}'
             """
         )
     elif storage_type == "local":
@@ -269,7 +269,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_local{disk_suffix}'
+            SETTINGS disk = 'disk_local{disk_suffix}'
             """
         )
     else:
@@ -349,12 +349,12 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         disk_name = f"disk_azure_common"
 
     storage_path = f'{TABLE_NAME}' if storage_type != "azure" else  f"var/lib/clickhouse/user_files/{TABLE_NAME}"
-    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS disk = '{disk_name}'") == instance.query(
         inserted_data
     )
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS disk = '{disk_name}'") == instance.query(
             inserted_data
         )
 
