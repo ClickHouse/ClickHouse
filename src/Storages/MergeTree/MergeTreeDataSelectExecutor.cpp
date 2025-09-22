@@ -690,8 +690,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
     {
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
-        bool is_handling_projection_parts = (original_num_parts > 0 && parts_with_ranges[0].data_part->isProjectionPart())
-            || find_exact_ranges;
+        bool is_handling_projection_parts = std::any_of(
+            parts_with_ranges.begin(),
+            parts_with_ranges.end(),
+            [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
         bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts
             || (!is_handling_projection_parts && metadata_snapshot->hasProjections()));
 
