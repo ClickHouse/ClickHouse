@@ -113,6 +113,8 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    void setDataflowCacheKey(size_t key) { dataflow_cache_key = key; }
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -130,6 +132,8 @@ protected:
 
 private:
     size_t step_index = 0;
+
+    std::optional<size_t> dataflow_cache_key;
 };
 
 }

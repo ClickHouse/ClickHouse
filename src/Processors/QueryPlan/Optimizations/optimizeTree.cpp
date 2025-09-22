@@ -8,6 +8,9 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
+#include "Interpreters/Context_fwd.h"
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -231,13 +234,13 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
 std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_node_plan_root)
+    QueryPlan::Node & single_replica_plan_root)
 {
     auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
         LOG_DEBUG(&Poco::Logger::get("debug"), "final_node_in_replica_plan hash={}", it->second);
-        auto nopr_node_hashes = calculateHashTableCacheKeys(single_node_plan_root);
+        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
         for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
         {
@@ -283,15 +286,35 @@ void considerEnablingParallelReplicas(
     chassert(final_node_in_replica_plan);
     LOG_DEBUG(&Poco::Logger::get("debug"), "replicas_plan_top_node->step->getName()={}", final_node_in_replica_plan->step->getName());
 
-    [[maybe_unused]] const auto [corresponding_node_in_single_node_plan, single_node_plan_node_hash]
+    [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
-    chassert(corresponding_node_in_single_node_plan);
+    chassert(corresponding_node_in_single_replica_plan);
+
+    {
+        auto * reading_step = corresponding_node_in_single_replica_plan;
+        while (reading_step && !reading_step->children.empty())
+            // TODO(nickitat): Maybe we should consider all leafs?
+            reading_step = reading_step->children.front();
+
+        if (!typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The corresponding node in single node plan is not ReadFromMergeTree");
+
+        reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
+        corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
+    }
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    if (const auto stats = stats_cache.getStats(single_node_plan_node_hash))
+    if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
         const auto max_threads = optimization_settings.context->getSettingsRef()[Setting::max_threads];
         const auto num_replicas = optimization_settings.context->getSettingsRef()[Setting::max_parallel_replicas];
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
+            stats->input_bytes,
+            stats->output_bytes,
+            max_threads.value,
+            num_replicas.value);
         if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
         {
             dump(query_plan);
