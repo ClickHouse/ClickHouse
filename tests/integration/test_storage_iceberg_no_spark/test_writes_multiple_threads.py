@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+import pytest
+
+from helpers.iceberg_utils import (
+    create_iceberg_table,
+    get_uuid_str,
+    default_download_directory,
+)
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_writes_multiple_threads_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_no_spark, "(x Int32)", format_version)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    query_id = get_uuid_str()
+    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_experimental_insert_into_iceberg": 1, "max_iceberg_data_file_rows" : 4000000, "query_id": query_id, "max_insert_threads": 2})
+    instance.query("SYSTEM FLUSH LOGS")
