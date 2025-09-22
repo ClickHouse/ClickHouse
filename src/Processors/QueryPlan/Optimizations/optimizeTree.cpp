@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include "mysqlxx/Query.h"
 #include <Common/Exception.h>
 
 #include <Core/Settings.h>
@@ -22,6 +21,8 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool enable_automatic_parallel_replicas;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsNonZeroUInt64 max_parallel_replicas;
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
@@ -208,8 +209,6 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
 
             if (replicas_plan_top_node)
                 break;
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
         }
 
         /// Traverse all children first.
@@ -224,10 +223,12 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
         stack.pop_back();
     }
 
+    if (!replicas_plan_top_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
     return replicas_plan_top_node;
 }
 
-const QueryPlan::Node * findCorrespondingNodeInSingleNodePlan(
+std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
     QueryPlan::Node & single_node_plan_root)
@@ -243,7 +244,7 @@ const QueryPlan::Node * findCorrespondingNodeInSingleNodePlan(
             if (nopr_hash == it->second)
             {
                 LOG_DEBUG(&Poco::Logger::get("debug"), "Found matching node in original plan: {}", nopr_node->step->getName());
-                return nopr_node;
+                return std::make_pair(nopr_node, nopr_hash);
             }
         }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find matching hash for replicas_plan_top_node");
@@ -279,14 +280,29 @@ void considerEnablingParallelReplicas(
     auto plan_with_parallel_replicas = std::make_unique<QueryPlan>(optimization_settings.query_plan_builder());
 
     const auto * final_node_in_replica_plan = findReplicasTopNode(plan_with_parallel_replicas->getRootNode());
+    chassert(final_node_in_replica_plan);
     LOG_DEBUG(&Poco::Logger::get("debug"), "replicas_plan_top_node->step->getName()={}", final_node_in_replica_plan->step->getName());
 
-    [[maybe_unused]] const auto * corresponding_node_in_single_node_plan
+    [[maybe_unused]] const auto [corresponding_node_in_single_node_plan, single_node_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+    chassert(corresponding_node_in_single_node_plan);
 
-    dump(query_plan);
-    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
-    dump(query_plan);
+    const auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    if (const auto stats = stats_cache.getStats(single_node_plan_node_hash))
+    {
+        const auto max_threads = optimization_settings.context->getSettingsRef()[Setting::max_threads];
+        const auto num_replicas = optimization_settings.context->getSettingsRef()[Setting::max_parallel_replicas];
+        if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
+        {
+            dump(query_plan);
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+            dump(query_plan);
+        }
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "The corresponding node in single node plan doesn't support runtime statistics");
+    }
 }
 
 
