@@ -1304,10 +1304,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster,
-    const ASTInsertQuery & query,
-    ContextPtr local_context,
-    StorageMetadataPtr metadata_snapshot) const
+    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1345,8 +1342,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    // src_storage_cluster.updateExternalDynamicMetadataIfExists(query_context);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, nullptr);
+        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1390,8 +1388,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 }
 
 
-std::optional<QueryPipeline>
-StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context, StorageMetadataPtr metadata_snapshot) 
+std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
@@ -1429,7 +1426,7 @@ StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr lo
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context, metadata_snapshot);
+        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
 
     return {};

@@ -227,8 +227,7 @@ void IStorage::readFromPipe(
     }
 }
 
-std::optional<QueryPipeline>
-IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/, StorageMetadataPtr /*metadata_snapshot*/)
+std::optional<QueryPipeline> IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/)
 {
     return {};
 }

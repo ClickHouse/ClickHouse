@@ -836,6 +836,15 @@ ObjectIterator IcebergMetadata::iterate(
             persistent_components.table_location);
     }
 
+    LOG_DEBUG(
+        &Poco::Logger::get("IcebergMetadata"),
+        "Starting iterate with iceberg table state: {}, {}, {}, {}, {}",
+        iceberg_table_state->metadata_file_path,
+        iceberg_table_state->snapshot_id.has_value() ? toString(*iceberg_table_state->snapshot_id) : std::string{"none"},
+        iceberg_table_state->schema_id,
+        iceberg_table_state->metadata_version,
+        StackTrace().toString());
+
     return std::make_shared<IcebergIterator>(
         object_storage,
         local_context,

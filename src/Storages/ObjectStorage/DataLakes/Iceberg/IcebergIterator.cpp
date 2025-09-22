@@ -335,6 +335,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             object_info->addEqualityDeleteObject(equality_delete);
         }
         object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
+        LOG_DEBUG(&Poco::Logger::get("IcebergIterator"), "Iceberg iterator new object: {}", object_info->getPath());
+
         return object_info;
     }
     {
@@ -346,6 +348,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
         }
     }
+    LOG_DEBUG(&Poco::Logger::get("IcebergIterator"), "Iceberg iterator has finished");
+
     return nullptr;
 }
 

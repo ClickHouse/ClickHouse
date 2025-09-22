@@ -754,7 +754,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
 
 std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
-    const ASTInsertQuery & query, ContextPtr local_context, StorageMetadataPtr storage_metadata_snapshot)
+    const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
@@ -811,7 +811,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
 
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, src_cluster, storage_metadata_snapshot);
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(
+        nullptr, nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr());
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -891,14 +893,14 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
-            auto distributed = table->distributedWrite(query, context, metadata_snapshot);
+            auto distributed = table->distributedWrite(query, context);
             if (distributed)
             {
                 res.pipeline = std::move(*distributed);
             }
             if (!res.pipeline.initialized())
             {
-                auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context, metadata_snapshot);
+                auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context);
                 LOG_DEBUG(
                     logger,
                     "Trying to build distributed insert select pipeline into ReplicatedMergeTree or DataLake from cluster storage: "

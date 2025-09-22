@@ -239,6 +239,12 @@ void StorageObjectStorageConfiguration::updateExternalDynamicMetadataIfExistsImp
         return;
     }
 
+    LOG_DEBUG(
+        getLogger("StorageObjectStorageConfiguration"),
+        "Updating external dynamic metadata for storage {}, stacktrace: {}",
+        storage.getStorageID().getFullTableName(),
+        StackTrace().toString());
+
     update(
         object_storage,
         query_context,
