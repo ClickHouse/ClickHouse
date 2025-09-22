@@ -25,8 +25,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool dictionary_validate_primary_key_type;
-    extern const SettingsBool parallelize_output_from_storages;
-    extern const SettingsBool distributed_aggregation_memory_efficient;
 }
 
 namespace ServerSetting
