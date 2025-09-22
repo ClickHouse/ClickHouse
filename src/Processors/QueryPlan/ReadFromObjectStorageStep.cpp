@@ -51,11 +51,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     , num_streams(num_streams_)
     , distributed_processing(distributed_processing_)
 {
-    LOG_DEBUG(
-        getLogger("ReadFromObjectStorageStep"),
-        "Creating ReadFromObjectStorageStep with {} streams, storage name: {}",
-        num_streams,
-        getName());
 }
 
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)

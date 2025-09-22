@@ -272,12 +272,6 @@ void StorageObjectStorageSource::lazyInitialize()
 Chunk StorageObjectStorageSource::generate()
 {
     auto chunk = generateImpl();
-    LOG_DEBUG(
-        log,
-        "Generated chunk with {} rows, source get name {}, {}",
-        chunk.getNumRows(),
-        configuration->getEngineName(),
-        StackTrace().toString());
     return chunk;
 }
 

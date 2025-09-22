@@ -7,9 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/logger_useful.h>
-
-
 namespace DB
 {
 

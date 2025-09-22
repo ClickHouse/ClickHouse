@@ -900,20 +900,8 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context);
-                LOG_DEBUG(
-                    logger,
-                    "Trying to build distributed insert select pipeline into ReplicatedMergeTree or DataLake from cluster storage: "
-                    "table={}, pipeline was initialized: {}",
-                    query.getTable(),
-                    pipeline.has_value());
-                if (pipeline)
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
-                LOG_DEBUG(
-                    logger,
-                    "Trying to build distributed insert select pipeline into ReplicatedMergeTree or DataLake from cluster storage: "
-                    "res.pipeline.initialized(): {}",
-                    res.pipeline.initialized());
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
@@ -934,8 +922,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
-
-    LOG_DEBUG(&Poco::Logger::get("Adding node from here"), "{}", StackTrace().toString());
 
     return res;
 }
