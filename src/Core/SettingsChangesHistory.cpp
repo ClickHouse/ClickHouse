@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
