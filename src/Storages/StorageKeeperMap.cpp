@@ -996,6 +996,7 @@ private:
         auto data_out_compressed = temp_disk->writeFile(data_file_path);
         auto data_out = std::make_unique<CompressedWriteBuffer>(
             *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
