@@ -871,6 +871,7 @@ emptyArrayToSingle
 emptyArrayUInt
 enabledProfiles
 enabledRoles
+enablement
 encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
