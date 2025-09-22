@@ -165,6 +165,7 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
     virtual bool supportsPartialPathPrefix() const { return true; }

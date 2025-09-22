@@ -84,6 +84,7 @@ public:
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
 

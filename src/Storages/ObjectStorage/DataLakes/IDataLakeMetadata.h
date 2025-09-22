@@ -73,6 +73,7 @@ public:
 
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
