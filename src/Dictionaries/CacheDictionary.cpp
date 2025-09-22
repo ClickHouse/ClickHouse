@@ -630,18 +630,18 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     const auto now = std::chrono::system_clock::now();
 
-    auto current_source_ptr = getSourceAndUpdateIfNeeded();
-    BlockIO io;
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        io = current_source_ptr->loadIds(requested_keys_vector);
-    else
-        io = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
-
     if (now > backoff_end_time.load())
     {
         try
         {
+            auto current_source_ptr = getSourceAndUpdateIfNeeded();
+
             Stopwatch watch;
+            BlockIO io;
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+                io = current_source_ptr->loadIds(requested_keys_vector);
+            else
+                io = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
