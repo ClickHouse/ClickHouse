@@ -1482,12 +1482,38 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(getLogger("IcebergWrites"), "Cleaning up Iceberg manifest list file {}", storage_manifest_list_name);
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            LOG_DEBUG(getLogger("IcebergWrites"), "Cleaning up Iceberg metadata file {}", storage_metadata_name);
-            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
             auto [last_version, metadata_path, compression_method]
                 = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
 
+            LOG_DEBUG(getLogger("IcebergWrites"), "LASTEST VERSION {}", last_version);
+
+            metadata_compression_method = compression_method;
+            filename_generator.setVersion(last_version + 1);
+
             metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
+            partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+            auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
+
+            auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+            auto schemas = metadata->getArray(Iceberg::f_schemas);
+            for (size_t i = 0; i < schemas->size(); ++i)
+            {
+                if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+                {
+                    current_schema = schemas->getObject(static_cast<UInt32>(i));
+                }
+            }
+            for (size_t i = 0; i < partitions_specs->size(); ++i)
+            {
+                auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
+                if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+                {
+                    partititon_spec = current_partition_spec;
+                    if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
+                        partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
+                    break;
+                }
+            }
         }
         catch (...)
         {
