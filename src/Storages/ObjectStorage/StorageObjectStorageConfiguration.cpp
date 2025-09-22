@@ -70,10 +70,14 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-    const auto disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-        ? storage_settings[DataLakeStorageSetting::disk].value
-        : "";
+    std::string disk_name;
+    if (configuration_to_initialize.isDataLakeConfiguration())
+    {
+        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
+            ? storage_settings[DataLakeStorageSetting::disk].value
+            : "";
+    }
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
