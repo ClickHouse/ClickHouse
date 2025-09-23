@@ -2349,6 +2349,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator
