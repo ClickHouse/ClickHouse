@@ -14,6 +14,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <filesystem>
+#include <memory>
 #include <system_error>
 #include <fcntl.h>
 #include <unistd.h>
@@ -26,6 +27,8 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 
 namespace CurrentMetrics
@@ -320,9 +323,9 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -573,7 +576,7 @@ try
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {}, {});
+    auto buf = readFile(disk_checker_path, read_settings, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
     if (buf->eof())
@@ -763,6 +766,12 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
+}
+
+ObjectStoragePtr DiskLocal::getObjectStorage()
+{
+    LocalObjectStorageSettings settings_object_storage(disk_path, /* read_only */false);
+    return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)

@@ -127,6 +127,7 @@ enum class TableRequirement
 class StatementGenerator
 {
 public:
+    static const std::vector<std::vector<OutFormat>> outFormats;
     static const std::unordered_map<OutFormat, InFormat> outIn;
     static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
