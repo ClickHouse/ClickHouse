@@ -2,7 +2,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 
-namespace DB 
+namespace DB
 {
 
 // This state should be preserved as simple as possible to allow serialization/deserialization.
