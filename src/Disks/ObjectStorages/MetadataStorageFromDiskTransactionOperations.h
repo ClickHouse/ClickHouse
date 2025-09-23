@@ -140,7 +140,7 @@ private:
     IDisk & disk;
 
     std::string temp_path;
-    std::unordered_set<std::string> visited_paths;
+    std::unordered_set<int64_t> visited_inodes;
     std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
 };
 

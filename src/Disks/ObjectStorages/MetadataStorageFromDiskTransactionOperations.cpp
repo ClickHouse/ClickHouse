@@ -273,7 +273,8 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
     for (auto it = disk.iterateDirectory(mid_path); it->isValid(); it->next())
     {
         const std::string next_to_visit = it->path();
-        const bool is_new_path = visited_paths.emplace(next_to_visit).second;
+        const int64_t path_inode = disk.stat(next_to_visit).st_ino;
+        const bool is_new_path = visited_inodes.emplace(path_inode).second;
         if (!is_new_path)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Found cyclic symlink path {}", next_to_visit);
 

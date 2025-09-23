@@ -38,29 +38,37 @@ public:
         return active_metadatas[path];
     }
 
+    std::shared_ptr<DB::IDisk> getMetadataDisk(const std::string & path)
+    {
+        std::unique_lock<std::mutex> lock(active_metadatas_mutex);
+        chassert(active_disks.contains(path));
+        return active_disks[path];
+    }
+
     void TearDown() override
     {
         for (const auto & [path, metadata] : active_metadatas)
             metadata->shutdown();
 
-        if (!local_disk_metadata_dir.empty())
-            fs::remove_all(local_disk_metadata_dir);
+        for (const auto & [_, disk] : active_disks)
+            fs::remove_all(disk->getPath());
     }
 
 private:
     std::shared_ptr<DB::IMetadataStorage> createMetadataStorage(const std::string & path)
     {
-        local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
+        const auto local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
         fs::create_directories(local_disk_metadata_dir);
-        auto metadata_disk = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
-        auto metadata = std::make_shared<DB::MetadataStorageFromDisk>(metadata_disk, path);
+
+        auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path);
+
         return metadata;
     }
 
-    using MetadataPtr = std::shared_ptr<DB::IMetadataStorage>;
-    std::unordered_map<std::string, MetadataPtr> active_metadatas;
     std::mutex active_metadatas_mutex;
-    std::string local_disk_metadata_dir;
+    std::unordered_map<std::string, std::shared_ptr<DB::IMetadataStorage>> active_metadatas;
+    std::unordered_map<std::string, std::shared_ptr<DB::IDisk>> active_disks;
 };
 
 TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
@@ -1219,6 +1227,22 @@ TEST_F(MetadataLocalDiskTest, TestTruncate)
 
     EXPECT_EQ(metadata->getStorageObjects("file").size(), 1);
     EXPECT_EQ(metadata->getStorageObjects("file").front().remote_path, "blob-1");
+}
+
+TEST_F(MetadataLocalDiskTest, TestRecursiveCyclicRemove)
+{
+    auto metadata = getMetadataStorage("/TestRecursiveCyclicRemove");
+    auto disk = getMetadataDisk("/TestRecursiveCyclicRemove");
+
+    disk->createDirectory("root");
+    disk->createDirectorySymlink("root", "root/root");
+
+    /// Check that remove recursive will not hang
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root");
+        EXPECT_THROW(tx->commit(), std::exception);
+    }
 }
 
 TEST_F(MetadataLocalDiskTest, TestNonExistingObjects)
