@@ -20,44 +20,32 @@ INSERT INTO tp2 VALUES (1,100),(2,100),(3,200),(4,200),(5,300),(6,300);
 
 SELECT '--- CASE A: plan (enabled) ---';
 SET use_join_disjunctions_push_down = 1;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t1.k IN (1,2) AND t2.x = 100) OR (t1.k IN (3,4) AND t2.x = 200)
-          ORDER BY t1.k)
-)
-SELECT
-    -- Count Filters created and pushed into pre-join actions (generic 'Filter' nodes, not 'Prewhere' and not 'Filter (WHERE)')
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    -- Count top-level WHERE filter nodes if they remain after pushdown
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t1.k IN (1,2) AND t2.x = 100) OR (t1.k IN (3,4) AND t2.x = 200)
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- CASE A: plan (disabled) ---';
 SET use_join_disjunctions_push_down = 0;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t1.k IN (1,2) AND t2.x = 100) OR (t1.k IN (3,4) AND t2.x = 200)
-          ORDER BY t1.k)
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t1.k IN (1,2) AND t2.x = 100) OR (t1.k IN (3,4) AND t2.x = 200)
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 -- Results identical in both modes (k in {1,2,3,4})
@@ -81,42 +69,32 @@ ORDER BY t1.k;
 
 SELECT '--- CASE B: plan (enabled) ---';
 SET use_join_disjunctions_push_down = 1;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t2.x = 100) OR (t2.x = 200)
-          ORDER BY t1.k)
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t2.x = 100) OR (t2.x = 200)
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- CASE B: plan (disabled) ---';
 SET use_join_disjunctions_push_down = 0;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t2.x = 100) OR (t2.x = 200)
-          ORDER BY t1.k)
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t2.x = 100) OR (t2.x = 200)
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 -- Results identical in both modes (k in {1,2,3,4})
@@ -140,42 +118,32 @@ ORDER BY t1.k;
 
 SELECT '--- CASE C: plan (enabled) ---';
 SET use_join_disjunctions_push_down = 1;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t1.k IN (1,2)) OR (t1.k IN (3,4))
-          ORDER BY t1.k)
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t1.k IN (1,2)) OR (t1.k IN (3,4))
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- CASE C: plan (disabled) ---';
 SET use_join_disjunctions_push_down = 0;
-WITH lines AS (
-    SELECT explain
-    FROM (EXPLAIN actions=1
-          SELECT t1.k, t1.a, t2.x
-          FROM tp1 AS t1
-          JOIN tp2 AS t2 ON t1.k = t2.k
-          WHERE (t1.k IN (1,2)) OR (t1.k IN (3,4))
-          ORDER BY t1.k)
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, 'Filter') > 0
-            AND positionCaseInsensitive(explain, '(WHERE') = 0
-            AND positionCaseInsensitive(explain, 'Prewhere') = 0
-            AND positionCaseInsensitive(explain, 'Filter column:') = 0) AS pre_join_filter_cnt,
-    countIf(positionCaseInsensitive(explain, 'Filter (WHERE') > 0) AS where_filter_cnt
-FROM lines
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
+        EXPLAIN actions=1
+        SELECT t1.k, t1.a, t2.x
+        FROM tp1 AS t1
+        JOIN tp2 AS t2 ON t1.k = t2.k
+        WHERE (t1.k IN (1,2)) OR (t1.k IN (3,4))
+        ORDER BY t1.k
+    )
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 -- Results identical in both modes (k in {1,2,3,4})
@@ -211,10 +179,8 @@ INSERT INTO table2 VALUES (5, 'b5'), (6, 'b6'), (7, 'b7'), (10, 'b10');
 
 SELECT '--- Case D: plan (enabled) ---';
 SET use_join_disjunctions_push_down = 1;
-
-WITH lines AS (
-    SELECT explain
-    FROM (
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
         EXPLAIN actions = 1
         SELECT *
         FROM table1
@@ -223,19 +189,14 @@ WITH lines AS (
           AND ( ((a > 5) AND (c < 10)) OR ((a > 6) AND (c < 11)) )
         ORDER BY a ASC, c ASC
     )
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, '5_UInt')  > 0) AS count_const_5,
-    countIf(positionCaseInsensitive(explain, '11_UInt') > 0) AS count_const_11
-FROM lines
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- Case D: plan (disabled) ---';
 SET use_join_disjunctions_push_down = 0;
-
-WITH lines AS (
-    SELECT explain
-    FROM (
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
         EXPLAIN actions = 1
         SELECT *
         FROM table1
@@ -244,11 +205,8 @@ WITH lines AS (
           AND ( ((a > 5) AND (c < 10)) OR ((a > 6) AND (c < 11)) )
         ORDER BY a ASC, c ASC
     )
-)
-SELECT
-    countIf(positionCaseInsensitive(explain, '5_UInt')  > 0) AS count_const_5,
-    countIf(positionCaseInsensitive(explain, '11_UInt') > 0) AS count_const_11
-FROM lines
+
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- Case D: result (enabled) ---';
@@ -295,7 +253,8 @@ FORMAT TSV;
 
 SELECT '--- Case F: plan (enabled) ---';
 SET use_join_disjunctions_push_down = 1;
-WITH lines AS (
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
     SELECT explain
     FROM (
         EXPLAIN actions = 1
@@ -308,20 +267,13 @@ WITH lines AS (
            OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
     )
 )
-SELECT
-    -- plus() OR pushed to the (n2 x n3) side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
-    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
-            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
-            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
-             AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
-FROM lines
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
 
 SELECT '--- Case F: plan (disabled) ---';
 SET use_join_disjunctions_push_down = 0;
-WITH lines AS (
+SELECT REGEXP_REPLACE(trimLeft(explain), '__set_Int32_\\d+_\\d+', '__set_Int32_UNIQ_ID')
+FROM (
     SELECT explain
     FROM (
         EXPLAIN actions = 1
@@ -334,65 +286,5 @@ WITH lines AS (
            OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
     )
 )
-SELECT
-    -- plus() OR pushed to the (n2 x n3) side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
-    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
-            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
-            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
-            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
-FROM lines
-FORMAT TSV;
-
-SELECT '--- Case F: plan (enabled) ---';
-SET use_join_disjunctions_push_down = 1;
-WITH lines AS (
-    SELECT explain
-    FROM (
-        EXPLAIN actions = 1
-        SELECT
-            n1.number,
-            n2.number,
-            n3.number
-        FROM numbers(3) AS n1, numbers(3) AS n2, numbers(3) AS n3
-        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
-           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
-    )
-)
-SELECT
-    -- plus() OR cannot be pushed until both n2 and n3 are present in this order
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
-    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
-            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
-            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
-            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
-FROM lines
-FORMAT TSV;
-
-SELECT '--- Case F: plan (disabled) ---';
-SET use_join_disjunctions_push_down = 0;
-WITH lines AS (
-    SELECT explain
-    FROM (
-        EXPLAIN actions = 1
-        SELECT
-            n1.number,
-            n2.number,
-            n3.number
-        FROM numbers(3) AS n1, numbers(3) AS n2, numbers(3) AS n3
-        WHERE ((n1.number = 1) AND ((n2.number + n3.number) = 3))
-           OR ((n1.number = 2) AND ((n2.number + n3.number) = 2))
-    )
-)
-SELECT
-    -- plus() OR cannot be pushed until both n2 and n3 are present in this order
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(plus(') > 0) AS sum_or_push_cnt,
-    -- (n1 = 1 OR n1 = 2) pushed to the n1 side
-    countIf(positionCaseInsensitive(explain, 'Filter column: or(equals(__table') > 0
-            AND positionCaseInsensitive(explain, ', 1_UInt8') > 0
-            AND positionCaseInsensitive(explain, ', 2_UInt8') > 0
-            AND positionCaseInsensitive(explain, 'plus(') = 0) AS n1_or_push_cnt
-FROM lines
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
 FORMAT TSV;
