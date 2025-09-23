@@ -164,7 +164,7 @@ void JWTProvider::deviceCodeLogin()
         }
     }
 
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Device login flow timed out.");
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Device login timed out.");
 }
 
 void JWTProvider::refreshIdPAccessToken()
