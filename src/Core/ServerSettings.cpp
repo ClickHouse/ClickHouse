@@ -116,6 +116,8 @@ namespace DB
     DECLARE(UInt64, max_merges_bandwidth_for_server, 0, R"(The maximum read speed of all merges on server in bytes per second. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_replicated_fetches_network_bandwidth_for_server, 0, R"(The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_replicated_sends_network_bandwidth_for_server, 0, R"(The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited.)", 0) \
+    DECLARE(UInt64, max_distributed_cache_read_bandwidth_for_server, 0, R"(The maximum total read speed from distributed cache on server in bytes per second. Zero means unlimited.)", 0) \
+    DECLARE(UInt64, max_distributed_cache_write_bandwidth_for_server, 0, R"(The maximum total write speed to distributed cache on server in bytes per second. Zero means unlimited.)", 0) \
     DECLARE(UInt64, max_remote_read_network_bandwidth_for_server, 0, R"(
     The maximum speed of data exchange over the network in bytes per second for read.
 
@@ -580,6 +582,15 @@ namespace DB
     <max_partition_size_to_drop>0</max_partition_size_to_drop>
     ```
     )", 0) \
+    DECLARE(UInt64, max_named_collection_num_to_warn, 1000lu, R"(
+    If the number of named collections exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_named_collection_num_to_warn>400</max_named_collection_num_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_table_num_to_warn, 5000lu, R"(
     If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 
@@ -641,6 +652,18 @@ namespace DB
 
     ```xml
     <max_part_num_to_warn>400</max_part_num_to_warn>
+    ```
+    )", 0) \
+    DECLARE(UInt64, max_named_collection_num_to_throw, 0lu, R"(
+    If number of named collections is greater than this value, server will throw an exception.
+
+    :::note
+    A value of `0` means no limitation.
+    :::
+
+    **Example**
+    ```xml
+    <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
     ```
     )", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
@@ -1255,6 +1278,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
+            {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_table_num_to_warn", {std::to_string(context->getMaxTableNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_view_num_to_warn", {std::to_string(context->getMaxViewNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_dictionary_num_to_warn", {std::to_string(context->getMaxDictionaryNumToWarn()), ChangeableWithoutRestart::Yes}},
@@ -1313,6 +1337,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_write_bandwidth_for_server",
              {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_distributed_cache_read_bandwidth_for_server",
+             {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_distributed_cache_write_bandwidth_for_server",
+             {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
