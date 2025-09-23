@@ -417,6 +417,7 @@ template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageH
 
 #if USE_AVRO && USE_AWS_S3
 template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE

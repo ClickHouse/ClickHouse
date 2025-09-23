@@ -123,12 +123,14 @@ struct PaimonDefinition
 {
     static constexpr auto name = "paimon";
     static constexpr auto storage_engine_name = "Paimon";
+    static constexpr auto object_storage_type = "s3";
 };
 
 struct PaimonS3Definition
 {
     static constexpr auto name = "paimonS3";
     static constexpr auto storage_engine_name = "PaimonS3";
+    static constexpr auto object_storage_type = "s3";
 };
 
 
@@ -136,6 +138,7 @@ struct PaimonAzureDefinition
 {
     static constexpr auto name = "paimonAzure";
     static constexpr auto storage_engine_name = "PaimonAzure";
+    static constexpr auto object_storage_type = "azure";
 };
 
 
@@ -143,11 +146,13 @@ struct PaimonHDFSDefinition
 {
     static constexpr auto name = "paimonHDFS";
     static constexpr auto storage_engine_name = "PaimonHDFS";
+    static constexpr auto object_storage_type = "hdfs";
 };
 struct PaimonLocalDefinition
 {
     static constexpr auto name = "paimonLocal";
     static constexpr auto storage_engine_name = "PaimonLocal";
+    static constexpr auto object_storage_type = "local";
 };
 
 /// Cluster functions
@@ -240,11 +245,20 @@ struct HudiClusterDefinition
     static constexpr auto object_storage_type = "s3";
 };
 
+struct PaimonClusterDefinition
+{
+    static constexpr auto name = "paimonCluster";
+    static constexpr auto storage_engine_name = "PaimonCluster";
+    static constexpr auto non_clustered_storage_engine_name = PaimonDefinition::storage_engine_name;
+    static constexpr auto object_storage_type = "s3";
+};
+
 struct PaimonS3ClusterDefinition
 {
     static constexpr auto name = "paimonS3Cluster";
     static constexpr auto storage_engine_name = "PaimonS3Cluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonS3Definition::storage_engine_name;
+    static constexpr auto object_storage_type = "s3";
 };
 
 struct PaimonAzureClusterDefinition
@@ -252,6 +266,7 @@ struct PaimonAzureClusterDefinition
     static constexpr auto name = "paimonAzureCluster";
     static constexpr auto storage_engine_name = "PaimonAzureCluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonAzureDefinition::storage_engine_name;
+    static constexpr auto object_storage_type = "azure";
 };
 
 struct PaimonHDFSClusterDefinition
@@ -259,6 +274,7 @@ struct PaimonHDFSClusterDefinition
     static constexpr auto name = "paimonHDFSCluster";
     static constexpr auto storage_engine_name = "PaimonHDFSCluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonHDFSDefinition::storage_engine_name;
+    static constexpr auto object_storage_type = "hdfs";
 };
 
 }

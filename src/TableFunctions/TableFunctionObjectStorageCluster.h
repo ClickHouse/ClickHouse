@@ -85,6 +85,7 @@ using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<Iceber
 
 #if USE_AVRO && USE_AWS_S3
 using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
