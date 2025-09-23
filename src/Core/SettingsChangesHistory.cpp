@@ -126,7 +126,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_database_unity_catalog", false, false, "Added an alias for setting `allow_experimental_database_unity_catalog`"},
             {"allow_database_glue_catalog", false, false, "Added an alias for setting `allow_experimental_database_glue_catalog`"},
             {"apply_patch_parts_join_cache_buckets", 8, 8, "New setting"},
-            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
             {"delta_lake_enable_engine_predicate", true, true, "New setting"},
             {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
