@@ -1,7 +1,7 @@
 ---
 description: 'System table containing information about projection parts for tables of the MergeTree family.'
 keywords: ['system table', 'projection_parts']
-slug: /operations/system-tables/projection-parts
+slug: /operations/system-tables/projection_parts
 title: 'system.projection_parts'
 doc_type: 'reference'
 ---
