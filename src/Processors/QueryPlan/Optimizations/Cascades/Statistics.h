@@ -36,6 +36,7 @@ class IOptimizerStatistics
 {
 public:
     virtual ~IOptimizerStatistics() = default;
+    virtual std::optional<UInt64> getCardinaity(const String & table_name) const = 0;
     virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
 };
 
@@ -45,7 +46,6 @@ using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
 String getUnqualifiedColumnName(const String & full_column_name);
 
 OptimizerStatisticsPtr createEmptyStatistics();
-OptimizerStatisticsPtr createTPCH100Statistics();
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
 
 }

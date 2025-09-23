@@ -373,8 +373,6 @@ void CascadesOptimizer::optimize()
     constexpr auto stats_hint_param_name = "_internal_join_table_stat_hints";
     if (query_context->getQueryParameters().contains(stats_hint_param_name))
         statistics = createStatisticsFromHint(query_context->getQueryParameters().at(stats_hint_param_name));
-    else if (query_context->getCurrentDatabase().starts_with("tpch100"))
-        statistics = createTPCH100Statistics();
     else
         statistics = createEmptyStatistics();
 
