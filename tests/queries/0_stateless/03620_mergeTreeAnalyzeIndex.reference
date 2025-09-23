@@ -19,3 +19,6 @@ select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', value = 0);
 all_1_1_0	[(0,12)]
 select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key = 8193 and value = 0);
 all_1_1_0	[(1,2)]
+-- Set
+select * from mergeTreeAnalyzeIndex(currentDatabase(), data, '', key in (8193, 16385));
+all_1_1_0	[(1,3)]

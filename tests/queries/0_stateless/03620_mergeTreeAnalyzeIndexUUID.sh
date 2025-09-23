@@ -29,4 +29,7 @@ $CLICKHOUSE_CLIENT -nm -q "
   -- Columns not from PK is allowed and ignored.
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', value = 0);
   select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key = 8193 and value = 0);
+
+  -- Set
+  select * from mergeTreeAnalyzeIndexUUID('$table_uuid', '', key in (8193, 16385));
 " |& sed "s/$table_uuid/UUID/"
