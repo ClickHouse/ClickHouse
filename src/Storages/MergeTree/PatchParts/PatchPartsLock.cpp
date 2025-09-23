@@ -20,7 +20,6 @@ namespace ProfileEvents
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
 }
-
 namespace DB
 {
 

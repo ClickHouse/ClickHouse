@@ -76,8 +76,8 @@ namespace
     }
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
     if (format_settings.parquet.use_custom_encoder)
     {
@@ -114,13 +114,8 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
         options.write_geometadata = format_settings.parquet.write_geometadata;
-        options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
-        options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
-        if (format_filter_info_ && format_filter_info_->column_mapper)
-            schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
-        else
-            schema = convertSchema(*header_, options, std::nullopt);
+        schema = convertSchema(*header_, options);
     }
 }
 
@@ -336,10 +331,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             });
     }
 
-    if (format_filter_info && format_filter_info->column_mapper)
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num, format_filter_info->column_mapper->getStorageColumnEncoding());
-    else
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
 
     if (!file_writer)
     {
@@ -598,10 +590,9 @@ void registerOutputFormatParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & format_settings,
-           FormatFilterInfoPtr format_filter_info)
+           const FormatSettings & format_settings)
         {
-            return std::make_shared<ParquetBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, format_filter_info);
+            return std::make_shared<ParquetBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");

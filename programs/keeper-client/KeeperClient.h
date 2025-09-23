@@ -52,9 +52,7 @@ protected:
     void runInteractiveReplxx();
     void runInteractiveInputStream();
 
-    void connectToKeeper();
-
-    bool processQueryText(const String & text, bool is_interactive);
+    bool processQueryText(const String & text);
 
     void loadCommands(std::vector<Command> && new_commands);
 

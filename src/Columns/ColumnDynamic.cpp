@@ -42,10 +42,9 @@ const FormatSettings & getFormatSettings()
 /// Shared variant will contain String values but we cannot use usual String type
 /// because we can have regular variant with type String.
 /// To solve it, we use String type with custom name for shared variant.
-const DataTypePtr & ColumnDynamic::getSharedVariantDataType()
+DataTypePtr ColumnDynamic::getSharedVariantDataType()
 {
-    static thread_local DataTypePtr type = DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
-    return type;
+    return DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
 }
 
 ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_), global_max_dynamic_types(max_dynamic_types)
@@ -267,6 +266,7 @@ void ColumnDynamic::insert(const Field & x)
             encodeDataType(field_data_type, value_buf);
             getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
         }
+        chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
         variant_col.getOffsets().push_back(shared_variant.size() - 1);
@@ -299,7 +299,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
         return;
     }
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -314,7 +314,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
         return variant_col.getValueNameAndType(n);
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -722,6 +722,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
         encodeDataType(type, value_buf);
         serialization->serializeBinary(src, n, value_buf, getFormatSettings());
     }
+    chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
 
@@ -1377,7 +1378,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column during merges.
+    /// to extend selected variants on inerts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 

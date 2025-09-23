@@ -60,7 +60,6 @@ public:
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
-        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -145,7 +144,6 @@ protected:
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
-    const bool use_persistent_processing_nodes;
 
     const std::string processing_node_path;
     const std::string processed_node_path;

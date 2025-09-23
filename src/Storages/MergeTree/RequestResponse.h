@@ -65,7 +65,7 @@ struct ParallelReadRequest
 
     void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe() const;
-    static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_protocol_version);
+    static ParallelReadRequest deserialize(ReadBuffer & in);
     void merge(ParallelReadRequest & other);
 };
 
@@ -80,7 +80,7 @@ struct ParallelReadResponse
 
     void serialize(WriteBuffer & out, UInt64 replica_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 replica_protocol_version);
+    void deserialize(ReadBuffer & in);
 };
 
 

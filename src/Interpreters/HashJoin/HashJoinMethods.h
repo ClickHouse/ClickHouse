@@ -21,11 +21,14 @@ struct Inserter
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted() || join.anyTakeLastRow())
+        {
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns, i);
-        return emplace_result.isInserted() || join.anyTakeLastRow();
+            return true;
+        }
+        return false;
     }
 
-    static ALWAYS_INLINE bool
+    static ALWAYS_INLINE void
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Columns * stored_columns, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
@@ -37,10 +40,9 @@ struct Inserter
             /// The first element of the list is stored in the value of the hash table, the rest in the pool.
             emplace_result.getMapped().insert({stored_columns, i}, pool);
         }
-        return emplace_result.isInserted();
     }
 
-    static ALWAYS_INLINE bool insertAsof(
+    static ALWAYS_INLINE void insertAsof(
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
@@ -56,7 +58,6 @@ struct Inserter
         if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
         (*time_series_map)->insert(asof_column, stored_columns, i);
-        return emplace_result.isInserted();
     }
 };
 
@@ -76,21 +77,20 @@ public:
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
+        bool & is_inserted);
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 
-    static JoinResultPtr joinBlockImpl(
+    static Block joinBlockImpl(
         const HashJoin & join,
-        Block block,
+        Block & block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
 
-    static JoinResultPtr joinBlockImpl(
+    static ScatteredBlock joinBlockImpl(
         const HashJoin & join,
-        ScatteredBlock block,
+        ScatteredBlock & block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
@@ -110,31 +110,27 @@ private:
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
+        bool & is_inserted);
 
     template <typename AddedColumns>
-    static void switchJoinRightColumns(
+    static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
         AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
         HashJoin::Type type,
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static void joinRightColumnsSwitchNullability(
+    static size_t joinRightColumnsSwitchNullability(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
-    static void joinRightColumnsSwitchMultipleDisjuncts(
+    static size_t joinRightColumnsSwitchMultipleDisjuncts(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
         JoinStuff::JoinUsedFlags & used_flags);
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
@@ -147,7 +143,7 @@ private:
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
         typename Selector>
-    static void joinRightColumns(
+    static size_t joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -161,7 +157,7 @@ private:
         bool check_null_map,
         typename AddedColumns,
         typename Selector>
-    static void joinRightColumnsSwitchJoinMaskKind(
+    static size_t joinRightColumnsSwitchJoinMaskKind(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -176,7 +172,7 @@ private:
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
         typename Selector>
-    static void joinRightColumns(
+    static size_t joinRightColumns(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
@@ -184,7 +180,7 @@ private:
         const Selector & selector);
 
     template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static void joinRightColumnsSwitchJoinMaskKind(
+    static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
@@ -193,19 +189,20 @@ private:
 
     template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
+        size_t left_start_row,
         const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns>
-    static void joinRightColumnsWithAddtitionalFilter(
+    template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
+    static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
-        const ScatteredBlock::Selector & selector,
+        const Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
 
@@ -234,7 +231,6 @@ private:
 
 /// Instantiate template class ahead in different .cpp files to avoid `too large translation unit`.
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::RightAny, HashJoin::MapsOne>;
-extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Any, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Any, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::All, HashJoin::MapsAll>;
@@ -252,7 +248,6 @@ extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, Has
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Asof, HashJoin::MapsAsof>;
 
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsOne>;
-extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::All, HashJoin::MapsAll>;

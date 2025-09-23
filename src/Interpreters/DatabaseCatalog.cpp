@@ -32,7 +32,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageMemory.h>
 
 #include <algorithm>
@@ -45,8 +44,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
-#include <config.h>
-#include <base/sleep.h>
+#include "config.h"
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -82,20 +80,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int UNSUPPORTED_METHOD;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -367,33 +358,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-DatabaseAndTable DatabaseCatalog::getByUUID(const UUID & uuid) const
-{
-    auto res = tryGetByUUID(uuid);
-    if (!res.first || !res.second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", toString(uuid));
-    return res;
-}
-
-DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
-    const StorageID & table_id,
-    ContextPtr context_,
-    std::optional<Exception> * exception) const
-{
-    auto database_and_table = getTableImpl(table_id, context_, exception);
-    auto & table = database_and_table.second;
-    if (table)
-    {
-        if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        {
-            if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ORIGINAL_TABLE))
-                database_and_table.second = alias_storage->getReferenceTable(context_);
-            else if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Storage Alias is unsupported in this query");
-        }
-    }
-    return database_and_table;
-}
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
@@ -1070,7 +1034,7 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -1078,13 +1042,13 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr).second;
+    return getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1092,7 +1056,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr);
+    return getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -1514,29 +1478,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    /// Check if we are interested in a particular disk
-    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
-    {
-        bool is_disk_eligible = !disk->isReadOnly();
-
-        /// Disk is not actually used by MergeTree table
-        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-        {
-            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
-        }
-
-        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
-        return is_disk_eligible;
-    };
-
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -2087,31 +2033,12 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
-        static constexpr int MAX_TRY = 10;
-        static constexpr UInt64 INTERVAL_MS = 100;
-        bool acquired_db_mutex_lock = false;
-        for (int i = 0; i < MAX_TRY; ++i)
-        {
-            acquired_db_mutex_lock = db_mutex.try_lock_shared();
-            if (acquired_db_mutex_lock)
-                break;
 
-            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-            {
-                releaseTableLock();
-                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
-            }
-
-            sleepForMilliseconds(INTERVAL_MS);
-        }
-        if (!acquired_db_mutex_lock)
+        bool locked_database_for_read = db_mutex.try_lock_shared();
+        if (!locked_database_for_read)
         {
             releaseTableLock();
-            throw Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Unable to acquire the database lock of {} after {} ms",
-                database_name,
-                MAX_TRY * INTERVAL_MS);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }

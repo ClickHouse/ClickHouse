@@ -20,7 +20,7 @@ Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 Time64(precision)
 ```
 
-Internally, Time64 stores data as an Int64 number of ticks since the start of the day (000:00:00.000000000). The tick resolution is determined by the precision parameter. **Note that specifying a timezone during Time64 type initialization is not allowed and will result in an error**.
+Internally, Time64 stores data as an Int64 number of ticks since the start of the day (000:00:00.000000000). The tick resolution is determined by the precision parameter. Optionally, a time zone can be specified at the column level, which affects how time values are interpreted and displayed in text format.
 
 Unlike DateTime64, Time64 does not store a date component, meaning that it only represents time. See details in [Time](../../sql-reference/data-types/time.md).
 
@@ -96,6 +96,7 @@ SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
 1. │  19:14:16.000 │ Time64(3) │
    └───────────────┴───────────┘
 ```
+
 
 **See Also**
 
