@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {

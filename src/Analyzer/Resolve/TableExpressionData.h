@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Analyzer/ColumnNode.h>
 #include <IO/Operators.h>
+#include <Analyzer/ColumnNode.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -12,11 +12,20 @@ struct StringTransparentHash
     using is_transparent = void;
     using hash = std::hash<std::string_view>;
 
-    [[maybe_unused]] size_t operator()(const char * data) const { return hash()(data); }
+    [[maybe_unused]] size_t operator()(const char * data) const
+    {
+        return hash()(data);
+    }
 
-    size_t operator()(std::string_view data) const { return hash()(data); }
+    size_t operator()(std::string_view data) const
+    {
+        return hash()(data);
+    }
 
-    size_t operator()(const std::string & data) const { return hash()(data); }
+    size_t operator()(const std::string & data) const
+    {
+        return hash()(data);
+    }
 };
 
 using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr, StringTransparentHash, std::equal_to<>>;
