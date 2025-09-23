@@ -38,6 +38,8 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 
+using ValueSizeMap = std::map<std::string, double>;
+
 class Field;
 
 struct FormatSettings;
@@ -392,9 +394,6 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings;
 
-        /// If not zero, may be used to avoid reallocations while reading column of String type.
-        double avg_value_size_hint = 0;
-
         bool object_and_dynamic_read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
@@ -419,6 +418,12 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
+
+        /// Callback used to get avg_value_size_hint for each substream.
+        std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;
+
+        /// Callback used to update avg_value_size_hint for each substream.
+        std::function<void(const SubstreamPath &, const IColumn &)> update_avg_value_size_hint_callback;
 
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.

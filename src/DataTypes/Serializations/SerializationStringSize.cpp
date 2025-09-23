@@ -90,10 +90,15 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
             size_state->string_column = ColumnString::create();
 
         size_t prev_size = size_state->string_column->size();
+        double avg_value_size_hint = 0.0;
+        if (settings.get_avg_value_size_hint_callback)
+            avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
         serialization_string.deserializeBinaryBulk(
-            *size_state->string_column->assumeMutable(), *stream, rows_offset, limit, settings.avg_value_size_hint);
+            *size_state->string_column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
         num_read_rows = size_state->string_column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, size_state->string_column, num_read_rows);
+        if (settings.update_avg_value_size_hint_callback)
+            settings.update_avg_value_size_hint_callback(settings.path, *size_state->string_column);
     }
     else
     {

@@ -171,9 +171,14 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     {
         size_t prev_size = column->size();
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
+        double avg_value_size_hint = 0.0;
+        if (settings.get_avg_value_size_hint_callback)
+            avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
         column = std::move(mutable_column);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        if (settings.update_avg_value_size_hint_callback)
+            settings.update_avg_value_size_hint_callback(settings.path, *column);
     }
 
     settings.path.pop_back();

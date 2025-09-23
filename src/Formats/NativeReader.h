@@ -49,8 +49,7 @@ public:
         ColumnPtr & column,
         ReadBuffer & istr,
         const FormatSettings * format_settings,
-        size_t rows,
-        double avg_value_size_hint);
+        size_t rows);
 
 private:
     ReadBuffer & istr;
@@ -66,10 +65,6 @@ private:
 
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.
     CompressedReadBufferFromFile * istr_concrete = nullptr;
-
-    PODArray<double> avg_value_size_hints;
-
-    void updateAvgValueSizeHints(const Block & block);
 };
 
 }
