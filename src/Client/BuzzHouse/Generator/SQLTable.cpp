@@ -41,6 +41,12 @@ void collectColumnPaths(
         paths.push_back(next);
     }
     collectNullable(tp, flags, next, paths);
+    if (tp && tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+    {
+        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
+
+        tp = lc->subtype;
+    }
     if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
         /// JSON type can be inside nullable
