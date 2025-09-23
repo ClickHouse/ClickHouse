@@ -34,6 +34,7 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -803,8 +804,14 @@ void TCPHandler::runImpl()
             {
                 query_state->io.onFinish();
 
-                sendProgress(query_state.value());
-                sendSelectProfileEvents(query_state.value());
+                // Send final progress if query had completed pipeline which was executed separately
+                // in a such case those completed pipeline uses cancellation callback for sending intermediate progress.
+                if (auto * create_query = query_state->parsed_query->as<ASTCreateQuery>();
+                    create_query && create_query->isCreateQueryWithImmediateInsertSelect())
+                {
+                    sendProgress(query_state.value());
+                    sendSelectProfileEvents(query_state.value());
+                }
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
