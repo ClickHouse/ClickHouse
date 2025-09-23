@@ -202,7 +202,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            StorageObjectStorageConfigurationPtr configuration;
+            StorageObjectStorageConfigurationPtr configuration = nullptr;
             const auto context = args.getLocalContext();
             if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
             {
@@ -210,30 +210,41 @@ void registerStorageIceberg(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3
-                case ObjectStorageType::S3:
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-                    break;
+                    case ObjectStorageType::S3:
+                        configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                        break;
 #endif
 #if USE_AZURE_BLOB_STORAGE
-                case ObjectStorageType::Azure:
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-                    break;
+                    case ObjectStorageType::Azure:
+                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                        break;
 #endif
-                case ObjectStorageType::Local:
-                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                    break;
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergDefinition::storage_engine_name, disk->getObjectStorage()->getType());
+                    case ObjectStorageType::Local:
+                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported disk type for {}: {}",
+                            IcebergDefinition::storage_engine_name,
+                            disk->getObjectStorage()->getType());
                 }
             }
             else
+#if USE_AWS_S3
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+#endif
+            if (configuration == nullptr)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
+            }
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
+            /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
