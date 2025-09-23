@@ -200,8 +200,6 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     configuration->updateStorageMetadataIfNeeded(query_context, *this);
 }
 
-
-
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
