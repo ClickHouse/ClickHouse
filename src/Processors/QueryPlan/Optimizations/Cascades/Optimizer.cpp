@@ -368,7 +368,11 @@ void CascadesOptimizer::optimize()
 {
     OptimizerStatisticsPtr statistics;
     /// FIXME: statistics stub for testing
-    if (CurrentThread::get().getQueryContext()->getCurrentDatabase().starts_with("tpch100"))
+    auto query_context = CurrentThread::get().getQueryContext();
+    constexpr auto stats_hint_param_name = "_internal_join_table_stat_hints";
+    if (query_context->getQueryParameters().contains(stats_hint_param_name))
+        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(stats_hint_param_name));
+    else if (query_context->getCurrentDatabase().starts_with("tpch100"))
         statistics = createTPCH100Statistics();
     else
         statistics = createEmptyStatistics();
