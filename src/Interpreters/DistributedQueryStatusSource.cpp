@@ -225,8 +225,8 @@ Chunk DistributedQueryStatusSource::generate()
                         settings[Setting::keeper_fault_injection_probability],
                         settings[Setting::keeper_fault_injection_seed],
                         context->getZooKeeper(),
-                        "DDLWorker",
-                        nullptr);
+                        "DistributedQueryStatusSource",
+                        log);
 
                     Strings paths = getNodesToWait();
                     auto res = zookeeper->tryGetChildren(paths);

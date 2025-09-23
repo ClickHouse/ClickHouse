@@ -319,8 +319,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
         if (stop_flag)
-            return;
+        {
+            holder.retries_ctl.stopRetries();
+            throw zkutil::KeeperException(Coordination::Error::ZCONNECTIONLOSS, "Stop flag is set, exiting DDLWorker::scheduleTasks");
+        }
         with_retries.renewZooKeeper(holder);
+        reinitialized |= holder.retries_ctl.isRetry();
 
         /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
         /// We have some unfinished tasks.
