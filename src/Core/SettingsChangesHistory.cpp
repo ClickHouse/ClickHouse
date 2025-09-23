@@ -887,12 +887,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-
+            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
-            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"replicated_deduplication_window", 1000, 10000, "increase default value"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
