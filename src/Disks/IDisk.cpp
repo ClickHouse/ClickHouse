@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
