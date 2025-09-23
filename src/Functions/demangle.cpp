@@ -78,15 +78,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAt(i);
-            auto demangled = tryDemangle(source.data);
+            String source = column_concrete->getDataAt(i).toString();
+            auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
                 result_column->insertData(demangled.get(), strlen(demangled.get()));
             }
             else
             {
-                result_column->insertData(source.data, source.size);
+                result_column->insertData(source.data(), source.size());
             }
         }
 
@@ -98,7 +98,90 @@ public:
 
 REGISTER_FUNCTION(Demangle)
 {
-    factory.registerFunction<FunctionDemangle>();
+    FunctionDocumentation::Description description = R"(
+Converts a symbol to a C++ function name.
+The symbol is usually returned by function `addressToSymbol`.
+    )";
+    FunctionDocumentation::Syntax syntax = "demangle(symbol)";
+    FunctionDocumentation::Arguments arguments = {
+        {"symbol", "Symbol from an object file.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the C++ function, or an empty string if the symbol is not valid.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Selecting the first string from the `trace_log` system table",
+        R"(
+SELECT * FROM system.trace_log LIMIT 1 \G;
+        )",
+        R"(
+-- The `trace` field contains the stack trace at the moment of sampling.
+Row 1:
+──────
+event_date:    2019-11-20
+event_time:    2019-11-20 16:57:59
+revision:      54429
+timer_type:    Real
+thread_number: 48
+query_id:      724028bf-f550-45aa-910d-2af6212b94ac
+trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+        )"
+    },
+    {
+        "Getting a function name for a single address",
+        R"(
+SET allow_introspection_functions=1;
+SELECT demangle(addressToSymbol(94138803686098)) \G;
+        )",
+        R"(
+Row 1:
+──────
+demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
+        )"
+    },
+    {
+        "Applying the function to the whole stack trace",
+        R"(
+SET allow_introspection_functions=1;
+
+-- The arrayMap function allows to process each individual element of the trace array by the demangle function.
+-- The result of this processing is shown in the trace_functions column of output.
+
+SELECT
+    arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
+FROM system.trace_log
+LIMIT 1
+\G
+        )",
+        R"(
+Row 1:
+──────
+trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
+DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const
+DB::Aggregator::executeOnBlock(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn> > >, unsigned long, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
+DB::Aggregator::executeOnBlock(DB::Block const&, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
+DB::Aggregator::execute(std::shared_ptr<DB::IBlockInputStream> const&, DB::AggregatedDataVariants&)
+DB::AggregatingBlockInputStream::readImpl()
+DB::IBlockInputStream::read()
+DB::ExpressionBlockInputStream::readImpl()
+DB::IBlockInputStream::read()
+DB::ExpressionBlockInputStream::readImpl()
+DB::IBlockInputStream::read()
+DB::AsynchronousBlockInputStream::calculate()
+std::_Function_handler<void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}>::_M_invoke(std::_Any_data const&)
+ThreadPoolImpl<ThreadFromGlobalPool>::worker(std::_List_iterator<ThreadFromGlobalPool>)
+ThreadFromGlobalPool::ThreadFromGlobalPool<ThreadPoolImpl<ThreadFromGlobalPool>::scheduleImpl<void>(std::function<void ()>, int, std::optional<unsigned long>)::{lambda()#3}>(ThreadPoolImpl<ThreadFromGlobalPool>::scheduleImpl<void>(std::function<void ()>, int, std::optional<unsigned long>)::{lambda()#3}&&)::{lambda()#1}::operator()() const
+ThreadPoolImpl<std::thread>::worker(std::_List_iterator<std::thread>)
+execute_native_thread_routine
+start_thread
+clone
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDemangle>(documentation);
 }
 
 }

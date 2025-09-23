@@ -30,10 +30,6 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
 /// Insert data from flattened Dynamic column representation to a usual Dynamic column
 void unflattenDynamicColumn(FlattenedDynamicColumn && flattened_column, ColumnDynamic & dynamic_column);
 
-/// Type of indexes for flattened Dynamic column is dynamic and can be UInt8/UInt16/UInt32/UInt64
-/// depending on the number of unique indexes.
-DataTypePtr getIndexesTypeForFlattenedDynamicColumn(size_t max_index);
-
 /// Iterate over indexes and calculate the total number of occurrences for each index.
 std::vector<size_t> getLimitsForFlattenedDynamicColumn(const IColumn & indexes_column, size_t num_types);
 

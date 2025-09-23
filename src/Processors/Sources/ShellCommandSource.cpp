@@ -2,6 +2,7 @@
 
 #include <poll.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -373,12 +374,16 @@ namespace
             context_for_reading->setSetting("input_format_custom_detect_header", false);
             context = context_for_reading;
 
+            auto thread_group = CurrentThread::getGroup();
+
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
+                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
+
                         try
                         {
                             task();
@@ -387,11 +392,15 @@ namespace
                         {
                             std::lock_guard lock(send_data_lock);
                             exception_during_send_data = std::current_exception();
-
-                            /// task should be reset inside catch block or else it breaks d'tor
-                            /// invariants such as in ~WriteBuffer.
-                            task = {};
                         }
+
+                        // In case of exception, the task should be reset in thread
+                        // worker function or else it breaks d'tor invariants such
+                        // as in ~WriteBuffer.
+                        //
+                        // For completed execution, the task reset allows to account
+                        // memory deallocation in sending data thread group.
+                        task = {};
                     });
                 }
                 size_t max_block_size = configuration.max_block_size;
@@ -557,7 +566,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(SharedHeader header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
+        SendingChunkHeaderTransform(SharedHeader header, WriteBuffer & buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -569,12 +578,12 @@ namespace
 
         void transform(Chunk & chunk) override
         {
-            writeText(chunk.getNumRows(), *buffer);
-            writeChar('\n', *buffer);
+            writeText(chunk.getNumRows(), buffer);
+            writeChar('\n', buffer);
         }
 
     private:
-        std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer;
+        WriteBuffer & buffer;
     };
 
 }
@@ -668,17 +677,19 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         input_pipes[i].resize(1);
 
+        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(input_pipes[i].getHeader()));
+        out->setAutoFlush();
+
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), timeout_write_buffer);
+            /// We cannot use timeout_write_buffer directly since the output format may wrap the buffer, so we need to use a wrapper
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), *out->getWriteBufferPtr());
             input_pipes[i].addTransform(std::move(transform));
         }
 
         auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
         pipeline->setNumThreads(num_streams);
-        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
-        out->setAutoFlush();
         pipeline->complete(std::move(out));
 
         ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()

@@ -25,11 +25,14 @@ public:
     /// Execute operation and something to metadata transaction
     virtual void execute(MetadataTransactionPtr transaction) = 0;
     /// Revert operation if possible
+    /// It is called if something went wrong before commit of metadata transaction
+    /// It is called in reverse order of execution of operations for all operations
+    /// even if they were not executed at all
     virtual void undo() = 0;
     /// Action to execute after metadata transaction successfully committed.
     /// Useful when it's impossible to revert operation
     /// like removal of blobs. Such implementation can lead to garbage.
-    virtual void finalize() = 0;
+    virtual void finalize(StoredObjects & to_remove) = 0;
     virtual ~IDiskObjectStorageOperation() = default;
 
     virtual std::string getInfoForLog() const = 0;
@@ -51,10 +54,9 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 ///
 /// If something wrong happen on step 1 or 2 reverts all applied operations.
 /// If finalize failed -- nothing is reverted, garbage is left in blob storage.
-struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
+struct DiskObjectStorageTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
-    DiskObjectStorage & disk;
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
 
@@ -63,19 +65,20 @@ protected:
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         MetadataTransactionPtr metadata_transaction_);
 
+    bool is_committed = false;
+
 public:
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_);
 
-    void commit() override;
-    void undo() override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
+    void commit() override { commit(NoCommitOptions{}); }
+    void undo() noexcept override;
 
     void createDirectory(const std::string & path) override;
 
@@ -99,12 +102,16 @@ public:
     /// Now it's almost noop because metadata added to transaction in finalize method
     /// of write buffer. Autocommit means that transaction will be immediately committed
     /// after returned buffer will be finalized.
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) override;
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
@@ -124,14 +131,14 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-    bool isTransactional() const override;
-    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
+private:
+    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
+        bool autocommit,
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings);
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
@@ -140,7 +147,6 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
     IMetadataStorage & destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         IObjectStorage & destination_object_storage,

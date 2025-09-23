@@ -24,7 +24,7 @@ MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer
 
 MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction()
 {
-    return std::make_shared<MetadataStorageFromStaticFilesWebServerTransaction>(*this);
+    throwNotImplemented();
 }
 
 const std::string & MetadataStorageFromStaticFilesWebServer::getPath() const
@@ -138,32 +138,4 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }
 
-const IMetadataStorage & MetadataStorageFromStaticFilesWebServerTransaction::getStorageForNonTransactionalReads() const
-{
-    return metadata_storage;
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectory(const std::string &)
-{
-    /// Noop.
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursive(const std::string &)
-{
-    /// Noop.
-}
-
-std::optional<StoredObjects>
-MetadataStorageFromStaticFilesWebServerTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
-    return std::nullopt;
-}
-
-std::vector<std::string> MetadataStorageFromStaticFilesWebServerTransaction::listUncommittedDirectory(const std::string & path) const
-{
-    chassert(!metadata_storage.isTransactional());
-    return metadata_storage.listDirectory(path);
-}
 }

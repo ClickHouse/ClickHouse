@@ -4,6 +4,8 @@ sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
 title: 'EXCEPT clause'
 keywords: ['EXCEPT', 'clause']
+title: 'EXCEPT Clause'
+doc_type: 'reference'
 ---
 
 # EXCEPT clause
@@ -51,7 +53,7 @@ SELECT number
 FROM numbers(1, 10)
 EXCEPT
 SELECT number
-FROM numbers(3, 8)
+FROM numbers(3, 6)
 ```
 
 ```response title="Response"

@@ -3,6 +3,7 @@ description: 'Documentation for NumericIndexedVector and Its Functions'
 sidebar_label: 'NumericIndexedVector'
 slug: /sql-reference/functions/numeric-indexed-vector-functions
 title: 'NumericIndexedVector Functions'
+doc_type: 'reference'
 ---
 
 # NumericIndexedVector
@@ -22,9 +23,13 @@ A vector contains indices and their corresponding values. The following are some
 - The Bit-Sliced Index mechanism converts value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits used for the fractional part, default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
 - There are three cases for indices: non-zero value, zero value and non-existent. In NumericIndexedVector, only non-zero value and zero value will be stored. In addition, in pointwise operations between two NumericIndexedVectors, the value of non-existent index will be treated as 0. In the division scenario, the result is zero when the divisor is zero.
 
-# Create a numericIndexedVector object
+## Create a numericIndexedVector object {#create-numeric-indexed-vector-object}
 
-There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`. Of course, you can continue to add suffix `-if` to accept an additional condition. The aggregate function will only process the rows that trigger the condition. The other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
+There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`.
+You can add suffix `-if` to accept an additional condition.
+The aggregate function will only process the rows that trigger the condition.
+The other is to build it from a map using `numericIndexedVectorBuild`.
+The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
 
 ## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
@@ -113,7 +118,7 @@ Result
 └─────┴────────────────────────────────────────────────────────────┘
 ```
 
-# numericIndexedVectorToMap
+## numericIndexedVectorToMap
 
 Converts a NumericIndexedVector to a map.
 
@@ -141,7 +146,7 @@ Result
 └──────────────────┘
 ```
 
-# numericIndexedVectorCardinality
+## numericIndexedVectorCardinality
 
 Returns the cardinality (number of unique indexes) of the NumericIndexedVector.
 
@@ -169,7 +174,7 @@ Result
 └─────┘
 ```
 
-# numericIndexedVectorAllValueSum
+## numericIndexedVectorAllValueSum
 
 Returns sum of all the values in NumericIndexedVector.
 
@@ -197,8 +202,7 @@ Result
 └─────┘
 ```
 
-
-# numericIndexedVectorGetValue
+## numericIndexedVectorGetValue
 
 Retrieves the value corresponding to a specified index.
 
@@ -227,7 +231,7 @@ Result
 └─────┘
 ```
 
-# numericIndexedVectorShortDebugString
+## numericIndexedVectorShortDebugString
 
 Returns internal information of the NumericIndexedVector in a json format. This function is primarily used for debugging purposes.
 
@@ -271,7 +275,7 @@ The following information is valid in BSI vector type.
     - `bitmap_info`: Information of each bitmap
         - `cardinality`: Number of indexes in each bitmap.
 
-# numericIndexedVectorPointwiseAdd
+## numericIndexedVectorPointwiseAdd
 
 Performs pointwise addition between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -305,7 +309,7 @@ Result
 └───────────────────────┴──────────────────┘
 ```
 
-# numericIndexedVectorPointwiseSubtract
+## numericIndexedVectorPointwiseSubtract
 
 Performs pointwise subtraction between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -339,7 +343,7 @@ Result
 └────────────────────────┴─────────────────┘
 ```
 
-# numericIndexedVectorPointwiseMultiply
+## numericIndexedVectorPointwiseMultiply
 
 Performs pointwise multiplication between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.
 
@@ -373,7 +377,7 @@ Result
 └───────────────┴──────────────────┘
 ```
 
-# numericIndexedVectorPointwiseDivide
+## numericIndexedVectorPointwiseDivide
 
 Performs pointwise division between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector. The result is zero when the divisor is zero.
 
@@ -407,7 +411,7 @@ Result
 └─────────────┴─────────────────┘
 ```
 
-# numericIndexedVectorPointwiseEqual
+## numericIndexedVectorPointwiseEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding values set to 1.
 
@@ -441,7 +445,7 @@ Result
 └───────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseNotEqual
+## numericIndexedVectorPointwiseNotEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant.  The result is a NumericIndexedVector containing the indices where the values are not equal, with all corresponding values set to 1.
 
@@ -475,7 +479,7 @@ Result
 └───────────────┴───────────┘
 ```
 
-# numericIndexedVectorPointwiseLess
+## numericIndexedVectorPointwiseLess
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than the second vector’s value, with all corresponding values set to 1.
 
@@ -509,7 +513,7 @@ Result
 └───────────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseLessEqual
+## numericIndexedVectorPointwiseLessEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than or equal to the second vector’s value, with all corresponding values set to 1.
 
@@ -543,7 +547,7 @@ Result
 └───────────────┴───────────┘
 ```
 
-# numericIndexedVectorPointwiseGreater
+## numericIndexedVectorPointwiseGreater
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than the second vector’s value, with all corresponding values set to 1.
 
@@ -577,7 +581,7 @@ Result
 └───────────┴───────┘
 ```
 
-# numericIndexedVectorPointwiseGreaterEqual
+## numericIndexedVectorPointwiseGreaterEqual
 
 Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than or equal to the second vector’s value, with all corresponding values set to 1.
 

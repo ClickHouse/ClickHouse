@@ -5,6 +5,7 @@ sidebar_label: 'HTTP Interface'
 sidebar_position: 15
 slug: /interfaces/http
 title: 'HTTP Interface'
+doc_type: 'reference'
 ---
 
 import PlayUI from '@site/static/images/play.png';
@@ -42,7 +43,7 @@ Also see: [HTTP response codes caveats](#http_response_codes_caveats).
 ClickHouse includes a web user interface, which can be accessed from the following address: 
 
 ```text
-http://localhost:8123/play`
+http://localhost:8123/play
 ```
 
 The web UI supports displaying progress during query runtime, query cancellation, and result streaming.
@@ -656,33 +657,46 @@ Configuration options for `http_handlers` work as follows.
 - `method`
 - `headers`
 - `url`
+- `full_url`
 - `handler`
 
 Each of these are discussed below:
 
-  - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
+- `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the   
   configuration file, it does not match the method portion of the HTTP request.
 
-  - `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular 
-  expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP 
-  request.
+- `url` is responsible for matching the URL part (path and query string) of the HTTP request.
+  If the `url` prefixed with `regex:` it expects [RE2](https://github.com/google/re2)'s regular expressions.
+  It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
-  - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
+- `full_url` same as `url`, but, includes complete URL, i.e. `schema://host:port/path?query_string`.
+  Note, ClickHouse does not support "virtual hosts", so the `host` is an IP address (and not the value of `Host` header).
+
+- `empty_query_string` - ensures that there is no query string (`?query_string`) in the request
+
+- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
   configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-  - `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, 
-  `response_content`, `query`, `query_param_name`. `type` currently supports three types: [`predefined_query_handler`](#predefined_query_handler), 
-  [`dynamic_query_handler`](#dynamic_query_handler), [`static`](#static).
+- `handler` contains the main processing part.
 
-    - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
-    - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
+  It can have the following `type`:
+  - [`predefined_query_handler`](#predefined_query_handler)
+  - [`dynamic_query_handler`](#dynamic_query_handler)
+  - [`static`](#static)
+  - [`redirect`](#redirect)
+
+  And the following parameters:
+  - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+  - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
        HTTP request parameters.
-    - `status` — use with `static` type, response status code.
-    - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
-    - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
+  - `status` — use with `static` type, response status code.
+  - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+  - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
+  - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
     from the file or configuration sends to client.
+  - `user` - user to execute the query from (default user is `default`).
+    **Note**, you do not need to specify password for this user.
 
 The configuration methods for different `type`s are discussed next.
 
@@ -951,6 +965,27 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
+```
+
+### redirect {#redirect}
+
+`redirect` will do a `302` redirect to `location`
+
+For instance this is how you can automatically add set user to `play` for ClickHouse play:
+
+```xml
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/play</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play?user=play</location>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
 ```
 
 ## HTTP response headers {#http-response-headers}

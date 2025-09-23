@@ -8,7 +8,7 @@ builds_for_release_branch = [
     job.unset_provides("unittest")
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
-]
+] + JobConfigs.release_build_jobs
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -23,7 +23,7 @@ workflow = Workflow.Config(
         ],
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
+        *JobConfigs.install_check_master_jobs,
         *[
             job
             for job in JobConfigs.integration_test_asan_master_jobs

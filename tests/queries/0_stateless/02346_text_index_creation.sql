@@ -119,34 +119,14 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test max_rows_per_postings_list argument.';
+SELECT 'Test bloom_filter_false_positive_rate argument.';
+
+SELECT '-- bloom_filter_false_positive_rate must be a double.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 4, max_rows_per_postings_list = 9999)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- max_rows_per_posting_list is set to unlimited rows.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 0)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- max_rows_per_posting_list should be at least 8192.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8191)
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -154,7 +134,109 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8192)
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.5)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 1.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT 'Test dictionary_block_size argument.';
+
+SELECT '-- dictionary_block_size must be an integer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- dictionary_block_size must be bigger than 0.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = -1)
+)
+ENGINE = MergeTree
+ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT 'Test max_cardinality_for_embedded_postings argument.';
+
+SELECT '-- max_cardinality_for_embedded_postings must be an integer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -165,16 +247,7 @@ SELECT 'Parameters are shuffled.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, ngram_size = 4, tokenizer = 'ngram')
+    INDEX idx str TYPE text(ngram_size = 4, tokenizer = 'ngram')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -214,22 +287,6 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(max_rows_per_postings_list)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(max_rows_per_postings_list = '9999')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
 SELECT 'Same argument appears >1 times.';
 
 CREATE TABLE tab
@@ -251,7 +308,17 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 9999, max_rows_per_postings_list = 8888)
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.5, bloom_filter_false_positive_rate = 0.5)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT 'Non-existing argument.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', non_existing_argument = 1024)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }

@@ -133,7 +133,7 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
+    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -217,6 +217,9 @@ public:
     UInt128 getPartBlockIDHash() const;
     String getNewPartBlockID(std::string_view token) const;
 
+    /// Returns true if it's a zero level part.
+    bool isZeroLevel() const { return info.min_block == info.max_block; }
+
     void setName(const String & new_name);
 
     const MergeTreeData & storage;
@@ -244,6 +247,7 @@ public:
     /// If true, the destructor will delete the directory with the part.
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
+    std::atomic<bool> is_removed = false;
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
@@ -296,7 +300,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    ALWAYS_INLINE MergeTreeDataPartState getState() const;
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state.load(std::memory_order_relaxed); }
 
     static std::string_view stateString(MergeTreeDataPartState state);
     std::string_view stateString() const { return stateString(state.load(std::memory_order_relaxed)); }
@@ -440,7 +444,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk() const;
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -523,6 +527,9 @@ public:
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
     static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+
+    /// File that contains list of substreams in order of serialization/deserialization for each column.
+    static constexpr auto COLUMNS_SUBSTREAMS_FILE_NAME = "columns_substreams.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
@@ -620,6 +627,8 @@ public:
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
+    void removeIfNeeded();
+
 protected:
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -651,7 +660,6 @@ protected:
     NamesAndTypesList columns;
 
     /// List of substreams in order of serialization/deserialization for each column.
-    /// Used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
     const Type part_type;
@@ -662,14 +670,12 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded();
-
     /// Set of source parts for patch parts. Empty for regular parts.
     SourcePartsSetForPatch source_parts_set;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -716,7 +722,7 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
-    /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
+    /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
 
     /// Loads marks index granularity into memory
@@ -742,7 +748,7 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsSizesOnDisk() const;
 
     void calculateSecondaryIndicesSizesOnDisk() const;
 
@@ -764,9 +770,6 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
-
-    void incrementTypeMetric(MergeTreeDataPartType type) const;
-    void decrementTypeMetric(MergeTreeDataPartType type) const;
 
     void checkConsistencyBase() const;
 

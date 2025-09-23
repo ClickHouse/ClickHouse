@@ -8,6 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import minio_secret_key
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -76,6 +77,15 @@ threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
 no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 
+rocksdb_properties = {
+    "rocksdb": {
+        "options": {
+            "max_background_jobs": threshold_generator(0.2, 0.2, 0, 100),
+        }
+    }
+}
+
+
 possible_properties = {
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
@@ -119,8 +129,6 @@ possible_properties = {
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
-    "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "cgroup_memory_watcher_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
@@ -194,6 +202,7 @@ possible_properties = {
     # "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
+    "max_named_collection_num_to_throw": threshold_generator(0.2, 0.2, 0, 1000),
     # "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000), not worth to mess around
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_size": threshold_generator(0.2, 0.2, 700, 10000),
@@ -221,7 +230,7 @@ possible_properties = {
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 1, 1000),
     "prefetch_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "prefixes_deserialization_thread_pool_thread_pool_queue_size": threshold_generator(
         0.2, 0.2, 0, 1000
@@ -277,6 +286,7 @@ possible_properties = {
             ]
         ),
     },
+    **rocksdb_properties,
 }
 
 distributed_properties = {
@@ -289,7 +299,7 @@ distributed_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024, 31),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
@@ -310,14 +320,13 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
-        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
     },
     "azure": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -331,7 +340,6 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
@@ -594,23 +602,23 @@ def add_single_disk(
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://minio1:9001/root/data{i}"
+            endpoint_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data{i}"
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = "ClickHouse_Minio_P@ssw0rd"
+            secret_access_key_xml.text = minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = (
-                f"http://azurite1:{cluster.azurite_port}/devstoreaccount1/data{i}"
-            )
+            endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
             account_name_xml = ET.SubElement(next_disk, "account_name")
-            account_name_xml.text = "devstoreaccount1"
+            account_name_xml.text = cluster.azurite_account
             account_key_xml = ET.SubElement(next_disk, "account_key")
-            account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            account_key_xml.text = cluster.azurite_key
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://nginx:80/data{i}/"
+            endpoint_xml.text = (
+                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+            )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
@@ -895,6 +903,61 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         apply_properties_recursively(property_element, shared_settings, 0)
 
 
+class LogTablePropertiesGroup(PropertiesGroup):
+
+    def __init__(self, _log_table: str):
+        super().__init__()
+        self.log_table: str = _log_table
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        database_xml = ET.SubElement(property_element, "database")
+        database_xml.text = "system"
+        table_xml = ET.SubElement(property_element, "table")
+        table_xml.text = self.log_table
+
+        log_table_properties = {
+            "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
+            "flush_on_crash": true_false_lambda,
+            "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+        }
+        # Can't use this without the engine parameter?
+        # number_policies = 0
+        # storage_configuration_xml = top_root.find("storage_configuration")
+        # if storage_configuration_xml is not None:
+        #    policies_xml = storage_configuration_xml.find("policies")
+        #    if policies_xml is not None:
+        #        number_policies = len([c for c in policies_xml])
+        # if number_policies > 0 and random.randint(1, 100) <= 75:
+        #    policy_choices = [f"policy{i}" for i in range(0, number_policies)]
+        #    log_table_properties["storage_policy"] = lambda: random.choice(
+        #        policy_choices
+        #    )
+        apply_properties_recursively(property_element, log_table_properties, 0)
+        # max_size_rows cannot be smaller than reserved_size_rows
+        max_size_rows_xml = property_element.find("max_size_rows")
+        reserved_size_rows_xml = property_element.find("reserved_size_rows")
+        if max_size_rows_xml is not None and max_size_rows_xml.text:
+            max_size_rows_xml.text = str(
+                max(
+                    int(max_size_rows_xml.text),
+                    (
+                        8192
+                        if reserved_size_rows_xml is None
+                        or not reserved_size_rows_xml.text
+                        else int(reserved_size_rows_xml.text)
+                    ),
+                )
+            )
+
+
 def add_ssl_settings(next_ssl: ET.Element):
     certificate_xml = ET.SubElement(next_ssl, "certificateFile")
     private_key_xml = ET.SubElement(next_ssl, "privateKeyFile")
@@ -955,8 +1018,12 @@ def modify_server_settings(
         secure_port_xml.text = "9440"
     if root.find("https_port") is None:
         modified = True
-        secure_port_xml = ET.SubElement(root, "https_port")
-        secure_port_xml.text = "8443"
+        https_port_xml = ET.SubElement(root, "https_port")
+        https_port_xml.text = "8443"
+    if args.with_arrowflight and root.find("arrowflight_port") is None:
+        modified = True
+        arrowflight_port_xml = ET.SubElement(root, "arrowflight_port")
+        arrowflight_port_xml.text = "8888"
     if root.find("openSSL") is None:
         modified = True
         openssl_xml = ET.SubElement(root, "openSSL")
@@ -971,6 +1038,29 @@ def modify_server_settings(
             name_xml.text = random.choice(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
+
+    if root.find("named_collections") is None:
+        modified = True
+        named_collections_xml = ET.SubElement(root, "named_collections")
+        if args.with_minio:
+            s3_xml = ET.SubElement(named_collections_xml, "s3")
+            url_xml = ET.SubElement(s3_xml, "url")
+            url_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+            access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
+            access_key_id_xml.text = "minio"
+            secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
+            secret_access_key_xml.text = minio_secret_key
+        if args.with_azurite:
+            azure_xml = ET.SubElement(named_collections_xml, "azure")
+            account_name_xml = ET.SubElement(azure_xml, "account_name")
+            account_name_xml.text = cluster.azurite_account
+            account_key_xml = ET.SubElement(azure_xml, "account_key")
+            account_key_xml.text = cluster.azurite_key
+            container_xml = ET.SubElement(azure_xml, "container")
+            container_xml.text = cluster.azure_container_name
+            storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
+            storage_account_url_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+        ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:
         possible_timezones = get_system_timezones()
@@ -1027,6 +1117,41 @@ def modify_server_settings(
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         selected_properties["distributed_ddl"] = DistributedDDLPropertiesGroup()
 
+    # Add log tables
+    if args.add_log_tables:
+        all_log_entries = [
+            "asynchronous_insert_log",
+            "asynchronous_metric_log",
+            "backup_log",
+            "blob_storage_log",
+            "crash_log",
+            "dead_letter_queue",
+            "error_log",
+            "iceberg_metadata_log",
+            "metric_log",
+            "opentelemetry_span_log",
+            "part_log",
+            "processors_profile_log",
+            "query_log",
+            "query_metric_log",
+            "query_thread_log",
+            "query_views_log",
+            "session_log",
+            "s3queue_log",
+            "text_log",
+            "trace_log",
+            "zookeeper_connection_log",
+            "zookeeper_log",
+        ]
+        if random.randint(1, 100) <= 70:
+            all_log_entries = random.sample(
+                all_log_entries, random.randint(1, len(all_log_entries))
+            )
+        random.shuffle(all_log_entries)
+        for entry in all_log_entries:
+            if root.find(entry) is None:
+                selected_properties[entry] = LogTablePropertiesGroup(entry)
+
     # Add shared_database_catalog settings, required for shared catalog to work
     if (
         args.add_shared_catalog
@@ -1057,7 +1182,7 @@ def modify_server_settings(
         distributed_ddl_xml = root.find("distributed_ddl")
         if distributed_ddl_xml is not None and distributed_ddl_xml.find("path") is None:
             path_xml = ET.SubElement(distributed_ddl_xml, "path")
-            path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+            path_xml.text = "/clickhouse/task_queue/ddl"
         # Make sure `zookeeper_path` in transaction_log is set
         transaction_log_xml = root.find("transaction_log")
         if (
@@ -1065,12 +1190,12 @@ def modify_server_settings(
             and transaction_log_xml.find("zookeeper_path") is None
         ):
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
-            zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+            zookeeper_path_xml.text = "/clickhouse/txn"
 
     # Get number of clusters if generated, to be used in `users.xml` if needed
     remote_servers = root.find("remote_servers")
     if remote_servers is not None:
-        number_clusters = len(list(remote_servers))
+        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
@@ -1124,3 +1249,175 @@ def modify_user_settings(
             tree.write(temp_path, encoding="utf-8", xml_declaration=True)
         return True, temp_path
     return False, input_config_path
+
+
+KEEPER_PROPERTIES_TEMPLATE = """
+<clickhouse>
+    <listen_try>true</listen_try>
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+    </logger>
+
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-zoo{id}</availability_zone>
+    </placement>
+
+    <keeper_server>
+        <tcp_port>2181</tcp_port>
+        <server_id>{id}</server_id>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>zoo1</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>zoo2</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>zoo3</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+"""
+
+keeper_settings = {
+    "cleanup_old_and_ignore_new_acl": true_false_lambda,
+    "coordination_settings": {
+        "async_replication": true_false_lambda,
+        "auto_forwarding": true_false_lambda,
+        "commit_logs_cache_size_threshold": threshold_generator(
+            0.2, 0.2, 0, 1000 * 1024 * 1024
+        ),
+        "compress_logs": true_false_lambda,
+        "compress_snapshots_with_zstd_format": true_false_lambda,
+        "configuration_change_tries_count": threshold_generator(0.2, 0.2, 0, 40),
+        "disk_move_retries_during_init": threshold_generator(0.2, 0.2, 0, 200),
+        "experimental_use_rocksdb": true_false_lambda,
+        "force_sync": true_false_lambda,
+        "fresh_log_gap": threshold_generator(0.2, 0.2, 0, 200),
+        "latest_logs_cache_size_threshold": threshold_generator(
+            0.2, 0.2, 0, 2 * 1024 * 1024 * 1024
+        ),
+        "log_file_overallocate_size": threshold_generator(
+            0.2, 0.2, 0, 100 * 1024 * 1024
+        ),
+        "max_flush_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
+        "max_log_file_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
+        "max_request_queue_size": threshold_generator(0.2, 0.2, 0, 100000),
+        "max_requests_append_size": threshold_generator(0.2, 0.2, 0, 200),
+        "max_requests_batch_bytes_size": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
+        "max_requests_batch_size": threshold_generator(0.2, 0.2, 0, 100),
+        "max_requests_quick_batch_size": threshold_generator(0.2, 0.2, 0, 200),
+        "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
+        "quorum_reads": true_false_lambda,
+        "raft_limits_reconnect_limit": threshold_generator(0.2, 0.2, 0, 100),
+        "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
+        "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
+        "rocksdb_load_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
+        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
+        "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
+        "snapshots_to_keep": threshold_generator(0.2, 0.2, 0, 5),
+        "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),
+        "use_xid_64": true_false_lambda,
+    },
+    "create_snapshot_on_exit": true_false_lambda,
+    "digest_enabled": true_false_lambda,
+    "digest_enabled_on_commit": true_false_lambda,
+    "enable_reconfiguration": true_false_lambda,
+    "feature_flags": {
+        "check_not_exists": true_false_lambda,
+        "create_if_not_exists": true_false_lambda,
+        "filtered_list": true_false_lambda,
+        "multi_read": true_false_lambda,
+        "multi_watches": true_false_lambda,
+        "remove_recursive": true_false_lambda,
+    },
+    "force_recovery": true_false_lambda,
+    "hostname_checks_enabled": true_false_lambda,
+    "max_memory_usage_soft_limit": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_memory_usage_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "upload_snapshot_on_exit": true_false_lambda,
+    **rocksdb_properties,
+}
+
+
+def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
+    result_configs = []
+    selected_settings = {}
+
+    if random.randint(1, 100) <= args.keeper_settings_prob:
+        selected_settings = sample_from_dict(
+            keeper_settings, random.randint(0, len(keeper_settings))
+        )
+
+    for i in range(1, 4):
+        tree = ET.ElementTree(ET.fromstring(KEEPER_PROPERTIES_TEMPLATE.format(id=i)))
+        keeper_server_xml: ET.Element | None = tree.find("keeper_server")
+
+        if keeper_server_xml is not None and len(selected_settings.items()) > 0:
+            for setting, next_child in selected_settings.items():
+                new_element = ET.SubElement(keeper_server_xml, setting)
+                if isinstance(next_child, dict):
+                    apply_properties_recursively(new_element, next_child, 0)
+                elif isinstance(next_child, PropertiesGroup):
+                    raise Exception("Can't use Properties Group here")
+                else:
+                    new_element.text = str(next_child())
+
+        # Set default coordination settings
+        coordination_settings_xml = keeper_server_xml.find("coordination_settings")
+        if coordination_settings_xml is None:
+            coordination_settings_xml = ET.SubElement(
+                keeper_server_xml, "coordination_settings"
+            )
+        operation_timeout_ms_xml = ET.SubElement(
+            coordination_settings_xml, "operation_timeout_ms"
+        )
+        operation_timeout_ms_xml.text = "10000"
+        session_timeout_ms_xml = ET.SubElement(
+            coordination_settings_xml, "session_timeout_ms"
+        )
+        session_timeout_ms_xml.text = "15000"
+        raft_logs_level_xml = ET.SubElement(
+            coordination_settings_xml, "raft_logs_level"
+        )
+        raft_logs_level_xml.text = "trace"
+        election_timeout_lower_bound_ms_xml = ET.SubElement(
+            coordination_settings_xml, "election_timeout_lower_bound_ms"
+        )
+        election_timeout_lower_bound_ms_xml.text = "2000"
+        election_timeout_upper_bound_ms_xml = ET.SubElement(
+            coordination_settings_xml, "election_timeout_upper_bound_ms"
+        )
+        election_timeout_upper_bound_ms_xml.text = "4000"
+
+        # Multi read is required for private binary
+        if is_private_binary:
+            feature_flags_xml = keeper_server_xml.find("feature_flags")
+            if feature_flags_xml is None:
+                feature_flags_xml = ET.SubElement(keeper_server_xml, "feature_flags")
+            multi_read_xml = feature_flags_xml.find("multi_read")
+            if multi_read_xml is None:
+                multi_read_xml = ET.SubElement(feature_flags_xml, "multi_read")
+            multi_read_xml.text = "1"
+
+        ET.indent(tree, space="    ", level=0)
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
+            result_configs.append(temp_file.name)
+            tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)
+    return result_configs

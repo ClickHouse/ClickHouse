@@ -14,16 +14,19 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 #include <memory>
 
+#include <Storages/IPartitionStrategy.h>
 namespace DB
 {
-
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct IPartitionStrategy;
 
 /**
  * A general class containing implementation for external table engines
@@ -42,11 +45,14 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        bool if_not_exists_,
+        bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,
@@ -76,6 +82,8 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -86,11 +94,21 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
+    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
+
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
+    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
@@ -122,6 +140,24 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    bool optimize(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        ContextPtr context) override;
+
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
+
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
@@ -141,16 +177,21 @@ protected:
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    /// Partition by expression from CREATE query.
-    const ASTPtr partition_by;
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
+    bool supports_prewhere = false;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;
 
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
+
     LoggerPtr log;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID storage_id;
 };
 
 }

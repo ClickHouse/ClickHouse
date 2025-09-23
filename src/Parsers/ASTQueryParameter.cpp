@@ -9,7 +9,7 @@ namespace DB
 
 void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << '{' << backQuoteIfNeed(name) << ':' << type << '}';
+    ostr << '{' << name << ':' << type << '}';
 }
 
 ASTPtr ASTQueryParameter::clone() const

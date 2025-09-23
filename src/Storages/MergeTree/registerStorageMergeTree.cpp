@@ -725,7 +725,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (!args.query.attach && (
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
                     ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
@@ -755,12 +755,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (minmax_index_exists)
                     continue;
 
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                        std::make_shared<ASTIdentifier>(column.name), index_type,
-                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }

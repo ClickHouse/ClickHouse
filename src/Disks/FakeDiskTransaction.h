@@ -1,9 +1,8 @@
 #pragma once
 
-#include <memory>
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromFileBase.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -22,10 +21,12 @@ struct FakeDiskTransaction final : public IDiskTransaction
 public:
     explicit FakeDiskTransaction(IDisk & disk_)
         : disk(disk_)
-    {}
+    {
+        LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
+    }
 
-    void commit() override {}
-    void undo() override {}
+    void commit(const TransactionCommitOptionsVariant &) override {}
+    void undo() noexcept override {}
 
     void createDirectory(const std::string & path) override
     {
@@ -67,12 +68,20 @@ public:
         disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool /*autocommit */ = true) override
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override
+    {
+        return disk.writeFile(path, buf_size, mode, settings);
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
     }
@@ -142,36 +151,9 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
-    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
+    void truncateFile(const std::string & /* src_path */, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
-    }
-
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
-    {
-        std::vector<std::string> result;
-        disk.listFiles(path, result);
-        return result;
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override
-    {
-        return disk.readFile(path, settings, read_hint, file_size);
-    }
-
-    bool isTransactional() const override
-    {
-        return false; // FakeDiskTransaction does not support transactions.
-    }
-
-    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
-    {
-        // No transaction checks needed for FakeDiskTransaction.
-        check_function(*this);
     }
 
 private:

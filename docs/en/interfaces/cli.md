@@ -4,6 +4,7 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
+doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';
@@ -13,7 +14,6 @@ import connection_details_native from '@site/static/images/_snippets/connection-
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
-
 
 ## Install {#install}
 
@@ -31,7 +31,6 @@ sudo ./clickhouse install
 See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
-
 
 ## Run {#run}
 
@@ -67,7 +66,6 @@ Specify additional connection details as necessary:
 
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
 
-
 ### Connecting to ClickHouse Cloud {#connecting-cloud}
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
@@ -86,7 +84,6 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
   alt="ClickHouse Cloud Native TCP connection details"
 />
 
-
 ### Storing connections in a configuration file {#connection-credentials}
 
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
@@ -95,12 +92,18 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <name>default</name>
-        <hostname>hostname</hostname>
-        <port>9440</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password>password</password>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
     </connections_credentials>
 </config>
 ```
@@ -175,7 +178,6 @@ _EOF
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
-
 ## Notes {#notes}
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
@@ -200,7 +202,6 @@ When processing a query, the client shows:
 You can cancel a long query by pressing `Ctrl+C`. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press `Ctrl+C` a second time, the client will exit.
 
 ClickHouse Client allows passing external data (external temporary tables) for querying. For more information, see the section [External data for query processing](../engines/table-engines/special/external-data.md).
-
 
 ## Queries with parameters {#cli-queries-with-parameters}
 
@@ -236,10 +237,11 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
-
 ## AI-powered SQL generation {#ai-sql-generation}
 
 ClickHouse Client includes built-in AI assistance for generating SQL queries from natural language descriptions. This feature helps users write complex queries without deep SQL knowledge.
+
+The AI assistance works out of the box if you have either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable set. For more advanced configuration, see the [Configuration](#ai-sql-generation-configuration) section.
 
 ### Usage {#ai-sql-generation-usage}
 
@@ -289,56 +291,151 @@ ORDER BY order_count DESC
 
 ### Configuration {#ai-sql-generation-configuration}
 
-AI SQL generation is configured through a configuration file. An API key must be provided in the configuration.
+AI SQL generation requires configuring an AI provider in your ClickHouse Client configuration file. You can use either OpenAI, Anthropic, or any OpenAI-compatible API service.
+
+#### Environment-based fallback {#ai-sql-generation-fallback}
+
+If no AI configuration is specified in the config file, ClickHouse Client will automatically try to use environment variables:
+
+1. First checks for `OPENAI_API_KEY` environment variable
+2. If not found, checks for `ANTHROPIC_API_KEY` environment variable
+3. If neither is found, AI features will be disabled
+
+This allows quick setup without configuration files:
+```bash
+# Using OpenAI
+export OPENAI_API_KEY=your-openai-key
+clickhouse-client
+
+# Using Anthropic
+export ANTHROPIC_API_KEY=your-anthropic-key
+clickhouse-client
+```
 
 #### Configuration file {#ai-sql-generation-configuration-file}
 
-Configure AI settings in your ClickHouse Client configuration file:
+For more control over AI settings, configure them in your ClickHouse Client configuration file located at:
+- `~/.clickhouse-client/config.xml` (XML format)
+- `~/.clickhouse-client/config.yaml` (YAML format)
+- Or specify a custom location with `--config-file`
 
-**XML format (`~/.clickhouse-client/config.xml`):**
+**XML format example:**
 
 ```xml
 <config>
     <ai>
-        <api_key>your-api-key-here</api_key>  <!-- Required -->
-        <provider>openai</provider>  <!-- Required: openai or anthropic -->
+        <!-- Required: Your API key (or set via environment variable) -->
+        <api_key>your-api-key-here</api_key>
+        
+        <!-- Required: Provider type (openai, anthropic) -->
+        <provider>openai</provider>
+        
+        <!-- Model to use (defaults vary by provider) -->
         <model>gpt-4o</model>
+        
+        <!-- Optional: Custom API endpoint for OpenAI-compatible services -->
+        <!-- <base_url>https://openrouter.ai/api</base_url> -->
+        
+        <!-- Schema exploration settings -->
         <enable_schema_access>true</enable_schema_access>
+        
+        <!-- Generation parameters -->
         <temperature>0.0</temperature>
         <max_tokens>1000</max_tokens>
         <timeout_seconds>30</timeout_seconds>
+        <max_steps>10</max_steps>
+        
+        <!-- Optional: Custom system prompt -->
+        <!-- <system_prompt>You are an expert ClickHouse SQL assistant...</system_prompt> -->
     </ai>
 </config>
 ```
 
-**YAML format (`~/.clickhouse-client/config.yaml`):**
+**YAML format example:**
 
 ```yaml
 ai:
-  api_key: your-api-key-here  # Required
-  provider: openai  # Required: openai or anthropic
+  # Required: Your API key (or set via environment variable)
+  api_key: your-api-key-here
+  
+  # Required: Provider type (openai, anthropic)
+  provider: openai
+  
+  # Model to use
   model: gpt-4o
+  
+  # Optional: Custom API endpoint for OpenAI-compatible services
+  # base_url: https://openrouter.ai/api
   
   # Enable schema access - allows AI to query database/table information
   enable_schema_access: true
   
-  # Optional: Custom system prompt (uncomment to use)
+  # Generation parameters
+  temperature: 0.0      # Controls randomness (0.0 = deterministic)
+  max_tokens: 1000      # Maximum response length
+  timeout_seconds: 30   # Request timeout
+  max_steps: 10         # Maximum schema exploration steps
+  
+  # Optional: Custom system prompt
   # system_prompt: |
   #   You are an expert ClickHouse SQL assistant. Convert natural language to SQL.
   #   Focus on performance and use ClickHouse-specific optimizations.
   #   Always return executable SQL without explanations.
-  # temperature: 0.0
-  # max_tokens: 1000
-  # timeout_seconds: 30
+```
+
+**Using OpenAI-compatible APIs (e.g., OpenRouter):**
+
+```yaml
+ai:
+  provider: openai  # Use 'openai' for compatibility
+  api_key: your-openrouter-api-key
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+```
+
+**Minimal configuration examples:**
+
+```yaml
+# Minimal config - uses environment variable for API key
+ai:
+  provider: openai  # Will use OPENAI_API_KEY env var
+
+# No config at all - automatic fallback
+# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+
+# Only override model - uses env var for API key
+ai:
+  provider: openai
+  model: gpt-3.5-turbo
 ```
 
 ### Parameters {#ai-sql-generation-parameters}
 
+**Required parameters:**
+- `api_key` - Your API key for the AI service. Can be omitted if set via environment variable:
+  - OpenAI: `OPENAI_API_KEY`
+  - Anthropic: `ANTHROPIC_API_KEY`
+  - Note: API key in config file takes precedence over environment variable
+- `provider` - The AI provider: `openai` or `anthropic`
+  - If omitted, uses automatic fallback based on available environment variables
+
+**Model configuration:**
+- `model` - The model to use (default: provider-specific)
+  - OpenAI: `gpt-4o`, `gpt-4`, `gpt-3.5-turbo`, etc.
+  - Anthropic: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, etc.
+  - OpenRouter: Use their model naming like `anthropic/claude-3.5-sonnet`
+
+**Connection settings:**
+- `base_url` - Custom API endpoint for OpenAI-compatible services (optional)
+- `timeout_seconds` - Request timeout in seconds (default: `30`)
+
+**Schema exploration:**
 - `enable_schema_access` - Allow AI to explore database schemas (default: `true`)
-- `temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
-- `max_tokens` - Maximum response length (default: `1000`)
-- `timeout_seconds` - Request timeout (default: `30`)
 - `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
+
+**Generation parameters:**
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
+- `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 
 ### How it works {#ai-sql-generation-how-it-works}
@@ -346,15 +443,10 @@ ai:
 The AI SQL generator uses a multi-step process:
 
 1. **Schema Discovery**: The AI uses built-in tools to explore your database:
-   - Lists available databases
-   - Discovers tables within relevant databases
-   - Examines table structures via `CREATE TABLE` statements
+- Lists available databases  - Discovers tables within relevant databases   - Examines table structures via `CREATE TABLE` statements
 
 2. **Query Generation**: Based on the discovered schema, the AI generates SQL that:
-   - Matches your natural language intent
-   - Uses correct table and column names
-   - Applies appropriate joins and aggregations
-
+- Matches your natural language intent  - Uses correct table and column names  - Applies appropriate joins and aggregations
 3. **Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
@@ -370,14 +462,12 @@ The AI SQL generator uses a multi-step process:
 - The AI only sees schema information (table/column names and types), not actual data
 - All generated queries respect your existing database permissions
 
-
 ## Aliases {#cli_aliases}
 
 - `\l` - SHOW DATABASES
 - `\d` - SHOW TABLES
 - `\c <DATABASE>` - USE DATABASE
 - `.` - repeat the last query
-
 
 ## Keyboard shortcuts {#keyboard_shortcuts}
 
@@ -392,7 +482,6 @@ To configure the correct work of the meta key (Option) on MacOS:
 
 iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 :::
-
 
 ## Connection string {#connection_string}
 
@@ -510,7 +599,6 @@ Connect to one of two hosts: `192.168.1.15`, `192.168.1.25`.
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-
 ## Query ID format {#query-id-format}
 
 In interactive mode ClickHouse Client shows the query ID for every query. By default, the ID is formatted like this:
@@ -537,7 +625,6 @@ With the configuration above, the ID of a query is shown in the following format
 ```response
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
-
 
 ## Configuration files {#configuration_files}
 
@@ -576,6 +663,10 @@ openSSL:
     caConfig: '/etc/ssl/cert.pem'
 ```
 
+## Environment variable options {#environment-variable-options}
+
+The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 

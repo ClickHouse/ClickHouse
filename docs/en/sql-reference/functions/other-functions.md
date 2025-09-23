@@ -3,6 +3,7 @@ description: 'Documentation for Other Functions'
 sidebar_label: 'Other'
 slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -297,7 +298,7 @@ byteSize(argument [, ...])
 
 **Examples**
 
-For [String](../data-types/string.md) arguments, the function returns the string length + 9 (terminating zero + length).
+For [String](../data-types/string.md) arguments, the function returns the string length + 8 (length).
 
 Query:
 
@@ -1278,8 +1279,6 @@ SELECT
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`.
 
 The inverse operations of this function are [formatReadableSize](#formatreadablesize) and [formatReadableDecimalSize](#formatreadabledecimalsize).
-
-
 **Syntax**
 
 ```sql
@@ -1772,8 +1771,6 @@ Result:
 │                            1 │
 └──────────────────────────────┘
 ```
-
-
 ## neighbor {#neighbor}
 
 <DeprecatedBadge/>
@@ -3647,8 +3644,6 @@ Result:
 │ 2 │ 6 │ 2              │ 2             │
 └───┴───┴────────────────┴───────────────┘
 ```
-
-
 ## shardNum {#shardnum}
 
 Returns the index of a shard which processes a part of data in a distributed query. Indices are started from `1`.

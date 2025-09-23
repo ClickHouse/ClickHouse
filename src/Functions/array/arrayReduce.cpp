@@ -221,7 +221,7 @@ Applies an aggregate function to array elements and returns its result.
 The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`.
 When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)]";
+    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)])";
     FunctionDocumentation::Arguments arguments = {
         {"agg_f", "The name of an aggregate function which should be a constant.", {"String"}},
         {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`.", {"Array(T)"}},

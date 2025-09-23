@@ -1,3 +1,4 @@
+import dataclasses
 import platform
 import sys
 import traceback
@@ -198,6 +199,18 @@ def _build_dockers(workflow, job_name):
     return Result.create_from(results=results, info=job_info)
 
 
+def _clean_buildx_volumes():
+    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
+    Shell.check(
+        "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
+        verbose=True,
+    )
+    Shell.check(
+        "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
+        verbose=True,
+    )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -207,7 +220,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         commands = [
             f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            f'test -z "$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})"',
         ]
 
         return Result.from_commands_run(
@@ -300,6 +313,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
+        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
+        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
@@ -464,6 +479,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
+
         results.append(
             Result(
                 name="Cache Lookup",
@@ -473,7 +489,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
+
+    print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
+    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
@@ -604,6 +624,7 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
+            _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
         elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:

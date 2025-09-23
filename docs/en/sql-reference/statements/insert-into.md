@@ -4,6 +4,7 @@ sidebar_label: 'INSERT INTO'
 sidebar_position: 33
 slug: /sql-reference/statements/insert-into
 title: 'INSERT INTO Statement'
+doc_type: 'reference'
 ---
 
 # INSERT INTO Statement
@@ -130,7 +131,6 @@ To insert a default value instead of `NULL` into a column with a non-nullable da
 INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
-
 
 ## Inserting Data from a File {#inserting-data-from-a-file}
 

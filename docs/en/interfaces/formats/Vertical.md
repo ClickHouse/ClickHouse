@@ -6,6 +6,7 @@ keywords: ['Vertical']
 output_format: true
 slug: /interfaces/formats/Vertical
 title: 'Vertical'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -48,4 +49,3 @@ test: string with 'quotes' and      with some special
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ## Format settings {#format-settings}
-

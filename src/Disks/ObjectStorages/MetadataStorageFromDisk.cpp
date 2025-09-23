@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+
 #include <memory>
 #include <shared_mutex>
 
@@ -137,16 +139,7 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
-    const auto & keys_with_meta = metadata->getKeysWithMeta();
-
-    StoredObjects objects;
-    objects.reserve(keys_with_meta.size());
-    for (const auto & [object_key, object_meta] : keys_with_meta)
-    {
-        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
-    }
-
-    return objects;
+    return metadata->getStorageObjects(path);
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
@@ -160,9 +153,9 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
-void MetadataStorageFromDiskTransaction::commit()
+void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
-    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -260,9 +253,9 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlink
     return result;
 }
 
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t size)
 {
-    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk());
+    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, size, metadata_storage, *metadata_storage.getDisk());
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
@@ -275,11 +268,4 @@ std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFrom
     return std::nullopt;
 }
 
-std::vector<std::string> MetadataStorageFromDiskTransaction::listUncommittedDirectory(const std::string & path) const
-{
-    chassert(!metadata_storage.isTransactional());
-    std::vector<std::string> result;
-    metadata_storage.disk->listFiles(path, result);
-    return result;
-}
 }

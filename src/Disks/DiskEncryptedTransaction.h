@@ -1,14 +1,15 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileBase.h>
-#include <config.h>
+#include "config.h"
 
 #if USE_SSL
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ struct DiskEncryptedSettings
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskEncryptedTransaction>
+class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
@@ -45,18 +46,31 @@ public:
         , disk_path(disk_path_)
         , current_settings(current_settings_)
         , delegate_disk(delegate_disk_)
-    {}
+    {
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
+            "Creating DiskEncryptedTransaction for delegating disk {} at path {}",
+            delegate_disk->getName(), disk_path);
+    }
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    void commit() override // NOLINT
+    void commit(const TransactionCommitOptionsVariant & options) override
     {
-        delegate_transaction->commit();
+        delegate_transaction->commit(options);
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
+            "Commit DiskEncryptedTransaction for delegating disk {} at path {}",
+            delegate_disk->getName(), disk_path);
     }
+    void commit() override { commit(NoCommitOptions{}); }
 
-    void undo() override
+    void undo() noexcept override
     {
         delegate_transaction->undo();
+    }
+
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
+    {
+        return delegate_transaction->tryCommit(options);
     }
 
     ~DiskEncryptedTransaction() override = default;
@@ -120,12 +134,16 @@ public:
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) override;
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeFile(const std::string & path) override
@@ -189,15 +207,11 @@ public:
     /// Third param determines which files cannot be removed even if second is true.
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        for (const auto & file : files)
-        {
-            auto wrapped_path = wrappedPath(file.path);
-            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                delegate_transaction->removeSharedFileIfExists(wrapped_path, keep);
-            else
-                delegate_transaction->removeSharedFile(wrapped_path, keep);
-        }
+        auto wrapped_path_files = files;
+        for (auto & file : wrapped_path_files)
+            file.path = wrappedPath(file.path);
+
+        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only);
     }
 
     /// Set last modified time to file or directory at `path`.
@@ -242,47 +256,24 @@ public:
         const WriteSettings & settings) const
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+        return delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings);
     }
 
     /// Truncate file to the target size.
-    void truncateFile(const std::string & src_path, size_t target_size) override
+    void truncateFile(const std::string & src_path, size_t size) override
     {
         auto wrapped_path = wrappedPath(src_path);
-        delegate_transaction->truncateFile(wrapped_path, target_size);
-    }
-
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint, file_size);
-    }
-
-    bool isTransactional() const override
-    {
-        return delegate_transaction->isTransactional();
-    }
-
-    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
-    {
-        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
-        {
-            moved_func(*tx);
-        };
-        delegate_transaction->validateTransaction(std::move(wrapped));
+        delegate_transaction->truncateFile(wrapped_path, size);
     }
 
 private:
+    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
+        bool autocommit,
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings);
+
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);

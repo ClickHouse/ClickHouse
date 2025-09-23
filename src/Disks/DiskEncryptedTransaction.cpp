@@ -59,12 +59,32 @@ void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, cons
     delegate_transaction->copyFile(wrapped_from_path, wrapped_to_path, read_settings, write_settings);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( // NOLINT
+std::unique_ptr<WriteBufferFromFileBase>
+DiskEncryptedTransaction::writeFileWithAutoCommit(
     const std::string & path,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings,
-    bool autocommit)
+    const WriteSettings & settings)
+{
+    return writeFileImpl(/*autocommit*/ true, path, buf_size, mode, settings);
+}
+
+std::unique_ptr<WriteBufferFromFileBase>
+DiskEncryptedTransaction::writeFile(
+    const std::string & path,
+    size_t buf_size,
+    WriteMode mode,
+    const WriteSettings & settings)
+{
+    return writeFileImpl(/*autocommit*/ false, path, buf_size, mode, settings);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl(
+    bool autocommit,
+    const std::string & path,
+    size_t buf_size,
+    WriteMode mode,
+    const WriteSettings & settings)
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;
@@ -90,9 +110,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
         header.key_fingerprint = current_settings.current_key_fingerprint;
         header.init_vector = FileEncryption::InitVector::random();
     }
-    auto buffer = delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings, autocommit);
-    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
 
+    auto buffer = autocommit
+        ? delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings)
+        : delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+
+    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
 }
 
 }

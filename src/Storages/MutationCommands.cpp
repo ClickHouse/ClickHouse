@@ -104,7 +104,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+        {
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        }
         return res;
     }
     if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -223,9 +226,6 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
-        if (!command.ast)
-            continue;
-
         if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
@@ -259,8 +259,6 @@ void MutationCommands::readText(ReadBuffer & in)
 
 std::string MutationCommands::toString() const
 {
-    if (empty())
-        return "no commands";
     return ast()->formatWithSecretsOneLine();
 }
 
