@@ -129,6 +129,7 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
     }
 
     bool is_insert = false;
+    bool is_new_entry = false;
     /// Create and insert an entry if not found.
     if (!cache_entry)
     {
@@ -145,7 +146,7 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
             );
 
             cache_entry = it->second;
-
+            is_new_entry = true;
         }
         else
         {
@@ -167,6 +168,7 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
 
     /// First, check if a cache entry is already registered for the key.
     /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    if (!is_new_entry)
     {
         std::shared_lock entry_lock(cache_entry->mutex);
 
