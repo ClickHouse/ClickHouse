@@ -1,4 +1,6 @@
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -8,8 +10,6 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
-#include "Interpreters/Context_fwd.h"
-#include "Processors/QueryPlan/ExpressionStep.h"
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -35,6 +35,7 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
