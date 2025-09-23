@@ -234,7 +234,7 @@ public:
 
     virtual void drop(ContextPtr) {}
 
-    void updateExternalDynamicMetadataIfExists(ContextPtr query_context, IStorage & storage, ObjectStoragePtr object_storage);
+    void updateStorageMetadataIfNeeded(ContextPtr query_context, IStorage & storage) const;
 
     String format = "auto";
     String compression_method = "auto";

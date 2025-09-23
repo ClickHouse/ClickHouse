@@ -36,7 +36,7 @@ public:
 
     bool supportsWrites() const override { return true; }
 
-    bool update(const ContextPtr & context) override;
+    void update(const ContextPtr & context) override;
 
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 

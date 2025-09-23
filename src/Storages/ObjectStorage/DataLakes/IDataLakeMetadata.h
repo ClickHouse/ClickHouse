@@ -73,7 +73,7 @@ public:
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
-    virtual bool update(const ContextPtr &) { return false; }
+    virtual void update(const ContextPtr &) { }
 
     virtual bool supportsWrites() const { return false; }
 

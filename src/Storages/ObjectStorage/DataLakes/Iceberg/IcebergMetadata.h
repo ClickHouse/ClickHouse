@@ -78,8 +78,6 @@ public:
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
 
-    bool update(const ContextPtr & local_context) override;
-
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;

@@ -133,9 +133,11 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
 {
     if (!storage_metadata)
         return nullptr;
-    return storage_metadata->iceberg_table_state.has_value()
-        ? std::make_shared<TableStateSnapshot>(storage_metadata->iceberg_table_state.value())
-        : nullptr;
+    if (!storage_metadata->datalake_table_state.has_value())
+        return nullptr;
+    if (!std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()))
+        return nullptr;
+    return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 }
 
@@ -233,11 +235,6 @@ Int32 IcebergMetadata::parseTableSchema(
             }
         }
     }
-}
-
-bool IcebergMetadata::update(const ContextPtr &)
-{
-    return true;
 }
 
 Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
@@ -868,7 +865,7 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     StorageInMemoryMetadata result;
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
-    result.setIcebergTableState(actual_table_state_snapshot);
+    result.setDataLakeTableState(actual_table_state_snapshot);
     return result;
 }
 

@@ -398,7 +398,7 @@ private:
 
         if (current_metadata->supportsUpdate())
         {
-            return current_metadata->update(context);
+            current_metadata->update(context);
         }
 
         auto new_metadata = DataLakeMetadata::create(
