@@ -327,7 +327,7 @@ void SerializationString::enumerateStreamsWithoutSize(
             sizes_column = column_string->createSizeSubcolumn();
         }
 
-        auto sizes_serialization = std::make_shared<SerializationStringSize>(false);
+        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
 
         /// Inlined size stream
         settings.path.push_back(Substream::InlinedStringSizes);
@@ -656,7 +656,7 @@ void SerializationString::enumerateStreamsWithSize(
         sizes_column = column_string->createSizeSubcolumn();
     }
 
-    auto sizes_serialization= (std::make_shared<SerializationStringSize>(true));
+    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
 
     /// Size stream
     settings.path.push_back(Substream::StringSizes);
@@ -684,7 +684,6 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
         limit = size - offset;
 
     settings.path.push_back(Substream::StringSizes);
-    settings.path.back().name_of_substream = "size";
     auto * size_stream = settings.getter(settings.path);
     if (!size_stream)
     {
@@ -696,7 +695,6 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     serializeStringSizes(column, *size_stream, offset, limit);
 
     settings.path.back() = Substream::Regular;
-    settings.path.back().name_of_substream = "";
     auto * stream = settings.getter(settings.path);
     if (!stream)
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
@@ -746,7 +744,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     /// String column is not in the cache.
     /// First, read sizes.
     settings.path.back() = Substream::StringSizes;
-    settings.path.back().name_of_substream = "size";
     size_t num_read_rows = 0;
     DeserializeBinaryBulkStateStringWithSizeStream * string_state = nullptr;
 
@@ -763,7 +760,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             string_state->size_column = ColumnUInt64::create();
 
         size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>().deserializeBinaryBulk(*string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
+        SerializationNumber<UInt64>().deserializeBinaryBulk(
+            *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
         num_read_rows = string_state->size_column->size() - prev_size;
         /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state->size_column, num_read_rows);
@@ -774,7 +772,11 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         return;
     }
 
-    settings.path.pop_back();
+    /// Read string data.
+    settings.path.back() = Substream::Regular;
+    auto * stream = settings.getter(settings.path);
+    if (!stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
 
     /// Fill offsets and calculate bytes to skip and read based on sizes column.
     auto mutable_column = column->assumeMutable();
@@ -789,18 +791,11 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 
     appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     size_t bytes_to_read = offsets.back() - prev_last_offset;
-
-    /// Read string data.
-    settings.path.push_back(Substream::Regular);
-    auto * stream = settings.getter(settings.path);
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
-
     auto & data = mutable_string_column.getChars();
-    const size_t initial_size = data.size();
+    size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
-    const size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
     data.resize(initial_size + size);
     column = std::move(mutable_column);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);

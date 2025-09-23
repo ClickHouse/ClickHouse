@@ -2,20 +2,32 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
+SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
+    : version(version_)
+    , serialization_string(version)
 {
-    extern const int NOT_IMPLEMENTED;
 }
 
-SerializationStringSize::SerializationStringSize(bool with_size_stream_)
-    : with_size_stream(with_size_stream_)
-    , serialization_string()
+void SerializationStringSize::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
+    switch (version)
+    {
+        case MergeTreeStringSerializationVersion::DEFAULT:
+            settings.path.push_back(Substream::Regular);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
+            settings.path.push_back(Substream::StringSizes);
+            break;
+    }
+
+    settings.path.back().data = data;
+    callback(settings.path);
+    settings.path.pop_back();
 }
 
 void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
@@ -26,10 +38,15 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (with_size_stream)
-        deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
-    else
-        deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
+    switch (version)
+    {
+        case MergeTreeStringSerializationVersion::DEFAULT:
+            deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
+            deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
+            break;
+    }
 }
 
 struct DeserializeBinaryBulkStateStringSizeWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
@@ -45,7 +62,7 @@ struct DeserializeBinaryBulkStateStringSizeWithoutSizeStream : public ISerializa
 void SerializationStringSize::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings &, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache *) const
 {
-    if (!with_size_stream)
+    if (version == MergeTreeStringSerializationVersion::DEFAULT)
         state = std::make_shared<DeserializeBinaryBulkStateStringSizeWithoutSizeStream>();
 }
 
@@ -57,9 +74,6 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WTF");
-
     settings.path.push_back(Substream::Regular);
     DeserializeBinaryBulkStateStringSizeWithoutSizeStream * size_state = nullptr;
     size_t num_read_rows = 0;
@@ -76,7 +90,8 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
             size_state->string_column = ColumnString::create();
 
         size_t prev_size = size_state->string_column->size();
-        serialization_string.deserializeBinaryBulk(*size_state->string_column->assumeMutable(), *stream, rows_offset, limit, settings.avg_value_size_hint);
+        serialization_string.deserializeBinaryBulk(
+            *size_state->string_column->assumeMutable(), *stream, rows_offset, limit, settings.avg_value_size_hint);
         num_read_rows = size_state->string_column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, size_state->string_column, num_read_rows);
     }
@@ -97,34 +112,6 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
         sizes_data.push_back(offsets[i] - offsets[i - 1]);
 }
 
-void SerializationStringSize::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
-{
-    if (with_size_stream)
-    {
-        settings.path.push_back(Substream::StringSizes);
-        settings.path.back().data = data;
-        callback(settings.path);
-        settings.path.pop_back();
-    }
-    else
-    {
-        settings.path.push_back(Substream::Regular);
-        settings.path.back().data = data;
-        callback(settings.path);
-        settings.path.pop_back();
-    }
-}
-
-void SerializationStringSize::serializeBinaryBulkWithMultipleStreams(
-    const IColumn &, size_t, size_t, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkWithMultipleStreams is not implemented for SerializationStringSize");
-}
-
 void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     ColumnPtr & column,
     size_t rows_offset,
@@ -134,7 +121,6 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     SubstreamsCache * cache) const
 {
     settings.path.push_back(Substream::StringSizes);
-    settings.path.back().name_of_substream = "size";
 
     size_t num_read_rows = 0;
     if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
@@ -155,7 +141,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         auto mutable_column = column->assumeMutable();
         size_t prev_size = mutable_column->size();
         /// Deserialize rows_offset + limit rows, we will apply rows_offset later.
-        SerializationNumber<UInt64>().deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, 0);
         num_read_rows = mutable_column->size() - prev_size;
 
         if (cache)
@@ -187,41 +173,6 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
 
     settings.path.pop_back();
-}
-
-void SerializationStringSize::serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-void SerializationStringSize::deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-void SerializationStringSize::serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-void SerializationStringSize::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-void SerializationStringSize::serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-void SerializationStringSize::deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
-}
-
-bool SerializationStringSize::tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for string size subcolumn");
 }
 
 }

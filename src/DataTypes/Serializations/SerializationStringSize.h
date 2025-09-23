@@ -1,30 +1,21 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
-#include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
 {
 
 /// Enables the `.size` subcolumn for string columns.
-class SerializationStringSize final : public SimpleTextSerialization
+class SerializationStringSize final : public SerializationNumber<UInt64>
 {
 public:
-    /// If true, the `.size` subcolumn is a real substream (new serialization).
-    /// If false, it is a virtual subcolumn derived from the data (old serialization).
-    explicit SerializationStringSize(bool with_size_stream_);
+    explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
-
-    void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
@@ -34,19 +25,13 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-    void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const override;
-
-    void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override;
-    void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override;
-    void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override;
-    void deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const override;
-    void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override;
-    void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override;
-    bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override;
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
 private:
-    /// Indicates whether `.size` is a real substream (true) or virtual (false).
-    bool with_size_stream;
+    MergeTreeStringSerializationVersion version;
 
     /// Helper to access base string serialization logic.
     SerializationString serialization_string;
