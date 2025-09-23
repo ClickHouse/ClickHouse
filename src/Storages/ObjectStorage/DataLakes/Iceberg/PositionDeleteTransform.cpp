@@ -138,12 +138,12 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
     IColumn::Filter delete_vector(num_rows, true);
     size_t num_rows_after_filtration = num_rows;
 
-    auto chunk_info = chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
     if (!chunk_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
 
     size_t row_num_offset = chunk_info->row_num_offset;
-    const auto & applied_filter = chunk_info->applied_filter;
+    auto & applied_filter = chunk_info->applied_filter;
     size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
     size_t idx_in_chunk = 0;
     for (size_t i = 0; i < num_indices; i++)
@@ -155,15 +155,28 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
             if (bitmap.rb_contains(row_idx))
             {
                 delete_vector[idx_in_chunk] = false;
+
+                /// If we already have a _row_number-indexed filter vector, update it in place.
+                if (applied_filter.has_value())
+                    applied_filter.value()[i] = false;
+
                 num_rows_after_filtration--;
             }
         }
     }
     chassert(idx_in_chunk == num_rows);
 
+    if (num_rows_after_filtration == num_rows)
+        return;
+
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = column->filter(delete_vector, -1);
+
+    /// If it's the first filtering we do on this Chunk (i.e. its _row_number-s were consecutive),
+    /// assign its applied_filter.
+    if (!applied_filter.has_value())
+        applied_filter.emplace(std::move(delete_vector));
 
     chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }
@@ -231,7 +244,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows, true);
     size_t num_rows_after_filtration = chunk.getNumRows();
-    auto chunk_info = chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
     if (!chunk_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
 
@@ -277,6 +290,10 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
                 else if (it->first == row_idx)
                 {
                     filter[idx_in_chunk] = false;
+
+                    if (chunk_info->applied_filter.has_value())
+                        chunk_info->applied_filter.value()[i] = false;
+
                     --num_rows_after_filtration;
                     break;
                 }
@@ -292,6 +309,9 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = column->filter(filter, -1);
+
+    if (!chunk_info->applied_filter.has_value())
+        chunk_info->applied_filter.emplace(std::move(filter));
 
     chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }
