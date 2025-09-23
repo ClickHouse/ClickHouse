@@ -143,7 +143,7 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
                 std::forward_as_tuple(key),
                 std::forward_as_tuple(std::make_shared<CacheEntry>(marks_count))
             );
-    
+
             cache_entry = it->second;
 
         }
