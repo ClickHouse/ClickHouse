@@ -527,16 +527,14 @@ TruncateFileOperationOutcomePtr TruncateMetadataFileOperation::getOutcome()
 
 void TruncateMetadataFileOperation::execute()
 {
-    if (!disk.existsFile(path))
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
+    if (!object_metadata.has_value())
     {
         if (target_size > 0)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, can't truncate", path);
         else
             return;
     }
-
-    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
-    chassert(object_metadata.has_value());
 
     while (object_metadata->getTotalSizeBytes() > target_size)
     {
