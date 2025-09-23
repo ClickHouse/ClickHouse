@@ -151,7 +151,6 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
         if (!applied_filter.has_value() || applied_filter.value()[i])
         {
             size_t row_idx = row_num_offset + i;
-            idx_in_chunk += 1;
             if (bitmap.rb_contains(row_idx))
             {
                 delete_vector[idx_in_chunk] = false;
@@ -162,6 +161,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
                 num_rows_after_filtration--;
             }
+            idx_in_chunk += 1;
         }
     }
     chassert(idx_in_chunk == num_rows);

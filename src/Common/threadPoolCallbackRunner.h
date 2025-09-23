@@ -318,14 +318,14 @@ private:
     /// queue, blocking other "threads" from running. E.g. this may happen:
     ///  1. Iceberg reader creates many parquet readers, and their ThreadPoolCallbackRunnerFast(s)
     ///     occupy all slots in the shared ThreadPool (getFormatParsingThreadPool()).
-    ///  2. Iceberg reader creates some more parquet readers for positioned deletes, using separate
+    ///  2. Iceberg reader creates some more parquet readers for positional deletes, using separate
     ///     ThreadPoolCallbackRunnerFast-s (because the ones from above are mildly inconvenient to
     ///     propagate to that code site). Those ThreadPoolCallbackRunnerFast-s make
     ///     pool->scheduleOrThrowOnError calls, but ThreadPool just adds them to queue, no actual
     ///     ThreadPoolCallbackRunnerFast::threadFunction()-s are started.
     ///  3. The readers from step 2 are stuck because their ThreadPoolCallbackRunnerFast-s have no
     ///     threads. The readers from step 1 are idle but not destroyed (keep occupying threads)
-    ///     because the iceberg reader is waiting for positioned deletes to be read (by readers
+    ///     because the iceberg reader is waiting for positional deletes to be read (by readers
     ///     from step 2). We're stuck.
     void startMoreThreadsIfNeeded(size_t active_tasks_, std::unique_lock<std::mutex> &);
 

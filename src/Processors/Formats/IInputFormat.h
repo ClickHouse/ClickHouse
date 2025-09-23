@@ -19,7 +19,7 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// Most (all?) file formats have a natural order of rows within the file.
 /// But our format readers and query pipeline may reorder or filter rows. This struct is used to
 /// propagate the original row numbers, e.g. for _row_number virtual column or for iceberg
-/// positioned deletes.
+/// positional deletes.
 ///
 /// Warning: we currently don't correctly update this info in most transforms. E.g. things like
 /// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
