@@ -5,6 +5,7 @@ sidebar_label: 'paimon'
 sidebar_position: 90
 slug: /sql-reference/table-functions/paimon
 title: 'paimon'
+doc_type: 'reference'
 ---
 
 # paimon Table Function {#paimon-table-function}

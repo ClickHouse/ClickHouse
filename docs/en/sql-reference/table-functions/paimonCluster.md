@@ -5,6 +5,7 @@ sidebar_label: 'paimonCluster'
 sidebar_position: 91
 slug: /sql-reference/table-functions/paimonCluster
 title: 'paimonCluster'
+doc_type: 'reference'
 ---
 
 # paimonCluster Table Function
