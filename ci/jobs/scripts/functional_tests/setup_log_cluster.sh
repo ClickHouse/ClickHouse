@@ -67,7 +67,12 @@ function setup_logs_replication()
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
-    check_logs_credentials
+
+    if [[ -n "$CLICKHOUSE_CI_LOGS_HOST" ]]; then
+        check_logs_credentials
+    else
+        echo 'No CI logs creds found, tables check will be skipped'
+    fi
 
     echo "My hostname is ${HOSTNAME}"
 
