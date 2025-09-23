@@ -482,6 +482,7 @@ private:
     template <typename Method>
     void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
+        Arena * arena,
         UInt32 worker_id,
         UInt32 total_worker,
         std::atomic<bool> & is_cancelled) const;

@@ -1881,6 +1881,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 template <typename Method>
 void Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
+    Arena * arena,
     const UInt32 worker_id,
     const UInt32 total_worker,
     std::atomic<bool> & is_cancelled) const
@@ -1905,7 +1906,7 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
                 mergeDataImpl<Method>(
                     getDataVariant<Method>(*res).data,
                      getDataVariant<Method>(current).data,
-                     res->aggregates_pool, true,
+                     arena, true,
                      false, /*prefetch*/
                     is_cancelled, &parallel_param);
             }
@@ -1915,7 +1916,7 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
                 mergeDataImpl<Method>(
                     getDataVariant<Method>(*res).data,
                      getDataVariant<Method>(current).data,
-                     res->aggregates_pool, false,
+                     arena, false,
                       false, /*prefetch*/
                     is_cancelled, &parallel_param);
             }
@@ -3089,9 +3090,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #undef M
 
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 
 
 void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const
