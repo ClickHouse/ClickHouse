@@ -697,7 +697,6 @@ void generateManifestList(
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
         auto snapshots = metadata->getArray(Iceberg::f_snapshots);
-        LOG_DEBUG(&Poco::Logger::get("IcebergWrites"), "Use previous snapshots, parent_snapshot_id {} snapshots {}", parent_snapshot_id, snapshots->size());
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             if (snapshots->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot_id)
@@ -1449,7 +1448,6 @@ bool IcebergStorageSink::initializeMetadata()
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
 
-    LOG_DEBUG(getLogger("IcebergWrites"), "Initializing Iceberg metadata {}", metadata_name);
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
@@ -1457,10 +1455,8 @@ bool IcebergStorageSink::initializeMetadata()
     Int32 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += writer.getDataFiles().size();
-    LOG_DEBUG(getLogger("IcebergWrites"), "Initializing Iceberg metadata {}", metadata_name);
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator, metadata_name, parent_snapshot, total_data_files, total_rows, total_chunks_size, total_data_files, /* added_delete_files */0, /* num_deleted_rows */0);
-    LOG_DEBUG(getLogger("IcebergWrites"), "Initializing Iceberg metadata {}", metadata_name);
 
 
     Strings manifest_entries_in_storage;
@@ -1475,19 +1471,15 @@ bool IcebergStorageSink::initializeMetadata()
                 writer.clearAllDataFiles();
 
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            {
-                LOG_DEBUG(getLogger("IcebergWrites"), "Cleaning up Iceberg manifest file {}", manifest_filename_in_storage);
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
-            }
 
-            LOG_DEBUG(getLogger("IcebergWrites"), "Cleaning up Iceberg manifest list file {}", storage_manifest_list_name);
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            LOG_DEBUG(getLogger("IcebergWrites"), "Cleaning up Iceberg metadata file {}", storage_metadata_name);
-            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+
             auto [last_version, metadata_path, compression_method]
                 = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
 
             metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
+            filename_generator.setVersion(last_version + 1);
         }
         catch (...)
         {
@@ -1539,8 +1531,6 @@ bool IcebergStorageSink::initializeMetadata()
                 generateManifestList(
                     filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
                 buffer_manifest_list->finalize();
-
-                LOG_DEBUG(getLogger("IcebergWrites"), "New Iceberg manifest list file {}, size {} written", storage_manifest_list_name, buffer_manifest_list->count());
             }
             catch (...)
             {
@@ -1565,8 +1555,6 @@ bool IcebergStorageSink::initializeMetadata()
                 return false;
             }
 
-            LOG_DEBUG(
-                getLogger("IcebergWrites"), "Writing new Iceberg metadata file {}, size {}", storage_metadata_name, json_representation.size());
             Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup, metadata_compression_method);
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
@@ -1574,7 +1562,6 @@ bool IcebergStorageSink::initializeMetadata()
                 Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
             }
 
-            LOG_DEBUG(getLogger("IcebergWrites"), "New Iceberg metadata file {}, size {} written", storage_metadata_name, json_representation.size());
             if (catalog)
             {
                 String catalog_filename = metadata_name;
