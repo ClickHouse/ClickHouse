@@ -3004,7 +3004,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             }
         }
 
-        format_settings.out << prefix << indent << "Ranges: " << result.selected_ranges << '\n';
+        format_settings.out << prefix << indent << indent << "Ranges: " << result.selected_ranges << '\n';
     }
 }
 
