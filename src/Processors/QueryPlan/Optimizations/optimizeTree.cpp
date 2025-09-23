@@ -48,6 +48,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
     Optimization::ExtraSettings extra_settings = {
+        optimization_settings.max_step_description_length,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
@@ -167,6 +168,7 @@ void optimizeTreeSecondPass(
     bool has_reading_from_mt = false;
 
     Optimization::ExtraSettings extra_settings = {
+        optimization_settings.max_step_description_length,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
@@ -182,6 +184,10 @@ void optimizeTreeSecondPass(
         optimizePrimaryKeyConditionAndLimit(stack);
 
         updateQueryConditionCache(stack, optimization_settings);
+
+        /// Must be executed after index analysis and before PREWHERE optimization.
+        if (optimization_settings.direct_read_from_text_index)
+            optimizeDirectReadFromTextIndex(stack, nodes);
 
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
@@ -202,6 +208,7 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
+    bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -210,8 +217,44 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
+            if (optimization_settings.enable_join_runtime_filters)
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
+
+
+    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
+    /// to move newly added runtime filter as deep in the tree as possible
+    if (join_runtime_filters_were_added)
+    {
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            if (optimization_settings.optimize_prewhere)
+                optimizePrewhere(stack, nodes);
+
+            /// NOTE: optimizePrewhere can modify the stack.
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                tryMergeExpressions(frame.node, nodes, {});
+                tryMergeFilters(frame.node, nodes, {});
+                tryPushDownFilter(frame.node, nodes, {});
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+    }
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -242,7 +285,8 @@ void optimizeTreeSecondPass(
                         *frame.node,
                         nodes,
                         optimization_settings.optimize_use_implicit_projections,
-                        optimization_settings.is_parallel_replicas_initiator_with_projection_support);
+                        optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                        optimization_settings.max_step_description_length);
                     if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
                 }
@@ -267,7 +311,8 @@ void optimizeTreeSecondPass(
             if (auto applied_projection = optimizeUseNormalProjections(
                 stack,
                 nodes,
-                optimization_settings.is_parallel_replicas_initiator_with_projection_support))
+                optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                optimization_settings.max_step_description_length))
             {
                 applied_projection_names.insert(*applied_projection);
 

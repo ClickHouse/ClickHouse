@@ -12,6 +12,7 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
+        *JobConfigs.release_build_jobs,
         *[
             job.set_dependency(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
@@ -29,7 +30,7 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
-        *JobConfigs.stress_test_azure_master_jobs,
+        *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,

@@ -32,6 +32,8 @@ public:
 
     static std::string getCompatibilityMetadataTypeHint(const ObjectStorageType & type);
 
+    void clearRegistry();
+
 private:
     using Registry = std::unordered_map<String, Creator>;
     Registry registry;
