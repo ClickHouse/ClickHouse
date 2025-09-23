@@ -14,13 +14,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void JoinGraph::addRelation(String name, QueryPlan::Node & node)
+void JoinGraphBuilder::addRelation(String name, QueryPlan::Node & node)
 {
     if (name.empty())
         name = "__rel_" + toString(relations.size());
 
     if (relation_name_to_id.contains(name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Relation '{}' already exists in the grapsh", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Relation '{}' already exists in the graph", name);
 
     RelationId new_relation_id = relations.size();
 
@@ -33,21 +33,38 @@ void JoinGraph::addRelation(String name, QueryPlan::Node & node)
     }
 
     relations.push_back({name, &node, column_names});
-    edges.push_back({});
     relation_name_to_id[name] = new_relation_id;
 }
 
 
-void JoinGraph::addEqualityPredicate(const String & lhs_column_name, const String & rhs_column_name)
+void JoinGraphBuilder::addEqualityPredicate(const String & lhs_column_name, const String & rhs_column_name)
 {
-    auto lhs_relation_id = getColumnSourceRelationId(lhs_column_name);
-    auto rhs_relation_id = getColumnSourceRelationId(rhs_column_name);
-    edges[lhs_relation_id][rhs_relation_id].insert({lhs_column_name, rhs_column_name});
-    edges[rhs_relation_id][lhs_relation_id].insert({rhs_column_name, lhs_column_name});
+    equivalent_columns.add(lhs_column_name, rhs_column_name);
 }
 
+JoinGraph::JoinGraph(JoinGraphBuilder join_graph_builder)
+    : relations(std::move(join_graph_builder.relations))
+    , edges(relations.size())
+{
+    for (const auto & [column_name, all_equivalent_columns] : join_graph_builder.equivalent_columns.getMembers())
+    {
+        const auto & column_a  = column_name;
+        for (const auto & column_b : *all_equivalent_columns)
+        {
+            if (column_a == column_b)
+                continue;
 
-void JoinGraph::dump(WriteBuffer & out)
+            auto lhs_relation_id = join_graph_builder.getColumnSourceRelationId(column_a);
+            auto rhs_relation_id = join_graph_builder.getColumnSourceRelationId(column_b);
+            if (lhs_relation_id == rhs_relation_id)
+                continue;
+
+            edges[lhs_relation_id][rhs_relation_id].insert({column_a, column_b});
+        }
+    }
+}
+
+void JoinGraph::dump(WriteBuffer & out) const
 {
     out << "Relations:\n";
     for (RelationId relation_id = 0; relation_id < relations.size(); ++relation_id)
@@ -66,7 +83,7 @@ void JoinGraph::dump(WriteBuffer & out)
     }
 }
 
-String JoinGraph::dump()
+String JoinGraph::dump() const
 {
     WriteBufferFromOwnString out;
     dump(out);
