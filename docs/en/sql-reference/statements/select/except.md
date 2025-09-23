@@ -4,7 +4,6 @@ sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
 title: 'EXCEPT clause'
 keywords: ['EXCEPT', 'clause']
-title: 'EXCEPT Clause'
 doc_type: 'reference'
 ---
 
