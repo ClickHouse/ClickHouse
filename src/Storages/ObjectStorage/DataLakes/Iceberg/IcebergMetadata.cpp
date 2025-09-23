@@ -70,6 +70,7 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebergIteratorInitializationMicroseconds;
 }
 
 namespace DB
@@ -785,15 +786,19 @@ ObjectIterator IcebergMetadata::iterate(
 
     auto table_snapshot
         = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
-    return std::make_shared<IcebergIterator>(
-        object_storage,
-        local_context,
-        configuration.lock(),
-        filter_dag,
-        callback,
-        table_snapshot,
-        relevant_snapshot,
-        persistent_components);
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
+
+        return std::make_shared<IcebergIterator>(
+            object_storage,
+            local_context,
+            configuration.lock(),
+            filter_dag,
+            callback,
+            table_snapshot,
+            relevant_snapshot,
+            persistent_components);
+    }
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

@@ -1,4 +1,5 @@
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -45,13 +46,16 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
 
 namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 };
 
 
@@ -320,6 +324,7 @@ IcebergIterator::IcebergIterator(
 
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
