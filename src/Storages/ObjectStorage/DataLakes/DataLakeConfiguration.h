@@ -95,7 +95,12 @@ public:
             return;
 
         BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
-        updateMetadataIfChanged(object_storage, local_context);
+        if (current_metadata && current_metadata->supportsUpdate())
+        {
+            current_metadata->update(local_context);
+            return;
+        }
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
     void create(
@@ -381,16 +386,6 @@ private:
         }
         return current_metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
-    }
-
-    void updateMetadataIfChanged(ObjectStoragePtr object_storage, ContextPtr context)
-    {
-        if (current_metadata && current_metadata->supportsUpdate())
-        {
-            current_metadata->update(context);
-            return;
-        }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
     }
 };
 
