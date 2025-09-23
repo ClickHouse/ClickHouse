@@ -891,7 +891,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-
+            {"auto_statistics_types", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
@@ -901,7 +901,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
             {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
-            {"auto_statistics_types", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
