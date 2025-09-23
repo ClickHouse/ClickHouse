@@ -499,7 +499,7 @@ void StorageObjectStorage::truncate(
     const auto read_prefix = configuration->getPathForRead().path;
 
     auto it = object_storage->iterate(read_prefix, /* max_keys */ 0); // backend default
-    
+
     // Delete all objects found by iterating storage backend
     // Process in batches to handle large numbers of objects efficiently
     static constexpr size_t DELETE_BATCH = 1000;
