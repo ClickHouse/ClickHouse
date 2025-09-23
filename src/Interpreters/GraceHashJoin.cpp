@@ -387,8 +387,8 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
     for (size_t i = 0; i < bucket_count; ++i)
         try
         {
-            TemporaryBlockStreamHolder left_file(left_sample_block, tmp_data.get());
-            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), tmp_data.get());
+            TemporaryBlockStreamHolder left_file(left_sample_block, tmp_data);
+            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), tmp_data);
 
             BucketPtr new_bucket = std::make_shared<FileBucket>(current_size + i, std::move(left_file), std::move(right_file), log);
             tmp_buckets.emplace_back(std::move(new_bucket));
