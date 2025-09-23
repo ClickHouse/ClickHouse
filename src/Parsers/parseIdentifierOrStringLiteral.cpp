@@ -1,4 +1,4 @@
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include "parseIdentifierOrStringLiteral.h"
 
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>

@@ -1,5 +1,3 @@
-#include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -8,8 +6,8 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// This is no optimization. This function extracts and hashes the filter condition of WHERE or PREWHERE filters.
-/// These correspond to these steps:
+/// This is not really an optimization. The purpose of this function is to extract and hash the filter condition of WHERE or PREWHERE
+/// filters. These correspond to these steps:
 ///
 ///   [...]
 ///     ^
@@ -40,43 +38,16 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         return;
 
     const auto & outputs = filter_actions_dag->getOutputs();
-
-    /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks
-    /// the implementation a lot while not losing much usefulness.
-    if (outputs.size() != 1)
-        return;
-
-    /// Issues #81506 and #84508.
     for (const auto * output : outputs)
-    {
         if (!VirtualColumnUtils::isDeterministic(output))
             return;
-    }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
-
-            String condition;
-            if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)
-            {
-                Names outputs_names = filter_actions_dag->getNames();
-                condition = outputs_names[0];
-            }
-
-            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-            if (query_condition_cache)
-            {
-                auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
-                    *query_condition_cache,
-                    condition_hash, condition,
-                    optimization_settings.query_condition_cache_selectivity_threshold);
-
-                filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
-            }
-
+            size_t condition_hash = filter_actions_dag->getOutputs().front()->getHash();
+            filter_step->setQueryConditionHash(condition_hash);
             return;
         }
     }

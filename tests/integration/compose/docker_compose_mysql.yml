@@ -1,7 +1,6 @@
 services:
     mysql57:
         image: mysql:5.7
-        stop_grace_period: 5s
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
