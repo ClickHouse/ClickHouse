@@ -1008,7 +1008,7 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
 {
     try
     {
-        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+        Coordination::EventPtr wait_event = std::make_shared<Poco::Event>();
         while (!shutdown_called.load())
         {
             try

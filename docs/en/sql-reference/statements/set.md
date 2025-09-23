@@ -4,6 +4,7 @@ sidebar_label: 'SET'
 sidebar_position: 50
 slug: /sql-reference/statements/set
 title: 'SET Statement'
+doc_type: 'reference'
 ---
 
 # SET Statement
