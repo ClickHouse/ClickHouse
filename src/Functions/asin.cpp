@@ -18,7 +18,7 @@ REGISTER_FUNCTION(Asin)
 Calculates the arcsine of the provided argument.
 For arguments in the range `[-1, 1]` it returns the value in the range of `[-pi() / 2, pi() / 2]`.
     )";
-    FunctionDocumentation::Syntax syntax = "arcsin(x)";
+    FunctionDocumentation::Syntax syntax = "asin(x)";
     FunctionDocumentation::Argument argument = {
         {"x", "Argument for which to calculate arcsine of.", {"(U)Int*", "Float*", "Decimal"}}
     };
