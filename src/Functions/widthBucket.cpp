@@ -255,7 +255,8 @@ public:
 REGISTER_FUNCTION(WidthBucket)
 {
     FunctionDocumentation::Description description = R"(
-Returns the number of the bucket in which operand falls in a histogram having count equal-width buckets spanning the range low to high. Returns 0 if `operand` is less than `low`, and returns `count`+1 if `operand` is greater than or equal to `high`.
+Returns the number of the bucket in which parameter `operand` falls in a histogram having count equal-width buckets spanning the range `low` to `high`. Returns 0 if `operand` is less than `low`, and returns `count`+1 if `operand` is greater than or equal to `high`.
+There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
 )";
 FunctionDocumentation::Syntax syntax = "widthBucket(operand, low, high, count)";
 FunctionDocumentation::Arguments arguments = {
