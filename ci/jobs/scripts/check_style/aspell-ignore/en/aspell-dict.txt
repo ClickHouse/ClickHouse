@@ -2840,6 +2840,8 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
+studentTTestOneSample
+studentttestonesample
 subarray
 subarrays
 subBitmap
