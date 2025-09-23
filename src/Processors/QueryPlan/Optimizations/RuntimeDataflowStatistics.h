@@ -2,11 +2,11 @@
 
 #include <Common/CacheBase.h>
 
-#include <iostream>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
 #include <cstddef>
+#include <memory>
 #include <mutex>
 
 namespace CurrentMetrics
@@ -43,7 +43,7 @@ public:
     {
     }
 
-    std::optional<Entry> getStats([[maybe_unused]] size_t key) const
+    std::optional<Entry> getStats(size_t key) const
     {
         std::lock_guard lock(mutex);
         if (const auto entry = stats_cache->get(key))
@@ -51,15 +51,11 @@ public:
         return std::nullopt;
     }
 
-    template <typename Func>
-    void update([[maybe_unused]] size_t key, Func foo)
+    void update(size_t key, RuntimeDataflowStatistics stats)
     {
         std::lock_guard lock(mutex);
-        if (!stats_cache->contains(key))
-            stats_cache->set(key, std::make_shared<Entry>());
-        const auto entry = stats_cache->get(key);
-        foo(*entry);
-        LOG_DEBUG(&Poco::Logger::get("debug"), "entry->input_bytes={}, entry->output_bytes={}", entry->input_bytes, entry->output_bytes);
+        stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
+        LOG_DEBUG(&Poco::Logger::get("debug"), "input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
     }
 
 private:
@@ -73,4 +69,33 @@ inline RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
     return stats_cache;
 }
 
+struct Updater
+{
+    explicit Updater(std::optional<size_t> cache_key_)
+        : cache_key(cache_key_)
+    {
+    }
+
+    ~Updater()
+    {
+        if (!cache_key)
+            return;
+        auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+        dataflow_cache.update(*cache_key, statistics);
+    }
+
+    void operator()(const RuntimeDataflowStatistics & stats)
+    {
+        if (!cache_key)
+            return;
+        std::lock_guard lock(mutex);
+        statistics += stats;
+    }
+
+    std::mutex mutex;
+    RuntimeDataflowStatistics statistics{};
+    std::optional<size_t> cache_key;
+};
+
+using UpdaterPtr = std::shared_ptr<Updater>;
 }

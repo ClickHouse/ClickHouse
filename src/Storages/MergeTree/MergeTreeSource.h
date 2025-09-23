@@ -17,7 +17,7 @@ using DataflowStatisticsCallback = std::function<void(const RuntimeDataflowStati
 class MergeTreeSource final : public ISource
 {
 public:
-    MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, DataflowStatisticsCallback callback_);
+    MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, UpdaterPtr updater_);
     ~MergeTreeSource() override;
 
     std::string getName() const override;
@@ -38,7 +38,7 @@ private:
     const std::string log_name;
 
     RuntimeDataflowStatistics statistics{};
-    DataflowStatisticsCallback callback;
+    UpdaterPtr updater;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

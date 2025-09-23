@@ -134,12 +134,11 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(
-    MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, DataflowStatisticsCallback callback_)
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, UpdaterPtr updater_)
     : ISource(std::make_shared<const Block>(processor_->getHeader()))
     , processor(std::move(processor_))
     , log_name(log_name_)
-    , callback(std::move(callback_))
+    , updater(std::move(updater_))
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -149,8 +148,8 @@ MergeTreeSource::MergeTreeSource(
 
 MergeTreeSource::~MergeTreeSource()
 {
-    if (callback)
-        callback(statistics);
+    if (updater)
+        (*updater)(statistics);
 }
 
 std::string MergeTreeSource::getName() const
@@ -189,7 +188,7 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
     if (chunk.num_read_rows || chunk.num_read_bytes)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
 
-    if (callback)
+    if (updater)
         statistics.input_bytes += chunk.num_read_bytes;
 
     finished = chunk.is_finished;
