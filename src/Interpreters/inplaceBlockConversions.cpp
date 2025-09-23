@@ -15,7 +15,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Common/checkStackSize.h>
 #include <Storages/ColumnsDescription.h>
-#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
