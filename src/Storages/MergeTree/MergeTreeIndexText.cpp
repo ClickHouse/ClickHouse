@@ -528,7 +528,7 @@ void serializeTokensRaw(
 void serializeTokensFrontCoding(
     WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
 {
-    const auto & first_token = tokens_and_postings[0].first;
+    const auto & first_token = tokens_and_postings[block_begin].first;
     writeVarUInt(first_token.size, write_buffer);
     write_buffer.write(first_token.data, first_token.size);
 
