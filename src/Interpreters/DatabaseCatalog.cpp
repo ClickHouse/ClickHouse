@@ -32,7 +32,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageMemory.h>
 
 #include <algorithm>
