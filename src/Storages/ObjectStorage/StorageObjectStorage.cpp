@@ -489,12 +489,12 @@ void StorageObjectStorage::truncate(
     if (configuration->isArchive())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
-                        raw.path);
+                        raw_path.path);
 
-    if (raw.hasGlobs())
+    if (raw_path.hasGlobs())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-                        getName(), raw.path);
+                        getName(), raw_path.path);
 
     const auto read_prefix = configuration->getPathForRead().path;
 
