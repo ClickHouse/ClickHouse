@@ -50,7 +50,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_)
     : query_plan(query_plan_)
 {}
 
-bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
+bool collectJoins(QueryPlan::Node * node, JoinGraphBuilder & join_graph_builder)
 {
     if (!node)
         return false;
@@ -61,11 +61,11 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
         if (node->children.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step has {} children instead of 2", node->children.size());
 
-        if (!collectJoins(node->children[0], join_graph))
-            join_graph.addRelation({}, *node->children[0]);
+        if (!collectJoins(node->children[0], join_graph_builder))
+            join_graph_builder.addRelation({}, *node->children[0]);
 
-        if (!collectJoins(node->children[1], join_graph))
-            join_graph.addRelation({}, *node->children[1]);
+        if (!collectJoins(node->children[1], join_graph_builder))
+            join_graph_builder.addRelation({}, *node->children[1]);
 
         for (const auto & e : join_step->getJoinOperator().expression)
         {
@@ -74,7 +74,7 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
             {
                 const auto & lhs_column = get<1>(predicate).getColumnName();
                 const auto & rhs_column = get<2>(predicate).getColumnName();
-                join_graph.addEqualityPredicate(lhs_column, rhs_column);
+                join_graph_builder.addEqualityPredicate(lhs_column, rhs_column);
             }
         }
 
@@ -84,13 +84,13 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (expression_step)
     {
-        return collectJoins(node->children[0], join_graph);
+        return collectJoins(node->children[0], join_graph_builder);
     }
 
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (filter_step)
     {
-        return collectJoins(node->children[0], join_graph);
+        return collectJoins(node->children[0], join_graph_builder);
     }
 
     return false;
@@ -115,9 +115,10 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
         node = node->children.front();
     }
 
-    JoinGraph join_graph;
-    if (!collectJoins(node, join_graph))
-        join_graph.addRelation({}, *node);
+    JoinGraphBuilder join_graph_builder;
+    if (!collectJoins(node, join_graph_builder))
+        join_graph_builder.addRelation({}, *node);
+    JoinGraph join_graph(std::move(join_graph_builder));
 
     LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
 

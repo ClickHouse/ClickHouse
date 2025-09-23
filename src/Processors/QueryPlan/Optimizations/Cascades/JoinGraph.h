@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Planner/EquivalenceClasses.h>
 #include <IO/WriteBuffer.h>
 #include <Core/Names.h>
 #include <Common/Exception.h>
@@ -18,13 +19,44 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Collects all relations participating in JOINs and all the predicates connecting them
+class JoinGraphBuilder
+{
+    friend class JoinGraph;
+
+public:
+    void addRelation(String name, QueryPlan::Node & node);
+    void addEqualityPredicate(const String & lhs_column_name, const String & rhs_column_name);
+
+private:
+    using RelationId = size_t;
+
+    struct RelationInfo
+    {
+        String name;
+        QueryPlan::Node * node;
+        Names columns;
+    };
+
+    RelationId getColumnSourceRelationId(const String & column_name) const
+    {
+        auto column_source_it = column_source_relation.find(column_name);
+        if (column_source_it == column_source_relation.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column_name);
+        return column_source_it->second;
+    }
+
+    std::vector<RelationInfo> relations;
+    std::unordered_map<String, RelationId> relation_name_to_id;
+    std::unordered_map<String, RelationId> column_source_relation;
+    EquivalenceClasses equivalent_columns;
+};
 
 /// JOIN graph is used to enumerate all allowed combinations of JOINs from the query based on the predicates.
 /// This enumeration is more efficient than JOIN Associativity transformation rule and replaces it.
 class JoinGraph
 {
 public:
-    using RelationId = size_t;
     using Predicate = std::pair<String, String>;  /// {from_column_name, to_column_name}
 
     struct PredicateHash
@@ -36,21 +68,18 @@ public:
     };
 
     using PredicatesSet = std::unordered_set<Predicate, PredicateHash>;
+    using RelationId = JoinGraphBuilder::RelationId;
 
-    void addRelation(String name, QueryPlan::Node & node);
-    void addEqualityPredicate(const String & lhs_column_name, const String & rhs_column_name);
+private:
+    using RelationInfo = JoinGraphBuilder::RelationInfo;
+
+    std::vector<RelationInfo> relations;
+    std::vector<std::unordered_map<RelationId, PredicatesSet>> edges;
+
+public:
+    explicit JoinGraph(JoinGraphBuilder join_graph_builder);
 
     size_t size() const { return relations.size(); }
-
-    RelationId getRelationId(const String & name) const { return relation_name_to_id.at(name); }
-
-    RelationId getColumnSourceRelationId(const String & column_name) const
-    {
-        auto column_source_it = column_source_relation.find(column_name);
-        if (column_source_it == column_source_relation.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column_name);
-        return column_source_it->second;
-    }
 
     PredicatesSet getPredicates(RelationId from, RelationId to) const
     {
@@ -68,21 +97,8 @@ public:
         return *relations[relation_id].node;
     }
 
-    void dump(WriteBuffer & out);
-    String dump();
-
-private:
-    struct RelationInfo
-    {
-        String name;
-        QueryPlan::Node * node;
-        Names columns;
-    };
-
-    std::vector<RelationInfo> relations;
-    std::unordered_map<String, RelationId> relation_name_to_id;
-    std::vector<std::unordered_map<RelationId, PredicatesSet>> edges;
-    std::unordered_map<String, RelationId> column_source_relation;
+    void dump(WriteBuffer & out) const;
+    String dump() const;
 };
 
 }
