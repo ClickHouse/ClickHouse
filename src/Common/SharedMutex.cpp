@@ -19,14 +19,14 @@ void SharedMutex::lock()
         return;
 
     /// Drain writers and set up self as next writer
-    value = state.load(std::memory_order_relaxed);
+    value = state.load();
     while (true)
     {
         if (unlikely(value & writers))
         {
-            waiters.fetch_add(1, std::memory_order_relaxed);
+            waiters++;
             futexWaitUpperFetch(state, value);
-            waiters.fetch_sub(1, std::memory_order_relaxed);
+            waiters--;
         }
         else if (state.compare_exchange_strong(value, value | writers))
             break;
@@ -47,20 +47,20 @@ bool SharedMutex::try_lock()
 void SharedMutex::unlock()
 {
     state.store(0);
-    if (waiters.load(std::memory_order_relaxed))
+    if (waiters)
         futexWakeUpperAll(state);
 }
 
 void SharedMutex::lock_shared()
 {
-    UInt64 value = state.load(std::memory_order_relaxed);
+    UInt64 value = state.load();
     while (true)
     {
         if (unlikely(value & writers))
         {
-            waiters.fetch_add(1, std::memory_order_relaxed);
+            waiters++;
             futexWaitUpperFetch(state, value);
-            waiters.fetch_sub(1, std::memory_order_relaxed);
+            waiters--;
         }
         else if (state.compare_exchange_strong(value, value + 1))
             break;
@@ -69,7 +69,7 @@ void SharedMutex::lock_shared()
 
 bool SharedMutex::try_lock_shared()
 {
-    UInt64 value = state.load(std::memory_order_relaxed);
+    UInt64 value = state.load();
     while (true)
     {
         if (value & writers)
