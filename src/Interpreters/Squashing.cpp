@@ -155,9 +155,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
+            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->convertToFullColumnIfConst()->assumeMutable();
             for (auto & column : source_columns_list[i])
-                column = recursiveRemoveSparse(column);
+                column = recursiveRemoveSparse(column)->convertToFullColumnIfConst();
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
