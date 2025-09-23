@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -19,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
@@ -55,10 +55,14 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
+    if (!file_size)
+        file_size = tryGetSizeFromFilePath(object.remote_path);
+
     LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
@@ -198,6 +202,14 @@ void LocalObjectStorage::throwIfReadonly() const
 {
     if (settings.read_only)
         throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
+}
+
+std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
+    const std::string & /* new_namespace */,
+    const Poco::Util::AbstractConfiguration & /* config */,
+    const std::string & /* config_prefix */, ContextPtr /* context */)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for LocalObjectStorage");
 }
 
 ObjectStorageKey

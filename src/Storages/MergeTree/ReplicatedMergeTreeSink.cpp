@@ -123,7 +123,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     ContextPtr context_,
     bool is_attach_,
     bool allow_attach_while_readonly_)
-    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , required_quorum_size(majority_quorum ? std::nullopt : std::make_optional<size_t>(quorum_size))
@@ -869,8 +869,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Allocate new block number and check for duplicates
-        auto block_data = serializeCommittingBlockOpToString(CommittingBlock::Op::NewPart);
-        auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zookeeper, block_id_path, "", block_data); /// 1 RTT
+        auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zookeeper, block_id_path); /// 1 RTT
 
         ThreadFuzzer::maybeInjectSleep();
 
@@ -1228,7 +1227,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     while (true)
     {
-        Coordination::EventPtr event = std::make_shared<Poco::Event>();
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
         std::string value;
         /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.

@@ -4,14 +4,9 @@ sidebar_label: 'PostgreSQL Interface'
 sidebar_position: 20
 slug: /interfaces/postgresql
 title: 'PostgreSQL Interface'
-doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # PostgreSQL Interface
-
-<CloudNotSupportedBadge/>
 
 ClickHouse supports the PostgreSQL wire protocol, which allows you to use Postgres clients to connect to ClickHouse. In a sense, ClickHouse can pretend to be a PostgreSQL instance - allowing you to connect a PostgreSQL client application to ClickHouse that is not already directly supported by ClickHouse (for example, Amazon Redshift).
 
@@ -75,7 +70,7 @@ Each client has their own method of how to connect using SSL. The following comm
 psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
 ```
 
-## Configuring ClickHouse user authentication with SCRAM-SHA-256 {#using-scram-sha256}
+## Configuring ClickHouse User Authentication with SCRAM-SHA-256 {#using-scram-sha256}
 
 To ensure secure user authentication in ClickHouse, it is recommended to use the SCRAM-SHA-256 protocol. Configure the user by specifying the `password_scram_sha256_hex` element in the users.xml file. The password hash must be generated with num_iterations=4096.
 

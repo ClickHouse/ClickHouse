@@ -5,7 +5,6 @@ sidebar_label: 'DateTime64'
 sidebar_position: 18
 slug: /sql-reference/data-types/datetime64
 title: 'DateTime64'
-doc_type: 'reference'
 ---
 
 # DateTime64
@@ -44,9 +43,8 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from integer interpreted as number of microseconds (because of precision 3) since 1970-01-01,
--- - from decimal interpreted as number of seconds before the decimal part, and based on the precision after the decimal point,
--- - from string.
+-- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from string,
 INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
 SELECT * FROM dt64;
@@ -107,8 +105,8 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 
 ```sql
 SELECT
-toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
-toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
+toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
 FROM dt64;
 ```
 

@@ -115,15 +115,12 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 void DatabaseAtomic::drop(ContextPtr)
 {
     waitDatabaseStarted();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
 
     auto db_disk = getDisk();
     try
     {
-        if (db_disk->isSymlinkSupported() && !db_disk->isReadOnly())
+        if (db_disk->isSymlinkSupported())
         {
             db_disk->removeFileIfExists(path_to_metadata_symlink);
             db_disk->removeRecursive(path_to_table_symlinks);
@@ -133,8 +130,7 @@ void DatabaseAtomic::drop(ContextPtr)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    if (!db_disk->isReadOnly())
-        db_disk->removeRecursive(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)

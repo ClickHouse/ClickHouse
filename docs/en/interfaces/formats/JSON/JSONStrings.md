@@ -6,7 +6,6 @@ keywords: ['JSONStrings']
 output_format: true
 slug: /interfaces/formats/JSONStrings
 title: 'JSONStrings'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -17,9 +16,9 @@ doc_type: 'reference'
 
 Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -200,7 +199,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONStrings;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `JSONStrings` format:
 
@@ -393,4 +392,5 @@ The output will be in JSON format:
 }
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
+

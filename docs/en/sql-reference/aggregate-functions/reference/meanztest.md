@@ -4,7 +4,6 @@ sidebar_label: 'meanZTest'
 sidebar_position: 166
 slug: /sql-reference/aggregate-functions/reference/meanztest
 title: 'meanZTest'
-doc_type: 'reference'
 ---
 
 # meanZTest
@@ -39,6 +38,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 - calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
 - calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
+
 
 **Example**
 

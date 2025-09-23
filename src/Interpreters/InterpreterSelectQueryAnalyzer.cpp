@@ -210,7 +210,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 {
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -221,7 +221,7 @@ SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query
     return interpreter.getSampleBlock();
 }
 
-std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -232,20 +232,20 @@ std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSa
     return interpreter.getSampleBlockAndPlannerContext();
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
     return getSampleBlockAndPlannerContext(query_tree, context, select_query_options).first;
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock()
+Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan().getCurrentHeader();
 }
 
-std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
 {
     planner.buildQueryPlanIfNeeded();
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};

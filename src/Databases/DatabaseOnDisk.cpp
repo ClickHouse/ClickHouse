@@ -167,7 +167,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
@@ -595,10 +595,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);
@@ -901,7 +898,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();

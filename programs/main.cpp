@@ -1,7 +1,5 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
-#include <base/defines.h>
-
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -25,45 +23,6 @@
 #include <utility> /// pair
 #include <vector>
 
-#ifdef SANITIZER
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" {
-#ifdef ADDRESS_SANITIZER
-const char * __asan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1";
-}
-const char * __lsan_default_options()
-{
-    return "max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef MEMORY_SANITIZER
-const char * __msan_default_options()
-{
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef THREAD_SANITIZER
-const char * __tsan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-const char * __ubsan_default_options()
-{
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
-}
-#endif
-}
-#pragma clang diagnostic pop
-#endif
-
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseCheckMarks(int argc, char ** argv);
@@ -73,7 +32,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
@@ -105,15 +63,6 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
-int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
-#endif
-
-#if USE_CHDIG
-extern "C" int chdig_main(int argc, char ** argv);
-int mainEntryClickHouseChdig(int argc, char ** argv)
-{
-    return chdig_main(argc, argv);
-}
 #endif
 
 // install
@@ -136,10 +85,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
-#if USE_CHDIG
-    {"chdig", mainEntryClickHouseChdig},
-    {"dig", mainEntryClickHouseChdig},
-#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
@@ -171,7 +116,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 #if USE_NURAFT
     {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
-    {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
     {"install", mainEntryClickHouseInstall},
@@ -194,9 +138,6 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
-#if USE_CHDIG
-    {"chdig", "chdig"},
-#endif
 };
 
 }
@@ -294,7 +235,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
 __attribute__((constructor(202))) void init_ssl()
 {
-    DB::OpenSSLInitializer::instance();
+    DB::OpenSSLInitializer::initialize();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -382,6 +323,8 @@ int main(int argc_, char ** argv_)
 #if defined(SANITIZE_COVERAGE)
     dumpCoverage();
 #endif
+
+    DB::OpenSSLInitializer::cleanup();
 
     return exit_code;
 }

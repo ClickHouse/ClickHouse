@@ -19,7 +19,6 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from synchronizer_utils import SYNC_PR_PREFIX
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -146,7 +145,6 @@ class PRInfo:
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str
         self.number = 0  # type: int
-        self.updated_at = github_event.get('repository', {}).get('updated_at', None)
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
@@ -195,7 +193,6 @@ class PRInfo:
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }
-            self.updated_at = github_event["pull_request"]["updated_at"]
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]
@@ -468,7 +465,7 @@ class PRInfo:
 
     def get_latest_sync_commit(self):
         gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith(SYNC_PR_PREFIX)
+        assert self.head_ref.startswith("sync-upstream/pr/")
         assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
         upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
         upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])

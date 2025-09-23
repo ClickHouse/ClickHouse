@@ -234,7 +234,7 @@ class TablesBlockSource : public ISource
 public:
     TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -820,10 +820,7 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
-                }
-                else
-                {
-                    src_index += 4;
+
                 }
 
                 if (columns_mask[src_index++])
@@ -867,7 +864,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,

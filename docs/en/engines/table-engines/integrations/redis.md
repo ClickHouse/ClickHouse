@@ -4,14 +4,17 @@ sidebar_label: 'Redis'
 sidebar_position: 175
 slug: /engines/table-engines/integrations/redis
 title: 'Redis'
-doc_type: 'guide'
 ---
+
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Redis
 
+<CloudNotSupportedBadge/>
+
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +45,7 @@ Arguments also can be passed using [named collections](/operations/named-collect
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 :::
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Create a table in ClickHouse using `Redis` engine with plain arguments:
 
@@ -85,7 +88,7 @@ ENGINE = Redis(redis_creds) PRIMARY KEY(key);
 Insert:
 
 ```sql
-INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+INSERT INTO redis_table Values('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 ```
 
 Query:

@@ -1,13 +1,12 @@
 ---
 description: 'A collection of settings grouped under the same name.'
-sidebar_label: 'Settings profiles'
+sidebar_label: 'Settings Profiles'
 sidebar_position: 61
 slug: /operations/settings/settings-profiles
-title: 'Settings profiles'
-doc_type: 'reference'
+title: 'Settings Profiles'
 ---
 
-# Settings profiles
+# Settings Profiles
 
 A settings profile is a collection of settings grouped under the same name.
 
