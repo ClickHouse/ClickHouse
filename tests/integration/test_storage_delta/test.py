@@ -59,8 +59,9 @@ from helpers.s3_tools import (
 )
 from helpers.test_tools import TSV
 
+
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
-cluster = ClickHouseCluster(__file__, with_spark=True)
+cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
@@ -98,6 +99,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -114,6 +116,7 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -131,6 +134,7 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/use_environment_credentials.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             env_variables={
                 "AWS_ACCESS_KEY_ID": minio_access_key,
@@ -144,6 +148,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
@@ -160,6 +165,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -2010,8 +2016,8 @@ deltaLake(
     )
 
 
-@pytest.mark.parametrize("new_analyzer", ["1", "0"])
-def test_cluster_function(started_cluster, new_analyzer):
+@pytest.mark.parametrize("new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]])
+def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
     instance_old = started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2022,69 +2028,78 @@ def test_cluster_function(started_cluster, new_analyzer):
         pa.array(["aa", "bb", "cc", "aa", "bb"], type=pa.string()),
     ]
 
-    storage_options = {
-        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
-        "AWS_ACCESS_KEY_ID": minio_access_key,
-        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
-        "AWS_ALLOW_HTTP": "true",
-        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
-    }
-    path = f"s3://root/{table_name}"
-    table = pa.Table.from_arrays(data, schema=schema)
-    write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
+    if storage_type == "s3" :
+        storage_options = {
+            "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "AWS_ACCESS_KEY_ID": minio_access_key,
+            "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+            "AWS_ALLOW_HTTP": "true",
+            "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+        }
+        path = f"s3://root/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
 
-    table_function = f"""
-deltaLakeCluster(cluster,
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
-    """
-    instance.query(
-        f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
-    assert 5 == int(
+        table_function = f"""
+    deltaLakeCluster(cluster,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+            SETTINGS allow_experimental_delta_kernel_rs=1)
+        """
         instance.query(
-            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
-    )
-    assert "1\taa\n"
-    "2\tbb\n"
-    "3\tcc\n"
-    "4\taa\n"
-    "5\tbb\n" == instance.query(
-        f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
-
-    table_function_old = f"""
-deltaLakeCluster(cluster_old,
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
-    """
-
-    assert 5 == int(
-        instance_old.query(
-            f"SELECT count() FROM {table_function_old} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
         )
-    )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
 
-    # Incorrect result on old instance
-    assert "1\n2\n3\n4\n5\n" == instance_old.query(
-        f"SELECT * FROM {table_function_old} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
+        table_function_old = f"""
+    deltaLakeCluster(cluster_old,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+            SETTINGS allow_experimental_delta_kernel_rs=1)
+        """
+    elif storage_type == "azure":
+        # For azure we will only test new cluster as this function is added recently
+        storage_options = {
+            "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
+            "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            "AZURE_STORAGE_CONTAINER_NAME" : "{cluster.azure_container_name}",
+            "AZURE_STORAGE_USE_EMULATOR": "true"
+        }
+        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
 
-    assert 5 == int(
+        table_function = f"""
+        deltaLakeAzureCluster(cluster, azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
+        """
         instance.query(
-            f"SELECT count() FROM {table_function_old} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
-    )
-
-    # Incorrect result on old instance
-    assert "1\t\\N\n2\t\\N\n3\t\\N\n4\t\\N\n5\t\\N\n" == instance.query(
-        f"SELECT * FROM {table_function_old} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
+        )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
 
 
 def test_partition_columns_3(started_cluster):
@@ -3693,3 +3708,43 @@ def test_type_from_storage_def(started_cluster, column_mapping):
         "2000-11-11 00:00:00"
         == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
     )
+
+@pytest.mark.parametrize("use_delta_kernel", ["0", "1"])
+def test_system_table(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_multiple_log_files")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 2  # 1 metadata files + 1 data file
+
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"{TABLE_NAME}/_delta_log/", recursive=True)
+    )
+    assert len(s3_objects) == 1
+
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 100
+
+    write_delta_from_df(
+        spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 4  # 2 metadata files + 2 data files
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 200
+
+    instance.query("SYSTEM FLUSH LOGS delta_lake_metadata_log")
+
+    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log")) == 2
+    contents = instance.query("SELECT content FROM system.delta_lake_metadata_log").split('\n')
+    for content in contents:
+        if len(content) == 0:
+            continue
+        assert 'commitInfo' in content
+        assert '.parquet' in content
+    instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")

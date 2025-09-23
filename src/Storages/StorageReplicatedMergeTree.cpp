@@ -1712,7 +1712,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
 
     try
     {
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
     }
     catch (...)
     {
@@ -5935,7 +5935,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
 {
     auto max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(getMaxAddedBlocks());
 
-    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock())
+    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock(getStorageID().uuid))
     {
         for (const auto & [partition_id, max_block] : *additional_blocks)
         {
@@ -5987,7 +5987,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
         local_context,
         max_block_size,
         num_streams,
-        local_context->getPartitionIdToMaxBlock(),
+        local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         enable_parallel_reading);
 
     if (plan)
@@ -6479,7 +6479,7 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
@@ -6488,7 +6488,7 @@ void StorageReplicatedMergeTree::alter(
         setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only the comment is changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
@@ -6617,7 +6617,7 @@ void StorageReplicatedMergeTree::alter(
 
             /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
             /// of them are validated in alterTable.
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -8156,7 +8156,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     const auto & block_numbers = update_holder.partition_block_numbers.getBlockNumbers();
     auto partitions = std::make_shared<PartitionIdToMaxBlock>(block_numbers.begin(), block_numbers.end());
-    context_copy->setPartitionIdToMaxBlock(std::move(partitions));
+    context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partitions));
 
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
@@ -8167,7 +8167,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         auto sync_timeout = query_context->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
 
         std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
-        waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(), ops, backoff_ms, sync_timeout);
+        waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
@@ -11112,7 +11112,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTP
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext());
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext(), false);
     }
     catch (...)
     {
