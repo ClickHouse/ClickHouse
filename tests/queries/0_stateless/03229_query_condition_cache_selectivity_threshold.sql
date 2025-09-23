@@ -3,7 +3,9 @@
 
 -- Tests that setting 'query_condition_cache_selectivity_threshold' works.
 
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
+
+SYSTEM DROP QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 

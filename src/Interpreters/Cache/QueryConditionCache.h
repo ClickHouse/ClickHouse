@@ -9,7 +9,7 @@ namespace DB
 
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
-/// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
+/// Given the table + part IDs and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
 /// match the predicate. This allows to skip the scan if the same predicate is evaluated on the same data again. Note that this doesn't work
 /// the other way round: we can't tell if _all_ rows in the mark match the predicate.
 ///
@@ -22,8 +22,8 @@ namespace DB
 class QueryConditionCache
 {
 public:
-    /// False means no row in the mark matches the predicate. We can skip such marks.
-    /// True means rows in the mark potentially match the predicate. We need to read such marks.
+    /// False means none of the rows in the mark match the predicate. We can skip such marks.
+    /// True means at least one row in the mark matches the predicate. We need to read such marks.
     using Entry = std::vector<bool>;
     using EntryPtr = std::shared_ptr<Entry>;
 
@@ -103,12 +103,18 @@ private:
     {
         SharedMutex mutex;
         QueryConditionCache::Entry entry;
-        bool is_dirty; /// whether it needs to be written into the query condition cache.
+        /// Whether it needs to be written into the query condition cache.
+        bool is_dirty;
 
-        explicit CacheEntry(size_t marks_count);
-        explicit CacheEntry(const QueryConditionCache::Entry & entry_);
+        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
+        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
+        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
+        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
+        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
+        /// Even if there is an exception, future scans will not skip them.
+        explicit CacheEntry(size_t marks_count) : entry(marks_count, true), is_dirty(true) {}
+        explicit CacheEntry(const QueryConditionCache::Entry & entry_) : entry(entry_), is_dirty(false) {}
     };
-
     using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
     void finalize();

@@ -211,23 +211,6 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
         has_final_mark);
 }
 
-QueryConditionCacheWriter::CacheEntry::CacheEntry(const QueryConditionCache::Entry & entry_)
-    : entry(entry_)
-    , is_dirty(false)
-{
-}
-
-/// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
-/// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
-/// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
-/// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
-/// Even if there is an exception, future scans will not skip them.
-QueryConditionCacheWriter::CacheEntry::CacheEntry(size_t marks_count)
-    : entry(marks_count, true)
-    , is_dirty(true)
-{
-}
-
 void QueryConditionCacheWriter::finalize()
 {
     std::lock_guard lock(mutex);
