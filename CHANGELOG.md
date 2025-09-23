@@ -1,4 +1,5 @@
 ### Table of Contents
+**[ClickHouse release v25.10, TBD](#260)**<br/>
 **[ClickHouse release v25.9, 2025-09-25](#259)**<br/>
 **[ClickHouse release v25.8 LTS, 2025-08-28](#258)**<br/>
 **[ClickHouse release v25.7, 2025-07-24](#257)**<br/>
@@ -18,6 +19,11 @@
 **[Changelog for 2017](https://clickhouse.com/docs/whats-new/changelog/2017/)**<br/>
 
 # 2025 Changelog
+
+### <a id="260"></a> ClickHouse release 25.10, TBD
+
+#### Improvement
+* Adds new `dictionary_block_frontcoding_compression` text index parameter to control the dictionary compression. By default, it is enabled to use the `front-coding` compression.
 
 ### <a id="259"></a> ClickHouse release 25.9, 2025-09-25
 
