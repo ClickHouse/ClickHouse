@@ -274,6 +274,8 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     MergeTreeReaderSettings reader_settings;
 

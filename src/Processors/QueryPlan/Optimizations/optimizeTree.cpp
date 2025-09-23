@@ -305,6 +305,13 @@ void considerEnablingParallelReplicas(
         if (!typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The corresponding node in single node plan is not ReadFromMergeTree");
 
+        if (!reading_step->step->supportsDataflowStatisticsCollection()
+            || !corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(&Poco::Logger::get("debug"), "Step doesn't support dataflow statistics collection");
+            return;
+        }
+
         reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
         corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
     }
@@ -330,7 +337,7 @@ void considerEnablingParallelReplicas(
     }
     else
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "The corresponding node in single node plan doesn't support runtime statistics");
+        LOG_DEBUG(&Poco::Logger::get("debug"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 }
 

@@ -113,6 +113,7 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
     void setDataflowCacheKey(size_t key) { dataflow_cache_key = key; }
 
 protected:
