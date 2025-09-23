@@ -71,7 +71,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
-        nullptr,
+        nullptr, // storage_metadata
         local_distributed_processing,
         context,
         {}, // predicate
@@ -164,7 +164,7 @@ StorageObjectStorage::StorageObjectStorage(
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
-    if (need_resolve_columns_or_format && updated_configuration)
+    if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
