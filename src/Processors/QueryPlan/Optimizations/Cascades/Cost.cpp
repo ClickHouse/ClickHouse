@@ -221,18 +221,9 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     else
         statistics.estimated_row_count = 1000000;
 
-    /// HACK
-    if (read_step.getStorageID().table_name == "nation")
-    {
-        statistics.estimated_row_count = 2;
-        statistics.max_row_count = 2;
-        for (auto & column : statistics.column_statistics)
-            column.second.number_of_distinct_values = 2;
-    }
-    if (read_step.getStorageID().table_name == "lineitem")
-    {
-        statistics.estimated_row_count = 200000000;
-    }
+    auto cardinality_hint = statistics_lookup.getCardinaity(table_name);
+    if (cardinality_hint)
+        statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, *cardinality_hint);
 
     return statistics;
 }
