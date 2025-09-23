@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
 #include "Interpreters/Context_fwd.h"
+#include "Processors/QueryPlan/ExpressionStep.h"
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -194,7 +195,10 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
             bool found_read_from_parallel_replicas = false;
             for (const auto & child : frame.node->children)
             {
-                if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(child->step.get()))
+                auto node = child;
+                if (typeid_cast<const ExpressionStep *>(node->step.get()))
+                    node = child->children.front();
+                if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
                 {
                     found_read_from_parallel_replicas = true;
                 }
@@ -203,7 +207,7 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
                     if (replicas_plan_top_node)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "");
 
-                    replicas_plan_top_node = child;
+                    replicas_plan_top_node = node;
                 }
             }
 
@@ -226,8 +230,8 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
         stack.pop_back();
     }
 
-    if (!replicas_plan_top_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
+    // if (!replicas_plan_top_node)
+    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
     return replicas_plan_top_node;
 }
 
@@ -283,6 +287,8 @@ void considerEnablingParallelReplicas(
     auto plan_with_parallel_replicas = std::make_unique<QueryPlan>(optimization_settings.query_plan_builder());
 
     const auto * final_node_in_replica_plan = findReplicasTopNode(plan_with_parallel_replicas->getRootNode());
+    if (!final_node_in_replica_plan)
+        return;
     chassert(final_node_in_replica_plan);
     LOG_DEBUG(&Poco::Logger::get("debug"), "replicas_plan_top_node->step->getName()={}", final_node_in_replica_plan->step->getName());
 

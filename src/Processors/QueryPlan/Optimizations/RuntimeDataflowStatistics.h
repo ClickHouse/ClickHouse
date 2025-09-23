@@ -54,6 +54,11 @@ public:
     void update(size_t key, RuntimeDataflowStatistics stats)
     {
         std::lock_guard lock(mutex);
+        if (auto existing_stats = stats_cache->get(key))
+        {
+            stats.input_bytes = std::max(stats.input_bytes, existing_stats->input_bytes);
+            stats.output_bytes = std::max(stats.output_bytes, existing_stats->output_bytes);
+        }
         stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
         LOG_DEBUG(&Poco::Logger::get("debug"), "input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
     }
@@ -82,6 +87,14 @@ struct Updater
             return;
         auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
         dataflow_cache.update(*cache_key, statistics);
+    }
+
+    void operator()(size_t bytes)
+    {
+        if (!cache_key)
+            return;
+        std::lock_guard lock(mutex);
+        statistics.output_bytes += bytes;
     }
 
     void operator()(const RuntimeDataflowStatistics & stats)

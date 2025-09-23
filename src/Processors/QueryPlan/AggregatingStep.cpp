@@ -499,6 +499,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
+        auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
         size_t counter = 0;
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -511,7 +513,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_merge_threads,
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging);
+                    skip_merging,
+                    updater);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false, settings.min_outstreams_per_resize_after_split);

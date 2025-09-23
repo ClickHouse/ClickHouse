@@ -275,12 +275,14 @@ private:
 class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
-    ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
+    ConvertingAggregatedToChunksTransform(
+        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_, UpdaterPtr updater_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -380,6 +382,8 @@ private:
         auto & output = outputs.front();
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
+        if (updater)
+            (*updater)(chunk.bytes());
         output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
@@ -420,6 +424,8 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
+                if (updater)
+                    (*updater)(chunk.bytes());
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -435,6 +441,8 @@ private:
     ConvertingAggregatedToChunksWithMergingSource::SharedDataPtr shared_data;
 
     size_t num_threads;
+
+    UpdaterPtr updater;
 
     bool is_initialized = false;
     bool finished = false;
@@ -541,7 +549,8 @@ AggregatingTransform::AggregatingTransform(
     size_t max_threads_,
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
-    bool skip_merging_)
+    bool skip_merging_,
+    UpdaterPtr updater_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -552,6 +561,7 @@ AggregatingTransform::AggregatingTransform(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
+    , updater(std::move(updater_))
 {
 }
 
@@ -750,7 +760,7 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
+                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
         }
         else
         {
