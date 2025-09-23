@@ -77,6 +77,32 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 
+struct PostingListBuilder
+{
+public:
+    static constexpr size_t max_small_size = 6;
+    using SmallContainer = std::array<UInt32, max_small_size>;
+    using PostingListsHolder = std::list<PostingList>;
+    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
+
+    PostingListBuilder() : small_size(0) {}
+    void add(UInt32 value, PostingListsHolder & postings_holder);
+
+    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
+    bool isSmall() const { return small_size < max_small_size; }
+    SmallContainer & getSmall() { return small; }
+    PostingList & getLarge() const { return *large.first; }
+
+private:
+    union
+    {
+        SmallContainer small;
+        PostingListWithContext large;
+    };
+
+    UInt8 small_size;
+};
+
 struct PostingsSerialization
 {
     enum Flags : UInt64
@@ -88,7 +114,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
     };
 
-    static void serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr);
+    static void serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
     static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
@@ -197,10 +223,9 @@ private:
     TokenToPostingsInfosMap remaining_tokens;
 };
 
-using PostingListRawPtr = PostingList *;
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsMap = StringHashMap<std::pair<PostingListRawPtr, roaring::BulkContext>>;
-using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
+using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
+using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingListBuilder *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
