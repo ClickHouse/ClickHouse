@@ -203,9 +203,10 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
 ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree & read_step)
 {
     ExpressionStatistics statistics;
+    const auto & table_name = read_step.getStorageID().getTableName();
     for (const auto & column_name : read_step.getAllColumnNames())
     {
-        auto column_ndv = statistics_lookup.getNumberOfDistinctValues(column_name);
+        auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
         if (column_ndv)
             statistics.column_statistics[column_name].number_of_distinct_values = column_ndv.value();
     }
