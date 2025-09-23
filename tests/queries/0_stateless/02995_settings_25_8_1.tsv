@@ -201,7 +201,7 @@ backup_restore_s3_retry_attempts	1000
 backup_restore_s3_retry_initial_backoff_ms	25
 backup_restore_s3_retry_jitter_factor	0.1
 backup_restore_s3_retry_max_backoff_ms	5000
-backup_slow_all_threads_after_retryable_s3_error	1
+backup_slow_all_threads_after_retryable_s3_error	0
 backup_threads	16
 bool_false_representation	false
 bool_true_representation	true
