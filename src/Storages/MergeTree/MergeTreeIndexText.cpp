@@ -223,7 +223,6 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
         ColumnString::Offsets & offsets = tokens_column->getOffsets();
 
         /// Avoiding calling resize in a loop improves the performance.
-        offsets.reserve(num_tokens);
         /// The average length of words in English language is 4.7 characters, rounded up to the next power of 2.
         data.resize(roundUpToPowerOfTwoOrZero(num_tokens * 8));
 
