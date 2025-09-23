@@ -4,6 +4,7 @@ sidebar_label: 'APPLY'
 slug: /sql-reference/statements/select/apply-modifier
 title: 'APPLY modifier'
 keywords: ['APPLY', 'modifier']
+doc_type: 'reference'
 ---
 
 # APPLY modifier {#apply}

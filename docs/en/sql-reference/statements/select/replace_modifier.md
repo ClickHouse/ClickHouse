@@ -4,6 +4,7 @@ sidebar_label: 'REPLACE'
 slug: /sql-reference/statements/select/replace-modifier
 title: 'Replace modifier'
 keywords: ['REPLACE', 'modifier']
+doc_type: 'reference'
 ---
 
 # Replace modifier {#replace}

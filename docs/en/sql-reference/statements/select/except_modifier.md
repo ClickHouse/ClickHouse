@@ -4,6 +4,7 @@ sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except-modifier
 title: 'EXCEPT modifier'
 keywords: ['EXCEPT', 'modifier']
+doc_type: 'reference'
 ---
 
 # EXCEPT modifier {#except}
