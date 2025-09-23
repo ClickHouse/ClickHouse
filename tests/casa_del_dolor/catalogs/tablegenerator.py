@@ -1,4 +1,5 @@
 import random
+import time
 from abc import abstractmethod
 from datetime import datetime, timedelta
 
@@ -601,8 +602,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         table: SparkTable,
     ) -> str:
         next_option = random.randint(1, 9)
+        time.tzset() # The timezone may change for every run
         restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+            datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 60]))
         ).strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if next_option == 1:
@@ -637,7 +639,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 5:
-            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
         if next_option == 6:
             res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
@@ -649,11 +651,11 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 7:
-            return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.compute_table_stats('{table.get_namespace_path()}')"
         if next_option == 8:
-            return f"CALL {table.catalog_name}.system.compute_partition_stats(table => '{table.get_table_full_path()}')"
+            return f"CALL `{table.catalog_name}`.system.compute_partition_stats('{table.get_table_full_path()}')"
         if next_option == 9:
-            return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
         # if next_option == 10:
         #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
@@ -943,8 +945,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Restore
+            time.tzset() # The timezone may change for every run
             restore_to = (
-                datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+                datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 60]))
             ).strftime("%Y-%m-%d %H:%M:%S.%f")
             return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
         if next_option == 3:
