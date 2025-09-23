@@ -4,12 +4,16 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/LazilyReadInfo.h>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Common/CacheBase.h>
-#include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -99,36 +99,15 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
 private:
-    struct CacheEntry
-    {
-        SharedMutex mutex;
-        QueryConditionCache::Entry entry;
-        /// Whether it needs to be written into the query condition cache.
-        bool is_dirty;
-
-        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
-        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
-        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
-        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
-        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
-        /// Even if there is an exception, future scans will not skip them.
-        explicit CacheEntry(size_t marks_count) : entry(marks_count, true), is_dirty(true) {}
-        explicit CacheEntry(const QueryConditionCache::Entry & entry_) : entry(entry_), is_dirty(false) {}
-    };
-    using CacheEntryPtr = std::shared_ptr<CacheEntry>;
-
     void finalize();
 
-    bool needUpdateMarks(const QueryConditionCache::Entry & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const;
-
     QueryConditionCache & query_condition_cache;
-
-    SharedMutex mutex;
-    std::unordered_map<QueryConditionCache::Key, CacheEntryPtr, QueryConditionCache::KeyHasher> new_entries;
-
     const size_t condition_hash;
     const String condition;
     const double selectivity_threshold;
+
+    std::unordered_map<QueryConditionCache::Key, QueryConditionCache::Entry, QueryConditionCache::KeyHasher> new_entries TSA_GUARDED_BY(mutex);
+    std::mutex mutex;
 
     LoggerPtr logger = getLogger("QueryConditionCache");
 };

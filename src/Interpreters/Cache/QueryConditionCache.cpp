@@ -5,6 +5,12 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
+namespace ProfileEvents
+{
+    extern const Event QueryConditionCacheHits;
+    extern const Event QueryConditionCacheMisses;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric QueryConditionCacheBytes;
@@ -53,6 +59,8 @@ QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, c
 
     if (auto entry = cache.get(key))
     {
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+
         LOG_TEST(
             logger,
             "Read entry for table_uuid: {}, part: {}, condition_hash: {}",
@@ -64,6 +72,8 @@ QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, c
     }
     else
     {
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+
         LOG_TEST(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
@@ -113,90 +123,51 @@ QueryConditionCacheWriter::~QueryConditionCacheWriter()
     finalize();
 }
 
-/// The addRanges method tries to avoid exclusive locking like the plague. Shared locking is fine. The reason is that Clickhouse scan ranges
-/// in parallel: addRanges method is frequently called and we need to avoid lock contention.
 void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & part_name, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     QueryConditionCache::Key key = {table_id, part_name, condition_hash, condition};
 
-    /// First, check if a cache entry is already registered for the key
-    CacheEntryPtr cache_entry;
+    std::lock_guard<std::mutex> lock(mutex);
+
+    bool is_insert;
+
+    /// ClickHouse scans ranges within the same part in parallel.
+    /// The first scan thread which calls addRanges creates and inserts an entry.
+    /// The other scan threads update existing entry and update it.
+    if (auto it = new_entries.find(key); it == new_entries.end())
     {
-        std::shared_lock shared_lock(mutex);
-        auto it = new_entries.find(key);
-        if (it != new_entries.end())
-            cache_entry = it->second;
-    }
+        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
+        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
+        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
+        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
+        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
+        /// Even if there is an exception, future scans will not skip them.
+        QueryConditionCache::Entry entry(marks_count, true);
 
-    /// Check if we are lucky and don't need to update the matching marks of the entry (if found).
-    bool need_update_marks = false;
-    if (cache_entry)
-    {
-        /// Check under the entry's read lock. If no update is needed, exit immediately.
-        std::shared_lock shared_lock(cache_entry->mutex);
-        if (!needUpdateMarks(cache_entry->entry, mark_ranges, marks_count, has_final_mark))
-            return;
+        for (const auto & mark_range : mark_ranges)
+            std::fill(entry.begin() + mark_range.begin, entry.begin() + mark_range.end, false);
 
-        need_update_marks = true;
-    }
+        if (has_final_mark)
+            entry[marks_count - 1] = false;
 
-    /// Marks potentially need to be updated. We don't know for sure because another thread could have updated them in the meantime.
-    /// Acquire a write lock and attempt the update.
-    bool is_insert = false;
-    if (!need_update_marks)
-    {
-        /// Check from the query condition cache whether marks need to be updated,
-        /// which helps avoid a large number of unnecessary updates and reduces lock contention.
-        /// It also addresses the issue where marks in the cache entries are incomplete
-        /// due to the LIMIT operator terminating the ranges scan early.
-        auto entry_ptr = query_condition_cache.read(table_id, part_name, condition_hash);
-        if (entry_ptr)
-        {
-            chassert(marks_count == entry_ptr->size());
-
-            {
-                /// Copy entry in query condition cache.
-                std::lock_guard lock(mutex);
-                auto [it, inserted] = new_entries.emplace(
-                    std::piecewise_construct,
-                    std::forward_as_tuple(key),
-                    std::forward_as_tuple(std::make_shared<CacheEntry>(*entry_ptr))
-                );
-                cache_entry = it->second;
-            }
-
-            if (!needUpdateMarks(*entry_ptr, mark_ranges, marks_count, has_final_mark))
-                return;
-
-            is_insert = true;
-        }
-    }
-
-    /// Create new entry.
-    if (!cache_entry)
-    {
-        std::lock_guard lock(mutex);
-        /// If another thread created the entry in the meantime, emplace will do nothing.
-        auto [it, inserted] = new_entries.emplace(
-            std::piecewise_construct,
-            std::forward_as_tuple(key),
-            std::forward_as_tuple(std::make_shared<CacheEntry>(marks_count))
-        );
-        cache_entry = it->second; /// either the one we inserted here or the one which prevented the insertion
+        new_entries[key] = std::move(entry);
 
         is_insert = true;
     }
-
+    else
     {
-        std::lock_guard lock(cache_entry->mutex);
+        QueryConditionCache::Entry & matching_marks = it->second;
+
+        chassert(marks_count == matching_marks.size());
+
         /// The input mark ranges are the areas which the scan can skip later on.
         for (const auto & mark_range : mark_ranges)
-            std::fill(cache_entry->entry.begin() + mark_range.begin, cache_entry->entry.begin() + mark_range.end, false);
+            std::fill(matching_marks.begin() + mark_range.begin, matching_marks.begin() + mark_range.end, false);
 
         if (has_final_mark)
-            cache_entry->entry[marks_count - 1] = false;
+            matching_marks[marks_count - 1] = false;
 
-        cache_entry->is_dirty = true;
+        is_insert = false;
     }
 
     LOG_TEST(
@@ -213,11 +184,11 @@ void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & 
 
 void QueryConditionCacheWriter::finalize()
 {
-    std::lock_guard lock(mutex);
-    for (const auto & [key, cache_entry] : new_entries)
+    std::lock_guard<std::mutex> lock(mutex);
+
+    for (const auto & [key, entry] : new_entries)
     {
-        auto & entry = cache_entry->entry;
-        if (entry.empty() || !cache_entry->is_dirty)
+        if (entry.empty())
             continue;
 
         size_t matching_marks = std::count(entry.begin(), entry.end(), true);
@@ -225,28 +196,6 @@ void QueryConditionCacheWriter::finalize()
         if (selectivity <= selectivity_threshold)
             query_condition_cache.write(key, entry);
     }
-}
-
-bool QueryConditionCacheWriter::needUpdateMarks(const QueryConditionCache::Entry & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const
-{
-    bool need_not_update_marks = true;
-    for (const auto & mark_range : mark_ranges)
-    {
-        /// If the bits are already in the desired state (false), we don't need to update them.
-        need_not_update_marks = std::all_of(entry.begin() + mark_range.begin,
-                                            entry.begin() + mark_range.end,
-                                            [](auto b) { return b == false; });
-        if (!need_not_update_marks)
-            break;
-    }
-
-    /// Do we either have no final mark or final mark is already in the desired state?
-    bool need_not_update_final_mark = !has_final_mark || entry[marks_count - 1] == false;
-
-    if (need_not_update_marks && need_not_update_final_mark)
-        return false;
-
-    return true;
 }
 
 }
