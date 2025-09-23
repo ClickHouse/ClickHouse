@@ -14,6 +14,22 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     cluster = ClickHouseCluster(__file__)
     cluster.add_instance(
+        "oldest_node",
+        with_installed_binary=True,
+        image="clickhouse/clickhouse-server",
+        tag="23.11.5.29",
+        main_configs=[
+            "configs/old_node.xml",
+            "configs/storage_conf.xml",
+        ],
+        user_configs=[
+            "configs/settings.xml",
+        ],
+        with_minio=True,
+        macros={"replica": "3"},
+        with_zookeeper=True,
+    )
+    cluster.add_instance(
         "old_node",
         with_installed_binary=True,
         image="clickhouse/clickhouse-server",
@@ -113,9 +129,15 @@ def drop_table_scope(nodes, tables, create_statements = []):
             for table in tables:
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
-
-def test_read_new_format(cluster):
-    old_node = cluster.instances["old_node"]
+@pytest.mark.parametrize(
+    "node_name",
+    [
+        "old_node",
+        "oldest_node",
+    ],
+)
+def test_read_new_format(cluster, node_name):
+    old_node = cluster.instances[node_name]
 
     crete_table_statement = """
         CREATE TABLE test_read_new_format (
