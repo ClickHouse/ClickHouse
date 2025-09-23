@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
@@ -67,7 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
-            {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"query_plan_convert_any_join_to_semi_or_anti_join", true, true, "New setting."},
             {"text_index_use_bloom_filter", true, true, "New setting."},
             {"query_plan_direct_read_from_text_index", true, true, "New setting."},
