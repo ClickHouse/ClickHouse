@@ -469,7 +469,7 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, true, R"(
+    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, false, R"(
 When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
 after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
 When set to `false`, each thread handles s3 request backoff independently of the others.
@@ -1502,7 +1502,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
 Enable using data skipping indexes during data reading.
 
 When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
@@ -6500,9 +6500,6 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(String, datalake_disk_name, "", R"(
-Which disk to use for data lake table engines.
-)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -6518,7 +6515,7 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
-    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 100000, R"(
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 1000000, R"(
 Defines a rows limit for a single inserted data file in delta lake.
 )", 0) \
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
@@ -6840,10 +6837,10 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(UInt64, max_iceberg_data_file_rows, 1000, R"(
+    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
@@ -7088,6 +7085,15 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
+Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \

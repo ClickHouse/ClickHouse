@@ -5936,7 +5936,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
 {
     auto max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(getMaxAddedBlocks());
 
-    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock())
+    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock(getStorageID().uuid))
     {
         for (const auto & [partition_id, max_block] : *additional_blocks)
         {
@@ -5988,7 +5988,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
         local_context,
         max_block_size,
         num_streams,
-        local_context->getPartitionIdToMaxBlock(),
+        local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         enable_parallel_reading);
 
     if (plan)
@@ -8160,7 +8160,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     const auto & block_numbers = update_holder.partition_block_numbers.getBlockNumbers();
     auto partitions = std::make_shared<PartitionIdToMaxBlock>(block_numbers.begin(), block_numbers.end());
-    context_copy->setPartitionIdToMaxBlock(std::move(partitions));
+    context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partitions));
 
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
@@ -8171,7 +8171,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         auto sync_timeout = query_context->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
 
         std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
-        waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(), ops, backoff_ms, sync_timeout);
+        waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
