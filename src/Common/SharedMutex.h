@@ -11,7 +11,7 @@
 namespace DB
 {
 
-// Faster implementation of `std::shared_mutex` based on a pair of futexes
+// Faster implementation of STD shared_mutex based on a pair of futexes
 // See https://github.com/ClickHouse/ClickHouse/issues/87060 for a comparison with absl::Mutex
 // Or run `./src/unit_tests_dbms --gtest_filter=*SharedMutex*`
 class TSA_CAPABILITY("SharedMutex") SharedMutex
