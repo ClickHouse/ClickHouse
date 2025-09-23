@@ -793,9 +793,6 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
     return parseWithoutAssertEOF<T>(str.data(), str.size());
 }
 
-template <typename ReturnType = void, bool dt64_mode = false>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
-
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
 
@@ -827,63 +824,90 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     static constexpr auto date_broken_down_length = 10;
     bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
 
-    if (optimistic_path_for_date_time_input)
+    if (optimistic_path_for_date_time_input
+            && s[4] == s[7] && (s[4] < '0' || s[4] > '9'))
     {
-        if (s[4] < '0' || s[4] > '9')
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return ReturnType(false);
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return ReturnType(false);
+        }
+
+        UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+        UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+        UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+        UInt8 hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+        bool dt_long = (s[10] == ' ' || s[10] == 'T');
+        if (dt_long)
         {
             if constexpr (!throw_exception)
             {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
+                    || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
                     return ReturnType(false);
 
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
                     return ReturnType(false);
             }
 
-            UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-            UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-            UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
-
-            UInt8 hour = 0;
-            UInt8 minute = 0;
-            UInt8 second = 0;
-
-            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-            bool dt_long = (s[10] == ' ' || s[10] == 'T');
-            if (dt_long)
-            {
-                if constexpr (!throw_exception)
-                {
-                    if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
-                        || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
-                        return ReturnType(false);
-
-                    if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
-                        return ReturnType(false);
-                }
-
-                hour = (s[11] - '0') * 10 + (s[12] - '0');
-                minute = (s[14] - '0') * 10 + (s[15] - '0');
-                second = (s[17] - '0') * 10 + (s[18] - '0');
-            }
-
-            if (unlikely(year == 0))
-                datetime = 0;
-            else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-
-            if (dt_long)
-                buf.position() += date_time_broken_down_length;
-            else
-                buf.position() += date_broken_down_length;
-
-            return ReturnType(true);
+            hour = (s[11] - '0') * 10 + (s[12] - '0');
+            minute = (s[14] - '0') * 10 + (s[15] - '0');
+            second = (s[17] - '0') * 10 + (s[18] - '0');
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+
+        if (unlikely(year == 0))
+            datetime = 0;
+        else
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+
+        if (dt_long)
+            buf.position() += date_time_broken_down_length;
+        else
+            buf.position() += date_broken_down_length;
+
+        return ReturnType(true);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+
+    bool optimistic_path_for_date_only_input = s + date_broken_down_length <= buf.buffer().end();
+
+    if (optimistic_path_for_date_only_input
+            && s[4] == s[7] && (s[4] < '0' || s[4] > '9'))
+    {
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return ReturnType(false);
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return ReturnType(false);
+        }
+
+        UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+        UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+        UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+        if (unlikely(year == 0))
+            datetime = 0;
+        else
+            datetime = makeDateTime(date_lut, year, month, day, 0, 0, 0);
+
+        buf.position() += date_broken_down_length;
+
+        return ReturnType(true);
+    }
+
+    /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+    return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
 }
 
 /** In hhh:mm:ss format, according to specified time zone.
