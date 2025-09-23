@@ -3,7 +3,6 @@ SET allow_experimental_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
-    id UInt64,
     str String,
     INDEX text_idx str TYPE text(tokenizer = 'ngram', ngram_size = 3) GRANULARITY 1,
     INDEX set_idx str TYPE set(10) GRANULARITY 1
@@ -14,7 +13,6 @@ SETTINGS compress_marks = 0;
 
 INSERT INTO tab (str) VALUES ('I am inverted');
 
-SYSTEM START MERGES tab;
 OPTIMIZE TABLE tab FINAL;
 
 -- to double check: `ll -h $(find . -name "*text_idx*")` from build dir
@@ -32,7 +30,8 @@ SELECT
     secondary_indices_compressed_bytes,
     secondary_indices_uncompressed_bytes,
     secondary_indices_marks_bytes
-FROM system.parts WHERE active = 1 AND partition = 'tuple()'
+FROM system.parts 
+WHERE database = currentDatabase() AND table = 'tab' AND active = 1 AND partition = 'tuple()'
 FORMAT Vertical;
 
 DROP TABLE tab;
