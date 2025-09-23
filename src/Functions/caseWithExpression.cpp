@@ -90,16 +90,9 @@ public:
         // expr = when
         ColumnsWithTypeAndName equals_args{expr, when_value};
 
-        // determine return type for equals
-        bool needs_nullable = expr.type->isNullable() || when_value.type->isNullable();
-        DataTypePtr equals_return_type;
-        if (needs_nullable)
-            equals_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-        else
-            equals_return_type = std::make_shared<DataTypeUInt8>();
-
-        auto equals_result = equals_func->build(equals_args)
-            ->execute(equals_args, equals_return_type, input_rows_count, false);
+        auto function_base = equals_func->build(equals_args);
+        DataTypePtr equals_return_type = function_base->getResultType();
+        auto equals_result = function_base->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
         if (isColumnNullable(*equals_result))

@@ -3,6 +3,7 @@ description: 'Documentation for Bit Functions'
 sidebar_label: 'Bit'
 slug: /sql-reference/functions/bit-functions
 title: 'Bit Functions'
+doc_type: 'reference'
 ---
 
 # Bit functions

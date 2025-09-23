@@ -4,6 +4,7 @@ sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
 title: 'Query condition cache'
+doc_type: 'guide'
 ---
 
 # Query condition cache
@@ -53,6 +54,9 @@ SETTINGS use_query_condition_cache = true;
 
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
+
+Setting [query_condition_cache_selectivity_threshold](settings/settings#query_condition_cache_selectivity_threshold) (default: 1.0) allows to write entries to the cache only if the predicate has a smaller selectivity than the configured value.
+We recommend changing this value only if the system has little DRAM.
 
 ## Administration {#administration}
 
