@@ -383,9 +383,7 @@ private:
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 
-    bool updateMetadataIfChanged(
-        ObjectStoragePtr object_storage,
-        ContextPtr context)
+    void updateMetadataIfChanged(ObjectStoragePtr object_storage, ContextPtr context)
     {
         if (!current_metadata)
         {
@@ -393,24 +391,16 @@ private:
                 object_storage,
                 weak_from_this(),
                 context);
-            return true;
+            return;
         }
 
         if (current_metadata->supportsUpdate())
         {
             current_metadata->update(context);
+            return;
         }
 
-        auto new_metadata = DataLakeMetadata::create(
-            object_storage,
-            weak_from_this(),
-            context);
-
-        if (*current_metadata == *new_metadata)
-            return false;
-
-        current_metadata = std::move(new_metadata);
-        return true;
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
     }
 };
 
