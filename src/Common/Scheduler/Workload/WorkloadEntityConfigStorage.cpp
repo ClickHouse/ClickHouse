@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 WorkloadEntityConfigStorage::WorkloadEntityConfigStorage(const ContextPtr & global_context_)
     : WorkloadEntityStorageBase(global_context_)
 {
