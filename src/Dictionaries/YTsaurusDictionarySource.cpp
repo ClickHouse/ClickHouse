@@ -110,11 +110,11 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-    const Block& sample_block_)
+    const Block & sample_block_)
     : context(context_)
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , sample_block{new Block(sample_block_)}
+    , sample_block{std::make_shared<Block>(sample_block_)}
     , client(new YTsaurusClient(context,
         {
             .http_proxy_urls = configuration->http_proxy_urls,

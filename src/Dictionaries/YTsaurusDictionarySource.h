@@ -25,7 +25,7 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        const Block& sample_block_);
+        const Block & sample_block_);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
