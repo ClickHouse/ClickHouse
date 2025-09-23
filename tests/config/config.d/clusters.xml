@@ -325,19 +325,5 @@
                 </replica>
             </shard>
         </test_shard_bind_host_fail>
-        <test_cluster_multiple_nodes_all_unavailable>
-            <node>
-                <host>127.0.0.1</host>
-                <port>1234</port>
-            </node>
-            <node>
-                <host>127.0.0.2</host>
-                <port>1234</port>
-            </node>
-            <node>
-                <host>127.0.0.3</host>
-                <port>1234</port>
-            </node>
-        </test_cluster_multiple_nodes_all_unavailable>
     </remote_servers>
 </clickhouse>

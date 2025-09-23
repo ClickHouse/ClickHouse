@@ -47,13 +47,11 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
-
-        bool operator==(const Settings & other) const = default;
     };
 
     /// Full
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
@@ -61,7 +59,7 @@ public:
 
     /// Full with partitioning
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -69,7 +67,7 @@ public:
 
     /// FinishSorting
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -77,7 +75,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,

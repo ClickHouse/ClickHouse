@@ -1,44 +1,34 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/Macros.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/Macros.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/thread_local_rng.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric RefreshingViews;
-}
-
-namespace ProfileEvents
-{
-    extern const Event RefreshableViewRefreshSuccess;
-    extern const Event RefreshableViewRefreshFailed;
-    extern const Event RefreshableViewSyncReplicaSuccess;
-    extern const Event RefreshableViewSyncReplicaRetry;
-    extern const Event RefreshableViewLockTableRetry;
 }
 
 namespace DB
@@ -73,12 +63,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int ABORTED;
-}
-
-namespace FailPoints
-{
-extern const char refresh_task_delay_update_coordination_state_running[];
 }
 
 RefreshTask::RefreshTask(
@@ -164,13 +148,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
-
-    task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-    {
-        w->root_watch_active.store(false);
-        w->should_reread_znodes.store(true);
-        (*task_waker)(response);
-    });
 
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
@@ -403,7 +380,7 @@ void RefreshTask::wait()
     std::unique_lock lock(mutex);
     refresh_cv.wait(lock, [&] {
         return state != RefreshState::Running && state != RefreshState::Scheduling &&
-            state != RefreshState::RunningOnAnotherReplica && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested);
+            state != RefreshState::RunningOnAnotherReplica && !scheduling.out_of_schedule_refresh_requested;
     });
     throw_if_error();
 
@@ -669,16 +646,16 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     execution.progress.reset();
 
     ContextMutablePtr refresh_context = view->getContext();
-    ProcessList::EntryPtr process_list_entry;
-    std::optional<StorageID> table_to_drop;
-    auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
     std::shared_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
+    ProcessList::EntryPtr process_list_entry;
 
+    std::optional<StorageID> table_to_drop;
+    auto new_table_id = StorageID::createEmpty();
     try
     {
         refresh_context = view->createRefreshContext(log_comment);
@@ -764,6 +741,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
+            process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
         }
 
         /// Exchange tables.
@@ -776,8 +754,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     }
     catch (...)
     {
-        ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshFailed);
-
         bool cancelled = execution.interrupt_execution.load();
 
         if (table_to_drop.has_value())
@@ -804,8 +780,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         return std::nullopt;
     }
-
-    ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshSuccess);
 
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
@@ -949,12 +923,24 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->existsWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->root_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->getChildrenWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->children_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -990,18 +976,9 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
-        {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
-            ops.emplace_back(
-                zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
-        }
+            ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         else
-        {
             ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/running", -1));
-        }
 
         Coordination::Responses responses;
 
@@ -1048,98 +1025,41 @@ void RefreshTask::interruptExecution()
 
 std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)
 {
-    ///  1. Get table by name.
-    ///  2. Check that it's not dropped locally.
-    ///     (After that, it can't be dropped during the query because we're holding StoragePtr and
-    ///      TableLockHolder.)
-    ///     If this fails, retry and expect to see a different table by the same name.
-    ///  3. Do SYSTEM SYNC REPLICA. May fail if the table is being dropped.
-    ///     If this fails, retry until we see a different table by the same name.
-
-    StoragePtr prev_storage;
-    bool prev_table_dropped_locally = false;
-    std::exception_ptr exception;
-
+    StoragePtr storage;
+    TableLockHolder storage_lock;
     for (int attempt = 0; attempt < 10; ++attempt)
     {
-        if (attempt > 0)
-        {
-            if (prev_table_dropped_locally)
-            {
-                ProfileEvents::increment(ProfileEvents::RefreshableViewLockTableRetry);
-            }
-            else
-            {
-                /// We're waiting for DatabaseReplicated to catch up and see the new table.
-                ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaRetry);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        }
-
-        StoragePtr storage = DatabaseCatalog::instance().getTable(storage_id, context);
-
+        StoragePtr prev_storage = std::move(storage);
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
         if (storage == prev_storage)
         {
-            if (prev_table_dropped_locally)
-                // Table was dropped but is still accessible in DatabaseCatalog.
-                // Either ABA problem or something's broken. Don't retry.
-                break;
-            continue;
+            // Table was dropped but is still accessible in DatabaseCatalog.
+            // Either ABA problem or something's broken. Don't retry, just in case.
+            break;
         }
-        prev_storage = storage;
+        storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (storage_lock)
+            break;
+    }
+    if (!storage_lock)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
 
-        TableLockHolder storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-        if (!storage_lock)
+    if (coordination.coordinated)
+    {
+        UUID uuid = storage->getStorageID().uuid;
+
+        std::lock_guard lock(replica_sync_mutex);
+        if (uuid != last_synced_inner_uuid)
         {
-            prev_table_dropped_locally = true;
-            continue;
+            InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
+
+            /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
+            ///  anything, just causes an unnecessary sync. Should be rare.)
+            last_synced_inner_uuid = uuid;
         }
-
-        if (coordination.coordinated)
-        {
-            std::lock_guard lock(replica_sync_mutex);
-            UUID uuid = storage->getStorageID().uuid;
-            if (uuid != last_synced_inner_uuid)
-            {
-                try
-                {
-                    InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
-                    ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
-                }
-                catch (Exception & e)
-                {
-                    if (e.code() != ErrorCodes::ABORTED)
-                        throw;
-
-                    /// Work around this race condition:
-                    ///  1. Another replica does a refresh: create table X, insert, rename.
-                    ///  2. This replica sees table X, but not its data yet.
-                    ///  3. Another replica does another refresh: create table Y, insert, rename,
-                    ///     drop table X.
-                    ///  4. This replica's DatabaseReplicated shuts down table X, and the
-                    ///     trySyncReplica fails with "Shutdown is called for table" exception.
-                    ///     X may still not have all data. ReplicatedMergeTree shutdown stops
-                    ///     data part exchange, so there's no hope of getting all data out of X.
-                    /// In this case we retry table lookup in hopes of seeing the new table Y.
-                    LOG_DEBUG(log, "Retrying after exception when syncing replica: {}", e.message());
-                    exception = std::current_exception();
-                    prev_table_dropped_locally = false;
-                    continue;
-                }
-
-                /// (Race condition: this may revert from a newer uuid to an older one. This doesn't
-                ///  break anything, just causes an unnecessary sync. Should be rare.)
-                last_synced_inner_uuid = uuid;
-            }
-        }
-
-        return {storage, storage_lock};
     }
 
-    if (prev_table_dropped_locally)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
-    else
-        std::rethrow_exception(exception);
+    return {storage, storage_lock};
 }
 
 std::chrono::system_clock::time_point RefreshTask::currentTime() const
@@ -1157,7 +1077,7 @@ void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+    randomness = std::uniform_int_distribution(Int64(-1e-9), Int64(1e9))(thread_local_rng);
 }
 
 String RefreshTask::CoordinationZnode::toString() const

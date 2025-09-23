@@ -1,5 +1,5 @@
-#include <Processors/Sources/PostgreSQLSource.h>
-#include <Common/Exception.h>
+#include "PostgreSQLSource.h"
+#include "Common/Exception.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -32,14 +32,14 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
-    SharedHeader sample_block,
+    const Block & sample_block,
     UInt64 max_block_size_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
     , query_str(query_str_)
 {
-    init(*sample_block);
+    init(sample_block);
 }
 
 
@@ -47,16 +47,16 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
-    SharedHeader sample_block,
+    const Block & sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
     , query_str(query_str_)
     , tx(std::move(tx_))
 {
-    init(*sample_block);
+    init(sample_block);
 }
 
 template<typename T>
@@ -105,15 +105,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 
     auto status = ISource::prepare();
     if (status == Status::Finished)
-    {
-        if (stream)
-            stream->close();
-
-        if (tx && auto_commit)
-            tx->commit();
-
-        is_completed = true;
-    }
+        onFinish();
 
     return status;
 }
@@ -179,6 +171,18 @@ Chunk PostgreSQLSource<T>::generate()
     return Chunk(std::move(columns), num_rows);
 }
 
+
+template<typename T>
+void PostgreSQLSource<T>::onFinish()
+{
+    if (stream)
+        stream->close();
+
+    if (tx && auto_commit)
+        tx->commit();
+
+    is_completed = true;
+}
 
 template<typename T>
 PostgreSQLSource<T>::~PostgreSQLSource()

@@ -1,4 +1,4 @@
-#include <Dictionaries/IPAddressDictionary.h>
+#include "IPAddressDictionary.h"
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
@@ -125,15 +125,14 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
 }
 
-static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bool is_v4, char * dst)
+static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bool isv4, char * dst)
 {
     char * ptr = dst;
-    if (is_v4)
+    if (isv4)
         formatIPv4(src, ptr);
     else
         formatIPv6(src, ptr);
-    *ptr = '/';
-    ++ptr;
+    *(ptr - 1) = '/';
     ptr = itoa(prefix_len, ptr);
     return ptr - dst;
 }
@@ -1073,8 +1072,7 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
     else
         key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
 
-    ColumnsWithTypeAndName key_columns_with_type =
-    {
+    ColumnsWithTypeAndName key_columns_with_type = {
         ColumnWithTypeAndName(key_columns.front(), key_type, ""),
         ColumnWithTypeAndName(key_columns.back(), std::make_shared<DataTypeUInt8>(), "")
     };

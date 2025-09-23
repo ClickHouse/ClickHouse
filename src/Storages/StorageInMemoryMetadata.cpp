@@ -135,7 +135,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty() && database != new_context->getCurrentDatabase())
+    if (!database.empty())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -780,21 +780,5 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
-std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColumnSizes() const
-{
-    std::unordered_map<std::string, ColumnSize> sizes;
-    for (const auto & col : columns)
-        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
-    return sizes;
-}
-
-NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions() const
-{
-    NameSet names;
-    for (const auto & col : columns)
-        if (!col.default_desc.expression)
-            names.insert(col.name);
-    return names;
-}
 
 }

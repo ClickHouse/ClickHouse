@@ -6,7 +6,6 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,7 +13,6 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -42,14 +40,12 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -132,7 +128,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -540,7 +535,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
 
             size_t num_rows = res_columns[0]->size();
-            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
@@ -667,13 +662,9 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
-        {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
-        }
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
@@ -803,9 +794,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
-        case Type::RESTORE_DATABASE_REPLICA:
-            restoreDatabaseReplica(query);
-            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -819,21 +807,13 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         case Type::STOP_LISTEN:
-        {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM STOP LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->stopServers(query.server_type);
             break;
-        }
         case Type::START_LISTEN:
-        {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM START LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->startServers(query.server_type);
             break;
-        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
@@ -902,29 +882,25 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_PURGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            Jemalloc::purgeArenas();
+            purgeJemallocArenas();
             break;
         }
         case Type::JEMALLOC_ENABLE_PROFILE:
         {
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
-                "enable it per query using setting 'jemalloc_enable_profiler'");
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(true);
+            break;
+        }
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(false);
+            break;
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
-            auto filename = Jemalloc::getLastFlushProfileForThread();
-            auto col = ColumnString::create();
-            col->insertData(filename.data(), filename.size());
-            Columns columns;
-            columns.emplace_back(std::move(col));
-            Chunk chunk(std::move(columns), 1);
-            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
-            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-            result.pipeline = QueryPipeline(filename_source);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
             break;
         }
 #else
@@ -961,24 +937,6 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
         false);
-}
-
-void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
-{
-    const String database_name = query.getDatabase();
-    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
-
-    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
-
-    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
-    if (!replicated_db)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
-    }
-
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
-
-    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1081,19 +1039,9 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
-    bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
     for (auto & elem : catalog.getDatabases())
     {
-        if (!elem.second->canContainMergeTreeTables())
-            continue;
-
-        if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
-        {
-            LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
-            continue;
-        }
-
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
@@ -1139,7 +1087,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
@@ -1576,6 +1524,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1758,11 +1707,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTORE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
-            break;
-        }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::SYNC_REPLICA:
