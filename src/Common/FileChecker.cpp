@@ -133,7 +133,7 @@ void FileChecker::repair()
 
         if (real_size > expected_size)
         {
-            LOG_WARNING(log, "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
+            LOG_TRACE(log, "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
             disk->truncateFile(path, expected_size);
         }
     }

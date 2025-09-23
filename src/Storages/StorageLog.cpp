@@ -855,8 +855,6 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    disk->clearDirectory(table_path);
-
     for (auto & data_file : data_files)
     {
         data_file.marks.clear();
@@ -865,6 +863,9 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     if (use_marks_file)
         file_checker.setEmpty(marks_file_path);
+
+    file_checker.save();
+    file_checker.repair();
 
     marks_loaded = true;
     num_marks_saved = 0;

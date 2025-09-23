@@ -439,13 +439,18 @@ std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPt
     return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    disk->clearDirectory(table_path);
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     indices.clear();
     file_checker.setEmpty(data_file_path);
     file_checker.setEmpty(index_file_path);
+
+    file_checker.save();
+    file_checker.repair();
 
     indices_loaded = true;
     num_indices_saved = 0;
