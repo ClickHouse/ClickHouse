@@ -7,14 +7,34 @@
 
 namespace DB
 {
-
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
+    const String & prefix, const String & suffix)
+{
+    return listFiles(object_storage, configuration.getPathForRead().path, prefix, suffix);
+}
+
+std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix)
+{
+    return listFiles(
+        object_storage,
+        path,
+        prefix,
+        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
+}
+
+
+std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const String & path,
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    auto key = std::filesystem::path(configuration.getPathForRead().path) / prefix;
+    auto key = std::filesystem::path(path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
@@ -26,19 +46,12 @@ std::vector<String> listFiles(
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
 }
-
-
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const String & prefix,
-    const String & suffix)
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    return listFiles(
-        object_storage,
-        configuration,
-        prefix,
-        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
+    return listFiles(object_storage, configuration.getPathForRead().path, prefix, check_need);
 }
-
 }
