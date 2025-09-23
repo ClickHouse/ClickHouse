@@ -8,9 +8,7 @@ namespace DB
 class SerializationString final : public ISerialization
 {
 public:
-    /// If true, this string column has an explicit `.size` substream (new serialization).
-    /// If false, the size information is implicit/virtual (old serialization).
-    explicit SerializationString(bool with_size_stream_);
+    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::DEFAULT);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -64,8 +62,7 @@ public:
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
 private:
-    /// Indicates whether this serializer uses an explicit `.size` substream.
-    bool with_size_stream;
+    MergeTreeStringSerializationVersion version;
 
     /// dispatch helpers for enumerateStreams
     void enumerateStreamsWithSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;

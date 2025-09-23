@@ -35,14 +35,12 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeString::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationString>(false);
+    return std::make_shared<SerializationString>();
 }
 
 SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
 {
-    if (info.getSettings().string_serialization_version == MergeTreeStringSerializationVersion::WITH_SIZE_STREAM)
-        return IDataType::getSerialization(info.getKind(), std::make_shared<SerializationString>(true));
-    return IDataType::getSerialization(info);
+    return IDataType::getSerialization(info.getKind(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 SerializationStringSize::SerializationStringSize(bool with_size_stream_)
     : with_size_stream(with_size_stream_)
-    , serialization_string(with_size_stream)
+    , serialization_string()
 {
 }
 

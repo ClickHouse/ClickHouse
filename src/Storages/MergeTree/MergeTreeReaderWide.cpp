@@ -359,7 +359,7 @@ void MergeTreeReaderWide::deserializePrefix(
     ISerialization::StreamCallback prefixes_prefetch_callback)
 {
     const auto & name = name_and_type.name;
-    if (!deserialize_binary_bulk_state_map.contains(name))
+    if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.object_and_dynamic_read_statistics = true;

@@ -261,14 +261,17 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 }
 
 void SerializationString::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
-    if (with_size_stream)
-        enumerateStreamsWithSize(settings, callback, data);
-    else
-        enumerateStreamsWithoutSize(settings, callback, data);
+    switch (version)
+    {
+        case MergeTreeStringSerializationVersion::DEFAULT:
+            enumerateStreamsWithoutSize(settings, callback, data);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
+            enumerateStreamsWithSize(settings, callback, data);
+            break;
+    }
 }
 
 void SerializationString::serializeBinaryBulkWithMultipleStreams(
@@ -278,10 +281,15 @@ void SerializationString::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (with_size_stream)
-        serializeBinaryBulkWithSizeStream(column, offset, limit, settings, state);
-    else
-        ISerialization::serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+    switch (version)
+    {
+        case MergeTreeStringSerializationVersion::DEFAULT:
+            ISerialization::serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
+            serializeBinaryBulkWithSizeStream(column, offset, limit, settings, state);
+            break;
+    }
 }
 
 void SerializationString::deserializeBinaryBulkWithMultipleStreams(
@@ -292,10 +300,15 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (with_size_stream)
-        deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
-    else
-        deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
+    switch (version)
+    {
+        case MergeTreeStringSerializationVersion::DEFAULT:
+            deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
+            deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
+            break;
+    }
 }
 
 void SerializationString::enumerateStreamsWithoutSize(
@@ -568,8 +581,8 @@ void SerializationString::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
-SerializationString::SerializationString(bool with_size_stream_)
-    : with_size_stream(with_size_stream_)
+SerializationString::SerializationString(MergeTreeStringSerializationVersion version_)
+    : version(version_)
 {
 }
 

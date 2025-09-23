@@ -23,7 +23,7 @@ TEST(SerializationObjectDeprecated, FromString)
     column_string->insert(R"({"k1" : 2, "k2" : [{"k3" : "cc", "k5" : 4}, {"k4": 5}, {"k4": 6}]})");
 
     {
-        auto serialization = std::make_shared<SerializationString>(false);
+        auto serialization = std::make_shared<SerializationString>();
 
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
