@@ -26,7 +26,7 @@ For arguments in the range `[-1, 1]` it returns the value in the range of `[-pi(
     FunctionDocumentation::Examples examples = {
     {"inverse", "SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))", "1 1 1"},
     {"float32", "SELECT toTypeName(asin(1.0::Float32))", "Float64"},
-    {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", "nan nan nan nan"}},
+    {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", "nan nan nan nan"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
