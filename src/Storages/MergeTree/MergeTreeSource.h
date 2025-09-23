@@ -1,6 +1,9 @@
 #pragma once
 #include <Processors/ISource.h>
 
+#include <IO/Progress.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -9,10 +12,12 @@ using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 struct ChunkAndProgress;
 
+using DataflowStatisticsCallback = std::function<void(const RuntimeDataflowStatistics & statistics)>;
+
 class MergeTreeSource final : public ISource
 {
 public:
-    explicit MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_);
+    MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, DataflowStatisticsCallback callback_);
     ~MergeTreeSource() override;
 
     std::string getName() const override;
@@ -31,6 +36,9 @@ protected:
 private:
     MergeTreeSelectProcessorPtr processor;
     const std::string log_name;
+
+    RuntimeDataflowStatistics statistics{};
+    DataflowStatisticsCallback callback;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

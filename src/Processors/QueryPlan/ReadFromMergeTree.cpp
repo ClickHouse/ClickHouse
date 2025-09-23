@@ -53,6 +53,8 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -385,6 +387,15 @@ ReadFromMergeTree::ReadFromMergeTree(
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 }
 
+ReadFromMergeTree::~ReadFromMergeTree()
+{
+    if (dataflow_cache_key)
+    {
+        // auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+        // dataflow_cache.update(*dataflow_cache_key, [](RuntimeDataflowStatistics & entry) { return RuntimeDataflowStatistics{}; });
+    }
+}
+
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,
@@ -449,7 +460,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings, index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), DataflowStatisticsCallback{});
         pipes.emplace_back(std::move(source));
     }
 
@@ -551,7 +562,17 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(
+            std::move(processor),
+            data.getLogName(),
+            [cache_key = dataflow_cache_key]([[maybe_unused]] const RuntimeDataflowStatistics & statistics)
+            {
+                if (cache_key)
+                {
+                    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+                    dataflow_cache.update(*cache_key, [&statistics](RuntimeDataflowStatistics & entry) { entry += statistics; });
+                }
+            });
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -658,7 +679,18 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(
+            std::move(processor),
+            data.getLogName(),
+            [cache_key = dataflow_cache_key]([[maybe_unused]] const RuntimeDataflowStatistics & statistics)
+            {
+                if (cache_key)
+                {
+                    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+                    dataflow_cache.update(*cache_key, [&statistics](RuntimeDataflowStatistics & entry) { entry += statistics; });
+                }
+            });
+
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 

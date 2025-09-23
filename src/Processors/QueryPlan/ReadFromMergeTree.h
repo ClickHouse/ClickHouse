@@ -164,6 +164,8 @@ public:
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
     ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
 
+    ~ReadFromMergeTree() override;
+
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,

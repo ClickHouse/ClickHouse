@@ -128,12 +128,12 @@ protected:
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
 
+    std::optional<size_t> dataflow_cache_key;
+
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
     size_t step_index = 0;
-
-    std::optional<size_t> dataflow_cache_key;
 };
 
 }
