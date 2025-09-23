@@ -213,6 +213,7 @@ namespace CurrentMetrics
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric NamedCollection;
     extern const Metric IcebergCatalogThreads;
     extern const Metric IcebergCatalogThreadsActive;
     extern const Metric IcebergCatalogThreadsScheduled;
@@ -569,6 +570,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
+    std::atomic_size_t max_named_collection_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
@@ -1325,6 +1327,8 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
+        if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > static_cast<Int64>(shared->max_named_collection_num_to_warn))
+            common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create("The number of named collections is more than {}.", shared->max_named_collection_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -4758,6 +4762,12 @@ size_t Context::getMaxPartNumToWarn() const
     return shared->max_part_num_to_warn;
 }
 
+size_t Context::getMaxNamedCollectionNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_named_collection_num_to_warn;
+}
+
 size_t Context::getMaxTableNumToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4798,6 +4808,12 @@ void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_part_num_to_warn = max_part_to_warn;
+}
+
+void Context::setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_named_collection_num_to_warn = max_named_collection_to_warn;
 }
 
 void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
