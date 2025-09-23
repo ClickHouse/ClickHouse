@@ -227,7 +227,7 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
 {
 }
 
-void StorageObjectStorageConfiguration::updateExternalDynamicMetadataIfExistsImpl(
+void StorageObjectStorageConfiguration::updateExternalDynamicMetadataIfExists(
     ContextPtr query_context, IStorage & storage, ObjectStoragePtr object_storage)
 {
     if (!needsUpdateForSchemaConsistency())

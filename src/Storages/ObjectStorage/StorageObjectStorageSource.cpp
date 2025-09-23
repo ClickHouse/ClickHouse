@@ -271,12 +271,6 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
-    auto chunk = generateImpl();
-    return chunk;
-}
-
-Chunk StorageObjectStorageSource::generateImpl()
-{
     lazyInitialize();
 
     while (true)

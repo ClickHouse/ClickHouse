@@ -324,15 +324,9 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
 }
 
 
-static bool isTemporaryMetadataFile(const String & path)
+static bool isTemporaryMetadataFile(const String & file_name)
 {
-    /// Temporary metadata files are created during commit operation.
-    /// They have .tmp suffix
-    if (!path.ends_with(".metadata.json"))
-    {
-        return false;
-    }
-    String substring = path.substr(0, path.size() - strlen(".metadata.json"));
+    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
     if (!Poco::UUID{}.tryParse(substring))
     {
         return false;
@@ -340,12 +334,15 @@ static bool isTemporaryMetadataFile(const String & path)
     return true;
 }
 
-static std::optional<Iceberg::MetadataFileWithInfo> getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     if (isTemporaryMetadataFile(file_name))
     {
-        return std::nullopt;
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
+            path);
     }
     String version_str;
     /// v<V>.metadata.json
@@ -732,11 +729,11 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        auto metadata_path_opt = getMetadataFileAndVersion(path);
-        if (!metadata_path_opt.has_value())
+        String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+        if (isTemporaryMetadataFile(file_name))
             continue;
+        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
-        auto [version, metadata_file_path, compression_method] = metadata_path_opt.value();
         if (need_all_metadata_files_parsing)
         {
             auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
@@ -816,13 +813,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             auto prefix_storage_path = configuration_ptr->getPathForRead().path;
             if (!explicit_metadata_path.starts_with(prefix_storage_path))
                 explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-            auto metadata_path_opt = getMetadataFileAndVersion(explicit_metadata_path);
-            if (!metadata_path_opt.has_value())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Temporary metadata file is not allowed as a root metadata for the table: {}",
-                    explicit_metadata_path);
-            return metadata_path_opt.value();
+            return getMetadataFileAndVersion(explicit_metadata_path);
         }
         catch (const std::exception & ex)
         {
@@ -851,14 +842,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-        auto result_metadata_path = (std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file).string();
-        auto metadata_path_opt = getMetadataFileAndVersion(result_metadata_path);
-        if (!metadata_path_opt.has_value())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Temporary metadata file is not allowed as a root metadata for the table: {}",
-                result_metadata_path);
-        return metadata_path_opt.value();
+        std::string result_metadata_path = std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file;
+        return getMetadataFileAndVersion(result_metadata_path);
     }
     else
     {

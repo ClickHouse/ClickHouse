@@ -223,7 +223,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
     if (!do_lazy_init && mode == LoadingStrictnessLevel::CREATE)
-        configuration->updateExternalDynamicMetadataIfExistsImpl(context, *this, object_storage);
+        configuration->updateExternalDynamicMetadataIfExists(context, *this, object_storage);
 }
 
 String StorageObjectStorage::getName() const
@@ -278,7 +278,7 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    configuration->updateExternalDynamicMetadataIfExistsImpl(query_context, *this, object_storage);
+    configuration->updateExternalDynamicMetadataIfExists(query_context, *this, object_storage);
 }
 
 
@@ -493,7 +493,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        nullptr,
+        nullptr, // storage_metadata
         false /* distributed_processing */,
         context,
         /* predicate */ {},
