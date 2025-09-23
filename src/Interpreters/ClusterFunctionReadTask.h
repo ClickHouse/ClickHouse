@@ -18,6 +18,7 @@ struct ClusterFunctionReadTaskResponse
 
     /// Data path (object path, in case of object storage).
     String path;
+    std::optional<Int32> row_group_id = std::nullopt;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
 

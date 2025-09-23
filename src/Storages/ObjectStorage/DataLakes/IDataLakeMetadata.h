@@ -14,7 +14,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
-
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 namespace DataLake
 {

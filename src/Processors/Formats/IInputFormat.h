@@ -45,6 +45,9 @@ public:
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
+    virtual std::optional<size_t> getChunksCount();
+
+    virtual void setChunksToSkip(size_t num_chunks);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of

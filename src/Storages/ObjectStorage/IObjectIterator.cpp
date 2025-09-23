@@ -1,6 +1,11 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 namespace DB
 {
@@ -62,5 +67,50 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
     }
     return {};
 }
+
+ObjectIteratorSplittedByRowGroups::ObjectIteratorSplittedByRowGroups(
+    ObjectIterator iterator_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const ContextPtr & context_)
+    : WithContext(context_)
+    , iterator(iterator_)
+    , configuration(configuration_)
+    , object_storage(object_storage_)
+{
+}
+
+ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
+{
+    if (!pending_objects_info.empty())
+    {
+        auto result = pending_objects_info.front();
+        pending_objects_info.pop();
+        return result;
+    }
+    auto last_object_info = iterator->next(id);
+    if (!last_object_info)
+        return {};
+    
+    auto buffer = object_storage->readObject(StoredObject(last_object_info->getPath()), getReadSettings());
+    auto input_format = FormatFactory::instance().getInput(
+        configuration->format, *buffer, {}, getContext(), {});
+
+    auto chunks_count = input_format->getChunksCount();
+    if (chunks_count)
+    {
+        for (size_t i = 0; i < *chunks_count; ++i)
+        {
+            auto copy_object_info = *last_object_info;
+            copy_object_info.row_group_id = i;
+            pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));   
+        }
+    }
+
+    auto result = pending_objects_info.front();
+    pending_objects_info.pop();
+    return result;
+}
+
 
 }

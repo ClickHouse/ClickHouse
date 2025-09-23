@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -45,6 +46,9 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
+    if (row_group_id.has_value())
+        object->row_group_id = row_group_id;
+
     return object;
 }
 
@@ -60,6 +64,11 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
             data_lake_metadata.transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        writeVarUInt(row_group_id.value_or(-1), out);
     }
 }
 
@@ -86,6 +95,16 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         {
             data_lake_metadata.transform = std::move(transform);
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        Int32 raw_row_groud_id;
+        readVarInt(raw_row_groud_id, in);
+        if (raw_row_groud_id != -1)
+            row_group_id = raw_row_groud_id;
+        else
+            row_group_id = std::nullopt;
     }
 }
 

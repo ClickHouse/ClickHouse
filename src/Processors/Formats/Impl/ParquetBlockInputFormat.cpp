@@ -1,4 +1,5 @@
 #include <memory>
+#include <mutex>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_PARQUET
@@ -614,21 +615,19 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
-    if (parser_shared_resources->max_parsing_threads > 1)
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::FormatParsingThreads,
-            CurrentMetrics::FormatParsingThreadsActive,
-            CurrentMetrics::FormatParsingThreadsScheduled,
-            parser_shared_resources->max_parsing_threads);
+}
 
-    bool row_group_prefetch = !pool && parser_shared_resources->max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch
-        && !format_settings.parquet.use_native_reader;
-    if (row_group_prefetch)
-        io_pool = std::make_shared<ThreadPool>(
-            CurrentMetrics::IOThreads,
-            CurrentMetrics::IOThreadsActive,
-            CurrentMetrics::IOThreadsScheduled,
-            parser_shared_resources->getIOThreadsPerReader());
+std::optional<size_t> ParquetBlockInputFormat::getChunksCount()
+{
+    initializeIfNeeded();
+    return metadata->num_row_groups();
+}
+
+void ParquetBlockInputFormat::setChunksToSkip(size_t num_chunks)
+{
+    std::lock_guard lock(mutex);
+    num_blocks_to_skip = num_chunks;
+    read_exactly_one_block = true;
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -644,6 +643,22 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
         return;
+
+    if (parser_shared_resources->max_parsing_threads > 1)
+        pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::FormatParsingThreads,
+            CurrentMetrics::FormatParsingThreadsActive,
+            CurrentMetrics::FormatParsingThreadsScheduled,
+            parser_shared_resources->max_parsing_threads);
+
+    bool row_group_prefetch = !pool && parser_shared_resources->max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch
+        && !format_settings.parquet.use_native_reader;
+    if (row_group_prefetch)
+        io_pool = std::make_shared<ThreadPool>(
+            CurrentMetrics::IOThreads,
+            CurrentMetrics::IOThreadsActive,
+            CurrentMetrics::IOThreadsScheduled,
+            parser_shared_resources->getIOThreadsPerReader());
 
     if (format_filter_info)
     {
@@ -1142,11 +1157,11 @@ Chunk ParquetBlockInputFormat::read()
 {
     initializeIfNeeded();
 
-    if (is_stopped || row_group_batches_completed == row_group_batches.size())
-        return {};
-
     if (need_only_count)
     {
+        if (is_stopped || row_group_batches_completed == row_group_batches.size())
+            return {};
+
         auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
         size_t total_rows_before = std::accumulate(
                                        row_group_batches_skipped_rows.begin(),
@@ -1163,6 +1178,20 @@ Chunk ParquetBlockInputFormat::read()
     }
 
     std::unique_lock lock(mutex);
+    if (is_stopped || row_group_batches_completed == row_group_batches.size())
+        return {};
+
+    if (read_exactly_one_block && one_block_readed) 
+        return {};
+
+    if (num_blocks_to_skip > 0)
+    {
+        row_group_batches_completed = num_blocks_to_skip;
+        row_group_batches_started = num_blocks_to_skip;
+        for (size_t i = 0; i < num_blocks_to_skip; ++i)
+            row_group_batches[i].status = RowGroupBatchState::Status::Done;
+    }
+    num_blocks_to_skip = 0;
 
     while (true)
     {
@@ -1208,6 +1237,7 @@ Chunk ParquetBlockInputFormat::read()
 
             chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
 
+            one_block_readed = true;
             return std::move(chunk.chunk);
         }
 

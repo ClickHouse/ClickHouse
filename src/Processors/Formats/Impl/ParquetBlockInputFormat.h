@@ -72,6 +72,9 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
+    std::optional<size_t> getChunksCount() override;
+    void setChunksToSkip(size_t num_chunks) override;
+
 private:
     Chunk read() override;
 
@@ -340,6 +343,9 @@ private:
     bool is_initialized = false;
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
     std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
+    bool read_exactly_one_block = false;
+    bool one_block_readed = false;
+    size_t num_blocks_to_skip = 0;
 };
 
 class ArrowParquetSchemaReader : public ISchemaReader
