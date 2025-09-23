@@ -88,7 +88,7 @@ private:
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
-    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
+    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }

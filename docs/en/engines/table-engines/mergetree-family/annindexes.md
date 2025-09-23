@@ -4,6 +4,7 @@ keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index',
 sidebar_label: 'Exact and Approximate Vector Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Vector Search'
+doc_type: 'guide'
 ---
 
 # Exact and approximate vector search

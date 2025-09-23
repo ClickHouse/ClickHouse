@@ -5,6 +5,7 @@ sidebar_label: 'Operators'
 sidebar_position: 38
 slug: /sql-reference/operators/
 title: 'Operators'
+doc_type: 'reference'
 ---
 
 # Operators
@@ -70,13 +71,13 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 `a > b` – The `greater(a, b)` function.
 
 ### like function {#like-function}
-`a LIKE s` – The `like(a, b)` function.
+`a LIKE b` – The `like(a, b)` function.
 
 ### notLike function {#notlike-function}
-`a NOT LIKE s` – The `notLike(a, b)` function.
+`a NOT LIKE b` – The `notLike(a, b)` function.
 
 ### ilike function {#ilike-function}
-`a ILIKE s` – The `ilike(a, b)` function.
+`a ILIKE b` – The `ilike(a, b)` function.
 
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
