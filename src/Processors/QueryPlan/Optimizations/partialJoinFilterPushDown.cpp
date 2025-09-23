@@ -46,46 +46,6 @@ struct ConditionList
         return existing_nodes.empty() &&
             (subconditions.empty() || (subconditions.size() == 1 && subconditions.front().assumedTrue()));
     }
-
-//    void dump(WriteBuffer & out) const
-//    {
-//        if (op.empty() || (existing_nodes.size() + subconditions.size() == 1))
-//        {
-//            chassert(existing_nodes.size() + subconditions.size() <= 1);
-//            if (existing_nodes.empty() && subconditions.empty())
-//                out << "True";
-//            else if (!existing_nodes.empty())
-//                out << existing_nodes.front()->result_name;
-//            else
-//                subconditions.front().dump(out);
-//
-//            return;
-//        }
-//        out << op << "(";
-//        bool need_comma = false;
-//        for (const auto * node : existing_nodes)
-//        {
-//            if (need_comma)
-//                out << ", ";
-//            out << node->result_name;
-//            need_comma = true;
-//        }
-//        for (const auto & condition : subconditions)
-//        {
-//            if (need_comma)
-//                out << ", ";
-//            condition.dump(out);
-//            need_comma = true;
-//        }
-//        out << ")";
-//    }
-//
-//    String dump() const
-//    {
-//        WriteBufferFromOwnString out;
-//        dump(out);
-//        return out.str();
-//    }
 };
 
 /// Check if the whole subgraph that calculates the node only uses columns from the list
@@ -198,9 +158,6 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const std::string & filter_name,
     const Names & available_columns)
 {
-//    std::cerr << fmt::format("BEFORE:\n{}\nFILTER: {}\nAVAILABLE COLUMNS: {}\n\n\n",
-//        original_dag.dumpDAG(), filter_name, fmt::join(available_columns, ","));
-
     if (!original_dag.tryFindInOutputs(filter_name))
         return {};
 
@@ -209,8 +166,6 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG::Node & predicate = full_dag.findInOutputs(filter_name);
 
     auto predicate_template = extractPartialPredicate(predicate, NameSet(available_columns.begin(), available_columns.end()));
-
-//    std::cerr << "PREDICATE TEMPLATE: " << predicate_template.dump() << "\n\n\n";
 
     if (predicate_template.assumedTrue())
         return {};
@@ -223,8 +178,6 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     full_dag.getOutputs().clear();
     full_dag.addOrReplaceInOutputs(*predicate_node);
     full_dag.removeUnusedActions();
-
-//    std::cerr << "AFTER:\n" << full_dag.dumpDAG() << "\n\n\n";
 
     return full_dag;
 }
@@ -239,10 +192,7 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
     for (const auto * input : filter_dag.getInputs())
         filter_dag.addOrReplaceInOutputs(*input);
 
-//    std::cerr << "ADD FILTER:\n" << filter_dag.dumpDAG() << "\n\n\n";
-
     const auto input_header = new_filter_node.children.at(0)->step->getOutputHeader();
-//    std::cerr << input_header->dumpNames() << "\n\n";
 
     new_filter_node.step = std::make_unique<FilterStep>(
         input_header,
