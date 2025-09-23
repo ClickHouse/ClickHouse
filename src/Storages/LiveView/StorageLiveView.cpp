@@ -657,11 +657,6 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         builder = interpreter.buildQueryPipeline();
     }
 
-    builder.addSimpleTransform([&](const Block & cur_header)
-    {
-        return std::make_shared<MaterializingTransform>(cur_header);
-    });
-
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
