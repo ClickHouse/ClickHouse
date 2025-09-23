@@ -9,6 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -760,6 +761,8 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClu
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
+            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
             if (joined_tables.tablesCount() == 1)
                 src_storage = joined_tables.getLeftTableStorage();
