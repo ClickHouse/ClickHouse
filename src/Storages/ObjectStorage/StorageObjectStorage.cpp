@@ -221,8 +221,10 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
-    /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
-    if (!do_lazy_init && mode == LoadingStrictnessLevel::CREATE && configuration->needsUpdateForSchemaConsistency())
+    /// This will update metadata for table function which contains specific information about table
+    /// state (e.g. for Iceberg). It is done because select queries for table functions are executed
+    /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
+    if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
     {
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
         setInMemoryMetadata(metadata_snapshot);
@@ -285,7 +287,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         object_storage,
         query_context,
         /* if_not_updated_before */ true);
-    configuration->updateStorageMetadataIfNeeded(query_context, *this);
+    if (configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 
@@ -500,12 +506,12 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        nullptr, // storage_metadata
-        false /* distributed_processing */,
+        nullptr, /* storage_metadata */
+        false, /* distributed_processing */
         context,
-        /* predicate */ {},
+        {}, /* predicate*/
         {},
-        {} /* virtual_columns */,
+        {}, /* virtual_columns */
         {}, /* hive_columns */
         &read_keys);
 

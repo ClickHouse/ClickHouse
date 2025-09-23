@@ -1342,7 +1342,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    // src_storage_cluster.updateExternalDynamicMetadataIfExists(query_context);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
         predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
 

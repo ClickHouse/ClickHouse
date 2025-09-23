@@ -40,7 +40,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
-        nullptr,
+        nullptr, // storage_metadata
         false, // distributed_processing
         context,
         {}, // predicate
@@ -105,7 +105,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
 
-    configuration->updateStorageMetadataIfNeeded(context_, *this);
+    if (configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -197,7 +201,11 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
         object_storage,
         query_context,
         /* if_not_updated_before */ true);
-    configuration->updateStorageMetadataIfNeeded(query_context, *this);
+    if (configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(

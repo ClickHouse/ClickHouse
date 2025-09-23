@@ -327,16 +327,12 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
 static bool isTemporaryMetadataFile(const String & file_name)
 {
     String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
-    if (!Poco::UUID{}.tryParse(substring))
-    {
-        return false;
-    }
-    return true;
+    return Poco::UUID{}.tryParse(substring);
 }
 
 static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
-    String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
     {
         throw Exception(
@@ -729,8 +725,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
-        if (isTemporaryMetadataFile(file_name))
+        String filename = std::filesystem::path(path).filename();
+        if (isTemporaryMetadataFile(filename))
             continue;
         auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 

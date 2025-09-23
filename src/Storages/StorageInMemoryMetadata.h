@@ -125,7 +125,7 @@ struct StorageInMemoryMetadata
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
 
-    void setDataLakeTableState(const Iceberg::TableStateSnapshot & datalake_table_state_);
+    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

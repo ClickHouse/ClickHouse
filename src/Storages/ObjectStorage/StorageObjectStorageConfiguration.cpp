@@ -226,12 +226,4 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     ContextPtr) const
 {
 }
-
-void StorageObjectStorageConfiguration::updateStorageMetadataIfNeeded(ContextPtr query_context, IStorage & storage) const
-{
-    if (!needsUpdateForSchemaConsistency())
-        return;
-    auto metadata_snapshot = getStorageSnapshotMetadata(query_context);
-    storage.setInMemoryMetadata(metadata_snapshot);
-}
 }

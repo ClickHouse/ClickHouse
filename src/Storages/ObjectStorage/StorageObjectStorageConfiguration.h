@@ -135,6 +135,9 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
+    // This function is used primarily for datalake storages to check if we need to update metadata
+    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
+    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
     virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
@@ -233,8 +236,6 @@ public:
     }
 
     virtual void drop(ContextPtr) {}
-
-    void updateStorageMetadataIfNeeded(ContextPtr query_context, IStorage & storage) const;
 
     String format = "auto";
     String compression_method = "auto";
