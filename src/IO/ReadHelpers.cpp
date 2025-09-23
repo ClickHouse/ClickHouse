@@ -1303,7 +1303,6 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {

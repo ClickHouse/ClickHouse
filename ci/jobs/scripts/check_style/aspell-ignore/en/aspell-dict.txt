@@ -165,9 +165,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
-arrowFlight
 ArrowCompression
-ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -2840,8 +2838,6 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
-studentTTestOneSample
-studentttestonesample
 subarray
 subarrays
 subBitmap
@@ -3085,10 +3081,8 @@ toJSONString
 tokenbf
 tokenization
 tokenize
-tokenizes
 tokenized
 tokenizer
-tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

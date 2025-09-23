@@ -39,19 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.10",
-        {
-            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
-            {"enable_join_runtime_filters", false, false, "New setting"},
-            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
-            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"delta_lake_log_metadata", false, false, "New setting."},
-            {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
-            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
-        });
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"datalake_disk_name", "", "", "New setting."},
@@ -61,8 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
+            {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
+            {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
@@ -890,10 +877,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
-        {
-
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
