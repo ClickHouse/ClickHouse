@@ -18,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 
 
 namespace DB
@@ -73,14 +74,24 @@ BlockIO InterpreterUpdateQuery::execute()
     if (!settings[Setting::enable_lightweight_update])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
 
+    FunctionNameNormalizer::visit(query_ptr.get());
+    auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+
+    AccessRightsElements required_access;
+    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+
+    if (!update_query.cluster.empty())
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = std::move(required_access);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
-    FunctionNameNormalizer::visit(query_ptr.get());
-    auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+    getContext()->checkAccess(required_access);
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
-
-    getContext()->checkAccess(AccessType::ALTER_UPDATE, table_id);
     update_query.setDatabase(table_id.database_name);
 
     /// First check table storage for validations.
