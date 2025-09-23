@@ -103,6 +103,7 @@ private:
     {
         SharedMutex mutex;
         QueryConditionCache::Entry entry;
+        bool is_dirty; /// whether it needs to be written into the query condition cache.
 
         explicit CacheEntry(size_t marks_count);
         explicit CacheEntry(const QueryConditionCache::Entry & entry_);
@@ -111,6 +112,8 @@ private:
     using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
     void finalize();
+
+    bool needUpdateMarks(const QueryConditionCache::Entry & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const;
 
     QueryConditionCache & query_condition_cache;
 
