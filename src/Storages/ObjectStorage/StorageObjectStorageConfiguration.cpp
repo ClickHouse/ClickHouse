@@ -6,9 +6,15 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsString disk;
+}
 
 namespace ErrorCodes
 {
@@ -46,10 +52,11 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
+    bool supports_tuple_elements,
     ContextPtr local_context,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_parameters);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
@@ -63,7 +70,17 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    std::string disk_name;
+    if (configuration_to_initialize.isDataLakeConfiguration())
+    {
+        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
+            ? storage_settings[DataLakeStorageSetting::disk].value
+            : "";
+    }
+    if (!disk_name.empty())
+        configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -81,8 +98,11 @@ void StorageObjectStorageConfiguration::initialize(
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
-        // Promote to wildcard in case it is not data lake to make it backwards compatible
-        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
+        {
+            // Promote to wildcard in case it is not data lake to make it backwards compatible
+            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
     }
 
     if (configuration_to_initialize.format == "auto")
@@ -103,7 +123,10 @@ void StorageObjectStorageConfiguration::initialize(
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
     /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
-    configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
+    /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
+    if (disk_name.empty())
+        configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
+
     configuration_to_initialize.initialized = true;
 }
 
@@ -203,19 +226,12 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
-bool StorageObjectStorageConfiguration::hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
 {
-    return false;
 }
 
-
-std::shared_ptr<ISimpleTransform> StorageObjectStorageConfiguration::getPositionDeleteTransformer(
-    const ObjectInfoPtr & /*object_info*/,
-    const SharedHeader & /*header*/,
-    const std::optional<FormatSettings> & /*format_settings*/,
-    ContextPtr /*context_*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method getPositionDeleteTransformer() is not implemented for configuration type {}", getTypeName());
-}
 }

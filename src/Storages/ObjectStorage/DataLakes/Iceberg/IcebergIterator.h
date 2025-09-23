@@ -34,11 +34,13 @@ namespace Iceberg
 
 class SingleThreadIcebergKeysIterator
 {
+    using FilesGenerator = std::function<std::vector<ManifestFileEntry>(const Iceberg::ManifestFilePtr & manifest_file)>;
 public:
     SingleThreadIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
-        Iceberg::FileContentType content_type_,
+        FilesGenerator files_generator_,
+        Iceberg::ManifestFileContentType manifest_file_content_type_,
         StorageObjectStorageConfigurationWeakPtr configuration_,
         const ActionsDAG * filter_dag_,
         IcebergTableStateSnapshotPtr table_snapshot_,
@@ -58,6 +60,7 @@ private:
     StorageObjectStorageConfigurationWeakPtr configuration;
     bool use_partition_pruning;
     PersistentTableComponents persistent_components;
+    FilesGenerator files_generator;
     LoggerPtr log;
 
 
@@ -68,7 +71,6 @@ private:
     Int32 previous_entry_schema = -1;
     std::optional<Iceberg::ManifestFilesPruner> current_pruner;
 
-    const Iceberg::FileContentType content_type;
     const Iceberg::ManifestFileContentType manifest_file_content_type;
 
     size_t min_max_index_pruned_files = 0;
@@ -99,13 +101,14 @@ private:
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
-    Iceberg::SingleThreadIcebergKeysIterator position_deletes_iterator;
+    Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
     BackgroundSchedulePool::TaskHolder producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    const String format;
-    const String compression_method;
-    const std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
+    std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
+    std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
+    std::exception_ptr exception;
+    std::mutex exception_mutex;
 };
 }
 

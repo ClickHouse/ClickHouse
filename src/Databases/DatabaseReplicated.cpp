@@ -83,6 +83,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
 }
 
 namespace ErrorCodes
@@ -185,6 +186,57 @@ DatabaseReplicated::DatabaseReplicated(
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
 {
     return shard + '|' + replica;
+}
+
+void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_zk_fields) const
+{
+    auto zookeeper = getZooKeeper();
+
+    response.is_readonly = is_readonly;
+    response.is_session_expired = !zookeeper || zookeeper->expired();
+    response.max_log_ptr = 0;
+
+    response.replica_name = replica_name;
+    response.replica_path = replica_path;
+    response.shard_name = shard_name;
+    response.zookeeper_path = zookeeper_path;
+
+    response.total_replicas = 0;
+
+    if (!with_zk_fields || response.is_session_expired)
+        return;
+
+    try
+    {
+        std::vector<std::string> paths;
+
+        paths.push_back(zookeeper_path + "/max_log_ptr");
+        paths.push_back(fs::path(replica_path) / "log_ptr");
+
+        auto get_result = zookeeper->tryGet(paths);
+        chassert(get_result.size() == paths.size());
+
+        const auto & max_log_pointer_str = get_result[0].data;
+        if (get_result[0].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result[0].error);
+
+        response.max_log_ptr = max_log_pointer_str.empty() ? 0 : parse<UInt32>(max_log_pointer_str);
+
+        const auto & log_ptr_str = get_result[1].data;
+        if (get_result[1].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result[1].error);
+
+        response.log_ptr = log_ptr_str.empty() ? 0 : parse<UInt32>(log_ptr_str);
+
+        paths.clear();
+
+        const Strings all_replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+        response.total_replicas = static_cast<UInt32>(all_replicas.size());
+    }
+    catch (const Coordination::Exception &)
+    {
+        response.zookeeper_exception = getCurrentExceptionMessage(false);
+    }
 }
 
 String DatabaseReplicated::getFullReplicaName() const
@@ -597,7 +649,8 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/counter/cnt-", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/max_log_ptr", "1", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", "1000", zkutil::CreateMode::Persistent));
+    auto logs_to_keep = db_settings[DatabaseReplicatedSetting::logs_to_keep];
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", std::to_string(logs_to_keep), zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     auto res = current_zookeeper->tryMulti(ops, responses);
@@ -929,7 +982,11 @@ ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, C
 {
     auto res = tryGetCreateTableQuery(name, local_context);
     auto & create = res->as<ASTCreateQuery &>();
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.attach = false;
+    if (create.is_materialized_view_with_inner_table())
+        create.attach = true;
+    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
+        create.attach = true;
     return res;
 }
 
@@ -1460,7 +1517,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
             dropped_dictionaries += table->isDictionary();
-            table->flushAndShutdown();
+            table->flushAndShutdown(/*is_drop=*/true);
 
             if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
             {
@@ -1728,15 +1785,21 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);
 
     create.setDatabase(getDatabaseName());
-    create.setTable(unescapeForFileName(table_name));
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.setTable(table_name);
+    create.attach = false;
+
+    /// In both cases we need to set attach = true to avoid creating inner table(s) twice.
+    if (create.is_materialized_view_with_inner_table())
+        create.attach = true;
+    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
+        create.attach = true;
 
     return ast;
 }
-ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const
 {
-    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path, node_name);
-    return parseQueryFromMetadata(node_name, query, description);
+    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path, escapeForFileName(table_name));
+    return parseQueryFromMetadata(table_name, query, description);
 }
 ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_name) const
 {
@@ -1810,6 +1873,10 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
         }
         LOG_DEBUG(log, "It seems that the metadata was restored previously: {}.", e.what());
     }
+
+    /// Force the database to recover to update the restored metadata
+    auto current_zookeeper = getContext()->getZooKeeper();
+    current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
 
     reinitializeDDLWorker();
 }
@@ -2108,7 +2175,6 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
         assertDigestInTransactionOrInline(local_context, txn);
     }
 }
-
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {

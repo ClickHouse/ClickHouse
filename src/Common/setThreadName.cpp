@@ -1,16 +1,19 @@
+#include "config.h"
+
 #include <pthread.h>
 
 #if defined(OS_DARWIN) || defined(OS_SUNOS)
 #elif defined(OS_FREEBSD)
-    #include <pthread_np.h>
+#include <pthread_np.h>
 #else
-    #include <sys/prctl.h>
+#include <sys/prctl.h>
 #endif
 
 #include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+#include <Common/Jemalloc.h>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
 
@@ -53,6 +56,10 @@ void setThreadName(const char * name, bool truncate)
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
 
     memcpy(thread_name, name_capped, name_capped_len);
+
+#if USE_JEMALLOC
+    DB::Jemalloc::setValue("thread.prof.name", thread_name);
+#endif
 }
 
 const char * getThreadName()

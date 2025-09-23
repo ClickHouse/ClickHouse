@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Formats/IInputFormat.h>
+#include <Poco/JSON/Array.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -15,6 +16,11 @@ class IcebergPositionDeleteTransform : public ISimpleTransform
 public:
     static constexpr const char * positions_column_name = "pos";
     static constexpr const char * data_file_path_column_name = "file_path";
+
+    static constexpr Int64 positions_column_field_id = 2147483545;
+    static constexpr Int64 data_file_path_column_field_id = 2147483546;
+
+    static Poco::JSON::Array::Ptr getSchemaFields();
 
     IcebergPositionDeleteTransform(
         const SharedHeader & header_,

@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-SET enable_vector_similarity_index = 1;
-
 -- Tests that vector similarity indexes reject INSERTs of Arrays with sizes != than the size specified in the index
 
 DROP TABLE IF EXISTS tab;

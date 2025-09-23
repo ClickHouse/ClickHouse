@@ -123,8 +123,11 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
+    // nothing to read from body
+    body.reset();
+
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
     String part_name = params.get("part");
@@ -466,14 +469,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 if (data_disk->supportZeroCopyReplication())
                 {
                     LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), data_disk->getDataSourceDescription().toString());
-                    capability.push_back(data_disk->getDataSourceDescription().toString());
+                    capability.push_back(data_disk->getDataSourceDescription().name());
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
             LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
-            capability.push_back(disk->getDataSourceDescription().toString());
+            capability.push_back(disk->getDataSourceDescription().name());
         }
     }
 
@@ -520,7 +523,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
+            if (disk_candidate->getDataSourceDescription().name() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;

@@ -18,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
@@ -33,6 +34,25 @@ extern const int LOGICAL_ERROR;
 namespace DB::Iceberg
 {
 
+Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
+{
+    Poco::JSON::Array::Ptr pos_delete_schema = new Poco::JSON::Array;
+    Poco::JSON::Object::Ptr field_pos = new Poco::JSON::Object;
+    field_pos->set(Iceberg::f_id, IcebergPositionDeleteTransform::positions_column_field_id);
+    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::positions_column_name);
+    field_pos->set(Iceberg::f_required, true);
+    field_pos->set(Iceberg::f_type, "long");
+
+    Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
+    field_filename->set(Iceberg::f_id, IcebergPositionDeleteTransform::data_file_path_column_field_id);
+    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
+    field_pos->set(Iceberg::f_required, true);
+    field_pos->set(Iceberg::f_type, "string");
+
+    pos_delete_schema->add(field_filename);
+    pos_delete_schema->add(field_pos);
+    return pos_delete_schema;
+}
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {

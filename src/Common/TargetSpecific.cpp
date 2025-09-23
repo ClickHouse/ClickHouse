@@ -31,6 +31,8 @@ static UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::AMXTILE);
     if (CPU::CPUFlagsCache::have_AMXINT8)
         result |= static_cast<UInt32>(TargetArch::AMXINT8);
+    if (CPU::CPUFlagsCache::have_GenuineIntel)
+        result |= static_cast<UInt32>(TargetArch::GenuineIntel);
     return result;
 }
 
@@ -56,6 +58,7 @@ String toString(TargetArch arch)
         case TargetArch::AMXBF16: return "amxbf16";
         case TargetArch::AMXTILE: return "amxtile";
         case TargetArch::AMXINT8: return "amxint8";
+        case TargetArch::GenuineIntel: return "GenuineIntel";
     }
 }
 

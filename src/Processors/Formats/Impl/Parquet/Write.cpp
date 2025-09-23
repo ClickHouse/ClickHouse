@@ -40,8 +40,6 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-namespace parq = parquet::format;
-
 namespace
 {
 
@@ -138,7 +136,8 @@ struct StatisticsFixedStringRef
     }
 };
 
-template<size_t S>
+/// If SIGNED, compare as signed big endian integers.
+template<size_t S, bool SIGNED>
 struct StatisticsFixedStringCopy
 {
     bool empty = true;
@@ -152,7 +151,7 @@ struct StatisticsFixedStringCopy
         empty = false;
     }
 
-    void merge(const StatisticsFixedStringCopy<S> & s)
+    void merge(const StatisticsFixedStringCopy<S, SIGNED> & s)
     {
         if (s.empty)
             return;
@@ -175,14 +174,22 @@ struct StatisticsFixedStringCopy
         return s;
     }
 
+    inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
+    {
+        if constexpr (SIGNED)
+            /// Comparing the first byte as signed is sufficient.
+            if (*lhs != *rhs) return int(int8_t(*lhs)) - int(int8_t(*rhs));
+        return memcmp(lhs, rhs, S);
+    }
+
     void addMin(const uint8_t * p)
     {
-        if (empty || memcmp(p, min.data(), S) < 0)
+        if (empty || compare(p, min.data()) < 0)
             memcpy(min.data(), p, S);
     }
     void addMax(const uint8_t * p)
     {
-        if (empty || memcmp(p, max.data(), S) > 0)
+        if (empty || compare(p, max.data()) > 0)
             memcpy(max.data(), p, S);
     }
 };
@@ -415,7 +422,7 @@ struct ConverterNumberAsFixedString
 {
     /// Calculate min/max statistics for little-endian fixed strings, not numbers, because parquet
     /// doesn't know it's numbers.
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>;
 
     const ColumnVector<T> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -473,12 +480,11 @@ struct ConverterJSON
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
-/// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY, presumably
-/// to make them comparable lexicographically.)
+/// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY.)
 template <typename T>
 struct ConverterDecimal
 {
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ true>;
 
     const ColumnDecimal<T> & column;
     PODArray<uint8_t> data_buf;
@@ -617,7 +623,7 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     if (add_to_offset_index)
     {
-        parquet::format::PageLocation location;
+        parq::PageLocation location;
         /// Offset relative to column chunk. finalizeColumnChunkAndWriteFooter later adjusts it to global offset.
         location.__set_offset(s.column_chunk.meta_data.total_compressed_size);
         location.__set_compressed_page_size(static_cast<int32_t>(compressed_page_size));
@@ -642,7 +648,8 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     /// There appear to be undocumented requirements:
     ///  * number of blocks must be a power of two,
     ///  * bloom filter size must be at most 128 MiB.
-    /// At least parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters) requires this.
+    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+    /// requires this.
     double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
     while (num_blocks < requested_num_blocks)
@@ -714,6 +721,14 @@ void writeColumnImpl(
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
+    s.column_chunk.meta_data.__isset.size_statistics = true;
+    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
+    if (s.max_rep > 0)
+        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+    if (s.max_def > 0)
+        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
@@ -762,11 +777,18 @@ void writeColumnImpl(
             row_count = 0;
             for (size_t i = def_offset; i < def_offset + def_count; ++i)
             {
+                ++s.column_chunk.meta_data.size_statistics.repetition_level_histogram[s.rep[i]];
                 row_count += s.rep[i] == 0;
             }
         }
+
         if (s.max_def > 0)
+        {
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
+
+            for (size_t i = def_offset; i < def_offset + def_count; ++i)
+                ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
+        }
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
@@ -870,7 +892,7 @@ void writeColumnImpl(
     auto is_dict_too_big = [&] {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
         int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.dictionary_size_limit;
+        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
     };
 
     while (def_offset < num_values)
@@ -927,6 +949,12 @@ void writeColumnImpl(
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+            }
+
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                for (size_t i = 0; i < data_count; ++i)
+                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
             }
 
             encoder->Put(converted, static_cast<int>(data_count));

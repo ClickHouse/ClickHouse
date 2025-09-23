@@ -243,7 +243,7 @@ template <typename ColumnType>
 void ORCBlockOutputFormat::writeStrings(
         orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/)
+        const PaddedPODArray<UInt8> * null_bytemap)
 {
     orc::StringVectorBatch & string_orc_column = dynamic_cast<orc::StringVectorBatch &>(orc_column);
     const auto & string_column = assert_cast<const ColumnType &>(column);
@@ -253,7 +253,7 @@ void ORCBlockOutputFormat::writeStrings(
     for (size_t i = 0; i != string_column.size(); ++i)
     {
         const std::string_view & string = string_column.getDataAt(i).toView();
-        string_orc_column.data[i] = const_cast<char *>(string.data());
+        string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
         string_orc_column.length[i] = string.size();
     }
 }
@@ -583,7 +583,8 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
