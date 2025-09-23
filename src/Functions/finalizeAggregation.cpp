@@ -73,7 +73,52 @@ public:
 
 REGISTER_FUNCTION(FinalizeAggregation)
 {
-    factory.registerFunction<FunctionFinalizeAggregation>();
+    FunctionDocumentation::Description description_finalizeAggregation = R"(
+Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
+)";
+    FunctionDocumentation::Syntax syntax_finalizeAggregation = "finalizeAggregation(state)";
+    FunctionDocumentation::Arguments arguments_finalizeAggregation = {
+        {"state", "State of aggregation.", {"AggregateFunction"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_finalizeAggregation = {"Returns the finalized result of aggregation.", {"Any"}};
+    FunctionDocumentation::Examples examples_finalizeAggregation = {
+    {
+        "Usage example",
+        R"(
+SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
+        )",
+        R"(
+┌─finalizeAggregation(arrayReduce('maxState', [1, 2, 3]))─┐
+│                                                       3 │
+└─────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Combined with initializeAggregation",
+        R"(
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(5);
+        )",
+        R"(
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+└────────┴─────────────┴────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_finalizeAggregation = {1, 1};
+    FunctionDocumentation::Category category_finalizeAggregation = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_finalizeAggregation = {description_finalizeAggregation, syntax_finalizeAggregation, arguments_finalizeAggregation, returned_value_finalizeAggregation, examples_finalizeAggregation, introduced_in_finalizeAggregation, category_finalizeAggregation};
+
+    factory.registerFunction<FunctionFinalizeAggregation>(documentation_finalizeAggregation);
 }
 
 }

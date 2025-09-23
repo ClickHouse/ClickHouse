@@ -58,7 +58,33 @@ public:
 
 REGISTER_FUNCTION(ToColumnTypeName)
 {
-    factory.registerFunction<FunctionToColumnTypeName>();
+    FunctionDocumentation::Description description_toColumnTypeName = R"(
+Returns the internal name of the data type of the given value.
+Unlike function [`toTypeName`](#toTypeName), the returned data type potentially includes internal wrapper columns like `Const` and `LowCardinality`.
+)";
+    FunctionDocumentation::Syntax syntax_toColumnTypeName = "toColumnTypeName(value)";
+    FunctionDocumentation::Arguments arguments_toColumnTypeName = {
+        {"value", "Value for which to return the internal data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toColumnTypeName = {"Returns the internal data type used to represent the value.", {"String"}};
+    FunctionDocumentation::Examples examples_toColumnTypeName = {
+    {
+        "Usage example",
+        R"(
+SELECT toColumnTypeName(CAST('2025-01-01 01:02:03' AS DateTime));
+        )",
+        R"(
+┌─toColumnTypeName(CAST('2025-01-01 01:02:03', 'DateTime'))─┐
+│ Const(UInt32)                                             │
+└───────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toColumnTypeName = {1, 1};
+    FunctionDocumentation::Category category_toColumnTypeName = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_toColumnTypeName = {description_toColumnTypeName, syntax_toColumnTypeName, arguments_toColumnTypeName, returned_value_toColumnTypeName, examples_toColumnTypeName, introduced_in_toColumnTypeName, category_toColumnTypeName};
+
+    factory.registerFunction<FunctionToColumnTypeName>(documentation_toColumnTypeName);
 }
 
 }

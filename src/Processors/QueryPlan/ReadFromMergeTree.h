@@ -34,17 +34,6 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    struct DataSkippingIndexAndCondition
-    {
-        MergeTreeIndexPtr index;
-        MergeTreeIndexConditionPtr condition;
-
-        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
-        {
-        }
-    };
-
     struct MergedDataSkippingIndexAndCondition
     {
         std::vector<MergeTreeIndexPtr> indices;
@@ -59,7 +48,7 @@ struct UsefulSkipIndexes
 
     bool empty() const { return useful_indices.empty() && merged_indices.empty(); }
 
-    std::vector<DataSkippingIndexAndCondition> useful_indices;
+    std::vector<MergeTreeIndexWithCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
@@ -276,6 +265,12 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
+    /// Adds virtual columns for reading from text index.
+    /// Removes physical text columns that were eliminated by direct read from text index.
+    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+    const std::optional<Indexes> & getIndexes() const { return indexes; }
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -320,16 +315,19 @@ private:
         size_t max_streams,
         size_t min_marks_for_concurrent_read,
         bool use_uncompressed_cache);
+
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         Names required_columns,
         PoolSettings pool_settings);
+
     Pipe readFromPoolParallelReplicas(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         Names required_columns,
         PoolSettings pool_settings);
+
     Pipe readInOrder(
         RangesInDataParts parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -389,9 +387,11 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
+    IndexReadTasks index_read_tasks;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

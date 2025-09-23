@@ -54,7 +54,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
@@ -199,6 +198,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsUInt64 max_table_size_to_drop;
 }
 
 namespace MergeTreeSetting
@@ -781,24 +781,22 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
     return results;
 }
 
-ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
+ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
-        return {};
+        return nullptr;
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
-    if (parts.empty() || !filter_dag)
+    if (parts.empty())
         return {};
 
     ASTPtr expression_ast;
 
-    ConditionSelectivityEstimator estimator;
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
-    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
 
-    if (partition_pruner.isUseless())
+    auto build_estimator_all_partitions = [&]()
     {
         /// Read all partitions.
         for (const auto & part : parts)
@@ -806,14 +804,28 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         {
             auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            estimator.incrementRowCount(part.data_part->rows_count);
+            estimator_builder.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(stat);
+                estimator_builder.addStatistics(stat);
         }
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
         }
+    };
+
+    if (filter_dag == nullptr)
+    {
+        build_estimator_all_partitions();
+        return estimator_builder.getEstimator();
+    }
+
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
+
+    if (partition_pruner.isUseless())
+    {
+        build_estimator_all_partitions();
     }
     else
     {
@@ -823,9 +835,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             if (!partition_pruner.canBePruned(*part.data_part))
             {
                 auto stats = part.data_part->loadStatistics();
-                estimator.incrementRowCount(part.data_part->rows_count);
+                estimator_builder.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(stat);
+                    estimator_builder.addStatistics(stat);
             }
         }
         catch (...)
@@ -834,7 +846,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         }
     }
 
-    return estimator;
+    return estimator_builder.getEstimator();
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -8840,6 +8852,24 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
     return true;
 }
 
+void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    if (!supportsReplication() && isStaticStorage())
+        return;
+
+    auto table_id = getStorageID();
+
+    const auto & query_settings = query_context->getSettingsRef();
+    if (query_settings[Setting::max_table_size_to_drop].changed)
+    {
+        getContext()->checkTableCanBeDropped(
+            table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings[Setting::max_table_size_to_drop]);
+        return;
+    }
+
+    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
+}
+
 void MergeTreeData::writePartLog(
     PartLogElement::Type type,
     const ExecutionStatus & execution_status,
@@ -9862,7 +9892,7 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(parts),
         .min_part_data_versions = getMinDataVersionForEachPartition(parts),
-        .max_mutation_versions = query_context->getPartitionIdToMaxBlock(),
+        .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
         .need_patch_parts = apply_patch_parts,
