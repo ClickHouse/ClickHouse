@@ -385,21 +385,11 @@ private:
 
     void updateMetadataIfChanged(ObjectStoragePtr object_storage, ContextPtr context)
     {
-        if (!current_metadata)
-        {
-            current_metadata = DataLakeMetadata::create(
-                object_storage,
-                weak_from_this(),
-                context);
-            return;
-        }
-
-        if (current_metadata->supportsUpdate())
+        if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(context);
             return;
         }
-
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
     }
 };
