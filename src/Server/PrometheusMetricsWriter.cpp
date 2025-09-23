@@ -1,5 +1,7 @@
 #include <Server/PrometheusMetricsWriter.h>
 
+#include <Common/Histogram.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -119,6 +121,48 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
     }
 }
 
+void writeHistograms(DB::WriteBuffer & wb)
+{
+    DB::Histogram::Factory::instance().forEachFamily([&wb](const DB::Histogram::MetricFamily & family)
+    {
+        std::string base_name = family.getName();
+        if (!replaceInvalidChars(base_name))
+            return;
+
+        std::string help_text = family.getDocumentation();
+        convertHelpToSingleLine(help_text);
+
+        writeOutLine(wb, "# HELP", base_name, help_text);
+        writeOutLine(wb, "# TYPE", base_name, "histogram");
+
+        family.forEachMetric([&wb, &family](const DB::Histogram::LabelValues & label_values, const DB::Histogram::Metric & metric)
+        {
+            metric.writePrometheusLines(wb, family.getName(), family.getLabels(), label_values);
+        });
+    });
+}
+
+void writeDimensional(DB::WriteBuffer & wb)
+{
+    DB::DimensionalMetrics::Factory::instance().forEachFamily([&wb](const DB::DimensionalMetrics::MetricFamily & family)
+    {
+        std::string base_name = family.getName();
+        if (!replaceInvalidChars(base_name))
+            return;
+
+        std::string help_text = family.getDocumentation();
+        convertHelpToSingleLine(help_text);
+
+        writeOutLine(wb, "# HELP", base_name, help_text);
+        writeOutLine(wb, "# TYPE", base_name, "gauge");
+
+        family.forEachMetric([&wb, &family](const DB::DimensionalMetrics::LabelValues & label_values, const DB::DimensionalMetrics::Metric & metric)
+        {
+            metric.writePrometheusLine(wb, family.getName(), family.getLabels(), label_values);
+        });
+    });
+}
+
 }
 
 
@@ -172,6 +216,16 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
     writeOutLine(wb, key, total_count);
 }
 
+void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
+{
+    writeHistograms(wb);
+}
+
+void PrometheusMetricsWriter::writeDimensionalMetrics(WriteBuffer & wb) const
+{
+    writeDimensional(wb);
+}
+
 
 void KeeperPrometheusMetricsWriter::writeEvents([[maybe_unused]] WriteBuffer & wb) const
 {
@@ -194,6 +248,20 @@ void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] Wr
 {
 #if USE_NURAFT
     writeAsyncMetrics(wb, async_metrics.getValues());
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeHistogramMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    PrometheusMetricsWriter::writeHistogramMetrics(wb);
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeDimensionalMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    PrometheusMetricsWriter::writeDimensionalMetrics(wb);
 #endif
 }
 

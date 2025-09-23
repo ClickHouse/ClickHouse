@@ -2,12 +2,18 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <memory>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
+
+namespace DB
+{
+    class WriteBuffer;
+}
 
 namespace DB::Histogram
 {
@@ -26,6 +32,13 @@ namespace DB::Histogram
         Counter getCounter(size_t idx) const;
         Sum getSum() const;
 
+        /// Write all Prometheus lines for this histogram (buckets, count, sum)
+        void writePrometheusLines(
+            DB::WriteBuffer & wb,
+            const String & metric_name,
+            const Labels & labels,
+            const LabelValues & label_values) const;
+
     private:
         using AtomicCounters = std::vector<std::atomic<Counter>>;
         using AtomicSum = std::atomic<Value>;
@@ -43,42 +56,59 @@ namespace DB::Histogram
             size_t operator()(const LabelValues & label_values) const;
         };
 
-        using MetricsMap = std::unordered_map<LabelValues, std::shared_ptr<Metric>, LabelValuesHash>;
+        using MetricsMap = std::unordered_map<LabelValues, std::unique_ptr<Metric>, LabelValuesHash>;
 
     public:
-        explicit MetricFamily(Buckets buckets_, Labels labels_);
+        MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_);
         Metric & withLabels(LabelValues label_values);
-        MetricsMap getMetrics() const;
+
+        template <typename Func>
+        void forEachMetric(Func && func) const
+        {
+            std::shared_lock lock(mutex);
+            for (const auto & [label_values, metric] : metrics)
+            {
+                func(label_values, *metric);
+            }
+        }
+
         const Buckets & getBuckets() const;
         const Labels & getLabels() const;
+        const String & getName() const { return name; }
+        const String & getDocumentation() const { return documentation; }
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         MetricsMap metrics;
+        const String name;
+        const String documentation;
         const Buckets buckets;
         const Labels labels;
     };
 
-    struct MetricRecord
-    {
-        MetricRecord(String name_, String documentation_, Buckets buckets, Labels labels);
-        String name;
-        String documentation;
-        MetricFamily family;
-    };
-
-    using MetricRecordPtr = std::shared_ptr<MetricRecord>;
-    using MetricRecords = std::vector<MetricRecordPtr>;
+    using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
+    using MetricFamilies = std::vector<MetricFamilyPtr>;
 
     class Factory
     {
     public:
         static Factory & instance();
         MetricFamily & registerMetric(String name, String documentation, Buckets buckets, Labels labels);
-        MetricRecords getRecords() const;
+
+        template <typename Func>
+        void forEachFamily(Func && func) const
+        {
+            std::shared_lock lock(mutex);
+            for (const MetricFamilyPtr & family : registry)
+            {
+                func(*family);
+            }
+        }
+
+        void clear();
 
     private:
-        mutable std::mutex mutex;
-        MetricRecords registry TSA_GUARDED_BY(mutex);
+        mutable SharedMutex mutex;
+        MetricFamilies registry;
     };
 }
