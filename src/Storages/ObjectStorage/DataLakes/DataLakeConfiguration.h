@@ -61,11 +61,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
-namespace Setting
-{
-    extern const SettingsString datalake_disk_name;
-}
-
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
