@@ -20,9 +20,16 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Common/filesystemHelpers.h>
+#include <Disks/DiskType.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -32,8 +39,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DataLakeStorageSetting
@@ -51,6 +60,11 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+}
+
+namespace Setting
+{
+    extern const SettingsString datalake_disk_name;
 }
 
 template <typename T>
@@ -111,6 +125,12 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+        }
         BaseStorageConfiguration::create(
             object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 
@@ -160,6 +180,13 @@ public:
         assertInitialized();
         current_metadata->alter(params, context);
 
+    }
+
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    {
+        if (ready_object_storage)
+            return ready_object_storage;
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -330,10 +357,21 @@ public:
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
+    {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
+
+        BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        auto disk = context->getDisk(disk_name);
+        ready_object_storage = disk->getObjectStorage();
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
+    ObjectStoragePtr ready_object_storage;
 
     void assertInitialized() const
     {

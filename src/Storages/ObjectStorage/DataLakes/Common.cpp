@@ -27,6 +27,7 @@ std::vector<String> listFiles(
     return res;
 }
 
+
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
