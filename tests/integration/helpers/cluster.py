@@ -692,6 +692,10 @@ class ClickHouseCluster:
         self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
         self.azure_container_name = "cont"
 
+        # Dynamic host ports for MinIO exposure to host when needed by tests
+        self._minio_api_external_port = 0
+        self._minio_console_external_port = 0
+
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_dir = os.path.join(self.instances_dir, "kafka")
@@ -914,6 +918,20 @@ class ClickHouseCluster:
             return self._kafka_port
         self._kafka_port = self.port_pool.get_port()
         return self._kafka_port
+
+    @property
+    def minio_api_external_port(self):
+        if self._minio_api_external_port:
+            return self._minio_api_external_port
+        self._minio_api_external_port = self.port_pool.get_port()
+        return self._minio_api_external_port
+
+    @property
+    def minio_console_external_port(self):
+        if self._minio_console_external_port:
+            return self._minio_console_external_port
+        self._minio_console_external_port = self.port_pool.get_port()
+        return self._minio_console_external_port
 
     @property
     def schema_registry_port(self):
@@ -1658,6 +1676,10 @@ class ClickHouseCluster:
         self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
+        # Provide dynamic external ports for MinIO so compose can bind without collisions
+        # These are used by docker_compose_iceberg_*_catalog.yml via ${MINIO_API_EXTERNAL_PORT} and ${MINIO_CONSOLE_EXTERNAL_PORT}
+        env_variables["MINIO_API_EXTERNAL_PORT"] = str(self.minio_api_external_port)
+        env_variables["MINIO_CONSOLE_EXTERNAL_PORT"] = str(self.minio_console_external_port)
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
