@@ -9,6 +9,7 @@ namespace DB
 {
 
 class MetadataStorageFromDisk;
+class MetadataStorageFromDiskTransaction;
 class IDisk;
 
 /**

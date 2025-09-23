@@ -356,7 +356,6 @@ void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionC
     operations.finalize();
 }
 
-
 std::optional<StoredObjects>
 MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {

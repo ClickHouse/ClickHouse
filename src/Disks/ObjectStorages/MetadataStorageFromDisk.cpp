@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+
 #include <memory>
 #include <shared_mutex>
 
@@ -132,16 +134,7 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
-    const auto & keys_with_meta = metadata->getKeysWithMeta();
-
-    StoredObjects objects;
-    objects.reserve(keys_with_meta.size());
-    for (const auto & [object_key, object_meta] : keys_with_meta)
-    {
-        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
-    }
-
-    return objects;
+    return metadata->getStorageObjects(path);
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
@@ -265,9 +258,9 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     operations.addOperation(std::make_unique<AddBlobOperation>(path, std::move(key), size_in_bytes, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)
 {
-    auto op = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
+    auto op = std::make_unique<TruncateMetadataFileOperation>(src_path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
     auto outcome = op->getOutcome();
     operations.addOperation(std::move(op));
     return outcome;
