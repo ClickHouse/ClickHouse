@@ -98,7 +98,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 REGISTER_FUNCTION(Factorial)
 {
     FunctionDocumentation::Description description = R"(
-Computes the factorial of an integer value. 
+Computes the factorial of an integer value.
 The factorial of 0 is 1. Likewise, the `factorial()` function returns `1` for any negative value.
 The maximum positive value for the input argument is `20`, a value of `21` or greater will cause an exception.
     )";
@@ -113,7 +113,7 @@ The maximum positive value for the input argument is `20`, a value of `21` or gr
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionFactorial>(documentation, FunctionFactory::Case::Insensitive);
 }
 
