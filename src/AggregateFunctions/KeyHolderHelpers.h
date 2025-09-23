@@ -17,7 +17,7 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        auto serialized = column.serializeValueIntoArena(row_num, arena, begin);
+        auto serialized = column.serializeAggregationStateValueIntoArena(row_num, arena, begin);
         chassert(serialized.data() != nullptr);
         return SerializedKeyHolder{serialized, arena};
     }
@@ -29,7 +29,7 @@ static void deserializeAndInsert(std::string_view str, IColumn & data_to)
     if constexpr (is_plain_column)
         data_to.insertData(str.data(), str.size());
     else
-        std::ignore = data_to.deserializeAndInsertFromArena(str.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        std::ignore = data_to.serializeAggregationStateValueIntoArena(str.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 }

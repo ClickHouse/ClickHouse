@@ -61,6 +61,20 @@ StorageSnapshot::StorageSnapshot(
 {
 }
 
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    VirtualsDescriptionPtr virtual_columns_,
+    ColumnsDescription object_columns_,
+    DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(std::move(virtual_columns_))
+    , object_columns(std::move(object_columns_))
+    , data(std::move(data_))
+{
+}
+
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);

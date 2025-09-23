@@ -328,6 +328,27 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
     return res;
 }
 
+StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (columns.empty())
+    {
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
+    }
+
+    StringRef res(begin, 0);
+    for (const auto & column : columns)
+    {
+        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
     for (const auto & column : columns)
@@ -360,6 +381,19 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 
     for (auto & column : columns)
         pos = column->deserializeAndInsertFromArena(pos);
+
+    return pos;
+}
+
+const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    ++column_length;
+
+    if (columns.empty())
+        return pos + 1;
+
+    for (auto & column : columns)
+        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
 
     return pos;
 }

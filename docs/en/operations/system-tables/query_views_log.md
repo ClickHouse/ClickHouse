@@ -4,6 +4,7 @@ description: 'System table containing information about the dependent views exec
 keywords: ['system table', 'query_views_log']
 slug: /operations/system-tables/query_views_log
 title: 'system.query_views_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

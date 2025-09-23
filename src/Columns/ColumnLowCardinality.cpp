@@ -279,6 +279,11 @@ std::string_view ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena &
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
+StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
+}
+
 char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
@@ -308,6 +313,16 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
 
     const char * new_pos;
     idx.insertPosition(getDictionary().uniqueDeserializeAndInsertFromArena(pos, new_pos));
+
+    return new_pos;
+}
+
+const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    compactIfSharedDictionary();
+
+    const char * new_pos;
+    idx.insertPosition(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
 
     return new_pos;
 }

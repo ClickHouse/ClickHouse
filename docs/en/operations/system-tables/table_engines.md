@@ -4,6 +4,7 @@ description: 'System table containing descriptions of table engines supported by
 keywords: ['system table', 'table_engines']
 slug: /operations/system-tables/table_engines
 title: 'system.table_engines'
+doc_type: 'reference'
 ---
 
 # system.table_engines
