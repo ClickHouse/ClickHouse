@@ -43,7 +43,6 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -916,7 +915,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
+            Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
+            auto filename = Jemalloc::getLastFlushProfileForThread();
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
@@ -1199,7 +1199,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                                         "Please check the path in query. "
                                         "If you want to drop replica "
                                         "of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
+                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
                                         storage_replicated->getStorageID().getNameForLogs());
                 }
             }

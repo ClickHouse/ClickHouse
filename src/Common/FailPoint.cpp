@@ -114,10 +114,9 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
-    ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_delay_update_coordination_state_running) \
     ONCE(smt_commit_exception_before_op) \
-    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_delay_update_coordination_state_running)
 
 
 namespace FailPoints
