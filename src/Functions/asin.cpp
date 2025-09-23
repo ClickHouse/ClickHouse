@@ -19,7 +19,7 @@ Calculates the arcsine of the provided argument.
 For arguments in the range `[-1, 1]` it returns the value in the range of `[-pi() / 2, pi() / 2]`.
     )";
     FunctionDocumentation::Syntax syntax = "asin(x)";
-    FunctionDocumentation::Argument argument = {
+    FunctionDocumentation::Arguments argument = {
         {"x", "Argument for which to calculate arcsine of.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the arcsine value of the provided argument `x`", {"Float64"}};
