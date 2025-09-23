@@ -2,6 +2,7 @@ import base64
 import concurrent
 import errno
 import http.client
+import json
 import logging
 import os
 import os.path as p
@@ -19,8 +20,6 @@ import time
 import traceback
 import urllib.parse
 import uuid
-from glob import glob
-from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -28,6 +27,10 @@ from typing import Any, List, Sequence, Tuple, Union
 
 import requests
 import urllib3
+
+import sys
+sys.path.append(p.join(p.dirname(__file__), "../../../ci"))
+from praktika.utils import Shell
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -208,39 +211,56 @@ def is_port_free(port: int) -> bool:
 
 class PortPoolManager:
     """
-    This class is used for distribution of ports allocated to single pytest-xdist worker
-    It can be used by multiple ClickHouseCluster instances
+    Thread/process-safe port pool manager using a JSON file and filelock.
+    Ensures only one worker modifies ports.json at a time.
     """
 
-    # Shared between instances
-    all_ports = None
-    free_ports = None
+    PORTS_FILE = Path("/tmp/ports.json")
+    LOCK_FILE = PORTS_FILE.with_suffix(".lock")
+    START_PORT = 30000
+    END_PORT = 50000
 
-    def __init__(self):
-        self.used_ports = []
+    @classmethod
+    def get_port(cls):
+        lock = FileLock(str(cls.LOCK_FILE))
 
-        if self.all_ports is None:
-            worker_ports = os.getenv("WORKER_FREE_PORTS")
-            ports = [int(p) for p in worker_ports.split(" ")]
+        try:
+            with lock.acquire(timeout=5):
+                return cls._allocate_port()
+        except Timeout:
+            # Force unlock if lock file is stale
+            print(f"[WARN] Lock timeout exceeded, removing {cls.LOCK_FILE}")
+            try:
+                os.remove(cls.LOCK_FILE)
+            except FileNotFoundError:
+                pass
+            # Retry once after force unlock
+            with lock:
+                return cls._allocate_port()
 
-            # Static vars
-            PortPoolManager.all_ports = ports
-            PortPoolManager.free_ports = ports
+    @classmethod
+    def _allocate_port(cls):
+        if cls.PORTS_FILE.exists():
+            with open(cls.PORTS_FILE, "r", encoding="utf-8") as f:
+                ports = json.load(f)
+        else:
+            ports = {"used_ports": []}
 
-    def get_port(self):
-        for port in self.free_ports:
+        used_ports = ports["used_ports"]
+
+        for port in range(cls.START_PORT, cls.END_PORT):
+            if port in used_ports:
+                continue
             if is_port_free(port):
-                self.free_ports.remove(port)
-                self.used_ports.append(port)
+                used_ports.append(port)
+                ports_data = {
+                    "used_ports": used_ports,
+                }
+                with open(cls.PORTS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(ports_data, f, indent=2)
                 return port
 
-        raise Exception(
-            f"No free ports: {self.all_ports}",
-        )
-
-    def return_used_ports(self):
-        self.free_ports.extend(self.used_ports)
-        self.used_ports.clear()
+        raise Exception(f"No free ports available in range {cls.START_PORT} - {cls.END_PORT}")
 
 
 def docker_exec(*args: str) -> Tuple[str, ...]:
@@ -509,7 +529,7 @@ class ClickHouseCluster:
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
-
+        self.compose_files = []
         self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
         self.server_bin_path = p.realpath(
             server_bin_path
@@ -863,7 +883,6 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
-            # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
                 # The jars are now linked to "$SPARK_HOME/jars" and we don't
@@ -965,9 +984,6 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1117,6 +1133,7 @@ class ClickHouseCluster:
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper_secure.yml"
         )
+        self.compose_files.append(zookeeper_docker_compose_path)
         env_variables["ZOO_SECURE_CLIENT_PORT"] = str(self.zookeeper_secure_port)
         env_variables["ZK_FS"] = "bind"
         for i in range(1, 4):
@@ -1146,6 +1163,7 @@ class ClickHouseCluster:
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper.yml"
         )
+        self.compose_files.append(zookeeper_docker_compose_path)
 
         env_variables["ZK_FS"] = "bind"
         for i in range(1, 4):
@@ -1175,6 +1193,7 @@ class ClickHouseCluster:
         keeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_keeper.yml"
         )
+        self.compose_files.append(keeper_docker_compose_path)
 
         binary_path = self.server_bin_path
         binary_dir = os.path.dirname(self.server_bin_path)
@@ -1229,7 +1248,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"),
         )
-
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"))
         return self.base_mysql_client_cmd
 
     def setup_mysql57_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1250,6 +1269,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"))
 
         return self.base_mysql57_cmd
 
@@ -1271,6 +1291,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml"))
 
         return self.base_mysql8_cmd
 
@@ -1294,6 +1315,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"))
 
         return self.base_mysql_cluster_cmd
 
@@ -1312,6 +1334,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"))
         return self.base_postgres_cmd
 
     def setup_postgres_cluster_cmd(
@@ -1335,6 +1358,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"))
 
     def setup_postgresql_java_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1354,6 +1378,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"))
 
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1373,6 +1398,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"))
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
@@ -1392,6 +1418,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kafka.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_kafka.yml"))
         return self.base_kafka_cmd
 
     def setup_kafka_sasl_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1408,6 +1435,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"))
         return self.base_kafka_sasl_cmd
 
     def setup_kerberized_kafka_cmd(
@@ -1431,6 +1459,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"))
         return self.base_kerberized_kafka_cmd
 
     def setup_kerberos_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1466,6 +1495,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_redis.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_redis.yml"))
         return self.base_redis_cmd
 
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1487,6 +1517,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml"))
         return self.base_rabbitmq_cmd
 
     def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1507,6 +1538,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_nats.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_nats.yml"))
         return self.base_nats_cmd
 
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1530,6 +1562,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"))
         return self.base_mongo_cmd
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1543,6 +1576,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml"))
         return self.base_arrowflight_cmd
 
     def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1558,7 +1592,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_coredns.yml"),
         )
-
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_coredns.yml"))
         return self.base_coredns_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1580,6 +1614,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_minio.yml"))
         return self.base_minio_cmd
 
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1596,6 +1631,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"))
         return self.base_glue_catalog_cmd
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1615,6 +1651,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"))
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
@@ -1638,6 +1675,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, file_name),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, file_name))
         return self.base_iceberg_catalog_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1661,6 +1699,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_azurite.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_azurite.yml"))
         return self.base_azurite_cmd
 
     def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1675,6 +1714,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml"))
         return self.base_cassandra_cmd
 
     def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1689,6 +1729,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"))
         return self.base_ldap_cmd
 
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1704,6 +1745,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml"))
         return self.base_jdbc_bridge_cmd
 
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1719,6 +1761,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_nginx.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_nginx.yml"))
         return self.base_nginx_cmd
 
     def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
@@ -1732,6 +1775,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_hive.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_hive.yml"))
         return self.base_hive_cmd
 
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
@@ -1747,6 +1791,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
         )
+        self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"))
         return self.base_ytsaurus_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1795,6 +1840,7 @@ class ClickHouseCluster:
                 "--file",
                 p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
             )
+            self.compose_files.append(p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"))
         return self.base_prometheus_cmd
 
     def add_instance(
@@ -2029,6 +2075,7 @@ class ClickHouseCluster:
 
         docker_compose_yml_dir = get_docker_compose_path()
         docker_compose_net = p.join(docker_compose_yml_dir, "docker_compose_net.yml")
+        self.compose_files.append(docker_compose_net)
 
         self.instances[name] = instance
         if not self.with_net_trics and (
@@ -2989,7 +3036,7 @@ class ClickHouseCluster:
                             )
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
-                    logging.debug("S3 bucket '%s' created", bucket)
+                    logging.info("S3 bucket '%s' created", bucket)
 
                 self.minio_client = minio_client
                 return
@@ -3153,8 +3200,14 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
-
     def start(self):
+        # pre pull images
+        print(f"Pre pull images for [{self.compose_files}]")
+        for compose_file in self.compose_files:
+            cmd = (
+                f"docker compose -f \"{compose_file}\" pull"
+            )
+            Shell.check(cmd, verbose=True, retries=2)
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
         if not os.path.exists(self.instances_dir):
@@ -3533,15 +3586,14 @@ class ClickHouseCluster:
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
-                os.mkdir(self.minio_dir)
+                Shell.check(f"mkdir -p {self.minio_dir}", verbose=True, strict=True)
                 if self.minio_certs_dir is None:
-                    os.mkdir(os.path.join(self.minio_dir, "certs"))
-                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
+                    Shell.check(f"mkdir -p {self.minio_dir}/certs", verbose=True, strict=True)
+                    Shell.check(f"mkdir -p {self.minio_dir}/certs/CAs", verbose=True, strict=True)
+                    # os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    # os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
                 else:
-                    shutil.copytree(
-                        os.path.join(self.base_dir, self.minio_certs_dir),
-                        os.path.join(self.minio_dir, "certs"),
-                    )
+                    Shell.check(f"cp -r {self.base_dir}/{self.minio_certs_dir} {self.minio_dir}/certs", verbose=True, strict=True)
                 os.mkdir(self.minio_data_dir)
                 os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
 
@@ -3780,7 +3832,10 @@ class ClickHouseCluster:
 
         if self.with_net_trics:
             try:
-                self.docker_net_lock.release()
+                if self.docker_net_lock is not None:
+                    self.docker_net_lock.release()
+                else:
+                    logging.debug("docker_net_lock is None, nothing to release")
             except Exception as e:
                 logging.warning(f"Failed to release lock: {e}")
 

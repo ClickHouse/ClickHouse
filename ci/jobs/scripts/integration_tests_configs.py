@@ -1,0 +1,178 @@
+import dataclasses
+
+
+@dataclasses.dataclass
+class TC:
+    prefix: str
+    cpu_weight: int
+    mem_weight: int
+    time_weight: int
+    is_sequential: bool
+    comment: str
+
+
+TEST_CONFIGS = [
+    TC("test_atomic_drop_table/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_attach_without_fetching/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_cleanup_dir_after_bad_zk_conn/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC(
+        "test_consistent_parts_after_clone_replica/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_crash_log/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_cross_replication/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_ddl_worker_non_leader/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_delayed_replica_failover/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_dictionary_allow_read_expired_keys/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_disabled_mysql_server/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_distributed_respect_user_timeouts/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_dns_cache/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_global_overcommit_tracker/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_grpc_protocol/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_host_regexp_multiple_ptr_records/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_http_failover/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_https_replication/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_insert_into_distributed/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_insert_into_distributed_through_materialized_view/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_keeper_map/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_keeper_multinode_simple/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_keeper_two_nodes_cluster/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_limited_replicated_fetches/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_merge_tree_s3/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_mysql_database_engine/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_parts_delete_zookeeper/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_postgresql_replica_database_engine/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC(
+        "test_profile_max_sessions_for_user/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_quorum_inserts_parallel/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_random_inserts/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_replace_partition/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_replicated_database/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_replicated_fetches_timeouts/", 0, 0, 0, True, "no idea why i'm sequential"
+    ),
+    TC(
+        "test_replicated_merge_tree_wait_on_shutdown/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_server_overload/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_server_reload/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_kafka/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_kerberized_kafka/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_rabbitmq/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_s3/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_s3_queue/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_system_flush_logs/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_system_logs/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_system_metrics/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_ttl_move/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_user_ip_restrictions/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_zookeeper_config_load_balancing/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_zookeeper_fallback_session/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_backup_restore_on_cluster/test_concurrency.py",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_database_delta/test.py", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_keeper_ipv4_fallback/test.py", 0, 0, 0, True, "no idea why i'm sequential"
+    ),
+    TC("test_storage_iceberg_no_spark/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_with_spark/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC(
+        "test_storage_iceberg_schema_evolution/",
+        0,
+        0,
+        0,
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC("test_disks_app_interactive/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_delta_disks/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_disks/", 0, 0, 0, True, "no idea why i'm sequential"),
+]
+
+IMAGES_ENV = {
+    "clickhouse/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
+    "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
+    "clickhouse/integration-test": "DOCKER_BASE_TAG",
+    "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
+    "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
+    "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
+    "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "clickhouse/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
+    "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
+    "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
+    "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
+    "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
+    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
+    "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
+    "clickhouse/mysql_dotnet_client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
+}
