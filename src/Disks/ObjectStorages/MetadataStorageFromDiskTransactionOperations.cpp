@@ -292,7 +292,7 @@ void RemoveRecursiveOperation::execute()
 
         auto path_to = getRandomASCIIString(32);
         disk.moveFile(path, path_to);
-        temp_path = std::move(path_to);
+        temp_file_path = std::move(path_to);
     }
     else if (disk.existsDirectory(path))
     {
@@ -300,16 +300,16 @@ void RemoveRecursiveOperation::execute()
 
         auto path_to = getRandomASCIIString(32);
         disk.moveDirectory(path, path_to);
-        temp_path = std::move(path_to);
+        temp_directory_path = std::move(path_to);
     }
 }
 
 void RemoveRecursiveOperation::undo()
 {
-    if (temp_path.has_value() && disk.existsFile(temp_path.value()))
-        disk.moveFile(temp_path.value(), path);
-    else if (temp_path.has_value() && disk.existsDirectory(temp_path.value()))
-        disk.moveDirectory(temp_path.value(), path);
+    if (temp_file_path.has_value())
+        disk.moveFile(temp_file_path.value(), path);
+    else if (temp_directory_path.has_value())
+        disk.moveDirectory(temp_directory_path.value(), path);
 
     for (auto & write_op : write_operations)
         write_op->undo();
@@ -317,8 +317,10 @@ void RemoveRecursiveOperation::undo()
 
 void RemoveRecursiveOperation::finalize()
 {
-    if (temp_path.has_value())
-        disk.removeRecursive(temp_path.value());
+    if (temp_file_path.has_value())
+        disk.removeFile(temp_file_path.value());
+    else if (temp_directory_path.has_value())
+        disk.removeRecursive(temp_directory_path.value());
 }
 
 CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)

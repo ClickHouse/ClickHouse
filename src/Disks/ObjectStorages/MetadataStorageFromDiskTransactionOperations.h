@@ -139,7 +139,8 @@ private:
     const std::string & compatible_key_prefix;
     IDisk & disk;
 
-    std::optional<std::string> temp_path;
+    std::optional<std::string> temp_file_path;
+    std::optional<std::string> temp_directory_path;
     std::unordered_set<int64_t> visited_inodes;
     std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
 };
