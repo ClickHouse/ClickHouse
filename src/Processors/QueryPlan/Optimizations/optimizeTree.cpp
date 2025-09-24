@@ -197,7 +197,7 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
             bool found_read_from_parallel_replicas = false;
             for (const auto & child : frame.node->children)
             {
-                auto node = child;
+                auto * node = child;
                 if (typeid_cast<const ExpressionStep *>(node->step.get()))
                     node = child->children.front();
                 if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
@@ -299,7 +299,7 @@ void considerEnablingParallelReplicas(
     chassert(corresponding_node_in_single_replica_plan);
 
     {
-        auto * reading_step = corresponding_node_in_single_replica_plan;
+        const auto * reading_step = corresponding_node_in_single_replica_plan;
         while (reading_step && !reading_step->children.empty())
             // TODO(nickitat): Maybe we should consider all leafs?
             reading_step = reading_step->children.front();
