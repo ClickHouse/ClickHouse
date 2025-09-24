@@ -14,7 +14,7 @@ namespace DB
 class WorkloadEntityConfigStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityConfigStorage(const ContextPtr & global_context_);
+    explicit WorkloadEntityConfigStorage(const ContextPtr & global_context_);
 
     bool loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
