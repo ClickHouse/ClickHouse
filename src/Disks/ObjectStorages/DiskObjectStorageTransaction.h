@@ -135,6 +135,10 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
+    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
+    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
+    bool isTransactional() const override;
+
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
         bool autocommit,
@@ -143,13 +147,10 @@ private:
         WriteMode mode,
         const WriteSettings & settings);
 
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
     std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
-    bool isTransactional() const override;
-    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>

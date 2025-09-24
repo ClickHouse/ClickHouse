@@ -1312,7 +1312,6 @@ void DiskObjectStorageTransaction::undo() noexcept
     operations_to_execute.clear();
 }
 
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncommittedFileInTransaction(
     const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {

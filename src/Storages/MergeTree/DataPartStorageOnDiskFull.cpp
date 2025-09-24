@@ -256,6 +256,7 @@ void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDisk
         active_transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
 
     SCOPE_EXIT({
+        // it is commit for fake transaction, noop for real transaction
         if (active_transaction != transaction)
             active_transaction->commit();
     });

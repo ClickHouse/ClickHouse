@@ -267,32 +267,10 @@ public:
         delegate_transaction->truncateFile(wrapped_path, size);
     }
 
-private:
-    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
-        bool autocommit,
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings);
-
     std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint);
-    }
-
-    bool isTransactional() const override
-    {
-        return delegate_transaction->isTransactional();
     }
 
     void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
@@ -302,6 +280,28 @@ private:
             moved_func(*tx);
         };
         delegate_transaction->validateTransaction(std::move(wrapped));
+    }
+
+    bool isTransactional() const override
+    {
+        return delegate_transaction->isTransactional();
+    }
+
+private:
+    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
+        bool autocommit,
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings);
+
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint);
     }
 
     String wrappedPath(const String & path) const
