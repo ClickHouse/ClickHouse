@@ -59,7 +59,7 @@ bool tdigestStatisticsValidator(const SingleStatisticsDescription & /*descriptio
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() && !isIPv4(inner_data_type) && !isIPv6(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() && !isIPv4(inner_data_type);
 }
 
 StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
