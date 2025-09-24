@@ -6094,6 +6094,9 @@ Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distrib
     DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
 Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
 )", 0) \
+    DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
+Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \

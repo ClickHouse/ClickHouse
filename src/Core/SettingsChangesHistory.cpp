@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
             {"optimize_qbit_distance_function_reads", true, true, "New setting"},
+            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
         });
