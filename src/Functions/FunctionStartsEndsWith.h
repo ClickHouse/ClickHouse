@@ -61,9 +61,9 @@ struct NameStartsWithUTF8
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = false;
 };
-struct NameStartsWithUTF8CaseInsensitive
+struct NameStartsWithCaseInsensitiveUTF8
 {
-    static constexpr auto name = "startsWithUTF8CaseInsensitive";
+    static constexpr auto name = "startsWithCaseInsensitiveUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = true;
 };
@@ -74,9 +74,9 @@ struct NameEndsWithUTF8
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = false;
 };
-struct NameEndsWithUTF8CaseInsensitive
+struct NameEndsWithCaseInsensitiveUTF8
 {
-    static constexpr auto name = "endsWithUTF8CaseInsensitive";
+    static constexpr auto name = "endsWithCaseInsensitiveUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = true;
 };
@@ -347,11 +347,11 @@ private:
                 {
                     if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
                         res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
-                    else if constexpr (std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>)
+                    else if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitiveUTF8>)
                         res_data[row_num] = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
                     else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
                         res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
-                    else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitiveUTF8>)
                         res_data[row_num] = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
                     else
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
@@ -360,11 +360,11 @@ private:
                 {
                     if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
                         res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data, haystack.data + haystack.size, haystack.data);
-                    else if constexpr (std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>)
+                    else if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitiveUTF8>)
                         res_data[row_num] = UTF8CaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data, haystack.data + haystack.size, haystack.data);
                     else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
                         res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
-                    else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitiveUTF8>)
                         res_data[row_num] = UTF8CaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
                     else
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
