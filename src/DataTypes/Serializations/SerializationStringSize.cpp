@@ -157,7 +157,10 @@ void SerializationStringSize::deserializeWithoutStringData(
         {
             if (stream->eof())
                 break;
-            readVarUInt(mutable_column_data[prev_size + num_read_rows], *stream);
+            UInt64 size;
+            readVarUInt(size, *stream);
+            stream->ignore(size);
+            mutable_column_data[prev_size + num_read_rows] = size;
         }
         mutable_column_data.resize(prev_size + num_read_rows);
         column = std::move(mutable_column);
