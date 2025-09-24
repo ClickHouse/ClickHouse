@@ -73,6 +73,7 @@ constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
 constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
 constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
 constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
+constexpr auto clickhouse_prefix = "clickhouse_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 {
@@ -187,7 +188,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 
 void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histogram::MetricFamily & family)
 {
-    std::string base_name = family.getName();
+    std::string base_name = clickhouse_prefix + family.getName();
     if (!replaceInvalidChars(base_name))
         return;
 
@@ -271,7 +272,7 @@ void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
 
 void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family)
 {
-    std::string base_name = family.getName();
+    std::string base_name = clickhouse_prefix + family.getName();
     if (!replaceInvalidChars(base_name))
         return;
 
@@ -281,9 +282,9 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
     writeOutLine(wb, "# HELP", base_name, help_text);
     writeOutLine(wb, "# TYPE", base_name, "gauge");
 
-    family.forEachMetric([&wb, &family](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
+    family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
     {
-        wb << family.getName();
+        wb << base_name;
         const auto & labels = family.getLabels();
         if (!labels.empty())
         {

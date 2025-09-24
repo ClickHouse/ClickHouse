@@ -93,10 +93,6 @@ namespace DimensionalMetrics
             }
         }
 
-    protected:
-        /// The constructor is protected for unit testing purposes.
-        Factory() = default;
-
     private:
         mutable DB::SharedMutex mutex;
         MetricFamilies registry;
