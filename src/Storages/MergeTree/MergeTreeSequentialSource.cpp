@@ -440,7 +440,6 @@ public:
             KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
-            bool was_primary_index_useful = false;
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
@@ -450,7 +449,6 @@ public:
                     /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
                     context->getSettingsRef(),
-                    was_primary_index_useful,
                     log);
 
             if (mark_ranges && mark_ranges->empty())

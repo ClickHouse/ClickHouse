@@ -72,7 +72,6 @@ public:
         const std::optional<KeyCondition> & total_offset_condition,
         MarkRanges * exact_ranges,
         const Settings & settings,
-        bool & was_index_useful,
         LoggerPtr log);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(

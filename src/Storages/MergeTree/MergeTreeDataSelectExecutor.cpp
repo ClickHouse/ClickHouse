@@ -145,8 +145,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        bool was_primary_index_useful = false;
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, was_primary_index_useful, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -763,6 +762,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
+    const bool is_primary_key_or_offset_condition_used =
+        !key_condition.getUsedColumns().empty() ||
+            (part_offset_condition && !part_offset_condition->getUsedColumns().empty()) ||
+            (total_offset_condition && !total_offset_condition->getUsedColumns().empty());
 
     /// Let's find what range to read from each part.
     {
@@ -779,7 +782,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             auto & ranges = parts_with_ranges[part_index];
             MarkRanges initial_ranges = ranges.ranges;
-            bool was_primary_index_useful = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -797,7 +799,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
-                    was_primary_index_useful,
                     log);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
@@ -857,7 +858,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 std::vector<MarkRanges> selected_ranges_by_index;
                 if (condition_type != KeyCondition::OnlyConjuncts)
                 {
-                    if (was_primary_index_useful || !key_condition.getUsedColumns().empty())
+                    if (is_primary_key_or_offset_condition_used)
                     {
                         selected_ranges_by_index.push_back(ranges.ranges);
                     }
@@ -1443,7 +1444,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
     const Settings & settings,
-    bool & was_index_useful,
     LoggerPtr log)
 {
     const auto & part = part_with_ranges.data_part;
@@ -1467,11 +1467,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         else
             res.push_back(MarkRange(0, marks_count));
 
-        was_index_useful = false;
         return res;
     }
-
-    was_index_useful = true; /// either of PK / part_offset / total_offset
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -2364,14 +2361,6 @@ void MergeTreeDataSelectExecutor::prepareIndexConditionsForDisjuncts(
     /// will typically be queried as -
     /// WHERE (lat > 50 and long > 55 AND lat < 51 AND long < 56) AND (name = 'A' OR type = 'B')
     /// TODO : (primary key expression) OR (skip index expression)
-#if 0
-    if (indexes->key_condition.getUsedColumns().size() > 0)
-        indexes->key_condition.transformToDisjuncts();
-    if (indexes->part_offset_condition)
-        indexes->part_offset_condition->transformToDisjuncts();
-    if (indexes->total_offset_condition)
-        indexes->total_offset_condition->transformToDisjuncts();
-#endif
     for (auto & index_and_condition : indexes->skip_indexes.useful_indices)
     {
         index_and_condition.condition->transformToDisjuncts();
@@ -2386,7 +2375,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
 {
     MarkRanges res;
 
-    /// Optimization first
+    /// Optimization first - UNION of all index selections
     if (condition_type == KeyCondition::OnlyDisjuncts)
     {
         for (auto mr : skip_index_results)
@@ -2397,16 +2386,17 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
         return res;
     }
 
-    /// TODO - below is just something quick, not optimal
-    std::vector< std::unordered_set<size_t> > index_results;
+    const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    const size_t num_indexes = skip_index_results.size();
+
+    std::vector< std::vector<bool> > index_results(marks_count, std::vector<bool>(num_indexes, false));
     size_t i = 0;
-    index_results.resize(10);
     for (const auto & s : skip_index_results)
     {
         for (auto r : s)
         {
             for (size_t mark = r.begin; mark < r.end; mark++)
-                index_results[i].insert(mark);
+                index_results[mark][i] = true;
         }
         i++;
     }
@@ -2414,12 +2404,11 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     auto isRangeSelectedByIndex = [&](size_t idx, size_t range_begin)
     {
         if (idx < skip_index_results.size())
-            return index_results[idx].find(range_begin) != index_results[idx].end();
+            return index_results[range_begin][idx] == true;
         else
             return true; /// UNKNOWN
     };
 
-    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
     /// Evaluate the RPN over all the ranges.
     for (size_t range_begin = 0; range_begin < marks_count; range_begin++)
