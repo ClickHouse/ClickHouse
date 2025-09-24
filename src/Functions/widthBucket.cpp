@@ -267,7 +267,7 @@ FunctionDocumentation::Arguments arguments = {
 };
 FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
 FunctionDocumentation::Examples examples = {
-    {"widthBucket(10.15, -8.6, 23, 18)", "11"}
+    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
