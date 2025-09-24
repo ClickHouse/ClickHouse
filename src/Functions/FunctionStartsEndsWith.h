@@ -90,8 +90,6 @@ public:
     static constexpr auto name = Name::name;
     static constexpr auto is_utf8 = Name::is_utf8;
     static constexpr bool is_case_insensitive = Name::is_case_insensitive;
-    static constexpr bool is_case_insensitive_prefix = std::is_same_v<Name, NameStartsWithCaseInsensitive> || std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>;
-    static constexpr bool is_case_insensitive_sufffix = std::is_same_v<Name, NameEndsWithCaseInsensitive> || std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>;
 
     String getName() const override
     {
@@ -308,6 +306,7 @@ private:
         std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>;
 
     template <typename NeedleSource>
+    requires is_case_insensitive
     static CaseInsensitiveComparator constCaseInsensitiveComparatorOf(NeedleSource needle_source)
     {
         if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>)
@@ -355,7 +354,7 @@ private:
                     else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
                         res_data[row_num] = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
                     else
-                        chassert(false, "Unexpected function");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
                 }
                 else /// Non-constant needle comparison
                 {
@@ -368,7 +367,7 @@ private:
                     else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
                         res_data[row_num] = UTF8CaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
                     else
-                        chassert(false, "Unexpected function");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
                 }
             }
 

@@ -25,3 +25,27 @@
 -- Test invalid UTF8
 1	0
 1	0
+-- Test constant needle with haystack - prefix
+1
+1
+1
+1
+1
+-- Test constant needle with haystack - suffix
+1
+1
+1
+1
+1
+-- Test column needle with haystack - prefix
+3
+1
+0
+3
+1
+-- Test column needle with haystack - suffix
+3
+1
+0
+3
+1

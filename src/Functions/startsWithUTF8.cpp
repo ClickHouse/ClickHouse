@@ -16,7 +16,7 @@ Checks if a string starts with the provided prefix.
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 )";
-    FunctionDocumentation::Syntax syntax = "startsWithUTF8(str, prefix)";
+    FunctionDocumentation::Syntax syntax = "startsWithUTF8(s, prefix)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "String to check.", {"String"}},
         {"prefix", "Prefix to check for.", {"String"}}
@@ -47,7 +47,7 @@ Checks if a string starts with the provided case-insensitive prefix.
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 )";
-    FunctionDocumentation::Syntax syntax = "startsWithUTF8CaseInsensitive(str, prefix)";
+    FunctionDocumentation::Syntax syntax = "startsWithUTF8CaseInsensitive(s, prefix)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "String to check.", {"String"}},
         {"prefix", "Case-insensitive prefix to check for.", {"String"}}
