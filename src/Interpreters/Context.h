@@ -378,7 +378,8 @@ protected:
     UInt64 client_protocol_version = 0;
 
     /// Max block numbers in partitions to read from MergeTree tables.
-    PartitionIdToMaxBlockPtr partition_id_to_max_block;
+    /// Saved separately for each table uuid used in the query.
+    std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -1596,8 +1597,8 @@ public:
     void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
     uint8_t getStorageAliasBehaviour() const;
 
-    void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
-    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
+    void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
+    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 
