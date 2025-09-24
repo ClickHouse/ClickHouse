@@ -36,7 +36,7 @@ BlockIO InterpreterDropFunctionQuery::execute()
         if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because used-defined functions are replicated automatically");
 
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(current_context);
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(updated_query_ptr, current_context, params);
     }
