@@ -135,6 +135,11 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 
     /// NOTE: In some places AWS SDK expects it to be non-null.
     telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
+
+    /// NOTE: Without these settings AWS SDK enable transfer-encoding: chunked and content-encoding: aws-chunked
+    /// We don't use them and MinIO server doesn't support them.
+    checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
+    checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
