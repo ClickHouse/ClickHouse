@@ -22,4 +22,12 @@ SELECT count() FROM tab WHERE searchAny(text, ['']);
 SELECT count() FROM tab WHERE searchAll(text, ['']);
 SELECT count() FROM tab WHERE hasToken(text, '');
 
+select '---';
+
+SELECT count() FROM tab WHERE NOT searchAny(text, []);
+SELECT count() FROM tab WHERE NOT searchAll(text, []);
+SELECT count() FROM tab WHERE NOT searchAny(text, ['']);
+SELECT count() FROM tab WHERE NOT searchAll(text, ['']);
+SELECT count() FROM tab WHERE NOT hasToken(text, '');
+
 DROP TABLE tab;
