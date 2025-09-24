@@ -68,10 +68,6 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
-    LOG_INFO(
-        log,
-        "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views {}",
-        database->db_settings[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views].value);
     /// Pool size must be 1 to avoid reordering of log entries.
     /// TODO Make a dependency graph of DDL queries. It will allow to execute independent entries in parallel.
     /// We also need similar graph to load tables on server startup in order of topsort.
