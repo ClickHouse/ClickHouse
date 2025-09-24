@@ -133,7 +133,7 @@ public:
         size_t row_number = 0;
         for (const auto & state_to_add : states)
         {
-            if (row_number == 0 || (column_with_groups && column_with_groups->compareAt(row_number, row_number - 1, *column_with_groups, 1) != 0))
+            if (row_number == 0 || (column_with_groups && !column_with_groups->equalsAt(row_number, row_number - 1, *column_with_groups)))
             {
                 if (state_created)
                 {
