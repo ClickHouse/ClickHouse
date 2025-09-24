@@ -38,6 +38,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <Poco/Logger.h>
 
@@ -478,34 +480,58 @@ bool StorageObjectStorage::optimize(
 
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder & /* table_holder */)
+    const StorageMetadataPtr &,
+    ContextPtr,
+    TableExclusiveLockHolder &)
 {
-    const auto path = configuration->getRawPath();
+    const auto raw_path = configuration->getRawPath();
 
     if (configuration->isArchive())
-    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
-    }
+                        raw_path.path);
 
-    if (path.hasGlobs())
-    {
-        throw Exception(
-            ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
-    }
+    if (raw_path.hasGlobs())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
+                        getName(), raw_path.path);
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    const auto read_prefix = configuration->getPathForRead().path;
+
+    auto it = object_storage->iterate(read_prefix, /* max_keys */ 0); // backend default
+
+    // Delete all objects found by iterating storage backend
+    // Process in batches to handle large numbers of objects efficiently
+    static constexpr size_t DELETE_BATCH = 1000;
+    StoredObjects batch; batch.reserve(DELETE_BATCH);
+
+    while (it->isValid())
     {
-        objects.emplace_back(key.path);
+        auto cur = it->current();                 // RelativePathWithMetadataPtr
+        batch.emplace_back(cur->relative_path);   // use the path from the current item
+        it->next();
+
+        if (batch.size() >= DELETE_BATCH)
+        {
+            object_storage->removeObjectsIfExist(batch);
+            batch.clear();
+        }
     }
-    object_storage->removeObjectsIfExist(objects);
+    if (!batch.empty())
+        object_storage->removeObjectsIfExist(batch);
+
+    // Also attempt to delete any explicitly configured paths.
+    // Handle cases where configured paths differ from discovered paths.
+    if (!configuration->getPaths().empty())
+    {
+        StoredObjects configured;
+        configured.reserve(configuration->getPaths().size());
+        for (const auto & k : configuration->getPaths())
+            configured.emplace_back(k.path);
+        object_storage->removeObjectsIfExist(configured);
+    }
 }
+
 
 void StorageObjectStorage::drop()
 {
