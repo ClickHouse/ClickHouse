@@ -27,6 +27,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -479,7 +480,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -499,12 +500,63 @@ void StorageObjectStorage::truncate(
             getName(), path.path);
     }
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE) 
     {
-        objects.emplace_back(key.path);
+        auto query_settings = configuration->getQuerySettings(context);
+        query_settings.throw_on_zero_files_match = false;
+        query_settings.ignore_non_existent_file = true;
+    
+        bool local_distributed_processing = distributed_processing;
+        if (context->getSettingsRef()[Setting::use_hive_partitioning])
+            local_distributed_processing = false;
+    
+        auto iterator = StorageObjectStorageSource::createFileIterator(
+            configuration,
+            query_settings,
+            object_storage,
+            local_distributed_processing,
+            context,
+            {}, // predicate
+            {},
+            {}, // virtual_columns
+            {}, // hive_columns
+            nullptr, // read_keys
+            {} // file_progress_callback
+        );
+
+        std::vector<StoredObject> paths;
+        static const size_t DELETE_CHUNK_SIZE = 1000;
+        paths.reserve(DELETE_CHUNK_SIZE);
+        while (auto element = iterator->next(0))
+        {
+            paths.push_back(StoredObject(element->relative_path));
+            // Delete in chunks to avoid holding too many objects in memory
+            if (paths.size() >= DELETE_CHUNK_SIZE)
+            {
+                object_storage->removeObjectsIfExist(paths);
+                paths.clear();
+            }
+        }
+    
+        if (!paths.empty())
+        {
+            object_storage->removeObjectsIfExist(paths);
+        }
+    } 
+    else 
+    {
+        /*
+            The following logic exists for backwards compatibility, but it is not reliable at all.
+            It only works for non-partitioned tables and won't work after the server has been restarted.
+            The reason is that the old way of inserting data would populate this in-memory paths list so that we could later reference the files.
+        */
+        StoredObjects objects;
+        for (const auto & key : configuration->getPaths())
+        {
+            objects.emplace_back(key.path);
+        }
+        object_storage->removeObjectsIfExist(objects);
     }
-    object_storage->removeObjectsIfExist(objects);
 }
 
 void StorageObjectStorage::drop()
