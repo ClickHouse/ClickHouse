@@ -12,7 +12,8 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     enable_block_number_column = 0,
-    enable_block_offset_column = 0;
+    enable_block_offset_column = 0,
+    auto_statistics_types = 'uniq,minmax';
 
 SYSTEM STOP MERGES test_table;
 

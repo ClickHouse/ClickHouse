@@ -1158,7 +1158,6 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
-        # "auto_statistics_types": auto_statistics_generator(),
         **randomize_external_sort_group_by(),
     }
 
@@ -1241,14 +1240,22 @@ class MergeTreeSettingsRandomizer:
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "auto_statistics_types": auto_statistics_generator(),
     }
 
     @staticmethod
     def get_random_settings(args):
         random_settings = {}
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
-            if setting not in args.changed_merge_tree_settings:
-                random_settings[setting] = generator()
+            if setting in args.changed_merge_tree_settings:
+                continue
+
+            value = generator()
+            if type(value) == str and value == "":
+                continue
+
+            random_settings[setting] = value
+
         return random_settings
 
 

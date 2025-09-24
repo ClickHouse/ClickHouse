@@ -1652,7 +1652,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax,uniq", R"(
+    DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to use for auto-statistics.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
