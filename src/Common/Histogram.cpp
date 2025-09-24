@@ -1,14 +1,74 @@
 #include <Common/Histogram.h>
 #include <Common/SipHash.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 #include <algorithm>
 #include <mutex>
 
-namespace DB::Histogram
+namespace Histogram
 {
+    MetricFamily & AzureBlobConnect = Factory::instance().registerMetric(
+        "azure_connect_microseconds",
+        "Time to establish connection with Azure Blob Storage, in microseconds.",
+        {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000},
+        {}
+    );
+
+    MetricFamily & DiskAzureConnect = Factory::instance().registerMetric(
+        "disk_azure_connect_microseconds",
+        "Time to establish connection with DiskAzure, in microseconds.",
+        {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000},
+        {}
+    );
+
+    MetricFamily & AzureFirstByte = Factory::instance().registerMetric(
+        "azure_first_byte_microseconds",
+        "Time to receive the first byte from an Azure Blob Storage request, in microseconds.",
+        {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000},
+        {"http_method", "attempt"}
+    );
+
+    MetricFamily & DiskAzureFirstByte = Factory::instance().registerMetric(
+        "disk_azure_first_byte_microseconds",
+        "Time to receive the first byte from a DiskAzure request, in microseconds.",
+        {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000},
+        {"http_method", "attempt"}
+    );
+
+    MetricFamily & S3Connect = Factory::instance().registerMetric(
+        "s3_connect_microseconds",
+        "Time to establish connection with S3, in microseconds.",
+        {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000},
+        {}
+    );
+
+    MetricFamily & DiskS3Connect = Factory::instance().registerMetric(
+        "disk_s3_connect_microseconds",
+        "Time to establish connection with DiskS3, in microseconds.",
+        {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000},
+        {}
+    );
+
+    MetricFamily & S3FirstByte = Factory::instance().registerMetric(
+        "s3_first_byte_microseconds",
+        "Time to receive the first byte from an S3 request, in microseconds.",
+        {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000},
+        {"http_method", "attempt"}
+    );
+
+    MetricFamily & DiskS3FirstByte = Factory::instance().registerMetric(
+        "disk_s3_first_byte_microseconds",
+        "Time to receive the first byte from a DiskS3 request, in microseconds.",
+        {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000},
+        {"http_method", "attempt"}
+    );
+
+    MetricFamily & KeeperResponseTime = Factory::instance().registerMetric(
+        "keeper_response_time_ms",
+        "The response time of Keeper, in milliseconds",
+        {1, 2, 5, 10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 500, 1000, 2000},
+        {"operation"}
+    );
+
     Metric::Metric(const Buckets & buckets_)
         : buckets(buckets_)
         , counters(buckets.size() + 1)
@@ -36,70 +96,6 @@ namespace DB::Histogram
         return sum.load(std::memory_order_relaxed);
     }
 
-    void Metric::writePrometheusLines(
-        WriteBuffer & wb,
-        const String & metric_name,
-        const Labels & labels,
-        const LabelValues & label_values) const
-    {
-        Counter cumulative_count = 0;
-
-        for (size_t i = 0; i < buckets.size() + 1; ++i)
-        {
-            cumulative_count += getCounter(i);
-
-            wb << metric_name << "_bucket{";
-
-            for (size_t j = 0; j < labels.size(); ++j)
-            {
-                wb << labels[j] << "=\"" << label_values[j] << "\",";
-            }
-
-            wb << "le=\"";
-            if (i != buckets.size())
-            {
-                wb << buckets[i];
-            }
-            else
-            {
-                wb << "+Inf";
-            }
-
-            wb << "\"}" << ' ' << cumulative_count << '\n';
-        }
-
-        wb << metric_name << "_count";
-        if (!labels.empty())
-        {
-            wb << '{';
-            for (size_t j = 0; j < labels.size(); ++j)
-            {
-                if (j != 0)
-                {
-                    wb << ',';
-                }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
-            }
-            wb << '}';
-        }
-        wb << ' ' << cumulative_count << '\n';
-
-        wb << metric_name << "_sum";
-        if (!labels.empty())
-        {
-            wb << '{';
-            for (size_t j = 0; j < labels.size(); ++j)
-            {
-                if (j > 0)
-                {
-                    wb << ',';
-                }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
-            }
-            wb << '}';
-        }
-        wb << ' ' << getSum() << '\n';
-    }
 
     size_t MetricFamily::LabelValuesHash::operator()(const LabelValues& label_values) const
     {
@@ -140,6 +136,8 @@ namespace DB::Histogram
 
     const Buckets & MetricFamily::getBuckets() const { return buckets; }
     const Labels & MetricFamily::getLabels() const { return labels; }
+    const String & MetricFamily::getName() const { return name; }
+    const String & MetricFamily::getDocumentation() const { return documentation; }
 
 
     Factory & Factory::instance()
@@ -155,11 +153,5 @@ namespace DB::Histogram
             std::make_unique<MetricFamily>(std::move(name), std::move(documentation), std::move(buckets), std::move(labels))
         );
         return *registry.back();
-    }
-
-    void Factory::clear()
-    {
-        std::lock_guard lock(mutex);
-        registry.clear();
     }
 }

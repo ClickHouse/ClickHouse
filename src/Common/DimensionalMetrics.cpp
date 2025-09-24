@@ -7,8 +7,19 @@
 #include <cassert>
 #include <mutex>
 
-namespace DB::DimensionalMetrics
+namespace DimensionalMetrics
 {
+    MetricFamily & MergeFailures = Factory::instance().registerMetric(
+        "merge_failures",
+        "Number of all failed merges since startup.",
+        {"error_name"}
+    );
+
+    MetricFamily & StartupScriptsFailureReason = Factory::instance().registerMetric(
+        "startup_scripts_failure_reason",
+        "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+        {"error_name"}
+    );
 
     void Metric::set(Value value_)
     {
@@ -28,29 +39,6 @@ namespace DB::DimensionalMetrics
     Value Metric::get() const
     {
         return value.load(std::memory_order_relaxed);
-    }
-
-    void Metric::writePrometheusLine(
-        WriteBuffer & wb,
-        const String & metric_name,
-        const Labels & labels,
-        const LabelValues & label_values) const
-    {
-        wb << metric_name;
-        if (!labels.empty())
-        {
-            wb << '{';
-            for (size_t i = 0; i < labels.size(); ++i)
-            {
-                if (i != 0)
-                {
-                    wb << ',';
-                }
-                wb << labels[i] << "=\"" << label_values[i] << '"';
-            }
-            wb << '}';
-        }
-        wb << ' ' << get() << '\n';
     }
 
     size_t MetricFamily::LabelValuesHash::operator()(const LabelValues & label_values) const
@@ -92,13 +80,9 @@ namespace DB::DimensionalMetrics
         return *it->second;
     }
 
-    void MetricFamily::unregister(LabelValues label_values) noexcept
-    {
-        std::lock_guard lock(mutex);
-        metrics.erase(label_values);
-    }
-
     const Labels & MetricFamily::getLabels() const { return labels; }
+    const String & MetricFamily::getName() const { return name; }
+    const String & MetricFamily::getDocumentation() const { return documentation; }
 
 
     Factory & Factory::instance()
@@ -123,11 +107,5 @@ namespace DB::DimensionalMetrics
             )
         );
         return *registry.back();
-    }
-
-    void Factory::clear()
-    {
-        std::lock_guard lock(mutex);
-        registry.clear();
     }
 }

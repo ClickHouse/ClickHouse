@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <Common/Histogram.h>
+#include <Common/DimensionalMetrics.h>
 
 
 namespace DB
@@ -20,6 +22,9 @@ public:
     virtual void writeErrors(WriteBuffer & wb) const;
     virtual void writeHistogramMetrics(WriteBuffer & wb) const;
     virtual void writeDimensionalMetrics(WriteBuffer & wb) const;
+
+    static void writeHistogramMetric(WriteBuffer & wb, const Histogram::MetricFamily & family);
+    static void writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family);
 };
 
 

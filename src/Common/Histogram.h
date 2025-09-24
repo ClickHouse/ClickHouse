@@ -10,12 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace DB
-{
-    class WriteBuffer;
-}
-
-namespace DB::Histogram
+namespace Histogram
 {
     using Value = Int64;
     using Buckets = std::vector<Value>;
@@ -31,13 +26,6 @@ namespace DB::Histogram
         void observe(Value value);
         Counter getCounter(size_t idx) const;
         Sum getSum() const;
-
-        /// Write all Prometheus lines for this histogram (buckets, count, sum)
-        void writePrometheusLines(
-            DB::WriteBuffer & wb,
-            const String & metric_name,
-            const Labels & labels,
-            const LabelValues & label_values) const;
 
     private:
         using AtomicCounters = std::vector<std::atomic<Counter>>;
@@ -74,11 +62,11 @@ namespace DB::Histogram
 
         const Buckets & getBuckets() const;
         const Labels & getLabels() const;
-        const String & getName() const { return name; }
-        const String & getDocumentation() const { return documentation; }
+        const String & getName() const;
+        const String & getDocumentation() const;
 
     private:
-        mutable SharedMutex mutex;
+        mutable DB::SharedMutex mutex;
         MetricsMap metrics;
         const String name;
         const String documentation;
@@ -105,10 +93,12 @@ namespace DB::Histogram
             }
         }
 
-        void clear();
+    protected:
+        /// The constructor is protected for unit testing purposes.
+        Factory() = default;
 
     private:
-        mutable SharedMutex mutex;
+        mutable DB::SharedMutex mutex;
         MetricFamilies registry;
     };
 }

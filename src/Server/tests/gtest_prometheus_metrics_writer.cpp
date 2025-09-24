@@ -9,73 +9,63 @@ using namespace DB;
 
 TEST(PrometheusMetricsWriter, HistogramBasic)
 {
-    Histogram::Buckets buckets = {1, 5, 10};
+    Histogram::MetricFamily family("test_histogram_gtest", "Test histogram", {1, 5, 10}, {"database", "table"});
 
-    auto & family = Histogram::Factory::instance().registerMetric("test_histogram", "Test histogram", buckets, {"database", "table"});
+    auto & metric1 = family.withLabels({"db1", "users"});
+    metric1.observe(0);
+    metric1.observe(3);
+    metric1.observe(7);
 
-    auto & metric = family.withLabels({"db1", "users"});
-    metric.observe(0);
-    metric.observe(3);
-    metric.observe(7);
+    auto & metric2 = family.withLabels({"db2", "posts"});
+    metric2.observe(2);
+    metric2.observe(6);
 
     std::string output;
     {
         WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter().writeHistogramMetrics(buffer);
+        PrometheusMetricsWriter::writeHistogramMetric(buffer, family);
     }
 
     static constexpr const char * expected =
-        "# HELP test_histogram Test histogram\n"
-        "# TYPE test_histogram histogram\n"
-        "test_histogram_bucket{database=\"db1\",table=\"users\",le=\"1\"} 1\n"
-        "test_histogram_bucket{database=\"db1\",table=\"users\",le=\"5\"} 2\n"
-        "test_histogram_bucket{database=\"db1\",table=\"users\",le=\"10\"} 3\n"
-        "test_histogram_bucket{database=\"db1\",table=\"users\",le=\"+Inf\"} 3\n"
-        "test_histogram_count{database=\"db1\",table=\"users\"} 3\n"
-        "test_histogram_sum{database=\"db1\",table=\"users\"} 10\n";
+        "# HELP test_histogram_gtest Test histogram\n"
+        "# TYPE test_histogram_gtest histogram\n"
+        "test_histogram_gtest_bucket{database=\"db1\",table=\"users\",le=\"1\"} 1\n"
+        "test_histogram_gtest_bucket{database=\"db1\",table=\"users\",le=\"5\"} 2\n"
+        "test_histogram_gtest_bucket{database=\"db1\",table=\"users\",le=\"10\"} 3\n"
+        "test_histogram_gtest_bucket{database=\"db1\",table=\"users\",le=\"+Inf\"} 3\n"
+        "test_histogram_gtest_count{database=\"db1\",table=\"users\"} 3\n"
+        "test_histogram_gtest_sum{database=\"db1\",table=\"users\"} 10\n"
+        "test_histogram_gtest_bucket{database=\"db2\",table=\"posts\",le=\"1\"} 0\n"
+        "test_histogram_gtest_bucket{database=\"db2\",table=\"posts\",le=\"5\"} 1\n"
+        "test_histogram_gtest_bucket{database=\"db2\",table=\"posts\",le=\"10\"} 2\n"
+        "test_histogram_gtest_bucket{database=\"db2\",table=\"posts\",le=\"+Inf\"} 2\n"
+        "test_histogram_gtest_count{database=\"db2\",table=\"posts\"} 2\n"
+        "test_histogram_gtest_sum{database=\"db2\",table=\"posts\"} 8\n";
 
-    EXPECT_TRUE(output == expected);
-}
-
-TEST(PrometheusMetricsWriter, HistogramEmpty)
-{
-    Histogram::Factory::instance().clear();
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter().writeHistogramMetrics(buffer);
-    }
-    EXPECT_GE(output.length(), 0);
+    EXPECT_EQ(expected, output);
 }
 
 TEST(PrometheusMetricsWriter, DimensionalBasic)
 {
-    auto & family = DimensionalMetrics::Factory::instance().registerMetric("test_dimensional", "Test dimensional metrics", {"database", "table"});
+    DimensionalMetrics::MetricFamily family("test_dimensional_gtest", "Test dimensional metrics", {"database", "table"});
 
-    auto & metric = family.withLabels({"db1", "users"});
-    metric.set(42.0);
+    auto & metric1 = family.withLabels({"db1", "users"});
+    metric1.set(42.0);
+
+    auto & metric2 = family.withLabels({"db2", "posts"});
+    metric2.set(17.5);
 
     std::string output;
     {
         WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter().writeDimensionalMetrics(buffer);
+        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family);
     }
 
     static constexpr const char * expected =
-        "# HELP test_dimensional Test dimensional metrics\n"
-        "# TYPE test_dimensional gauge\n"
-        "test_dimensional{database=\"db1\",table=\"users\"} 42\n";
+        "# HELP test_dimensional_gtest Test dimensional metrics\n"
+        "# TYPE test_dimensional_gtest gauge\n"
+        "test_dimensional_gtest{database=\"db1\",table=\"users\"} 42\n"
+        "test_dimensional_gtest{database=\"db2\",table=\"posts\"} 17.5\n";
 
-    EXPECT_TRUE(output == expected);
-}
-
-TEST(PrometheusMetricsWriter, DimensionalEmpty)
-{
-    DimensionalMetrics::Factory::instance().clear();
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter().writeDimensionalMetrics(buffer);
-    }
-    EXPECT_GE(output.length(), 0);
+    EXPECT_EQ(expected, output);
 }

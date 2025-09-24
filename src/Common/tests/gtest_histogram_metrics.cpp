@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <Common/Histogram.h>
 
-using namespace DB::Histogram;
+using namespace Histogram;
 
 const Buckets test_buckets = {1, 5, 10};
 

@@ -15,7 +15,7 @@ namespace DB
     class WriteBuffer;
 }
 
-namespace DB::DimensionalMetrics
+namespace DimensionalMetrics
 {
     using Value = Float64;
     using Labels = std::vector<String>;
@@ -29,13 +29,6 @@ namespace DB::DimensionalMetrics
         void increment(Value amount = 1.0);
         void decrement(Value amount = 1.0);
         Value get() const;
-
-        /// Write complete Prometheus line to buffer: "metric_name{labels} value\n"
-        void writePrometheusLine(
-            DB::WriteBuffer & wb,
-            const String & metric_name,
-            const Labels & labels,
-            const LabelValues & label_values) const;
 
     private:
         std::atomic<Value> value;
@@ -54,7 +47,6 @@ namespace DB::DimensionalMetrics
     public:
         MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
-        void unregister(LabelValues label_values) noexcept;
 
         template <typename Func>
         void forEachMetric(Func && func) const
@@ -67,11 +59,11 @@ namespace DB::DimensionalMetrics
         }
 
         const Labels & getLabels() const;
-        const String & getName() const { return name; }
-        const String & getDocumentation() const { return documentation; }
+        const String & getName() const;
+        const String & getDocumentation() const;
 
     private:
-        mutable SharedMutex mutex;
+        mutable DB::SharedMutex mutex;
         MetricsMap metrics;
         const String name;
         const String documentation;
@@ -101,10 +93,12 @@ namespace DB::DimensionalMetrics
             }
         }
 
-        void clear();
+    protected:
+        /// The constructor is protected for unit testing purposes.
+        Factory() = default;
 
     private:
-        mutable SharedMutex mutex;
+        mutable DB::SharedMutex mutex;
         MetricFamilies registry;
     };
 }

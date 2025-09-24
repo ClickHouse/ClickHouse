@@ -274,7 +274,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024, "zookeeper-client"};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
