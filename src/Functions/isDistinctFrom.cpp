@@ -2,6 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
+#include <Functions/isDistinctFrom.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -9,13 +10,8 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsComparison.h>
-#include <Core/AccurateComparison.h>
 #include <Columns/ColumnNullable.h>
-#include <Functions/isNotDistinctFrom.h>
-
 namespace DB
 {
 
@@ -25,7 +21,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ColumnPtr FunctionIsNotDistinctFrom::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+
+ColumnPtr FunctionIsDistinctFrom::executeImpl(const ColumnsWithTypeAndName & arguments,
+                                              const DataTypePtr &,
+                                              size_t input_rows_count) const
 {
     if (arguments.size() != 2)
     {
@@ -47,13 +46,13 @@ ColumnPtr FunctionIsNotDistinctFrom::executeImpl(const ColumnsWithTypeAndName & 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error.get null DataType");
     }
 
-    // get common type for null-safe compare
+    // get common type for null-safe comparsion
     DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
 
     ColumnPtr c0_converted = castColumn(arguments[0], common_type);
     ColumnPtr c1_converted = castColumn(arguments[1], common_type);
 
-    // for null
+    // address null
     if (c0_converted->isNullable() && c1_converted->isNullable())
     {
         auto c_res = ColumnUInt8::create();
@@ -68,60 +67,54 @@ ColumnPtr FunctionIsNotDistinctFrom::executeImpl(const ColumnsWithTypeAndName & 
             bool is_null_r = c1_converted->isNullAt(i);
             if (is_null_l && is_null_r)
             {
-                vec_res[i] = 1;
+                vec_res[i] = 0;
             }
             else if ((!is_null_l && is_null_r) || (is_null_l && !is_null_r))
             {
-                vec_res[i] = 0;
+                vec_res[i] = 1;
             }
             else
             {
-                vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? 1 : 0;
+                vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? 0 : 1;
             }
         }
         return c_res;
     }
 
-    // for normal
+    // address normal
     ColumnPtr res;
 
-    FunctionOverloadResolverPtr equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params));
+    FunctionOverloadResolverPtr not_equals
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<NotEqualsOp, NameNotEquals>>(params));
 
-    auto executable_func = equals->build(arguments);
+    auto executable_func = not_equals->build(arguments);
     auto data_type = executable_func->getResultType();
     res = executable_func->execute(arguments, data_type, input_rows_count, /* dry_run = */ false);
 
     return res;
 }
 
-
-REGISTER_FUNCTION(IsNotDistinctFrom)
+REGISTER_FUNCTION(IsDistinctFrom)
 {
     FunctionDocumentation::Description description = R"(
-Performs a null-safe comparison between two `JOIN` keys. This function will consider
-two `NULL` values as identical and will return `true`, which is distinct from the usual
-equals behavior where comparing two `NULL` values would return `NULL`.
-
-:::info
-This function was originally implemented for null-safe comparisons in `JOIN ON` clauses, but can now be used in any SQL clause.
-:::
-For a complete example see: [`NULL` values in `JOIN` keys](/sql-reference/statements/select/join#null-values-in-join-keys).
+        Performs a null-safe comparison between two values.
+        Returns `true` if the values are distinct (not equal), treating `NULL` values as comparable.
     )";
-    FunctionDocumentation::Syntax syntax = "isNotDistinctFrom(x, y)";
+    FunctionDocumentation::Syntax syntax = "isDistinctFrom(x, y)";
     FunctionDocumentation::Arguments arguments = {
         {"x", "First key to compare.", {"Any"}},
         {"y", "Second key to compare.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns `true` when `x` and `y` are both `NULL`, otherwise `false`.",
-        {"Bool"}};
+        "Returns `true` when values are distinct, `false` when values are equal (including both NULL).",
+        {"Bool"}
+    };
     FunctionDocumentation::Examples examples = {};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
+    factory.registerFunction<FunctionIsDistinctFrom>(documentation);
 }
 
 }

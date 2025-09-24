@@ -4,6 +4,9 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Logger.h>
+#include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
 #include <Functions/FunctionsComparison.h>
 
 namespace DB
@@ -14,22 +17,25 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct NameFunctionIsNotDistinctFrom { static constexpr auto name = "isNotDistinctFrom"; };
+struct NameFunctionIsDistinctFrom { static constexpr auto name = "isDistinctFrom"; };
 
 /**
   * Performs null-safe comparison.
-  * equals(NULL, NULL) is NULL, while isNotDistinctFrom(NULL, NULL) is true.
   */
-class FunctionIsNotDistinctFrom : public IFunction
+class FunctionIsDistinctFrom : public IFunction
 {
 private:
     const ComparisonParams params;
 public:
-    static constexpr auto name = NameFunctionIsNotDistinctFrom::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotDistinctFrom>(context ? ComparisonParams(context) : ComparisonParams()); }
+    static constexpr auto name = NameFunctionIsDistinctFrom::name;
+    explicit FunctionIsDistinctFrom(ComparisonParams params_) : params(std::move(params_)) {}
 
-    explicit FunctionIsNotDistinctFrom(ComparisonParams params_) : params(std::move(params_)) {}
+    static FunctionPtr create(ContextPtr context)
+    {
+      return std::make_shared<FunctionIsDistinctFrom>(context ? ComparisonParams(context) : ComparisonParams());
+    }
+
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
