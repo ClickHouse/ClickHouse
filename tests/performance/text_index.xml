@@ -3,6 +3,7 @@
       <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
       <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
       <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+      <force_data_skipping_indices>idx_sp</force_data_skipping_indices>
   </settings>
 
   <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp(SearchPhrase) TYPE text(tokenizer = 'default')</fill_query>
@@ -15,6 +16,30 @@
   <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'world')</query>
   <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'market')</query>
   <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'mail')</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE NOT hasToken(SearchPhrase, 'mail')</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'mail') OR hasToken(SearchPhrase, 'market')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'mail') AND hasToken(SearchPhrase, 'market')</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'acompletelynonexistentwordxyz')</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE searchAll(SearchPhrase, ['the'])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAll(SearchPhrase, ['the', 'video'])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAll(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE NOT searchAll(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE searchAny(SearchPhrase, ['mail'])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAny(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE NOT searchAny(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'video') AND WatchID &gt;= 10 </query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAll(SearchPhrase, ['video']) AND WatchID &gt;= 10 </query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAny(SearchPhrase, ['video']) AND WatchID &gt;= 10 </query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, '')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAny(SearchPhrase, [''])</query>
+  <query>SELECT count() FROM hits_10m_single WHERE searchAll(SearchPhrase, [''])</query>
 
   <drop_query>ALTER TABLE hits_10m_single DROP INDEX idx_sp</drop_query>
 </test>
