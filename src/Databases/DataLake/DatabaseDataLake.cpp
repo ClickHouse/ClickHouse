@@ -60,8 +60,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsString datalake_disk_name;
 }
+
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
