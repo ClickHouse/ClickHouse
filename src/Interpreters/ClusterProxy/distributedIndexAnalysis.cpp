@@ -131,7 +131,7 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::string & filter, ContextPtr context, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
 {
-    const auto analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexUUID('{}', '^({})$', {})",
+    const auto analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', '^({})$', {})",
         storage_id.uuid,
         fmt::join(parts, "|"),
         filter);

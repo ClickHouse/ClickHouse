@@ -21,7 +21,7 @@ using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, I
 using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
 
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
-/// by sending mergeTreeAnalyzeIndexUUID() to each replica with list of assigned parts,
+/// by sending mergeTreeAnalyzeIndexesUUID() to each replica with list of assigned parts,
 /// in case of any failures the analysis will be done on local replica.
 ///
 /// For local replica uses LocalIndexAnalysisCallback (can be called multiple times).

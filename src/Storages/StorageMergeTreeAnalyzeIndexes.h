@@ -5,11 +5,11 @@
 namespace DB
 {
 
-/// Internal temporary storage for table function mergeTreeAnalyzeIndex(...)
-class StorageMergeTreeAnalyzeIndex final : public IStorage
+/// Internal temporary storage for table function mergeTreeAnalyzeIndexes(...)
+class StorageMergeTreeAnalyzeIndexes final : public IStorage
 {
 public:
-    StorageMergeTreeAnalyzeIndex(
+    StorageMergeTreeAnalyzeIndexes(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
@@ -26,10 +26,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    String getName() const override { return "MergeTreeAnalyzeIndex"; }
+    String getName() const override { return "MergeTreeAnalyzeIndexes"; }
 
 private:
-    friend class ReadFromMergeTreeAnalyzeIndex;
+    friend class ReadFromMergeTreeAnalyzeIndexes;
 
     StoragePtr source_table;
     MergeTreeData::DataPartsVector data_parts;

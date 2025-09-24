@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/StorageMergeTreeAnalyzeIndex.h>
+#include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -15,9 +15,9 @@ namespace
 const char * mergeTreeAnalyzeIndexFunctionName(bool resolve_by_uuid)
 {
     if (resolve_by_uuid)
-        return "mergeTreeAnalyzeIndexUUID";
+        return "mergeTreeAnalyzeIndexesUUID";
     else
-        return "mergeTreeAnalyzeIndex";
+        return "mergeTreeAnalyzeIndexes";
 }
 
 }
@@ -31,10 +31,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class TableFunctionMergeTreeAnalyzeIndex : public ITableFunction
+class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
 {
 public:
-    explicit TableFunctionMergeTreeAnalyzeIndex(bool resolve_by_uuid_)
+    explicit TableFunctionMergeTreeAnalyzeIndexes(bool resolve_by_uuid_)
         : resolve_by_uuid(resolve_by_uuid_)
     {}
 
@@ -54,7 +54,7 @@ private:
 
     const char * getStorageEngineName() const override
     {
-        /// Technically it's MergeTreeAnalyzeIndex but it doesn't register itself
+        /// Technically it's MergeTreeAnalyzeIndexes but it doesn't register itself
         return "";
     }
 
@@ -67,7 +67,7 @@ private:
     ASTPtr primary_key_predicate;
 };
 
-std::vector<size_t> TableFunctionMergeTreeAnalyzeIndex::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
+std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
 {
     /// Filter should not be analyzed
     if (resolve_by_uuid)
@@ -76,7 +76,7 @@ std::vector<size_t> TableFunctionMergeTreeAnalyzeIndex::skipAnalysisForArguments
         return {3};
 }
 
-void TableFunctionMergeTreeAnalyzeIndex::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionMergeTreeAnalyzeIndexes::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const ASTs & args_func = ast_function->children;
     if (args_func.size() != 1)
@@ -88,7 +88,7 @@ void TableFunctionMergeTreeAnalyzeIndex::parseArguments(const ASTPtr & ast_funct
         parseArgumentsDatabaseTable(args_func, context);
 }
 
-void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsUUID(const ASTs & args_func, ContextPtr context)
+void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_func, ContextPtr context)
 {
     ASTs & args = args_func.at(0)->children;
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
@@ -111,7 +111,7 @@ void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsUUID(const ASTs & args_fu
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
 
-void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
+void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
 {
     ASTs & args = args_func.at(0)->children;
     if (args.size() < 2 || args.size() > 4)
@@ -136,7 +136,7 @@ void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsDatabaseTable(const ASTs 
     source_table_id = StorageID{database, table};
 }
 
-ColumnsDescription TableFunctionMergeTreeAnalyzeIndex::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMergeTreeAnalyzeIndexes::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
     return ColumnsDescription(NamesAndTypesList({
         {"part_name", std::make_shared<DataTypeString>()},
@@ -147,7 +147,7 @@ ColumnsDescription TableFunctionMergeTreeAnalyzeIndex::getActualTableStructure(C
     }));
 }
 
-StoragePtr TableFunctionMergeTreeAnalyzeIndex::executeImpl(
+StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
@@ -162,7 +162,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndex::executeImpl(
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 
-    auto res = std::make_shared<StorageMergeTreeAnalyzeIndex>(
+    auto res = std::make_shared<StorageMergeTreeAnalyzeIndexes>(
         std::move(storage_id),
         std::move(source_table),
         std::move(columns),
@@ -172,15 +172,15 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndex::executeImpl(
     return res;
 }
 
-void registerTableFunctionMergeTreeAnalyzeIndex(TableFunctionFactory & factory)
+void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory)
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{
-        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ false); },
+        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
         TableFunctionProperties{
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndex", "SELECT * FROM mergeTreeAnalyzeIndex(currentDatabase(), mt_table, 'parts_regexp', pk_column = 1)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, 'parts_regexp', pk_column = 1)", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,
@@ -188,12 +188,12 @@ void registerTableFunctionMergeTreeAnalyzeIndex(TableFunctionFactory & factory)
     });
 
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ true), TableFunctionFactoryData{
-        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ true); },
+        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
         TableFunctionProperties{
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndex", "SELECT * FROM mergeTreeAnalyzeIndexUUID('table_uuid', 'parts_regexp', pk_column = 1)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', 'parts_regexp', pk_column = 1)", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,

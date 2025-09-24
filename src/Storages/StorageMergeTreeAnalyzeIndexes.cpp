@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/StorageMergeTreeAnalyzeIndex.h>
+#include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -54,7 +54,7 @@ public:
     {
     }
 
-    String getName() const override { return "MergeTreeAnalyzeIndex"; }
+    String getName() const override { return "MergeTreeAnalyzeIndexes"; }
 
 protected:
     Chunk generate() override
@@ -157,20 +157,20 @@ private:
 ///
 /// ReadFromMergeTreeAnalyzeIndex
 ///
-class ReadFromMergeTreeAnalyzeIndex : public SourceStepWithFilter
+class ReadFromMergeTreeAnalyzeIndexes : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndex"; }
+    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    ReadFromMergeTreeAnalyzeIndex(
+    ReadFromMergeTreeAnalyzeIndexes(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         size_t num_streams_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         SharedHeader sample_block,
-        std::shared_ptr<StorageMergeTreeAnalyzeIndex> storage_)
+        std::shared_ptr<StorageMergeTreeAnalyzeIndexes> storage_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -179,17 +179,17 @@ public:
             context_)
         , storage(std::move(storage_))
         , num_streams(num_streams_)
-        , log(&Poco::Logger::get("StorageMergeTreeAnalyzeIndex"))
+        , log(&Poco::Logger::get("StorageMergeTreeAnalyzeIndexes"))
     {
     }
 
 private:
-    std::shared_ptr<StorageMergeTreeAnalyzeIndex> storage;
+    std::shared_ptr<StorageMergeTreeAnalyzeIndexes> storage;
     const size_t num_streams;
     Poco::Logger * log;
 };
 
-void ReadFromMergeTreeAnalyzeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     LOG_DEBUG(log, "Analyzing index from {} parts of table {}",
         storage->data_parts.size(),
@@ -210,7 +210,7 @@ void ReadFromMergeTreeAnalyzeIndex::initializePipeline(QueryPipelineBuilder & pi
 ///
 /// StorageMergeTreeAnalyzeIndex
 ///
-StorageMergeTreeAnalyzeIndex::StorageMergeTreeAnalyzeIndex(
+StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
@@ -222,7 +222,7 @@ StorageMergeTreeAnalyzeIndex::StorageMergeTreeAnalyzeIndex(
 {
     const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree_data)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndex expected MergeTree table, got: {}", source_table->getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", source_table->getName());
 
     data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
@@ -239,7 +239,7 @@ StorageMergeTreeAnalyzeIndex::StorageMergeTreeAnalyzeIndex(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageMergeTreeAnalyzeIndex::read(
+void StorageMergeTreeAnalyzeIndexes::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -252,9 +252,9 @@ void StorageMergeTreeAnalyzeIndex::read(
     context->checkAccess(AccessType::SELECT, source_table->getStorageID());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-    auto this_ptr = std::static_pointer_cast<StorageMergeTreeAnalyzeIndex>(shared_from_this());
+    auto this_ptr = std::static_pointer_cast<StorageMergeTreeAnalyzeIndexes>(shared_from_this());
 
-    auto reading = std::make_unique<ReadFromMergeTreeAnalyzeIndex>(
+    auto reading = std::make_unique<ReadFromMergeTreeAnalyzeIndexes>(
         column_names,
         query_info,
         num_streams,
