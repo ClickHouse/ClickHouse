@@ -53,7 +53,6 @@ When using ClickHouse with less than 16GB of RAM, we recommend the following:
 - Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
 - disable writing in log tables, as it keeps the background merge task reserving RAM to perform merges of log tables. Disable `asynchronous_metric_log`, `metric_log`, `text_log`, `trace_log`.
 
-
 Additional notes:
 - To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
 command.
