@@ -5,6 +5,7 @@ sidebar_label: 'QBit'
 sidebar_position: 64
 slug: /sql-reference/data-types/qbit
 title: 'QBit Data Type'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
