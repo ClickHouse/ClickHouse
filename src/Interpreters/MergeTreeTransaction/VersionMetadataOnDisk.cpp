@@ -12,6 +12,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/TransactionID.h>
 #include <Common/logger_useful.h>
 
 static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
@@ -21,7 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int CORRUPTED_DATA;
+extern const int CANNOT_OPEN_FILE;
 }
 
 namespace MergeTreeSetting
@@ -104,10 +105,7 @@ try
 }
 catch (Exception & e)
 {
-    e.addMessage(
-        "While loading version metadata from table {} part {}",
-        merge_tree_data_part->storage.getStorageID().getNameForLogs(),
-        merge_tree_data_part->name);
+    e.addMessage("While loading version metadata from object ", getObjectName());
     throw;
 }
 
@@ -166,53 +164,6 @@ void VersionMetadataOnDisk::storeMetadata(bool force)
 }
 
 
-bool VersionMetadataOnDisk::assertHasValidMetadata() const
-{
-    String content;
-    auto current_removal_tid_lock = getRemovalTIDLock();
-    try
-    {
-        size_t small_file_size = 4096;
-        auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
-        /// Avoid cannot allocated thread error. No need in threadpool read method here.
-        read_settings.local_fs_method = LocalFSReadMethod::pread;
-        auto buf
-            = merge_tree_data_part->getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
-        if (!buf)
-            return false;
-        readStringUntilEOF(content, *buf);
-        ReadBufferFromString str_buf{content};
-        auto persisted_info = readFromBufferHelper(str_buf);
-        bool valid_creation_tid = creation_tid == persisted_info.creation_tid;
-        bool valid_removal_tid = removal_tid == persisted_info.removal_tid || removal_tid == Tx::PrehistoricTID;
-        bool valid_creation_csn = creation_csn == persisted_info.creation_csn || creation_csn == Tx::RolledBackCSN;
-        bool valid_removal_csn = removal_csn == persisted_info.removal_csn || removal_csn == Tx::PrehistoricCSN;
-
-        bool valid_removal_tid_lock
-            = (removal_tid.isEmpty() && current_removal_tid_lock == 0) || (current_removal_tid_lock == removal_tid.getHash());
-
-        if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version metadata file");
-        return true;
-    }
-    catch (...)
-    {
-        WriteBufferFromOwnString expected;
-        writeToBuffer(expected);
-        tryLogCurrentException(
-            merge_tree_data_part->storage.log,
-            fmt::format(
-                "File {} contains:\n{}\nexpected:\n{}\nlock: {}\nname: {}",
-                TXN_VERSION_METADATA_FILE_NAME,
-                content,
-                expected.str(),
-                current_removal_tid_lock,
-                merge_tree_data_part->name));
-        return false;
-    }
-}
-
-
 bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
     chassert(!tid.isEmpty());
@@ -230,7 +181,6 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const T
         return false;
     }
 
-    removal_tid = tid;
     tryWriteEventToSystemLog(log, TransactionsInfoLogElement::LOCK_PART, tid, context);
     return true;
 }
@@ -258,7 +208,6 @@ void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const Tr
     if (locked_by != removal_lock_value)
         throw_cannot_unlock();
 
-    removal_tid = Tx::EmptyTID;
     bool unlocked = removal_tid_lock.compare_exchange_strong(locked_by, 0);
     if (!unlocked)
         throw_cannot_unlock();
@@ -297,22 +246,37 @@ void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
     out->finalize();
 }
 
-void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(bool clear)
+void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid)
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
-        "{} removal TID for {} (creation: {}, removal {})",
-        (clear ? "Clearing" : "Appending"),
+        "Appending removal TID for {} (creation: {}, removal {})",
         merge_tree_data_part->name,
         creation_tid,
-        removal_tid);
+        tid);
 
     auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
-    writeRemovalTIDToBuffer(*out, clear);
+    writeRemovalTIDToBuffer(*out, tid);
     out->finalize();
 
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
+    if (tid != Tx::EmptyTID)
         out->sync();
+}
+
+
+VersionMetadata::Info VersionMetadataOnDisk::readStoredMetadata(String & content) const
+{
+    size_t small_file_size = 4096;
+    auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
+    /// Avoid cannot allocated thread error. No need in threadpool read method here.
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    auto buf = merge_tree_data_part->getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
+    if (!buf)
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open file {}", TXN_VERSION_METADATA_FILE_NAME);
+
+    readStringUntilEOF(content, *buf);
+    ReadBufferFromString str_buf{content};
+    return readFromBufferHelper(str_buf);
 }
 }

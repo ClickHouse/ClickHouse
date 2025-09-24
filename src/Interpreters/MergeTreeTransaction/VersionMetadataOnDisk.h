@@ -14,7 +14,6 @@ public:
 
     void loadMetadata() override;
     void storeMetadata(bool force) override;
-    bool assertHasValidMetadata() const override;
 
     bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id) override;
     void unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context) override;
@@ -29,7 +28,8 @@ protected:
     void setRemovalTIDLock(TIDHash removal_tid_hash) override;
     void appendCreationCSNToStoredMetadataImpl() override;
     void appendRemovalCSNToStoredMetadataImpl() override;
-    void appendRemovalTIDToStoredMetadataImpl(bool clear) override;
+    void appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid) override;
+    Info readStoredMetadata(String & content) const override;
 
 private:
     /// Hash of removal_tid, used to lock the object for removal

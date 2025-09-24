@@ -73,7 +73,7 @@ public:
     * This function appends a removal transaction ID to the metadata being persisted.
     * The removal ID can be either `removal_tid` or `Tx::EmptyTID`.
     *
-    * If the `creation_tid` is pre-historic and `clear` is false, the metadata is not yet
+    * If the `creation_tid` is pre-historic and tid is not `Tx::EmptyTID`, the metadata is not yet
     * stored in persistent storage. This can occur in the following cases:
     * - The data has not been written to storage yet.
     * - The data was created without an associated transaction.
@@ -81,9 +81,9 @@ public:
     * In such cases, the function will first persist the data to storage,
     * then append the removal ID.
     *
-    * @param clear If enabled,`Tx::EmptyTID` is used, otherwise, `removal_tid` is used
+    * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back.
     */
-    void appendRemovalTIDToStoredMetadata(bool clear = false);
+    void appendRemovalTIDToStoredMetadata(const TransactionID & tid);
 
     TransactionID getRemovalTID() const { return removal_tid; }
     TransactionID getRemovalTIDForLogging() const;
@@ -119,13 +119,14 @@ public:
     void loadAndVerifyMetadata(LoggerPtr logger);
 
     /**
+    * @brief Validate if the info stored on persistent storage matches the info stored in this object.
+    */
+    bool assertHasValidMetadata() const;
+
+    /**
     * @brief Stores the metadata to persistent storage.
     */
     virtual void storeMetadata(bool force) = 0;
-    /**
-    * @brief Validate if the info stored on persistent storage matches the info stored in this object.
-    */
-    virtual bool assertHasValidMetadata() const = 0;
 
     /**
     * @brief Locks the object for removal. Return true if successfully locked, otherwise, return false.
@@ -164,6 +165,8 @@ public:
     virtual bool hasStoredMetadata() const = 0;
 
 protected:
+    String getObjectName() const;
+
     bool canBeRemovedImpl(CSN oldest_snapshot_version);
     /**
     * @brief Verify information from metadata
@@ -212,9 +215,9 @@ protected:
     /**
     * @brief Write `removal_csn` to `Tx::EmptyTID` to `buf`.
     *
-    * @param clear If enabled,`Tx::EmptyTID` is written, otherwise, `removal_tid` is written.
+    * @param tid The target transaction ID
     */
-    void writeRemovalTIDToBuffer(WriteBuffer & buf, bool clear) const;
+    void writeRemovalTIDToBuffer(WriteBuffer & buf, const TransactionID & tid) const;
 
     /**
     * @brief Load metadata from persistent storage.
@@ -241,9 +244,13 @@ protected:
     /**
     * @brief The implementation to append a removal ID to the stored data.. Called by `appendRemovalTIDToStoredMetadata`.
     *
-    * @param clear If enabled,`Tx::EmptyTID` is used, otherwise, `removal_tid` is used
     */
-    virtual void appendRemovalTIDToStoredMetadataImpl(bool clear) = 0;
+    virtual void appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid) = 0;
+
+    /**
+    * @brief Read info from the stored metadata
+    */
+    virtual Info readStoredMetadata(String & content) const = 0;
 
     static inline constexpr char CREATION_TID_STR[] = "creation_tid: ";
     static inline constexpr char CREATION_CSN_STR[] = "creation_csn: ";
@@ -252,14 +259,14 @@ protected:
 
     const IMergeTreeDataPart * merge_tree_data_part;
 
-    /// ID of transaction that has created/is trying to create this object
+    /// ID of transaction that has created/is trying to create this object stored in the storage.
     TransactionID creation_tid = Tx::EmptyTID;
-    /// ID of transaction that has removed/is trying to remove this object
+    /// ID of transaction that has removed/is trying to remove this object stored in the storage.
     TransactionID removal_tid = Tx::EmptyTID;
 
-    /// CSN of transaction that has created this object
+    /// CSN of transaction that has created this object stored in the storage.
     std::atomic<CSN> creation_csn = Tx::UnknownCSN;
-    /// CSN of transaction that has removed this object
+    /// CSN of transaction that has removed this object stored in the storage.
     std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
     LoggerPtr log;

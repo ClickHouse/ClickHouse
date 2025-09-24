@@ -378,12 +378,13 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, part_type_)
-    , version(new VersionMetadataOnDisk(this))
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
     , mutable_name(name_)
 {
+
+    version = std::make_unique<VersionMetadataOnDisk>(this);
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
@@ -1763,7 +1764,8 @@ bool IMergeTreeDataPart::wasInvolvedInTransaction() const
         !storage.data_parts_loading_finished || !creation_tid.isEmpty()
         || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !creation_tid.isPrehistoric();
-    bool removed_by_transaction = version->isRemovalTIDLocked() && version->getRemovalTIDLock() != Tx::PrehistoricTID.getHash();
+    bool removed_by_transaction = (version->getRemovalCSN() != 0)
+        || (version->isRemovalTIDLocked() && version->getRemovalTIDLock() != Tx::PrehistoricTID.getHash());
     return created_by_transaction || removed_by_transaction;
 }
 
