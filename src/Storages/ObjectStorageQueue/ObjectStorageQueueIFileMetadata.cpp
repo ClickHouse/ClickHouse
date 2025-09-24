@@ -437,13 +437,19 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 
     set_processing = false;
 
-    chassert(
-        !ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_path),
-        fmt::format("Expected path {} not to exist", processing_node_path));
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        chassert(
+            !zk_client->exists(processing_node_path),
+            fmt::format("Expected path {} not to exist", processing_node_path));
 
-    chassert(
-        ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processed_node_path),
-        fmt::format("Expected path {} to exist", processed_node_path));
+        chassert(
+            zk_client->exists(processed_node_path),
+            fmt::format("Expected path {} to exist", processed_node_path));
+    });
+#endif
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
