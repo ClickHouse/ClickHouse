@@ -219,9 +219,15 @@ if (AWS_ARCH_INTEL)
     )
 elseif (AWS_ARCH_ARM64 OR AWS_ARCH_ARM32)
     if (AWS_HAVE_AUXV)
-        file(GLOB AWS_COMMON_ARCH_SRC
-            "${AWS_COMMON_DIR}/source/arch/arm/asm/*.c"
-        )
+        if (OS_LINUX)
+            file(GLOB AWS_COMMON_ARCH_SRC
+                "${AWS_COMMON_DIR}/source/arch/arm/auxv/cpuid.c"
+            )
+        elseif (OS_DARWIN)
+            file(GLOB AWS_COMMON_ARCH_SRC
+                "${AWS_COMMON_DIR}/source/arch/arm/darwnin/cpuid.c"
+            )
+        endif()
     endif()
 endif()
 
@@ -251,13 +257,11 @@ list(APPEND AWS_PRIVATE_INCLUDES
 # aws-checksums
 file(GLOB AWS_CHECKSUMS_SRC
     "${AWS_CHECKSUMS_DIR}/source/*.c"
-    "${AWS_CHECKSUMS_DIR}/source/intel/*.c"
-    "${AWS_CHECKSUMS_DIR}/source/intel/asm/*.c"
-    "${AWS_CHECKSUMS_DIR}/source/arm/*.c"
 )
 
 if(AWS_ARCH_INTEL AND AWS_HAVE_GCC_INLINE_ASM)
     file(GLOB AWS_CHECKSUMS_ARCH_SRC
+            "${AWS_CHECKSUMS_DIR}/source/intel/*.c"
             "${AWS_CHECKSUMS_DIR}/source/intel/asm/*.c"
     )
 endif()
