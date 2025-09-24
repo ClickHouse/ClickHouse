@@ -514,6 +514,20 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"iceberg_timestamp_ms",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
+             const auto now = std::chrono::system_clock::now();
+
+             // Convert to milliseconds since epoch
+             auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+             ms -= (rg.pickRandomly(values) * 1000);
+             return std::to_string(ms);
+         },
+         {},
+         false)},
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},

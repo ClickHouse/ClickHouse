@@ -604,7 +604,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         next_option = random.randint(1, 9)
         time.tzset() # The timezone may change for every run
         restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 60]))
+            datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
         ).strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if next_option == 1:
@@ -947,7 +947,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             # Restore
             time.tzset() # The timezone may change for every run
             restore_to = (
-                datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 60]))
+                datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
             ).strftime("%Y-%m-%d %H:%M:%S.%f")
             return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
         if next_option == 3:
