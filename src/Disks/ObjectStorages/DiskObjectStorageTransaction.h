@@ -57,6 +57,7 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 struct DiskObjectStorageTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
+    DiskObjectStorage & disk;
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
 
@@ -65,6 +66,7 @@ protected:
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
+        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         MetadataTransactionPtr metadata_transaction_);
@@ -73,9 +75,11 @@ protected:
 
 public:
     DiskObjectStorageTransaction(
+        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_);
 
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
     void commit(const TransactionCommitOptionsVariant & options) override;
     void commit() override { commit(NoCommitOptions{}); }
     void undo() noexcept override;
@@ -131,7 +135,6 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
         bool autocommit,
@@ -139,6 +142,14 @@ private:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings);
+
+    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const override;
+    bool isTransactional() const override;
+    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
@@ -147,6 +158,7 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
     IMetadataStorage & destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
+        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         IObjectStorage & destination_object_storage,

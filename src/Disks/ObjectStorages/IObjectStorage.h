@@ -213,6 +213,7 @@ public:
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const = 0;
 
+
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,

@@ -52,9 +52,11 @@ namespace ErrorCodes
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_)
-    : object_storage(object_storage_)
+    : disk(disk_)
+    , object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_storage.createTransaction())
 {
@@ -64,10 +66,12 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
 
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     MetadataTransactionPtr metadata_transaction_)
-    : object_storage(object_storage_)
+    : disk(disk_)
+    , object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
 {
@@ -76,11 +80,12 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
 }
 
 MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
+    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     IObjectStorage & destination_object_storage_,
     IMetadataStorage & destination_metadata_storage_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
+    : DiskObjectStorageTransaction(disk_, object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
     , destination_object_storage(destination_object_storage_)
     , destination_metadata_storage(destination_metadata_storage_)
 {}
@@ -752,7 +757,42 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
     }
 };
 
+struct ValidateTransactionObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    DiskTransactionPtr disk_transaction;
+    std::function<void(IDiskTransaction&)> check_function;
+
+    ValidateTransactionObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        DiskTransactionPtr disk_transaction_,
+        std::function<void(IDiskTransaction&)> check_function_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , disk_transaction(disk_transaction_)
+        , check_function(std::move(check_function_))
+    {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("ValidateTransactionObjectStorageOperation");
+    }
+
+    void execute(MetadataTransactionPtr) override
+    {
+        check_function(*disk_transaction);
+    }
+
+    void undo() override
+    {
+    }
+
+    void finalize(StoredObjects &) override
+    {
+    }
+};
+
 }
+
 
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 {
@@ -1131,7 +1171,6 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
 }
 
-
 TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
@@ -1243,6 +1282,11 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     return outcome;
 }
 
+std::vector<std::string> DiskObjectStorageTransaction::listUncommittedDirectoryInTransaction(const std::string & path) const
+{
+    return metadata_transaction->listUncommittedDirectory(path);
+}
+
 void DiskObjectStorageTransaction::undo() noexcept
 {
     if (is_committed)
@@ -1266,6 +1310,33 @@ void DiskObjectStorageTransaction::undo() noexcept
     }
 
     operations_to_execute.clear();
+}
+
+
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncommittedFileInTransaction(
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
+{
+    auto maybe_objects = metadata_transaction->tryGetBlobsFromTransactionIfExists(path);
+    if (!maybe_objects.has_value())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Stored objects for path '{}' not found in transaction", path);
+
+    /// tryGetBlobsFromTransactionIfExists return empty vector if blobs are unknown inside transaction
+    if (maybe_objects->empty())
+        return nullptr;
+
+    return disk.readFileFromStorageObjects(
+        *maybe_objects, path, settings, read_hint);
+}
+
+bool DiskObjectStorageTransaction::isTransactional() const
+{
+    return metadata_storage.isTransactional();
+}
+
+void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskTransaction&)> check_function)
+{
+    auto operation = std::make_unique<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, shared_from_this(), std::move(check_function));
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 }

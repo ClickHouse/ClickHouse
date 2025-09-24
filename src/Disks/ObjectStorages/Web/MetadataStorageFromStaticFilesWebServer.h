@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
