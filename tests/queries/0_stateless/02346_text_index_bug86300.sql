@@ -18,4 +18,8 @@ INSERT INTO tab VALUES(1, 'bar'), (2, 'foo');
 SELECT count() FROM tab WHERE searchAny(text, []);
 SELECT count() FROM tab WHERE searchAll(text, []);
 
+SELECT count() FROM tab WHERE searchAny(text, ['']);
+SELECT count() FROM tab WHERE searchAll(text, ['']);
+SELECT count() FROM tab WHERE hasToken(text, '');
+
 DROP TABLE tab;
