@@ -144,7 +144,7 @@ def main():
         Shell.check(f"chmod +x {clickhouse_bin_path}")
     else:
         os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
+            "https://f03ri840q4.us-east-1.aws.clickhouse.cloud"
         )
         os.environ["CH_USER"] = "ci_builder"
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
