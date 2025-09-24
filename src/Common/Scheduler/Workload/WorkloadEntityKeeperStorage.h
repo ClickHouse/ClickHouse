@@ -1,13 +1,11 @@
 #pragma once
 
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeperCachingGetter.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <condition_variable>
 #include <mutex>
 
@@ -52,7 +50,7 @@ private:
 
     void createRootNodes(const zkutil::ZooKeeperPtr & zookeeper);
     std::pair<String, Int32> getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper);
-    bool refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool config_changed);
+    bool refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
 
     zkutil::ZooKeeperCachingGetter zookeeper_getter;
     String zookeeper_path;
@@ -69,9 +67,6 @@ private:
     };
     std::shared_ptr<WatchEvent> watch;
     Coordination::WatchCallbackPtr zookeeper_watch;
-
-    /// Config-based entities storage
-    std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
 };
 
 }

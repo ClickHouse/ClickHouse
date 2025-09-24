@@ -1,11 +1,8 @@
 #pragma once
 
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -35,15 +32,13 @@ private:
         bool throw_if_not_exists) override;
 
     void createDirectory();
+    void loadEntitiesImpl();
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name);
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & file_path, bool check_file_exists);
     String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
     String dir_path;
-    bool initialized = false;
-
-    /// Config-based entities storage
-    std::shared_ptr<WorkloadEntityConfigStorage> config_storage;
+    std::atomic<bool> entities_loaded = false;
 };
 
 }

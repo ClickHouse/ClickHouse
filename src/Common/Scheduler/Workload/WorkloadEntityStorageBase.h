@@ -54,7 +54,8 @@ protected:
     {
         Ok,
         Failed,
-        Retry
+        Retry,
+        Delegated // Operation was delegated to another storage, no need to update in-memory state or notify subscribers, update will come through subscription for delegated storage
     };
 
     virtual OperationResult storeEntityImpl(
@@ -80,6 +81,11 @@ protected:
     /// will be consistent (all references between entities will be valid)
     /// Returns true if entities were changed, false if new_entities are the same as current entities
     bool setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+
+    /// Create, replace or drop one entity and notifies subscribers.
+    /// If entity is nullptr, it will be dropped.
+    /// Returns true if entities were changed, false if the entity is the same as current entity
+    bool setOneEntity(const String & entity_name, const ASTPtr & create_entity_query);
 
     /// Serialize `entities` stored in memory plus one optional `change` into multiline string
     String serializeAllEntities(std::optional<Event> change);

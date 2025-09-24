@@ -457,7 +457,7 @@ bool WorkloadEntityStorageBase::storeEntity(
             unlockAndNotify(lock, {std::move(event)});
         }
 
-        return result == OperationResult::Ok;
+        return result == OperationResult::Ok || result == OperationResult::Delegated;
     }
 }
 
@@ -503,7 +503,7 @@ bool WorkloadEntityStorageBase::removeEntity(
             unlockAndNotify(lock, {std::move(event)});
         }
 
-        return result == OperationResult::Ok;
+        return result == OperationResult::Ok || result == OperationResult::Delegated;
     }
 }
 
@@ -635,6 +635,31 @@ bool WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     // Notify subscribers
     unlockAndNotify(lock, tx);
 
+    return !tx.empty();
+}
+
+bool WorkloadEntityStorageBase::setOneEntity(const String & entity_name, const ASTPtr & create_entity_query)
+{
+    std::unique_lock lock(mutex);
+    EntityChange change;
+    change.name = entity_name;
+    if (auto it = entities.find(entity_name); it != entities.end())
+        change.before = it->second;
+    if (create_entity_query)
+        change.after = normalizeCreateWorkloadEntityQuery(*create_entity_query);
+    if (change.before && change.after && entityEquals(change.before, change.after))
+        return false; // No change
+
+    std::vector<Event> tx;
+    for (const auto & event : change.toEvents())
+    {
+        // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
+        applyEvent(lock, event);
+        tx.push_back(event);
+    }
+
+    // Notify subscribers
+    unlockAndNotify(lock, tx);
     return !tx.empty();
 }
 

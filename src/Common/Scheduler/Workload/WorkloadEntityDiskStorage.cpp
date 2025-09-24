@@ -1,5 +1,4 @@
 #include <Common/Scheduler/Workload/WorkloadEntityDiskStorage.h>
-#include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
 
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
@@ -25,7 +24,6 @@
 #include <Poco/Logger.h>
 
 #include <filesystem>
-#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -66,7 +64,6 @@ namespace
 WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
     : WorkloadEntityStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
-    , config_storage(std::make_shared<WorkloadEntityConfigStorage>(global_context_))
 {
     log = getLogger("WorkloadEntityDiskStorage");
 }
@@ -122,75 +119,69 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 
 bool WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    // Load config entities
-    if (!config_storage->loadEntities(config) && initialized)
-        return false; // No need in updating if config entities didn't change and disk entities are already loaded
+    UNUSED(config);
+    if (!entities_loaded)
+    {
+        loadEntitiesImpl();
+        return true;
+    }
+    return false;
+}
 
+
+void WorkloadEntityDiskStorage::loadEntitiesImpl()
+{
     LOG_INFO(log, "Loading workload entities from {}", dir_path);
+
+    if (!std::filesystem::exists(dir_path))
+    {
+        LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: nothing to load", dir_path);
+        return;
+    }
 
     std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
 
-    // First, take entities from config (they take precedence)
-    auto config_entities = config_storage->getAllEntities();
-    for (const auto & [name, ast] : config_entities)
-        entities_name_and_queries.emplace_back(name, ast);
-
-    // Create a set of config entity names for quick lookup
-    std::unordered_set<String> config_entity_names;
-    for (const auto & [name, ast] : config_entities)
-        config_entity_names.insert(name);
-
-    // Then load entities from disk, but skip those that exist in config
-    if (std::filesystem::exists(dir_path))
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
     {
-        Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
+        if (it->isDirectory())
+            continue;
+
+        const String & file_name = it.name();
+
+        if (file_name.starts_with(workload_prefix) && file_name.ends_with(sql_suffix))
         {
-            if (it->isDirectory())
+            String name = unescapeForFileName(file_name.substr(
+                workload_prefix.size(),
+                file_name.size() - workload_prefix.size() - sql_suffix.size()));
+
+            if (name.empty())
                 continue;
 
-            const String & file_name = it.name();
+            ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
+            if (ast)
+                entities_name_and_queries.emplace_back(name, ast);
+        }
 
-            if (file_name.starts_with(workload_prefix) && file_name.ends_with(sql_suffix))
-            {
-                String name = unescapeForFileName(file_name.substr(
-                    workload_prefix.size(),
-                    file_name.size() - workload_prefix.size() - sql_suffix.size()));
+        if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
+        {
+            String name = unescapeForFileName(file_name.substr(
+                resource_prefix.size(),
+                file_name.size() - resource_prefix.size() - sql_suffix.size()));
 
-                if (name.empty() || config_entity_names.contains(name))
-                    continue;
+            if (name.empty())
+                continue;
 
-                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
-                if (ast)
-                    entities_name_and_queries.emplace_back(name, ast);
-            }
-
-            if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
-            {
-                String name = unescapeForFileName(file_name.substr(
-                    resource_prefix.size(),
-                    file_name.size() - resource_prefix.size() - sql_suffix.size()));
-
-                if (name.empty() || config_entity_names.contains(name))
-                    continue;
-
-                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
-                if (ast)
-                    entities_name_and_queries.emplace_back(name, ast);
-            }
+            ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
+            if (ast)
+                entities_name_and_queries.emplace_back(name, ast);
         }
     }
-    else
-    {
-        LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: loading only config entities", dir_path);
-    }
 
-    bool changed = setAllEntities(entities_name_and_queries);
+    setAllEntities(entities_name_and_queries);
+    entities_loaded = true;
 
     LOG_DEBUG(log, "Workload entities loaded");
-    initialized = true;
-
-    return changed;
 }
 
 
@@ -213,14 +204,6 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
     bool replace_if_exists,
     const Settings & settings)
 {
-    // Check if this entity exists in config storage (config entities cannot be stored to disk)
-    if (config_storage->has(entity_name))
-    {
-        if (throw_if_exists)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot store workload entity '{}' to disk: it is defined in server configuration", entity_name);
-        return OperationResult::Failed;
-    }
-
     createDirectory();
     String file_path = getFilePath(entity_type, entity_name);
     LOG_DEBUG(log, "Storing workload entity {} to file {}", backQuote(entity_name), file_path);
@@ -268,14 +251,6 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
     const String & entity_name,
     bool throw_if_not_exists)
 {
-    // Check if this entity exists in config storage (config entities cannot be removed)
-    if (config_storage->has(entity_name))
-    {
-        if (throw_if_not_exists)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove workload entity '{}': it is defined in server configuration", entity_name);
-        return OperationResult::Failed;
-    }
-
     String file_path = getFilePath(entity_type, entity_name);
     LOG_DEBUG(log, "Removing workload entity {} stored in file {}", backQuote(entity_name), file_path);
 
