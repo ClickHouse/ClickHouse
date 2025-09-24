@@ -193,6 +193,9 @@ enum class SystemQueryTargetType : uint8_t
         }
         else
             return false;
+
+        if (database && ParserKeyword{Keyword::WITH_TABLES}.ignore(pos, expected))
+            res->with_tables = true;
     }
     else
         res->is_drop_whole_replica = true;

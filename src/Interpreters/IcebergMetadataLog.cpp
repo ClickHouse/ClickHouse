@@ -37,6 +37,7 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 namespace ErrorCodes
 {
 extern const int CANNOT_CLOCK_GETTIME;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -95,7 +96,14 @@ void insertRowToLogTable(
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(
+    auto iceberg_metadata_log = Context::getGlobalContextInstance()->getIcebergMetadataLog();
+
+    if (!iceberg_metadata_log)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
+    }
+
+    iceberg_metadata_log->add(
         DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),

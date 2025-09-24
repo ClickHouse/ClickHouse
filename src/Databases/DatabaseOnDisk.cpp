@@ -595,7 +595,10 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    {
+        std::lock_guard lock(mutex);
+        assert(tables.empty());
+    }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);
