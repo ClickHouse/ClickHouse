@@ -41,7 +41,7 @@ class SparkAndClickHouseCheck:
                 CharType,
                 VarcharType,
                 TimestampType,
-                DateType
+                DateType,
             ),
         ):
             # Map type is not comparable in Spark, Struct is complicated
@@ -54,7 +54,11 @@ class SparkAndClickHouseCheck:
             spark_predicate = ""
             extra_predicate = ""
             client = Client(
-                host=cluster.instances["node0"].ip_address,
+                host=(
+                    cluster.instances["node0"].ip_address
+                    if hasattr(cluster, "instances")
+                    else "localhost"
+                ),
                 port=9000,
                 command=cluster.client_bin_path,
             )

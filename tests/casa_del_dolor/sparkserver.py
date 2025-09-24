@@ -86,6 +86,7 @@ if __name__ == "__main__":
         "azurite_key": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         "azure_container_name": "cont",
         "instances_dir": "/var/lib/clickhouse/user_files",
+        "client_bin_path": sys.argv[1],
     }
     cluster = SimpleNamespace(**cluster_settings)
     os.makedirs(cluster.instances_dir, exist_ok=True)
