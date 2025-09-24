@@ -5204,7 +5204,8 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
             std::back_inserter(extra_files));
 
         if (files_in_part != files_in_checksums)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            LOG_TRACE(
+                getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
                 "checksums.txt file is not consistent with the files on file system, "
                 "checksums.txt file has {} files, part '{}' has {} files, "
                 "files in checksums: {}, files in part: {} "
@@ -5227,7 +5228,8 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
 
         if (!missed_projections.empty())
         {
-            LOG_INFO(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+            LOG_TRACE(
+                getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
                 "checksums.txt file is not consistent with the files on file system, "
                 "checksums.txt file has {} projections, part '{}' has {} projections, "
                 "projections in checksums: {}, projections in part: {} "
@@ -5248,7 +5250,9 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
 
         if (!extra_projections.empty())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "checksums.txt file is not consistent with the files on file system, "
+            LOG_TRACE(
+                getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+                "checksums.txt file is not consistent with the files on file system, "
                 "checksums.txt file has {} projections, part '{}' has {} projections, "
                 "projections in checksums: {}, projections in part: {} "
                 "Extra projections in part: {}",
