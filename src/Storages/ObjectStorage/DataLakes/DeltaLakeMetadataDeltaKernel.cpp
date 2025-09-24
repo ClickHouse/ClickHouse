@@ -8,12 +8,17 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Interpreters/DeltaMetadataLog.h>
 
 namespace DB
 {
@@ -24,6 +29,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
 }
 
@@ -63,6 +69,8 @@ namespace Setting
     }
 }
 
+static constexpr auto deltalake_metadata_directory = "_delta_log";
+static constexpr auto metadata_file_suffix = ".json";
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
@@ -76,6 +84,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
             context,
             log))
 {
+    object_storage_common = object_storage;
 #ifdef DEBUG_OR_SANITIZER_BUILD
     //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 #endif
@@ -99,8 +108,9 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t list_batch_size,
-    ContextPtr /* context  */) const
+    ContextPtr context) const
 {
+    logMetadataFiles(context);
     std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
@@ -357,6 +367,24 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction, configuration, partition_columns, object_storage,
         context, sample_block, format_settings);
+}
+
+void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
+{
+    if (!context->getSettingsRef()[Setting::delta_lake_log_metadata].value)
+        return;
+
+    const auto keys = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
+    auto read_settings = context->getReadSettings();
+    for (const String & key : keys)
+    {
+        ObjectInfo object_info(key);
+        auto buf = createReadBuffer(object_info, object_storage_common, context, log);
+        String json_str;
+        readStringUntilEOF(json_str, *buf);
+        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
+    }
+
 }
 
 }

@@ -86,6 +86,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -789,6 +790,15 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;
 
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (compression_method != "NONE" && compression_method != "ZSTD" && compression_method != "LZ4" && compression_method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
     if (compression_method == "ZSTD")
         compression_level = settings[Setting::network_zstd_compression_level];
 

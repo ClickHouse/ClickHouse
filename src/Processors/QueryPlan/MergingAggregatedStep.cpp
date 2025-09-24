@@ -144,7 +144,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
                                  : max_threads;
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getSharedHeader(), std::move(params), final);
-        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
+        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads, should_produce_results_in_order_of_bucket_number);
     }
 
     pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);

@@ -29,6 +29,12 @@ namespace ErrorCodes
     #endif
 }
 
+namespace YTsaurusSetting
+{
+    extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
+}
+
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
@@ -127,7 +133,12 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     , configuration{configuration_}
     , sample_block{sample_block_}
     , table_sample_block{table_sample_block_}
-    , client(new YTsaurusClient(context, {.http_proxy_urls = configuration->http_proxy_urls, .oauth_token = configuration->oauth_token}))
+    , client(new YTsaurusClient(context,
+        {
+            .http_proxy_urls = configuration->http_proxy_urls,
+            .oauth_token = configuration->oauth_token,
+            .enable_heavy_proxy_redirection = configuration->settings[YTsaurusSetting::enable_heavy_proxy_redirection],
+        }))
 {
 }
 
