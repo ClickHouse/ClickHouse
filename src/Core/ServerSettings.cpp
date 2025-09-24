@@ -582,6 +582,15 @@ namespace DB
     <max_partition_size_to_drop>0</max_partition_size_to_drop>
     ```
     )", 0) \
+    DECLARE(UInt64, max_named_collection_num_to_warn, 1000lu, R"(
+    If the number of named collections exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_named_collection_num_to_warn>400</max_named_collection_num_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_table_num_to_warn, 5000lu, R"(
     If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 
@@ -643,6 +652,18 @@ namespace DB
 
     ```xml
     <max_part_num_to_warn>400</max_part_num_to_warn>
+    ```
+    )", 0) \
+    DECLARE(UInt64, max_named_collection_num_to_throw, 0lu, R"(
+    If number of named collections is greater than this value, server will throw an exception.
+
+    :::note
+    A value of `0` means no limitation.
+    :::
+
+    **Example**
+    ```xml
+    <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
     ```
     )", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
@@ -894,7 +915,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```xml
     <validate_tcp_client_information>false</validate_tcp_client_information>
     ```)", 0) \
-    DECLARE(Bool, storage_metadata_write_full_object_key, false, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format)", 0) \
+    DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
     A limit on the number of materialized views attached to a table.
 
@@ -1257,6 +1278,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
+            {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_table_num_to_warn", {std::to_string(context->getMaxTableNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_view_num_to_warn", {std::to_string(context->getMaxViewNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_dictionary_num_to_warn", {std::to_string(context->getMaxDictionaryNumToWarn()), ChangeableWithoutRestart::Yes}},
