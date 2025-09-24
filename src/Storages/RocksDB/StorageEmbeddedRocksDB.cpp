@@ -213,17 +213,21 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     setSettings(std::move(settings_));
 
     if (rocksdb_dir.empty())
-        rocksdb_dir = fs::path{getContext()->getUserFilesPath()} / relative_data_path_;
+    {
+        /// We create tables under the database directory by default and enforce user_files path check for explicitly declared paths
+        rocksdb_dir = context_->getPath() + relative_data_path_;
+    }
+    else
+    {
+        bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
+        fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+        if (fs::path(rocksdb_dir).is_relative())
+            rocksdb_dir = user_files_path / rocksdb_dir;
+        rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
 
-    bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
-    if (fs::path(rocksdb_dir).is_relative())
-        rocksdb_dir = user_files_path / rocksdb_dir;
-    rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
-
-    if (!is_local && !pathStartsWith(fs::path(rocksdb_dir), user_files_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Path must be inside user-files path: {}", user_files_path.string());
+        if (!is_local && !fileOrSymlinkPathStartsWith(fs::path(rocksdb_dir), user_files_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
+    }
 
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
