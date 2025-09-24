@@ -101,7 +101,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     }
 
     /// Create header for InputFormat with columns that will be read from the data.
-    for (const auto & column : columns_in_data_file)
+    for (const auto & column : info.columns_description)
     {
         /// Never read hive partition columns from the data file. This fixes https://github.com/ClickHouse/ClickHouse/issues/87515
         if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
