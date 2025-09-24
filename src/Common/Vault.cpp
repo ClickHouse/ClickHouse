@@ -52,18 +52,29 @@ String Vault::readSecret(const String & secret, const String & key)
     Poco::URI uri = Poco::URI(fmt::format("{}/v1/secret/data/{}", url, secret));
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    // TODO exception catching for 404
-    auto wb = DB::BuilderRWBufferFromHTTP(uri)
-                  .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-                  .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
-                  .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-                  .withSkipNotFound(false)
-                  .withHeaders(headers)
-                  .create(credentials);
-
     std::string json_str;
-    readJSONObjectPossiblyInvalid(json_str, *wb);
-    LOG_DEBUG(log, "Vault response '{}'.", json_str);
+
+    try
+    {
+        auto wb = DB::BuilderRWBufferFromHTTP(uri)
+                      .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+                      .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
+                      .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                      .withSkipNotFound(false)
+                      .withHeaders(headers)
+                      .create(credentials);
+
+        readJSONObjectPossiblyInvalid(json_str, *wb);
+        LOG_DEBUG(log, "Vault response '{}'.", json_str);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        const auto status = e.getHTTPStatus();
+        if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Secret {} not found in vault.", secret);
+
+        throw;
+    }
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var res_json = parser.parse(json_str);
