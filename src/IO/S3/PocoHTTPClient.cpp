@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
+#include <smithy/tracing/NoopTelemetryProvider.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
@@ -131,6 +132,9 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
         retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
     }
+
+    /// NOTE: In some places AWS SDK expects it to be non-null.
+    telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
