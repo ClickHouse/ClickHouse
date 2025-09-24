@@ -800,14 +800,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes left in the disk space ({}), total size on disk {} is {}."
-                "Configure this limit with user settings {} or {}",
-                formatReadableSizeWithBinarySuffix(needed_free_bytes),
+                "Could not perform insert."
+                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
+                "The threshold can be configured either in MergeTree settings or User settings, "
+                "using the following settings: "
+                "(1) `min_free_disk_bytes_to_perform_insert` "
+                "(2) `min_free_disk_ratio_to_perform_insert`. "
+                "The total disk capacity of {} is {}",
                 formatReadableSizeWithBinarySuffix(free_disk_bytes),
                 backQuote(disk->getName()),
-                formatReadableSizeWithBinarySuffix(total_disk_bytes),
-                "min_free_disk_bytes_to_perform_insert",
-                "min_free_disk_ratio_to_perform_insert");
+                formatReadableSizeWithBinarySuffix(needed_free_bytes),
+                backQuote(disk->getName()),
+                formatReadableSizeWithBinarySuffix(total_disk_bytes));
         }
     }
 
