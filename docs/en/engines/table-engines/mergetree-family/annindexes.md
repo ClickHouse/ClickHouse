@@ -93,7 +93,7 @@ Where:
 * `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
 
-### Creating a `QBit` Table and Adding Data
+### Creating a `QBit` Table and Adding Data {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -111,7 +111,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-### Vector Search with `QBit`
+### Vector Search with `QBit` {#qbit-search}
 
 Let's find the nearest neighbors to a vector representing word 'lemon' using L2 distance. The third parameter in the distance function specifies the precision in bits - higher values provide more accuracy but require more computation.
 
@@ -165,7 +165,7 @@ Notice that with 12-bit quantization, we get a good approximation of the distanc
 In the current state, the speed-up is due to reduced I/O as we read less data. If the original data was wide, like `Float64`, choosing a lower precision will still result in distance calculation on data of the same width – just with less precision.
 :::
 
-### Performance Considerations
+### Performance Considerations {#qbit-performance}
 
 The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. The precision parameter directly controls the trade-off between accuracy and speed:
 
