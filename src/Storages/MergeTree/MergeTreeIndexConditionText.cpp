@@ -102,6 +102,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return isSupportedFunctionForDirectRead(function_name)
         || function_name == "equals"
         || function_name == "notEquals"
+        || function_name == "mapContainsKey"
+        || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
         || function_name == "hasTokenOrNull"
@@ -154,12 +156,13 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
-            RPNElement::FUNCTION_NOT_EQUALS,
-            RPNElement::FUNCTION_SEARCH_ANY,
-            RPNElement::FUNCTION_SEARCH_ALL,
-            RPNElement::FUNCTION_IN,
-            RPNElement::FUNCTION_NOT_IN,
-            RPNElement::FUNCTION_MATCH});
+         RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_HAS,
+         RPNElement::FUNCTION_SEARCH_ANY,
+         RPNElement::FUNCTION_SEARCH_ALL,
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN,
+         RPNElement::FUNCTION_MATCH});
 }
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
@@ -185,7 +188,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ALL
             || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_HAS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
@@ -354,16 +358,64 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     bool index_column_exists = header.has(index_column_node.getColumnName());
-    if (!index_column_exists)
+    bool index_column_map_keys_exists = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
+
+    Field const_value = value_field;
+    if (index_column_node.isFunction())
+    {
+        const auto function = index_column_node.toFunctionNode();
+        if (function.getFunctionName() == "arrayElement")
+        {
+            const auto map_column_name = function.getArgumentAt(0).getColumnName();
+            bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", map_column_name));
+            bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", map_column_name));
+            index_column_exists = has_maps_keys_index_column_name || has_map_values_index_column_name;
+            if (has_maps_keys_index_column_name)
+            {
+                const auto & argument_const_key = function.getArgumentAt(1);
+                DataTypePtr key_const_type;
+                if (argument_const_key.tryGetConstant(const_value, key_const_type))
+                {
+                    auto const_data_type = WhichDataType(key_const_type);
+                    if (!const_data_type.isStringOrFixedString())
+                        return false;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+        }
+    }
+
+    if (!index_column_exists && !index_column_map_keys_exists)
         return false;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    const Field & const_value = value_field;
     const String & function_name = function_node.getFunctionName();
 
+    if (function_name == "mapContainsKey")
+    {
+        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
+        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
+            return false;
+        auto tokens = stringToTokens(const_value, *token_extractor);
+        out.function = RPNElement::FUNCTION_HAS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        return true;
+    }
+    if (function_name == "has")
+    {
+        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
+            return false;
+        auto tokens = stringToTokens(const_value, *token_extractor);
+        out.function = RPNElement::FUNCTION_HAS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        return true;
+    }
     if (function_name == "notEquals")
     {
         auto tokens = stringToTokens(const_value, *token_extractor);
