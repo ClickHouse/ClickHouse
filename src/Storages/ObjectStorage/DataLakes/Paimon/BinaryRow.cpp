@@ -14,13 +14,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-}
 
 namespace Paimon
 {
@@ -57,7 +50,6 @@ BinaryRow::BinaryRow(const String & bytes_)
         return result.str();
     };
 
-    // seek(LENGTH_SIZE);
     readIntBinary(arity, reader);
     /// arity stores as big endian
     if (!need_flip)
@@ -187,11 +179,10 @@ DateTime64 BinaryRow::getTimestamp(Int32 pos, Int32 scale)
 {
     if (scale <= 3)
     {
-        // auto res = getFixedSizeData<Int64>(pos);
         return DateTime64(getFixedSizeData<Int64>(pos));
     }
     /// TODO: support larger precision
-    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "scale {} is not supported, only support scale <= 3", scale);
+    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "scale {} is not supported, only support scale <= 3", scale);
 }
 
 }

@@ -75,20 +75,6 @@ public:
 String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
 
-template <typename T>
-struct IsOptional
-{
-    static constexpr bool value = false;
-};
-
-template <typename T>
-struct IsOptional<std::optional<T>>
-{
-    static constexpr bool value = true;
-};
-
-template <typename T>
-inline constexpr bool is_optional_v = IsOptional<T>::value;
 
 
 template <typename T>

@@ -16,7 +16,7 @@
 #include <base/Decimal.h>
 #include <base/types.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
@@ -33,7 +33,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 using namespace Paimon;
@@ -75,7 +75,6 @@ using PaimonSnapshotPtr = std::shared_ptr<PaimonSnapshot>;
 
 struct SimpleStats
 {
-    // RowBinary
     String min_values;
     String max_values;
     Array null_counts;
@@ -139,7 +138,7 @@ struct PaimonManifestEntry
     static PaimonManifestEntry::Kind toKind(int8_t value)
     {
         if (value < static_cast<int8_t>(PaimonManifestEntry::Kind::ADD) || value > static_cast<int8_t>(PaimonManifestEntry::Kind::DELETE))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value for PaimonManifestEntry::Kind {}", value);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for PaimonManifestEntry::Kind {}", value);
         return static_cast<PaimonManifestEntry::Kind>(value);
     }
 
@@ -147,7 +146,7 @@ struct PaimonManifestEntry
     {
         if (value < static_cast<int8_t>(PaimonManifestEntry::FileSource::APPEND)
             || value > static_cast<int8_t>(PaimonManifestEntry::FileSource::COMPACT))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value for PaimonManifestEntry::FileSource {}", value);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for PaimonManifestEntry::FileSource {}", value);
         return static_cast<PaimonManifestEntry::FileSource>(value);
     }
 
@@ -168,7 +167,6 @@ struct PaimonManifestEntry
 
     public:
         String file_name;
-        // String full_path;
         String bucket_path;
         Int64 file_size;
         Int64 row_count;

@@ -25,7 +25,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 }
@@ -116,7 +115,7 @@ struct DataType
                 size_t end = type_.find(')');
                 if (!has_precision(type_))
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "not found precision: {}", type_);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "not found precision: {}", type_);
                 }
                 std::vector<size_t> precision_infos;
                 String precision_str = type_.substr(start + 1, end - start - 1);
@@ -134,7 +133,7 @@ struct DataType
                         (*p != ' '));
                     if (!std::isdigit(*p) && *p != ',' && *p != ' ')
                     {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "parse precision meet invalid char: {}, precision_str: {}", *p, precision_str);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "parse precision meet invalid char: {}, precision_str: {}", *p, precision_str);
                     }
                     if (!token_start && std::isdigit(*p))
                     {

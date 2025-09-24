@@ -21,7 +21,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -83,7 +83,6 @@ public:
 
                 return result.str();
             };
-            // int field_offset = getFieldOffset(pos);
             Int64 offset_and_size = getFixedSizeData<Int64>(pos);
             Int32 size = static_cast<Int32>(offset_and_size);
             Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
@@ -95,7 +94,7 @@ public:
                     return data;
                 else if (data.size() > target_size)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::BAD_ARGUMENTS,
                         "data size larger than target_size, data size: {}, target_size: {}.",
                         data.size(),
                         target_size);
@@ -118,7 +117,7 @@ public:
             {
                 if (bytes_string.length() > 16)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Get unexpected decimal bytes length: {}, expected <= 16", bytes_string.length());
+                        ErrorCodes::BAD_ARGUMENTS, "Get unexpected decimal bytes length: {}, expected <= 16", bytes_string.length());
                 bytes_string = add_leading_zero(bytes_string, 16);
                 UInt64 high = get_uint64_big_endian(bytes_string);
                 UInt64 low = get_uint64_big_endian(bytes_string.substr(8));
@@ -129,7 +128,7 @@ public:
             {
                 if (bytes_string.length() > 32)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Get unexpected decimal bytes length: {}, expected <= 32", bytes_string.length());
+                        ErrorCodes::BAD_ARGUMENTS, "Get unexpected decimal bytes length: {}, expected <= 32", bytes_string.length());
                 bytes_string = add_leading_zero(bytes_string, 32);
                 UInt64 ele1 = get_uint64_big_endian(bytes_string);
                 UInt64 ele2 = get_uint64_big_endian(bytes_string.substr(8));
@@ -144,7 +143,6 @@ public:
     DateTime64 getTimestamp(Int32 pos, Int32 scale);
 
 private:
-    // String bytes;
     ReadBufferFromOwnString reader;
     bool need_flip;
     Int32 arity;

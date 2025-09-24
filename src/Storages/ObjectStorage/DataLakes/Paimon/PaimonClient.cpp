@@ -21,7 +21,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -36,9 +36,8 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <boost/graph/properties.hpp>
 #include <fmt/format.h>
@@ -106,6 +105,9 @@ PaimonTableClient::PaimonTableClient(
 std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 {
     auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
+
     /// list all schema files
     const auto schema_files = listFiles(
         *object_storage,
@@ -146,14 +148,13 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 /// schema
 Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info)
 {
-    auto configuration_ptr = configuration.lock();
     const auto [max_schema_version, max_schema_path] = schema_meta_info;
     /// parse schema json
     ObjectInfo object_info(max_schema_path);
     auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
     const auto & shcema_json = json.extract<Poco::JSON::Object::Ptr>();
 
@@ -163,6 +164,8 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
 std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
     auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
     /// read latest hint
     Int64 snapshot_version;
     ObjectInfo object_info(std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
@@ -227,7 +230,6 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 
 PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)
 {
-    auto configuration_ptr = configuration.lock();
     /// read latest hint
     const auto [latest_snapshot_version, latest_snapshot_path] = snapshot_meta_info;
 
@@ -236,7 +238,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
     const auto & snapshot_json = json.extract<Poco::JSON::Object::Ptr>();
     return PaimonSnapshot(snapshot_json);
@@ -245,10 +247,6 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
 std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String manifest_list_path)
 {
     /// read manifest list file
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, log);
@@ -272,16 +270,11 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
     if (manifest_file_name.starts_with("index-manifest-"))
         return {};
 
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 
-    // std::vector<PaimonManifest> manifest_vec;
     PaimonManifest paimon_manifest;
     paimon_manifest.entries.reserve(manifest_deserializer.rows());
     for (size_t i = 0; i < manifest_deserializer.rows(); ++i)

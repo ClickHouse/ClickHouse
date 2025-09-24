@@ -29,7 +29,6 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <fmt/format.h>
 
@@ -37,11 +36,6 @@
 namespace DB
 {
 using namespace Paimon;
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
-}
 
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
@@ -86,7 +80,7 @@ bool PaimonMetadata::updateState()
     {
         std::stringstream ss;// STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(last_metadata_object, ss);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse paimon table schema, json object: {}", ss.str());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse paimon table schema, json object: {}", ss.str());
     }
     auto it = table_schema->options.find(PAIMON_SCAN_MODE);
     if (it != table_schema->options.end() && (it->second != "latest" || it->second != "latest-full" || it->second != "default"))

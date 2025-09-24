@@ -24,8 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
 }
 }
 namespace Paimon
@@ -176,7 +174,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         if (it == table_schema.fields_by_name_indexes.end() || it->second >= table_schema.fields.size())
         {
             throw DB::Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::BAD_ARGUMENTS,
                 "{} is not found in table schema fields: [{}]",
                 table_schema.partition_keys[i],
                 fmt::join(table_schema.fields_by_name_indexes, ","));
