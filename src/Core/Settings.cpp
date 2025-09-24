@@ -1513,7 +1513,39 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored during merges or by explicit MATERIALIZE INDEX.
+
+See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
+)", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored during merges (see [materialize_skip_indexes_on_merge](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit MATERIALIZE INDEX query.
+
+Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE t_skip_index_insert
+(
+    a UInt64,
+    b UInt64,
+    INDEX idx_a a TYPE minmax,
+    INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+
+SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
+
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
+
+ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
+
+SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
+```
 )", 0) \
     DECLARE(Bool, text_index_use_bloom_filter, true, R"(
 For testing purposes, enables or disables usage of bloom filter in text index.
@@ -6091,6 +6123,9 @@ Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distrib
     DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
 Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
 )", 0) \
+    DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
+Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6500,9 +6535,6 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(String, datalake_disk_name, "", R"(
-Which disk to use for data lake table engines.
-)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -6785,6 +6817,12 @@ Populate constant comparison in AND chains to enhance filtering ability. Support
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
+)", 0) \
+    DECLARE(Bool, use_join_disjunctions_push_down, false, R"(
+Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
+This allows storage engines to filter earlier, which can reduce data read.
+The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
+predicate for the target side.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
