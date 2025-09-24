@@ -60,7 +60,7 @@ class SparkAndClickHouseCheck:
             # For Iceberg, use time travel or snapshots sometimes
             if table.lake_format == LakeFormat.Iceberg and random.randint(1, 2) == 1:
                 result = spark.sql(
-                    f"CALL `{table.catalog_name}`.system.snapshots('{table.get_namespace_path()}');"
+                    f"CALL `{table.catalog_name}`.system.snapshots('{table.get_namespace_path()}')"
                 ).collect()
                 snapshots = [x["snapshot_id"] for x in result]
 
