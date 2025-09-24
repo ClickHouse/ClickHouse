@@ -259,16 +259,18 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 {
     ColumnsDescription description
         = {{"database", std::make_shared<DataTypeString>(), "Database name."},
-           {"is_readonly", std::make_shared<DataTypeUInt8>(), "is_readonly"},
-           {"max_log_ptr", std::make_shared<DataTypeInt32>(), "max_log_ptr"},
-           {"replica_name", std::make_shared<DataTypeString>(), "replica_name"},
-           {"replica_path", std::make_shared<DataTypeString>(), "replica_path"},
-           {"zookeeper_path", std::make_shared<DataTypeString>(), "zookeeper_path"},
-           {"shard_name", std::make_shared<DataTypeString>(), "shard_name"},
-           {"log_ptr", std::make_shared<DataTypeInt32>(), "log_ptr"},
-           {"total_replicas", std::make_shared<DataTypeUInt32>(), "total_replicas"},
-           {"zookeeper_exception", std::make_shared<DataTypeString>(), "zookeeper_exception"},
-           {"is_session_expired", std::make_shared<DataTypeUInt8>(), "is_session_expired"}};
+           {"is_readonly", std::make_shared<DataTypeUInt8>(), "Whether the database replica is in read-only mode. This mode is turned on if the config does not have sections with ClickHouse Keeper, "
+                "if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper."},
+           {"max_log_ptr", std::make_shared<DataTypeInt32>(), "Maximum entry number in the log of general activity."},
+           {"replica_name", std::make_shared<DataTypeString>(), "Replica name in ClickHouse Keeper. Different replicas of the same database have different names."},
+           {"replica_path", std::make_shared<DataTypeString>(), "Path to replica data in ClickHouse Keeper."},
+           {"zookeeper_path", std::make_shared<DataTypeString>(), "Path to the database data in ClickHouse Keeper."},
+           {"shard_name", std::make_shared<DataTypeString>(), "Replica shard name."},
+           {"log_ptr", std::make_shared<DataTypeInt32>(), "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. "
+                "If log_ptr is much smaller than max_log_ptr, something is wrong."},
+           {"total_replicas", std::make_shared<DataTypeUInt32>(), "The total number of known replicas of this database."},
+           {"zookeeper_exception", std::make_shared<DataTypeString>(), "The last exception message, got if the error happened when fetching the info from ClickHouse Keeper."},
+           {"is_session_expired", std::make_shared<DataTypeUInt8>(), "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."}};
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);

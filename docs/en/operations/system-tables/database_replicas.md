@@ -6,30 +6,35 @@ title: 'system.database_replicas'
 doc_type: 'reference'
 ---
 
-Contains information of each Replicated database replicas.
+Contains information and status of all database replicas on current server.
+Each database replica is represented by a single row.
 
 Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the Replicated database is in.
 
 - `is_readonly` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the database replica is in read-only mode.
-    This mode is turned on if the config does not have sections with Zookeeper/ClickHouse Keeper.
+    This mode is turned on if the config does not have sections with ClickHouse Keeper,
+    if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper.
 
-- `is_session_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) - the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`.
+- `max_log_ptr` ([Int32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity.
 
-- `max_log_ptr` ([UInt32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity.
-
-- `zookeeper_path` ([String](../../sql-reference/data-types/string.md)) - Path to database data in ClickHouse Keeper.
-
-- `replica_name` ([String](../../sql-reference/data-types/string.md)) - Replica name in ClickHouse Keeper.
+- `replica_name` ([String](../../sql-reference/data-types/string.md)) - Replica name in ClickHouse Keeper. Different replicas of the same database have different names.
 
 - `replica_path` ([String](../../sql-reference/data-types/string.md)) - Path to replica data in ClickHouse Keeper.
 
-- `zookeeper_exception` ([String](../../sql-reference/data-types/string.md)) - The last exception message, got if the error happened when fetching the info from ClickHouse Keeper.
+- `zookeeper_path` ([String](../../sql-reference/data-types/string.md)) - Path to database data in ClickHouse Keeper.
+
+- `shard_name` ([String](../../sql-reference/data-types/string.md)) - Replica shard name.
+
+- `log_ptr` ([Int32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one.
+    If log_ptr is much smaller than max_log_ptr, something is wrong.
 
 - `total_replicas` ([UInt32](../../sql-reference/data-types/int-uint.md)) - The total number of known replicas of this database.
 
-- `log_ptr` ([UInt32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one.
+- `zookeeper_exception` ([String](../../sql-reference/data-types/string.md)) - The last exception message, got if the error happened when fetching the info from ClickHouse Keeper.
+
+- `is_session_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) - the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`.
 
 **Example**
 
