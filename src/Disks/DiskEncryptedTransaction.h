@@ -304,7 +304,6 @@ private:
         delegate_transaction->validateTransaction(std::move(wrapped));
     }
 
-private:
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
