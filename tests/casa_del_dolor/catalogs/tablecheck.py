@@ -1,4 +1,5 @@
 import logging
+import random
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -13,7 +14,7 @@ from pyspark.sql.types import (
     DoubleType,
 )
 
-from .laketables import SparkTable
+from .laketables import SparkTable, LakeFormat, get_timestamp_for_table
 from integration.helpers.client import Client
 
 
@@ -47,16 +48,44 @@ class SparkAndClickHouseCheck:
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
+            clickhouse_predicate = ""
+            spark_predicate = ""
+            extra_predicate = ""
             client = Client(
                 host=cluster.instances["node0"].ip_address,
                 port=9000,
                 command=cluster.client_bin_path,
             )
 
+            # For Iceberg, use time travel or snapshots sometimes
+            if table.lake_format == LakeFormat.Iceberg and random.randint(1, 2) == 1:
+                result = spark.sql(
+                    f"CALL `{table.catalog_name}`.system.snapshots('{table.get_namespace_path()}');"
+                ).collect()
+                snapshots = [x["snapshot_id"] for x in result]
+
+                if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                    next_snapshot = random.choice(snapshots)
+                    clickhouse_predicate = (
+                        f" SETTINGS iceberg_snapshot_id = {next_snapshot}"
+                    )
+                    spark_predicate = f" VERSION AS OF {next_snapshot}"
+                    extra_predicate = f" on snapshot {next_snapshot}"
+                else:
+                    next_time = get_timestamp_for_table()
+                    clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {next_time.timestamp() * 1000}"
+                    spark_predicate = f" TIMESTAMP AS OF '{next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}'"
+                    extra_predicate = (
+                        f" on timestamp {next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}"
+                    )
+
             # Start by checking counts
-            spark_count = spark.table(table.get_table_full_path()).count()
+            spark_query = spark.sql(
+                f"SELECT count(*) c FROM {table.get_table_full_path()}{spark_predicate};"
+            ).collect()
+            spark_count = spark_query[0]["c"]
             ch_count_str = client.query(
-                f"SELECT count(*) FROM {table.get_clickhouse_path()};"
+                f"SELECT count(*) FROM {table.get_clickhouse_path()}{clickhouse_predicate};"
             )
             if not isinstance(ch_count_str, str) or ch_count_str == "":
                 self.logger.error(f"No count received {table.get_clickhouse_path()}")
@@ -64,7 +93,7 @@ class SparkAndClickHouseCheck:
             ch_count = int(ch_count_str.rstrip())
             if spark_count != ch_count:
                 self.logger.error(
-                    f"The row count for table {table.get_clickhouse_path()} doesn't match between Spark: {spark_count} and ClickHouse: {ch_count}"
+                    f"The row count for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark: {spark_count} and ClickHouse: {ch_count}"
                 )
                 return False
 
@@ -79,7 +108,7 @@ class SparkAndClickHouseCheck:
                 )
                 return True
             self.logger.info(
-                f"Comparing hashes for table {table.get_clickhouse_path()} for column(s) {','.join([col.column_name for col in order_by_cols])}"
+                f"Comparing hashes for table {table.get_clickhouse_path()} for column(s) {','.join([col.column_name for col in order_by_cols])}{extra_predicate}"
             )
 
             # Spark hash
@@ -95,7 +124,7 @@ class SparkAndClickHouseCheck:
             FROM (
                 SELECT MD5(CONCAT({concat_cols})) as row_hash
                 FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in spark_strings.items()])}
-                      FROM {table.get_table_full_path()}) x
+                      FROM {table.get_table_full_path()}{spark_predicate}) x
                 ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in spark_strings.keys()])}
             );
             """
@@ -125,7 +154,7 @@ class SparkAndClickHouseCheck:
                 FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in clickhouse_strings.items()])}
                       FROM {table.get_clickhouse_path()}) x
                 ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in clickhouse_strings.keys()])}
-            );
+            ){clickhouse_predicate};
             """
             )
             if not isinstance(clickhouse_hash, str) or clickhouse_hash == "":
@@ -133,7 +162,7 @@ class SparkAndClickHouseCheck:
                 return False
             if spark_hash != clickhouse_hash.rstrip():
                 self.logger.error(
-                    f"The hash for table {table.get_clickhouse_path()} doesn't match between Spark and ClickHouse"
+                    f"The hash for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark and ClickHouse"
                 )
                 return False
         except Exception as e:

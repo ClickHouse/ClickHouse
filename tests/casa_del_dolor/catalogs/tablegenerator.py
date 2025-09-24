@@ -1,10 +1,15 @@
 import random
-import time
 from abc import abstractmethod
-from datetime import datetime, timedelta
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
-from .laketables import LakeFormat, SparkTable, FileFormat, TableStorage, SparkColumn
+from .laketables import (
+    LakeFormat,
+    SparkTable,
+    FileFormat,
+    TableStorage,
+    SparkColumn,
+    get_timestamp_for_table,
+)
 
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
@@ -602,10 +607,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         table: SparkTable,
     ) -> str:
         next_option = random.randint(1, 9)
-        time.tzset() # The timezone may change for every run
-        restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
-        ).strftime("%Y-%m-%d %H:%M:%S.%f")
+        restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if next_option == 1:
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}')"
@@ -945,10 +947,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Restore
-            time.tzset() # The timezone may change for every run
-            restore_to = (
-                datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
-            ).strftime("%Y-%m-%d %H:%M:%S.%f")
+            restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
             return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
         if next_option == 3:
             # Optimize
