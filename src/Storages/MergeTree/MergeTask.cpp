@@ -115,6 +115,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
     extern const MergeTreeSettingsBool vertical_merge_remote_filesystem_prefetch;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
@@ -261,7 +262,7 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns() const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
@@ -308,6 +309,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     for (const auto & index : skip_indexes)
     {
+        if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
+            continue;
+
         auto index_columns = index.expression->getRequiredColumns();
 
         /// Calculate indexes that depend only on one column on vertical
@@ -505,7 +509,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     prepareProjectionsToMergeAndRebuild();
 
-    extractMergingAndGatheringColumns();
+    /// Get list of skip indexes to exclude from merge
+    std::unordered_set<String> exclude_index_names
+    if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        auto exlude_index_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+        if (!exclude_index_string.empty())
+            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+    }
+
+    extractMergingAndGatheringColumns(exclude_index_names);
 
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
@@ -621,7 +634,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
-            global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+
+            if (exclude_index_names.empty())
+                global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+            else
+            {
+                global_ctx->merging_skip_indexes.clear();
+                const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
+                for (const auto & index : index_descriptions)
+                    if (!exclude_index_names.contains(index.name))
+                        global_ctx->merging_skip_indexes.push_back(index);
+            }
+
             global_ctx->gathering_columns.clear();
             global_ctx->skip_indexes_by_column.clear();
             break;
