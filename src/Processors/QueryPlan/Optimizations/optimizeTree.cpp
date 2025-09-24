@@ -310,8 +310,15 @@ void considerEnablingParallelReplicas(
         if (!reading_step->step->supportsDataflowStatisticsCollection()
             || !corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
         {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "Step doesn't support dataflow statistics collection");
-            return;
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "Step ({}) doesn't support dataflow statistics collection",
+                corresponding_node_in_single_replica_plan->step->getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Step ({}) doesn't support dataflow statistics collection",
+                corresponding_node_in_single_replica_plan->step->getName());
+            // return;
         }
 
         reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);

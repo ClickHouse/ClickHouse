@@ -12,9 +12,10 @@ Block ExpressionTransform::transformHeader(const Block & header, const ActionsDA
     return expression.updateHeader(header);
 }
 
-ExpressionTransform::ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_)
+ExpressionTransform::ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_, UpdaterPtr updater_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, expression_->getActionsDAG())), false)
     , expression(std::move(expression_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -26,6 +27,9 @@ void ExpressionTransform::transform(Chunk & chunk)
     expression->execute(block, num_rows);
 
     chunk.setColumns(block.getColumns(), num_rows);
+
+    if (updater)
+        (*updater)(chunk.bytes());
 }
 
 ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActionsPtr expression_)
