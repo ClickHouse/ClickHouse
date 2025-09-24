@@ -348,6 +348,14 @@ void SerializationString::enumerateStreamsWithoutSize(
     settings.path.pop_back();
 }
 
+ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::clone() const
+{
+    auto res = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+    res->column = column;
+    res->need_string_data = need_string_data;
+    return res;
+}
+
 void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ColumnPtr & column,
     size_t rows_offset,
@@ -715,14 +723,33 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
-        return std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+        auto res = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+        res->size_column = size_column;
+        return res;
     }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings &, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache *) const
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    state = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = cached_state;
+        if (version == MergeTreeStringSerializationVersion::DEFAULT)
+        {
+            auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
+            string_state->need_string_data = true;
+        }
+    }
+    else
+    {
+        if (version == MergeTreeStringSerializationVersion::DEFAULT)
+            state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+        else
+            state = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+    }
 }
 
 void SerializationString::deserializeBinaryBulkWithSizeStream(

@@ -49,21 +49,21 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-struct DeserializeBinaryBulkStateStringSizeWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
-{
-    ColumnPtr string_column;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        return std::make_shared<DeserializeBinaryBulkStateStringSizeWithoutSizeStream>();
-    }
-};
-
 void SerializationStringSize::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings &, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache *) const
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
     if (version == MergeTreeStringSerializationVersion::DEFAULT)
-        state = std::make_shared<DeserializeBinaryBulkStateStringSizeWithoutSizeStream>();
+    {
+        if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+        {
+            state = cached_state;
+        }
+        else
+        {
+            state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+            addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        }
+    }
 }
 
 void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
@@ -75,46 +75,95 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
     SubstreamsCache * cache) const
 {
     settings.path.push_back(Substream::Regular);
-    DeserializeBinaryBulkStateStringSizeWithoutSizeStream * size_state = nullptr;
+    auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
+
+    if (string_state->need_string_data)
+        deserializeWithStringData(column, rows_offset, limit, settings, *string_state, cache);
+    else
+        deserializeWithoutStringData(column, rows_offset, limit, settings, cache);
+
+    settings.path.pop_back();
+}
+
+void SerializationStringSize::deserializeWithStringData(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStateStringWithoutSizeStream & string_state,
+    SubstreamsCache * cache) const
+{
     size_t num_read_rows = 0;
+
     if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        size_state = checkAndGetState<DeserializeBinaryBulkStateStringSizeWithoutSizeStream>(state);
-        std::tie(size_state->string_column, num_read_rows) = *cached_column_with_num_read_rows;
+        std::tie(string_state.column, num_read_rows) = *cached_column_with_num_read_rows;
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        size_state = checkAndGetState<DeserializeBinaryBulkStateStringSizeWithoutSizeStream>(state);
-        /// If we started to read a new column, reinitialize string column in the state.
-        if (!size_state->string_column || column->empty())
-            size_state->string_column = ColumnString::create();
+        if (!string_state.column || column->empty())
+            string_state.column = ColumnString::create();
 
-        size_t prev_size = size_state->string_column->size();
-        double avg_value_size_hint = 0.0;
-        if (settings.get_avg_value_size_hint_callback)
-            avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        serialization_string.deserializeBinaryBulk(
-            *size_state->string_column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
-        num_read_rows = size_state->string_column->size() - prev_size;
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, size_state->string_column, num_read_rows);
+        size_t prev_size = string_state.column->size();
+        double avg_value_size_hint
+            = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
+
+        serialization_string.deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
+
+        num_read_rows = string_state.column->size() - prev_size;
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);
+
         if (settings.update_avg_value_size_hint_callback)
-            settings.update_avg_value_size_hint_callback(settings.path, *size_state->string_column);
+            settings.update_avg_value_size_hint_callback(settings.path, *string_state.column);
     }
     else
     {
-        settings.path.pop_back();
         return;
     }
-
-    settings.path.pop_back();
 
     auto mutable_column = column->assumeMutable();
     auto & sizes_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
     sizes_data.reserve(sizes_data.size() + num_read_rows);
-    const auto & offsets = assert_cast<const ColumnString &>(*size_state->string_column).getOffsets();
+
+    const auto & offsets = assert_cast<const ColumnString &>(*string_state.column).getOffsets();
     size_t prev_size = offsets.size() - num_read_rows;
     for (size_t i = prev_size; i != offsets.size(); ++i)
         sizes_data.push_back(offsets[i] - offsets[i - 1]);
+}
+
+void SerializationStringSize::deserializeWithoutStringData(
+    ColumnPtr & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const
+{
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
+    {
+        return;
+    }
+    else if (ReadBuffer * stream = settings.getter(settings.path))
+    {
+        for (size_t i = 0; i < rows_offset; ++i)
+        {
+            UInt64 size;
+            readVarUInt(size, *stream);
+            stream->ignore(size);
+        }
+
+        size_t prev_size = column->size();
+        auto mutable_column = column->assumeMutable();
+        auto & mutable_column_data = typeid_cast<ColumnVector<UInt64> &>(*mutable_column).getData();
+        mutable_column_data.resize(prev_size + limit);
+
+        size_t num_read_rows = 0;
+        for (; num_read_rows < limit; ++num_read_rows)
+        {
+            if (stream->eof())
+                break;
+            readVarUInt(mutable_column_data[prev_size + num_read_rows], *stream);
+        }
+        mutable_column_data.resize(prev_size + num_read_rows);
+        column = std::move(mutable_column);
+
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
+    }
 }
 
 void SerializationStringSize::deserializeBinaryBulkWithSizeStream(

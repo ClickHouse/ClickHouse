@@ -51,6 +51,17 @@ private:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
+
+    void deserializeWithStringData(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStateStringWithoutSizeStream & string_state,
+        SubstreamsCache * cache) const;
+
+    void deserializeWithoutStringData(
+        ColumnPtr & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
 };
 
 }
