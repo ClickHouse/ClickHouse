@@ -29,7 +29,7 @@ void ExpressionTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), num_rows);
 
     if (updater)
-        (*updater)(chunk.bytes());
+        updater->addOutputBytes(chunk.bytes());
 }
 
 ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActionsPtr expression_)

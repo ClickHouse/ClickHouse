@@ -89,7 +89,7 @@ struct Updater
         dataflow_cache.update(*cache_key, statistics);
     }
 
-    void operator()(size_t bytes)
+    void addOutputBytes(size_t bytes)
     {
         if (!cache_key)
             return;
@@ -97,12 +97,12 @@ struct Updater
         statistics.output_bytes += bytes;
     }
 
-    void operator()(const RuntimeDataflowStatistics & stats)
+    void addInputBytes(size_t bytes)
     {
         if (!cache_key)
             return;
         std::lock_guard lock(mutex);
-        statistics += stats;
+        statistics.input_bytes += bytes;
     }
 
     std::mutex mutex;

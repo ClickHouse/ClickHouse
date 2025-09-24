@@ -390,15 +390,6 @@ ReadFromMergeTree::ReadFromMergeTree(
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 }
 
-ReadFromMergeTree::~ReadFromMergeTree()
-{
-    if (dataflow_cache_key)
-    {
-        // auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-        // dataflow_cache.update(*dataflow_cache_key, [](RuntimeDataflowStatistics & entry) { return RuntimeDataflowStatistics{}; });
-    }
-}
-
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,

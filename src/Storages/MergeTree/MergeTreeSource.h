@@ -37,7 +37,6 @@ private:
     MergeTreeSelectProcessorPtr processor;
     const std::string log_name;
 
-    RuntimeDataflowStatistics statistics{};
     UpdaterPtr updater;
 
 #if defined(OS_LINUX)

@@ -387,7 +387,7 @@ private:
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
         if (updater)
-            (*updater)(chunk.bytes());
+            updater->addOutputBytes(chunk.bytes());
         output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
@@ -472,7 +472,7 @@ private:
             if (has_rows)
             {
                 if (updater)
-                    (*updater)(chunk.bytes());
+                    updater->addOutputBytes(chunk.bytes());
                 chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;

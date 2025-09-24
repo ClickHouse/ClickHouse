@@ -146,11 +146,7 @@ MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const s
 #endif
 }
 
-MergeTreeSource::~MergeTreeSource()
-{
-    if (updater)
-        (*updater)(statistics);
-}
+MergeTreeSource::~MergeTreeSource() = default;
 
 std::string MergeTreeSource::getName() const
 {
@@ -189,7 +185,7 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
 
     if (updater)
-        statistics.input_bytes += chunk.num_read_bytes;
+        updater->addInputBytes(chunk.num_read_bytes);
 
     finished = chunk.is_finished;
 

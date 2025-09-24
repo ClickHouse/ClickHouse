@@ -44,6 +44,12 @@ void ColumnLazyTransform::transform(Chunk & chunk)
         }
     }
 
+    if (updater)
+    {
+        for (auto & column_with_type_and_name : res_columns)
+            updater->addInputBytes(column_with_type_and_name.column->byteSize());
+    }
+
     for (auto & column_with_type_and_name : res_columns)
     {
         const auto & alias_name = column_with_type_and_name.name;
@@ -53,6 +59,6 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), rows_size);
 
     if (updater)
-        (*updater)(chunk.bytes());
+        updater->addOutputBytes(chunk.bytes());
 }
 }
