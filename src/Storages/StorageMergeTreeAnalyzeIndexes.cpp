@@ -35,20 +35,20 @@ class MergeTreeAnalyzeIndexSource : public ISource, WithContext
 public:
     MergeTreeAnalyzeIndexSource(
         SharedHeader header_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StoragePtr & storage_,
         const SelectQueryInfo & query_info_,
         size_t num_streams_,
         MergeTreeData::DataPartsVector data_parts_,
         MergeTreeSettingsPtr table_settings_,
-        const ASTPtr & primary_key_predicate_,
+        const ASTPtr & predicate_,
         ContextPtr context_)
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
-        , metadata_snapshot(metadata_snapshot_)
+        , storage(storage_)
         , query_info(query_info_)
         , num_streams(num_streams_)
-        , primary_key_predicate(primary_key_predicate_)
+        , predicate(predicate_)
         , data_parts(std::move(data_parts_))
         , table_settings(std::move(table_settings_))
     {
@@ -105,38 +105,58 @@ protected:
         ReadFromMergeTree::IndexStats index_stats;
         auto reader_settings = MergeTreeReaderSettings::create(context, *table_settings, query_info);
 
-        const auto & primary_key = metadata_snapshot->getPrimaryKey();
+        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr();
+        const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+        if (!merge_tree_data)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
 
         std::optional<ActionsDAG> filter_dag;
-        if (primary_key_predicate)
+        if (predicate)
         {
             /// FIXME:
             /// - use analyzer
             /// - use primary_key->getSampleBlock().getNamesAndTypesList() over metadata_snapshot->getSampleBlock().getNamesAndTypesList()
-            TreeRewriterResultPtr syntax_analyzer_result = TreeRewriter(context).analyze(primary_key_predicate, metadata_snapshot->getSampleBlock().getNamesAndTypesList());
-            ExpressionAnalyzer analyzer(primary_key_predicate, syntax_analyzer_result, context);
+            TreeRewriterResultPtr syntax_analyzer_result = TreeRewriter(context).analyze(predicate, metadata_snapshot->getSampleBlock().getNamesAndTypesList());
+            ExpressionAnalyzer analyzer(predicate, syntax_analyzer_result, context);
             /// FIXME: add_aliases is true to avoid adding source columns as outputs
             filter_dag.emplace(analyzer.getActionsDAG(/*add_aliases=*/ true));
             if (filter_dag->getOutputs().size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", primary_key_predicate->formatForLogging());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", predicate->formatForLogging());
         }
-        ActionsDAGWithInversionPushDown filter_dag_for_key_condition(filter_dag ? filter_dag->getOutputs().front() : nullptr, context);
-        auto indexes = ReadFromMergeTree::Indexes(KeyCondition{filter_dag_for_key_condition, context, primary_key.column_names, primary_key.expression});
+
+        const auto & parts_ranges = RangesInDataParts{data_parts};
+
+        const StorageSnapshotPtr storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+        const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+        std::optional<ReadFromMergeTree::Indexes> indexes;
+        ReadFromMergeTree::buildIndexes(
+            indexes,
+            filter_dag ? &filter_dag.value() : nullptr,
+            *merge_tree_data,
+            parts_ranges,
+            /*vector_search_parameters=*/ {},
+            context,
+            query_info,
+            metadata_snapshot);
+
+        ContextMutablePtr new_context = Context::createCopy(context);
+        new_context->setSetting("use_skip_indexes_on_data_read", false);
 
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            RangesInDataParts{data_parts},
+            parts_ranges,
             metadata_snapshot,
-            /* mutations_snapshot= */ {}, /// Used only for skip indexes
-            context,
-            indexes.key_condition,
-            indexes.part_offset_condition,
-            indexes.total_offset_condition,
-            indexes.skip_indexes,
+            snapshot_data.mutations_snapshot,
+            new_context,
+            indexes->key_condition,
+            indexes->part_offset_condition,
+            indexes->total_offset_condition,
+            indexes->skip_indexes,
             reader_settings,
             getLogger("MergeTreeAnalyzeIndexSource"),
             num_streams,
             index_stats,
-            /* use_skip_indexes= */ false,
+            indexes->use_skip_indexes,
             /* find_exact_ranges= */ false,
             /* is_final_query= */ false,
             /* is_parallel_reading_from_replicas= */ false);
@@ -144,10 +164,10 @@ protected:
 
 private:
     SharedHeader header;
-    StorageMetadataPtr metadata_snapshot;
+    const StoragePtr storage;
     SelectQueryInfo query_info;
     size_t num_streams;
-    ASTPtr primary_key_predicate;
+    ASTPtr predicate;
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
 
@@ -197,12 +217,12 @@ void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & 
 
     pipeline.init(Pipe(std::make_shared<MergeTreeAnalyzeIndexSource>(
         getOutputHeader(),
-        storage->source_table->getInMemoryMetadataPtr(),
+        storage->source_table,
         getQueryInfo(),
         num_streams,
         storage->data_parts,
         storage->table_settings,
-        storage->primary_key_predicate,
+        storage->predicate,
         context)));
 }
 
@@ -215,10 +235,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
     const String & parts_regexp_,
-    const ASTPtr & primary_key_predicate_)
+    const ASTPtr & predicate_)
     : IStorage(table_id_)
     , source_table(source_table_)
-    , primary_key_predicate(primary_key_predicate_)
+    , predicate(predicate_)
 {
     const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree_data)

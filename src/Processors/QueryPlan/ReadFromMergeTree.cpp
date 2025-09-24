@@ -1742,14 +1742,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-static void buildIndexes(
+void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAG * filter_actions_dag_,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
-    const ContextPtr & context,
-    const SelectQueryInfo & query_info,
+    const ContextPtr & context_,
+    const SelectQueryInfo & query_info_,
     const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
@@ -1758,35 +1758,35 @@ static void buildIndexes(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context_->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr), context);
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), context_);
 
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context_, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
+        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context_));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context, false /* strict */);
+        indexes->minmax_idx_condition.emplace(filter_dag, context_, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context_, false /* strict */);
     }
 
     indexes->part_values
-        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context);
+        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context_);
 
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context);
+        MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context_);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(indexes->total_offset_condition, filter_dag.predicate, context);
+        MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(indexes->total_offset_condition, filter_dag.predicate, context_);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
-    if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
+    if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
         indexes->use_skip_indexes = false;
 
     if (!indexes->use_skip_indexes)
@@ -1839,7 +1839,7 @@ static void buildIndexes(
             if (inserted)
             {
                 skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info_, metadata_snapshot);
             }
 
             skip_indexes.merged_indices[it->second].addIndex(index_helper);
@@ -1851,7 +1851,7 @@ static void buildIndexes(
         {
 #if USE_USEARCH
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
+                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context_, vector_search_parameters);
 #endif
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
@@ -1861,7 +1861,7 @@ static void buildIndexes(
             if (!filter_dag.predicate)
                 continue;
 
-            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+            condition = index_helper->createIndexCondition(filter_dag.predicate, context_);
         }
 
         if (!condition->alwaysUnknownOrTrue())

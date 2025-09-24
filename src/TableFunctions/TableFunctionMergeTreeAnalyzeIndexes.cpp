@@ -64,7 +64,7 @@ private:
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
     String parts_regexp;
-    ASTPtr primary_key_predicate;
+    ASTPtr predicate;
 };
 
 std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
@@ -106,7 +106,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     }
 
     if (args.size() > 2)
-        primary_key_predicate = args[2]->clone();
+        predicate = args[2]->clone();
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -131,7 +131,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     }
 
     if (args.size() > 3)
-        primary_key_predicate = args[3]->clone();
+        predicate = args[3]->clone();
 
     source_table_id = StorageID{database, table};
 }
@@ -167,7 +167,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(source_table),
         std::move(columns),
         parts_regexp,
-        primary_key_predicate);
+        predicate);
     res->startup();
     return res;
 }
@@ -180,7 +180,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, 'parts_regexp', pk_column = 1)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, 'parts_regexp', predicate)", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,
@@ -193,7 +193,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', 'parts_regexp', pk_column = 1)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', 'parts_regexp', predicate)", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,

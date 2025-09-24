@@ -289,6 +289,15 @@ public:
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
+    static void buildIndexes(std::optional<ReadFromMergeTree::Indexes> & indexes,
+        const ActionsDAG * filter_actions_dag_,
+        const MergeTreeData & data,
+        const RangesInDataParts & parts,
+        [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const ContextPtr & context_,
+        const SelectQueryInfo & query_info_,
+        const StorageMetadataPtr & metadata_snapshot);
+
 private:
     MergeTreeReaderSettings reader_settings;
 

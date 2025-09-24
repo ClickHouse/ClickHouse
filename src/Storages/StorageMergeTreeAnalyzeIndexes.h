@@ -34,7 +34,7 @@ private:
     StoragePtr source_table;
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
-    ASTPtr primary_key_predicate;
+    ASTPtr predicate;
 };
 
 }
