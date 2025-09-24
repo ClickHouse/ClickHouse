@@ -676,7 +676,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
             for total_batches in (4,)
@@ -687,7 +687,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
             for total_batches in (6,)
@@ -696,7 +696,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_binary, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM_MEM,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             )
             for total_batches in (5,)
@@ -705,7 +705,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"arm_binary, distributed plan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_MEDIUM,
                 requires=[ArtifactNames.CH_ARM_BINARY],
             )
             for total_batches in (4,)
@@ -716,7 +716,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (6,)
@@ -727,7 +727,7 @@ class JobConfigs:
         common_integration_test_job_config.parametrize(
             Job.ParamSet(
                 parameter=f"amd_asan, flaky",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
         )

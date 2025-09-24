@@ -2790,7 +2790,7 @@ jobs:
           fi
 
   integration_tests_amd_binary_1_5:
-    runs-on: [self-hosted, amd-medium-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_binary]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnksIDEvNSk=') }}
     name: "Integration tests (amd_binary, 1/5)"
@@ -2828,7 +2828,7 @@ jobs:
           fi
 
   integration_tests_amd_binary_2_5:
-    runs-on: [self-hosted, amd-medium-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_binary]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnksIDIvNSk=') }}
     name: "Integration tests (amd_binary, 2/5)"
@@ -2866,7 +2866,7 @@ jobs:
           fi
 
   integration_tests_amd_binary_3_5:
-    runs-on: [self-hosted, amd-medium-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_binary]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnksIDMvNSk=') }}
     name: "Integration tests (amd_binary, 3/5)"
@@ -2904,7 +2904,7 @@ jobs:
           fi
 
   integration_tests_amd_binary_4_5:
-    runs-on: [self-hosted, amd-medium-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_binary]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnksIDQvNSk=') }}
     name: "Integration tests (amd_binary, 4/5)"
@@ -2942,7 +2942,7 @@ jobs:
           fi
 
   integration_tests_amd_binary_5_5:
-    runs-on: [self-hosted, amd-medium-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_binary]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnksIDUvNSk=') }}
     name: "Integration tests (amd_binary, 5/5)"

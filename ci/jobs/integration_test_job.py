@@ -4,7 +4,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, TEST_CONFIGS
+from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -55,13 +55,12 @@ def main():
     args = parse_args()
     job_params = args.options.split(",")
     job_params = [to.strip() for to in job_params]
-    only_parallel = "parallel" in job_params
-    only_sequential = "sequential" in job_params
     use_old_analyzer = False
     use_distributed_plan = False
     is_flaky_check = False
     is_bugfix_validation = False
     build_type = ""
+    workers = max(ncpu // MAX_CPUS_PER_WORKER, 1)
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -136,31 +135,13 @@ def main():
         ]
     ]
     assert len(test_files) > 100
-    test_files.sort()
 
-    # parallel_skip_prefixes sanity check
-    for test_config in TEST_CONFIGS:
-        assert any(
-            test_file.removeprefix("./").startswith(test_config.prefix)
-            for test_file in test_files
-        ), f"No test files found for prefix [{test_config.prefix}] in [{test_files}]"
-
-    sequential_test_modules = [
-        test_file
-        for test_file in test_files
-        if any(test_file.startswith(test_config.prefix) for test_config in TEST_CONFIGS)
-    ]
-    parallel_test_modules = [
-        test_file
-        for test_file in test_files
-        if test_file not in sequential_test_modules
-    ]
-    assert len(parallel_test_modules) > 0
-    # assert len(sequential_test_modules) > 0
-    assert len(sequential_test_modules) + len(parallel_test_modules) == len(test_files)
+    parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
+        test_files, total_batches, batch_num, workers
+    )
 
     if is_bugfix_validation or is_flaky_check:
-        # TODO: reduce scope to specific functions
+        # TODO: reduce scope to modified test cases instead of entire modules
         sequential_test_modules = [
             test_file
             for test_file in changed_test_modules
@@ -171,37 +152,6 @@ def main():
             for test_file in changed_test_modules
             if test_file in parallel_test_modules
         ]
-
-    if only_sequential:
-        sequential_test_modules = []
-    if only_parallel:
-        parallel_test_modules = []
-
-    # Split tests on batches
-    # The way we split tests on batches is not straightforward and might not be correct
-    # We want to split tests so that each batch has approximately the same number of tests
-    # This is a simple way to achieve this:
-    # 1. Sort tests by alphabet
-    # 2. Split sorted tests into batches
-    # 3. For each batch, take `batch_num`th element and all elements after it
-    workers = max(ncpu // MAX_CPUS_PER_WORKER, 1)
-    if batch_num > 0:
-        tot_parallel_test_modules = len(parallel_test_modules)
-        start_index = (batch_num - 1) * tot_parallel_test_modules // total_batches
-        end_index = (batch_num) * tot_parallel_test_modules // total_batches
-        parallel_test_modules = parallel_test_modules[start_index:end_index]
-        print(
-            f"Parallel test modules for batch {batch_num}: {len(parallel_test_modules)} out of {tot_parallel_test_modules}"
-        )
-        print(f"ncpu: {ncpu}, number_workers: {workers}")
-
-        tot_sequential_test_modules = len(sequential_test_modules)
-        start_index = (batch_num - 1) * tot_sequential_test_modules // total_batches
-        end_index = (batch_num) * tot_sequential_test_modules // total_batches
-        sequential_test_modules = sequential_test_modules[start_index:end_index]
-        print(
-            f"Sequential test modules for batch {batch_num}: {len(sequential_test_modules)} out of {tot_sequential_test_modules}"
-        )
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():

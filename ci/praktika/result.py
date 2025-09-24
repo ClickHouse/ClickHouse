@@ -1133,7 +1133,6 @@ class ResultTranslator:
                                 ):
                                     test_results[node_id].status = status
                                     test_results[node_id].duration = duration
-                                    test_results[node_id].ext["when"] = when
                                 # Only update with non-failure if there's no existing failure
                                 elif existing_status not in (
                                     Result.StatusExtended.FAIL,
@@ -1147,21 +1146,21 @@ class ResultTranslator:
                                     ):
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
-                                        test_results[node_id].ext["when"] = when
 
-                            # Process sections (log output)
-                            if "sections" in entry:
-                                logs = []
-                                for section in entry["sections"]:
-                                    if isinstance(section, list) and len(section) == 2:
-                                        section_title, section_content = section
-                                        if section_content:
-                                            logs.append(f"===== {section_title} =====")
-                                            logs.append(section_content)
-
-                                # Add logs to the result info
-                                if logs and not test_results[node_id].is_ok():
-                                    test_results[node_id].info = "\n".join(logs)
+                            # Process sections (log output),
+                            # TODO: output in jsonl report too verbose without meaningful output - commented out
+                            # if "sections" in entry:
+                            #     logs = []
+                            #     for section in entry["sections"]:
+                            #         if isinstance(section, list) and len(section) == 2:
+                            #             section_title, section_content = section
+                            #             if section_content:
+                            #                 logs.append(f"===== {section_title} =====")
+                            #                 logs.append(section_content)
+                            #
+                            #     # Add logs to the result info
+                            #     if logs and not test_results[node_id].is_ok():
+                            #         test_results[node_id].info = "\n".join(logs)
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")
