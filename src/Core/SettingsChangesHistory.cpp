@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"enable_automatic_parallel_replicas", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
