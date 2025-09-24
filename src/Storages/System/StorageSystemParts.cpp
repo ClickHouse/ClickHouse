@@ -360,7 +360,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version->getRemovalTIDLock());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version->getRemovalTIDForLogging()));
+            columns[res_index++]->insert(get_tid_as_field(part->version->getRemovalTID()));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version->getCreationCSN());
         if (columns_mask[src_index++])

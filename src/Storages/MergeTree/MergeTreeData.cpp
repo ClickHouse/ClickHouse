@@ -1767,7 +1767,8 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 {
     part->remove_time.store(part->modification_time, std::memory_order_relaxed);
     auto creation_csn = part->version->getCreationCSN();
-    if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !part->version->isRemovalTIDLocked())
+    auto removal_tid = part->version->getRemovalTID();
+    if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && removal_tid.isEmpty())
     {
         /// It's possible that covering part was created without transaction,
         /// but if covered part was created with transaction (i.e. creation_tid is not prehistoric),
@@ -1956,7 +1957,13 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     if (res.part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
-    LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
+    LOG_TRACE(
+        log,
+        "Finished loading {} part {} on disk {} {}",
+        magic_enum::enum_name(to_state),
+        part_name,
+        part_disk_ptr->getName(),
+        StackTrace().toString());
     return res;
 }
 
