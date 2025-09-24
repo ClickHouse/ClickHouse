@@ -155,7 +155,7 @@ std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, cha
     return nested->serializeValueIntoArena(n, arena, begin);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
 }

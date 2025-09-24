@@ -163,7 +163,7 @@ std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, 
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
 }

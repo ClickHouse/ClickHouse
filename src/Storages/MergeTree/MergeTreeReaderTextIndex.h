@@ -8,7 +8,7 @@
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
+using PostingsMap = absl::flat_hash_map<std::string_view, const PostingList *>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters

@@ -279,7 +279,7 @@ std::string_view ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena &
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }

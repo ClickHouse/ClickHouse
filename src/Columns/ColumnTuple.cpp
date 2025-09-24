@@ -328,7 +328,7 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
     return res;
 }
 
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())
     {
@@ -338,12 +338,11 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
         return { res, 1 };
     }
 
-    StringRef res(begin, 0);
+    std::string_view res;
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;

@@ -753,6 +753,21 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
+    LOG_INFO(getLogger("HELP"), "Consuming chunk {}", chunk.dumpStructure());
+    for (const auto & column : chunk.getColumns())
+    {
+        LOG_INFO(getLogger("HELP"), "Column {}", column->dumpStructure());
+        for (size_t row = 0; row < column->size(); ++row)
+        {
+            auto value = column->getDataAt(row);
+            for (size_t i = 0; i < value.size(); ++i)
+            {
+                LOG_INFO(getLogger("HELP"), "i {} Value {}", i, static_cast<uint64_t>(value[i]));
+            }
+
+        }
+    }
+
     if (params->params.only_merge)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());

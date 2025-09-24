@@ -2,6 +2,7 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
+#include <Common/logger_useful.h>
 
 #include <bit>
 #include <new>
@@ -313,6 +314,10 @@ public:
             return func(self.m0, VoidKey{}, 0);
         }
 
+        for (size_t i = 0; i < sz; ++i)
+        {
+            LOG_INFO(getLogger("HELP"), "{} - {}", i, static_cast<uint64_t>(x[i]));
+        }
         if (x[sz - 1] == 0)
         {
             // Strings with trailing zeros are not representable as fixed-size

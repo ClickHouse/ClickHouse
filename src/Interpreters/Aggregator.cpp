@@ -1668,6 +1668,20 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
+    for (const auto & column : columns)
+    {
+        LOG_INFO(getLogger("HELP"), "Column {}", column->dumpStructure());
+        for (size_t row = 0; row < column->size(); ++row)
+        {
+            auto value = column->getDataAt(row);
+            for (size_t i = 0; i < value.size(); ++i)
+            {
+                LOG_INFO(getLogger("HELP"), "i {} Value {}", i, static_cast<uint64_t>(value[i]));
+            }
+
+        }
+    }
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {

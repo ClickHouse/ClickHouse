@@ -242,7 +242,7 @@ std::string_view ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, c
 }
 
 
-StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -250,13 +250,12 @@ StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena &
     char * pos = arena.allocContinue(sizeof(array_size), begin);
     memcpy(pos, &array_size, sizeof(array_size));
 
-    StringRef res(pos, sizeof(array_size));
+    std::string_view res(pos, sizeof(array_size));
 
     for (size_t i = 0; i < array_size; ++i)
     {
         auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;

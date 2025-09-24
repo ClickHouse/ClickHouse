@@ -394,9 +394,9 @@ private:
                 data.remove_suffix(1);
 #else
             size_t index = 0;
-            while (index < data.size && data.data[index] == 0)
+            while (index < data.size() && data[index] == 0)
                 index++;
-            data.size -= index;
+            data.remove_suffx(index);
 #endif
             data_to.resize(offset + data.size());
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__

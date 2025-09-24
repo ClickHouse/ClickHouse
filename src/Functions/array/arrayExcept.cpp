@@ -91,7 +91,7 @@ struct ValueHandler<ColumnFixedString>
     static std::string_view getValue(const ColumnFixedString & col, size_t pos)
     {
         const size_t fixed_size = col.getN();
-        return std::string_view{&col.getChars()[pos * fixed_size], fixed_size};
+        return std::string_view{reinterpret_cast<const char *>(&col.getChars()[pos * fixed_size]), fixed_size};
     }
 
     static void insertValue(ColumnFixedString & col, std::string_view value) { col.insertData(value.data(), value.size()); }

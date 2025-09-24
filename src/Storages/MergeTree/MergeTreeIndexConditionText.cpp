@@ -544,7 +544,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         auto ref = set_column.getDataAt(row);
 
         std::vector<String> tokens;
-        token_extractor->stringToTokens(ref.data, ref.size, tokens);
+        token_extractor->stringToTokens(ref.data(), ref.size(), tokens);
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
     }
 

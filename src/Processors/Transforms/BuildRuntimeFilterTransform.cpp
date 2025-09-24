@@ -60,7 +60,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
     {
         /// TODO: make this efficient: compute hashes in vectorized manner
         auto value = filter_column->getDataAt(row);
-        built_filter->add(value.data, value.size);
+        built_filter->add(value.data(), value.size());
     }
 }
 

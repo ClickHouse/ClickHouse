@@ -801,22 +801,19 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
     return {value_ref.data() - res.size(), res.size() + value_ref.size()};
 }
 
-StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    StringRef res(pos, sizeof(global_discr));
+    std::string_view res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
-    res.data = value_ref.data - res.size;
-    res.size += value_ref.size;
-
-    return res;
+    return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
 }
 
 const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)

@@ -904,15 +904,14 @@ std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, 
     return res;
 }
 
-StringRef ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    StringRef res(begin, 0);
+    std::string_view res;
     /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
     for (auto path : sorted_typed_paths)
     {
         auto data_ref = typed_paths.find(path)->second->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = data_ref.data - res.size;
-        res.size += data_ref.size;
+        res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
     }
 
     /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
@@ -920,7 +919,7 @@ StringRef ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena 
     return res;
 }
 
-void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, StringRef & res) const
+void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const
 {
     /// Calculate total number of paths to serialize and write it.
     const auto & shared_data_offsets = getSharedDataOffsets();

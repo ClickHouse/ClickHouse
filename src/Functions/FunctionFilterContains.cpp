@@ -91,7 +91,7 @@ public:
         {
             /// TODO: optimize: consider replacing hash calculation with vectorized version
             const auto & value = data_column->getDataAt(row);
-            dst_data[row] = filter->find(value.data, value.size);
+            dst_data[row] = filter->find(value.data(), value.size());
         }
 
         return dst;

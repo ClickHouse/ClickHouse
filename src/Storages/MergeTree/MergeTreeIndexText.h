@@ -135,9 +135,9 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t lowerBound(const StringRef & token) const;
-    size_t upperBound(const StringRef & token) const;
-    std::optional<size_t> binarySearch(const StringRef & token) const;
+    size_t lowerBound(const std::string_view & token) const;
+    size_t upperBound(const std::string_view & token) const;
+    std::optional<size_t> binarySearch(const std::string_view & token) const;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -161,7 +161,7 @@ struct DictionaryBlock : public DictionaryBlockBase
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
+    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -199,7 +199,7 @@ private:
 using PostingListRawPtr = PostingList *;
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsMap = StringHashMap<std::pair<PostingListRawPtr, roaring::BulkContext>>;
-using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
+using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingList *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -239,7 +239,7 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(StringRef document);
+    void addDocument(std::string_view document);
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return current_row == 0; }
     void reset();

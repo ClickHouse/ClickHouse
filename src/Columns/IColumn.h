@@ -276,7 +276,7 @@ public:
     /// serializeValueIntoArena is used for in-memory value representations, so it's implementation can be changed.
     /// This method must respect compatibility with older versions because aggregation states may be serialized/deserialized
     /// by servers with different versions.
-    virtual StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+    virtual std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
     {
         return serializeValueIntoArena(n, arena, begin);
     }

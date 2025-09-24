@@ -189,14 +189,26 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
             column = key_columns[0];
         }
         const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(*column);
+
+        LOG_INFO(getLogger("HELP"), "Column {}", column_string.dumpStructure());
+        for (size_t row = 0; row < column_string.size(); ++row)
+        {
+            auto value = column_string.getDataAt(row);
+            for (size_t i = 0; i < value.size(); ++i)
+            {
+                LOG_INFO(getLogger("HELP"), "i {} Value {}", i, static_cast<uint64_t>(value[i]));
+            }
+
+        }
+        LOG_INFO(getLogger("HELP"), "Rows count: {}", column_string.size());
         n = column_string.getN();
         chars = &column_string.getChars();
     }
 
     auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
     {
+        LOG_INFO(getLogger("HELP"), "Row: {}", row);
         std::string_view key(reinterpret_cast<const char *>(chars) + row * n, n);
-
         if constexpr (place_string_to_arena)
         {
             return ArenaKeyHolder{key, pool};

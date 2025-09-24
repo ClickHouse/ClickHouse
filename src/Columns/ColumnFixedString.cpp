@@ -113,6 +113,8 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     if (length > n)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
+    LOG_INFO(getLogger("HELP"), "Inserting string of length {}", length);
+
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
@@ -121,6 +123,8 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
 const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 {
+    LOG_INFO(getLogger("HELP"), "Deserilizing from arena");
+
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, n);

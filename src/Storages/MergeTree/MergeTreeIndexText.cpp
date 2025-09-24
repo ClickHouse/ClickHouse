@@ -75,11 +75,11 @@ size_t DictionaryBlockBase::size() const
     return tokens ? tokens->size() : 0;
 }
 
-size_t DictionaryBlockBase::lowerBound(const StringRef & token) const
+size_t DictionaryBlockBase::lowerBound(const std::string_view & token) const
 {
     auto range = collections::range(0, tokens->size());
 
-    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, const StringRef & rhs_ref)
+    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, const std::string_view & rhs_ref)
     {
         return assert_cast<const ColumnString &>(*tokens).getDataAt(lhs_idx) < rhs_ref;
     });
@@ -87,11 +87,11 @@ size_t DictionaryBlockBase::lowerBound(const StringRef & token) const
     return it - range.begin();
 }
 
-size_t DictionaryBlockBase::upperBound(const StringRef & token) const
+size_t DictionaryBlockBase::upperBound(const std::string_view & token) const
 {
     auto range = collections::range(0, tokens->size());
 
-    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const StringRef & lhs_ref, size_t rhs_idx)
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const std::string_view & lhs_ref, size_t rhs_idx)
     {
         return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
     });
@@ -99,7 +99,7 @@ size_t DictionaryBlockBase::upperBound(const StringRef & token) const
     return it - range.begin();
 }
 
-std::optional<size_t> DictionaryBlockBase::binarySearch(const StringRef & token) const
+std::optional<size_t> DictionaryBlockBase::binarySearch(const std::string_view & token) const
 {
     size_t idx = lowerBound(token);
     const auto & tokens_str = assert_cast<const ColumnString &>(*tokens);
@@ -324,7 +324,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
-    std::map<size_t, std::vector<StringRef>> block_to_tokens;
+    std::map<size_t, std::vector<std::string_view>> block_to_tokens;
 
     for (const auto & [token, _] : remaining_tokens)
     {
@@ -460,7 +460,7 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         const auto & first_token = tokens_and_postings[block_begin].first;
         sparse_index_offsets_data.emplace_back(current_mark.offset_in_compressed_file);
-        sparse_index_str.insertData(first_token.data, first_token.size);
+        sparse_index_str.insertData(first_token.data(), first_token.size());
 
         size_t num_tokens_in_block = block_end - block_begin;
         writeVarUInt(tokens_format, dictionary_stream.compressed_hashing);
@@ -471,8 +471,8 @@ DictionarySparseIndex serializeTokensAndPostings(
             /// Write tokens the same as in SerializationString::serializeBinaryBulk
             /// to be able to read them later with SerializationString::deserializeBinaryBulk.
             const auto & token = tokens_and_postings[i].first;
-            writeVarUInt(token.size, dictionary_stream.compressed_hashing);
-            dictionary_stream.compressed_hashing.write(token.data, token.size);
+            writeVarUInt(token.size(), dictionary_stream.compressed_hashing);
+            dictionary_stream.compressed_hashing.write(token.data(), token.size());
         }
 
         for (size_t i = block_begin; i < block_end; ++i)
@@ -570,19 +570,19 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 {
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
+void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    size_t length = document.size;
+    size_t length = document.size();
 
-    while (cur < length && token_extractor->nextInStringPadded(document.data, length, &cur, &token_start, &token_len))
+    while (cur < length && token_extractor->nextInStringPadded(document.data(), length, &cur, &token_start, &token_len)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
     {
         bool inserted;
         TokenToPostingsMap::LookupResult it;
 
-        ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
+        ArenaKeyHolder key_holder{std::string_view(document.data() + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
         auto & [posting_list, bulk_context] = it->getMapped();
 
@@ -610,7 +610,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         sorted_values.emplace_back(key, mapped.first);
-        bloom_filter.add(key.data, key.size);
+        bloom_filter.add(key.data(), key.size());
     });
 
     std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });

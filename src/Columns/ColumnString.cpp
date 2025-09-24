@@ -268,23 +268,20 @@ std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, 
     return {pos, result_size};
 }
 
-StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// Serialize string values with 0 byte at the end for compatibility
     /// with old versions where we stored 0 byte at the end of each string value.
     size_t string_size_with_zero_byte = sizeAt(n) + 1;
     size_t offset = offsetAt(n);
 
-    StringRef res;
-    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
-    char * pos = arena.allocContinue(res.size, begin);
+    auto res_size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
+    char * pos = arena.allocContinue(res_size, begin);
     memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
     memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
     /// Add 0 byte at the end.
     *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
-    res.data = pos;
-
-    return res;
+    return std::string_view{pos, res_size};
 }
 
 
