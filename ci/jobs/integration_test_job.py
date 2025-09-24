@@ -42,7 +42,13 @@ def _start_docker_in_docker():
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument("--options", help="Job parameters: ...")
-    parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument(
+        "--test",
+        help="Optional test name patterns (can be space-separated and flag can repeat)",
+        default=[],
+        nargs="+",
+        action="extend",
+    )
     return parser.parse_args()
 
 
@@ -179,7 +185,7 @@ def main():
 
     if args.test:
         test_result_specific = Result.from_pytest_run(
-            command=f"{args.test} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+            command=f"{' '.join(args.test)} --report-log-exclude-logs-on-passed-tests -n 1 --dist=loadfile --tb=short {repeat_option}",
             cwd="./tests/integration/",
             env=test_env,
             pytest_report_file=f"{temp_path}/pytest.jsonl",
