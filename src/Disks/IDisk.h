@@ -1,24 +1,27 @@
 #pragma once
 
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
 
 #include <memory>
-#include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
+#include <optional>
 #include <sys/stat.h>
+
+#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -32,15 +35,15 @@ namespace Poco
     }
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric IDiskCopierThreads;
-    extern const Metric IDiskCopierThreadsActive;
-    extern const Metric IDiskCopierThreadsScheduled;
-}
-
 namespace DB
 {
+
+#if USE_AWS_S3
+namespace S3
+{
+class Client;
+}
+#endif
 
 namespace ErrorCodes
 {
@@ -66,6 +69,10 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 
 class DiskObjectStorage;
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
+
+using ObjectAttributes = std::map<std::string, std::string>;
+
+struct PartitionCommand;
 
 /**
  * Provide interface for reservation.
@@ -112,23 +119,9 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IDisk : public Space
 {
 public:
-    /// Default constructor.
-    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-        : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads,
-              CurrentMetrics::IDiskCopierThreadsActive,
-              CurrentMetrics::IDiskCopierThreadsScheduled,
-              config.getUInt(config_prefix + ".thread_pool_size", 16))
-    {
-    }
-
-    explicit IDisk(const String & name_)
-        : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
-    {
-    }
+    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    explicit IDisk(const String & name_);
+    ~IDisk() override;
 
     /// This is a disk.
     bool isDisk() const override { return true; }
@@ -180,7 +173,7 @@ public:
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Return `true` if the specified directory is empty.
-    bool isDirectoryEmpty(const String & path) const;
+    virtual bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -232,16 +225,14 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -297,6 +288,9 @@ public:
     /// E.g. for DiskLocal it's the absolute path to the file and for DiskObjectStorage it's
     /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
     virtual Strings getBlobPath(const String & path) const = 0;
+
+    /// Returns whether the blob paths this disk uses are randomly generated.
+    virtual bool areBlobPathsRandom() const = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
@@ -388,22 +382,22 @@ public:
     virtual bool isSymlink(const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool isSymlinkNoThrow(const String &) const
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method isSymlinkNothrow() is not implemented for disk type: {}",
+            "Method isSymlinkNothrow is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
-    virtual void createDirectoriesSymlink(const String &, const String &)
+    virtual void createDirectorySymlink(const String &, const String &)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDirectoriesSymlink() is not implemented for disk type: {}",
+            "Method createDirectorySymlink is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -411,20 +405,20 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method readSymlink() is not implemented for disk type: {}",
+            "Method readSymlink is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
     virtual bool equivalent(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool equivalentNoThrow(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     /// Truncate file to specified size.
@@ -446,9 +440,14 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    /// If the disk is plain object storage.
+    virtual bool isPlain() const { return false; }
+
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
+
+    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
@@ -457,10 +456,19 @@ public:
     virtual void shutdown() {}
 
     /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
+    void startup(bool skip_access_check);
 
     /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    virtual void startupImpl() {}
+
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// but don't do it more frequently than the specified parameter.
+    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
+    /// (those that MergeTree tables can make).
+    virtual void refresh(UInt64 /* not_sooner_than_milliseconds */)
+    {
+        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
+    }
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -470,9 +478,6 @@ public:
     /// Overrode in remote FS disks (s3/hdfs)
     /// Required for remote disk to ensure that the replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
-
-    /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -491,7 +496,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getMetadataStorage() is not implemented for disk type: {}",
+            "Method getMetadataStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -525,7 +530,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
+            "Method getObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -536,7 +541,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            "Method createDiskObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -558,7 +563,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getS3StorageClient() is not implemented for disk type: {}",
+            "Method getS3StorageClient is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -567,8 +572,6 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
-
     const String name;
 
     /// Base implementation of the function copy().
@@ -578,7 +581,6 @@ protected:
         const String & from_path,
         const std::shared_ptr<IDisk> & to_disk,
         const String & to_path,
-        bool copy_root_dir,
         const ReadSettings & read_settings,
         WriteSettings write_settings,
         const std::function<void()> & cancellation_hook);
@@ -586,7 +588,7 @@ protected:
     virtual void checkAccessImpl(const String & path);
 
 private:
-    ThreadPool copying_thread_pool;
+    std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
 

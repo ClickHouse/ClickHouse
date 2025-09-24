@@ -1,14 +1,10 @@
 # docker build -t clickhouse/stateless-test .
-FROM ubuntu:22.04
-
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
-
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client /usr/share/clickhouse/ && chmod 777 /etc/clickhouse-* /usr/share/clickhouse \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
@@ -17,49 +13,52 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
+# git - required in one of FT TC
+# gnuplot - for perf tests
+# imagemagick - for perf tests
+# parallel - for perf tests
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
+# Install additional packages not included in test-base
 RUN apt-get update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
-            awscli \
-            brotli \
-            lz4 \
-            expect \
-            moreutils \
-            bzip2 \
-            bsdmainutils \
-            golang \
-            lsof \
-            mysql-client=8.0* \
-            ncdu \
-            netcat-openbsd \
-            nodejs \
-            npm \
-            odbcinst \
-            openjdk-11-jre-headless \
-            openssl \
-            postgresql-client \
-            python3 \
-            python3-pip \
-            qemu-user-static \
-            sqlite3 \
-            sudo \
-            tree \
-            unixodbc \
-            rustc \
-            cargo \
-            zstd \
-            file \
-            jq \
-            pv \
-            zip \
-            unzip \
-            p7zip-full \
-            curl \
-            wget \
-            xz-utils \
-            ripgrep \
+    && apt-get install --yes --no-install-recommends \
+        awscli \
+        brotli \
+        lz4 \
+        expect \
+        bzip2 \
+        golang \
+        lsof \
+        mysql-client=8.0* \
+        ncdu \
+        netcat-openbsd \
+        odbcinst \
+        openjdk-11-jre-headless \
+        openssl \
+        postgresql-client \
+        python3 \
+        python3-pip \
+        qemu-user-static \
+        sqlite3 \
+        tree \
+        unixodbc \
+        rustc \
+        cargo \
+        file \
+        jq \
+        zip \
+        unzip \
+        p7zip-full \
+        xz-utils \
+        gnuplot \
+        imagemagick \
+        parallel \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -81,15 +80,12 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && sed -i 's"=libclickhouseodbc"=/usr/local/lib64/libclickhouseodbc"' /etc/odbcinst.ini \
   && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Amsterdam
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
 ENV NUM_TRIES=1
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
-ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
+ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
+ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
@@ -104,17 +100,26 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 # for minio to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
-ENV TEMP_DIR="/tmp/praktika"
-ENV PATH="/wd/tests:/tmp/praktika/input:$PATH"
 
-RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
-    && tar -xvf hadoop-3.3.1.tar.gz \
-    && rm -rf hadoop-3.3.1.tar.gz \
-    && chmod 777 /hadoop-3.3.1
-
-
-RUN npm install -g azurite@3.30.0 \
-    && npm install -g tslib && npm install -g node
+RUN npm install -g azurite@3.34.0 \
+    && npm install -g tslib
 
 ENV PYTHONPATH=".:./ci"
-USER clickhouse
+
+#USER clickhouse
+
+# A directory for cache
+RUN mkdir /dev/shm/clickhouse
+
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
+
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
+
+# Make timezone and locale files writable to randomize them in tests
+RUN chmod 666 /etc/timezone /etc/localtime

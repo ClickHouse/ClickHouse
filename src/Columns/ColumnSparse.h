@@ -65,6 +65,7 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
@@ -78,8 +79,11 @@ public:
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char *) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -153,8 +157,10 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool structureEquals(const IColumn & rhs) const override;
 

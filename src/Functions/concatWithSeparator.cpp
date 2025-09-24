@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/map.h>
 #include <base/range.h>
 
 
@@ -123,13 +122,13 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
-                    write_helper.rowWritten();
+                    write_helper.finishRow();
                 }
                 write_helper.finalize();
 
@@ -181,21 +180,86 @@ using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameC
 
 REGISTER_FUNCTION(ConcatWithSeparator)
 {
-    factory.registerFunction<FunctionConcatWithSeparator>(FunctionDocumentation{
-        .description = R"(
-Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
-        )",
-        .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .categories{"String"}});
+    FunctionDocumentation::Description description = R"(
+Concatenates the provided strings, separating them by the specified separator.
+)";
+    FunctionDocumentation::Syntax syntax = "concatWithSeparator(sep[, exp1, exp2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"sep", "The separator to use.", {"const String", "const FixedString"}},
+        {"exp1, exp2, ...", "Expression to be concatenated. Arguments which are not of type `String` or `FixedString` are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`.",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT concatWithSeparator('a', '1', '2', '3', '4')",
+        R"(
+┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
-        .description = R"(
-Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+    FunctionDocumentation::Description description_injective = R"(
+Like [`concatWithSeparator`](#concatWithSeparator) but assumes that `concatWithSeparator(sep[,exp1, exp2, ... ]) → result` is injective.
+A function is called injective if it returns different results for different arguments.
 
-The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+Can be used for optimization of `GROUP BY`.
+)";
+    FunctionDocumentation::Syntax syntax_injective = "concatWithSeparatorAssumeInjective(sep[, exp1, exp2, ... ])";
+    FunctionDocumentation::Arguments arguments_injective = {
+        {"sep", "The separator to use.", {"const String", "const FixedString"}},
+        {"exp1, exp2, ...", "Expression to be concatenated. Arguments which are not of type `String` or `FixedString` are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_injective = {
+        "Returns the String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`.",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples_injective = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE user_data (
+user_id UInt32,
+first_name String,
+last_name String,
+score UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO user_data VALUES
+(1, 'John', 'Doe', 100),
+(2, 'Jane', 'Smith', 150),
+(3, 'John', 'Wilson', 120),
+(4, 'Jane', 'Smith', 90);
+
+SELECT
+    concatWithSeparatorAssumeInjective('-', first_name, last_name) as full_name,
+    sum(score) as total_score
+FROM user_data
+GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
         )",
-        .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
-        .categories{"String"}});
+        R"(
+┌─full_name───┬─total_score─┐
+│ Jane-Smith  │         240 │
+│ John-Doe    │         100 │
+│ John-Wilson │         120 │
+└─────────────┴─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, returned_value_injective, examples_injective, introduced_in, category};
+
+    factory.registerFunction<FunctionConcatWithSeparator>(documentation);
+    factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(documentation_injective);
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

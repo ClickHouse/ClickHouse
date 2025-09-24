@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -58,7 +59,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
 {
-    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
+    LOG_TRACE(log, "Starting the restarting thread, schedule: {}", schedule);
     if (schedule)
         task->activateAndSchedule();
     else

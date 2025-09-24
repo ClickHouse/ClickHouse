@@ -67,10 +67,15 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
+
+    static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
+    static void deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static std::pair<size_t, size_t> deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(ColumnPtr & offsets_column, size_t offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
     struct SubcolumnCreator : public ISubcolumnCreator
     {
@@ -79,7 +84,7 @@ public:
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 

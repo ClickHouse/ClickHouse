@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
-
-#include <fstream>
-#include <mutex>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/TrackedString.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ public:
 
     auto getFileName() const { return current[-1].file_name; }
     auto getOffset() const { return current[-1].offset; }
-    const String & getCurrentRecord() const { return current[-1].data; }
+    const auto & getCurrentRecord() const { return current[-1].data; }
 
 private:
     enum class BufferStatus : uint8_t
@@ -56,20 +55,19 @@ private:
     size_t stream_number;
     size_t max_streams_number;
 
-    using RecordData = std::string;
     struct Record
     {
-        RecordData data;
+        TrackedString data;
         std::string file_name;
         /// Offset is the start of a row, which is needed for virtual columns.
         UInt64 offset;
     };
-    using Records = std::vector<Record>;
+    using Records = std::vector<Record, AllocatorWithMemoryTracking<Record>>;
 
     Records records;
     Records::const_iterator current;
 
-    using TaskThread = BackgroundSchedulePool::TaskHolder;
+    using TaskThread = BackgroundSchedulePoolTaskHolder;
 
     Records pollBatch(size_t batch_size_);
 

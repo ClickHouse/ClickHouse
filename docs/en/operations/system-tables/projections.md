@@ -1,9 +1,15 @@
 ---
-slug: /en/operations/system-tables/projections
+description: 'System table containing information about existing projections in all
+  tables.'
+keywords: ['system table', 'projections']
+slug: /operations/system-tables/projections
+title: 'system.projections'
+doc_type: 'reference'
 ---
-# projections
 
-Contains information about existing projections in all the tables.
+# system.projections
+
+Contains information about existing projections in all tables.
 
 Columns:
 

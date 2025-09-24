@@ -115,6 +115,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
     bool has_column;
+    bool has_alias_column;
     if (host_name.empty())
     {
         // FIXME this (probably) needs a non-constant access to query context,
@@ -125,6 +126,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             const_pointer_cast<Context>(getContext()));
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
+        has_alias_column = table_metadata->getColumns().hasAlias(column_name);
     }
     else
     {
@@ -139,6 +141,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             treat_local_as_remote,
             treat_local_port_as_remote,
             /* secure= */ false,
+            /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* password= */ ""
@@ -153,16 +156,56 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             const_pointer_cast<Context>(getContext()));
 
         has_column = remote_columns.hasPhysical(column_name);
+        has_alias_column = remote_columns.hasAlias(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column || has_alias_column)});
 }
 
 }
 
 REGISTER_FUNCTION(HasColumnInTable)
 {
-    factory.registerFunction<FunctionHasColumnInTable>();
+    FunctionDocumentation::Description description = R"(
+Checks if a specific column exists in a database table.
+For elements in a nested data structure, the function checks for the existence of a column.
+For the nested data structure itself, the function returns `0`.
+    )";
+    FunctionDocumentation::Syntax syntax = "hasColumnInTable([hostname[, username[, password]],]database, table, column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"database", "Name of the database.", {"const String"}},
+        {"table", "Name of the table.", {"const String"}},
+        {"column", "Name of the column.", {"const String"}},
+        {"hostname", "Optional. Remote server name to perform the check on.", {"const String"}},
+        {"username", "Optional. Username for remote server.", {"const String"}},
+        {"password", "Optional. Password for remote server.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the given column exists, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Check an existing column",
+        R"(
+SELECT hasColumnInTable('system','metrics','metric')
+        )",
+        R"(
+1
+        )"
+    },
+    {
+        "Check a non-existing column",
+        R"(
+SELECT hasColumnInTable('system','metrics','non-existing_column')
+        )",
+        R"(
+0
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionHasColumnInTable>(documentation);
 }
 
 }

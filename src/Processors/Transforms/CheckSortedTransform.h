@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Core/SortDescription.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace DB
 class CheckSortedTransform : public ISimpleTransform
 {
 public:
-    CheckSortedTransform(const Block & header, const SortDescription & sort_description);
+    CheckSortedTransform(SharedHeader header, const SortDescription & sort_description);
 
     String getName() const override { return "CheckSortedTransform"; }
     void setDescription(const String & str) { description = str; }

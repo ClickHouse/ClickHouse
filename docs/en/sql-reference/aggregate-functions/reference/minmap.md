@@ -1,6 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/minmap
+description: 'Calculates the minimum from `value` array according to the keys specified
+  in the `key` array.'
 sidebar_position: 169
+slug: /sql-reference/aggregate-functions/reference/minmap
+title: 'minMap'
+doc_type: 'reference'
 ---
 
 # minMap
@@ -37,14 +41,14 @@ Alias: `minMappedArrays`
 
 Query:
 
-``` sql
+```sql
 SELECT minMap(a, b)
-FROM values('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
+FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
 ```
 
 Result:
 
-``` text
+```text
 ┌─minMap(a, b)──────┐
 │ ([1,2,3],[2,1,1]) │
 └───────────────────┘

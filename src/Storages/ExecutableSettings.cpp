@@ -31,11 +31,11 @@ struct ExecutableSettingsImpl : public BaseSettings<ExecutableSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
 
 namespace ExecutableSetting
 {
-LIST_OF_EXECUTABLE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_EXECUTABLE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -94,5 +94,10 @@ void ExecutableSettings::loadFromQuery(ASTStorage & storage_def)
 void ExecutableSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
+}
+
+bool ExecutableSettings::hasBuiltin(std::string_view name)
+{
+    return ExecutableSettingsImpl::hasBuiltin(name);
 }
 }

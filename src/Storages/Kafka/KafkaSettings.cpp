@@ -38,11 +38,15 @@ namespace ErrorCodes
     /* default is stream_flush_interval_ms */ \
     DECLARE(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
     DECLARE(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter).", 0) \
     DECLARE(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     DECLARE(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
     DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
+    DECLARE(String, kafka_security_protocol, "", "Protocol used to communicate with brokers.", 0) \
+    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
+    DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
+    DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
@@ -64,11 +68,11 @@ struct KafkaSettingsImpl : public BaseSettings<KafkaSettingsTraits>
 };
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) KafkaSettings##TYPE NAME = &KafkaSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) KafkaSettings##TYPE NAME = &KafkaSettingsImpl ::NAME;
 
 namespace KafkaSetting
 {
-LIST_OF_KAFKA_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_KAFKA_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -128,14 +132,14 @@ void KafkaSettings::sanityCheck() const
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be less then rescheduled interval ({})",
-            impl->kafka_consumers_pool_ttl_ms,
+            impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_RESCHEDULE_MS);
 
     if (impl->kafka_consumers_pool_ttl_ms > KAFKA_CONSUMERS_POOL_TTL_MS_MAX)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be too big (greater then {}), since this may cause live memory leaks",
-            impl->kafka_consumers_pool_ttl_ms,
+            impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_CONSUMERS_POOL_TTL_MS_MAX);
 }
 
@@ -153,5 +157,10 @@ SettingsChanges KafkaSettings::getFormatSettings() const
     }
 
     return values;
+}
+
+bool KafkaSettings::hasBuiltin(std::string_view name)
+{
+    return KafkaSettingsImpl::hasBuiltin(name);
 }
 }

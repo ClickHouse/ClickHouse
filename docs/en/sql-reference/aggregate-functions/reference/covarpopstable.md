@@ -1,6 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarpopstable
+description: 'Calculates the value of the population covariance'
 sidebar_position: 123
+slug: /sql-reference/aggregate-functions/reference/covarpopstable
+title: 'covarPopStable'
+doc_type: 'reference'
 ---
 
 # covarPopStable
@@ -12,7 +15,6 @@ $$
 $$
 
 It is similar to the [covarPop](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
-
 
 **Syntax**
 
@@ -57,4 +59,3 @@ Result:
 │                         6.485648 │
 └──────────────────────────────────┘
 ```
-

@@ -5,8 +5,9 @@ set output_format_parquet_row_group_size = 1000;
 set output_format_parquet_data_page_size = 800;
 set output_format_parquet_batch_size = 100;
 set output_format_parquet_row_group_size_bytes = 1000000000;
-set engine_file_truncate_on_insert=1;
-set allow_suspicious_low_cardinality_types=1;
+set engine_file_truncate_on_insert = 1;
+set allow_suspicious_low_cardinality_types = 1;
+set output_format_parquet_enum_as_byte_array=0;
 
 -- Write random data to parquet file, then read from it and check that it matches what we wrote.
 -- Do this for all kinds of data types: primitive, Nullable(primitive), Array(primitive),
@@ -42,11 +43,20 @@ create temporary table basic_types_02735 as select * from generateRandom('
     decimal256 Decimal256(40),
     ipv4 IPv4,
     ipv6 IPv6') limit 1011;
-insert into function file(basic_types_02735.parquet) select * from basic_types_02735;
+insert into function file(basic_types_02735.parquet) select * from basic_types_02735 settings output_format_parquet_datetime_as_uint32 = 1;
 desc file(basic_types_02735.parquet);
 select (select sum(cityHash64(*)) from basic_types_02735) - (select sum(cityHash64(*)) from file(basic_types_02735.parquet));
 drop table basic_types_02735;
 
+-- DateTime values don't roundtrip (without output_format_parquet_datetime_as_uint32) because we
+-- write them as DateTime64(3) (the closest type supported by Parquet).
+drop table if exists datetime_02735;
+create temporary table datetime_02735 as select * from generateRandom('datetime DateTime') limit 1011;
+insert into function file(datetime_02735.parquet) select * from datetime_02735;
+desc file(datetime_02735.parquet);
+select (select sum(cityHash64(toDateTime64(datetime, 3))) from datetime_02735) - (select sum(cityHash64(*)) from file(datetime_02735.parquet));
+select (select sum(cityHash64(*)) from datetime_02735) - (select sum(cityHash64(*)) from file(datetime_02735.parquet, Parquet, 'datetime DateTime'));
+drop table datetime_02735;
 
 drop table if exists nullables_02735;
 create temporary table nullables_02735 as select * from generateRandom('
@@ -65,7 +75,7 @@ select (select sum(cityHash64(*)) from nullables_02735) - (select sum(cityHash64
 drop table nullables_02735;
 
 
--- TODO: When cityHash64() fully supports Nullable: https://github.com/ClickHouse/ClickHouse/pull/48625
+-- TODO: When cityHash64() fully supports Nullable: https://github.com/ClickHouse/ClickHouse/pull/58754
 --       the next two blocks can be simplified: arrays_out_02735 intermediate table is not needed,
 --       a.csv and b.csv are not needed.
 
@@ -181,3 +191,7 @@ insert into function file(datetime64_02735.parquet) select
     from numbers(2000);
 desc file(datetime64_02735.parquet);
 select sum(cityHash64(*)) from file(datetime64_02735.parquet);
+
+insert into function file(date_as_uint16.parquet) select toDate('2025-08-12') as d settings output_format_parquet_date_as_uint16 = 1;
+select * from file(date_as_uint16.parquet);
+desc file(date_as_uint16.parquet);

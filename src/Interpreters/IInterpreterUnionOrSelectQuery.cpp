@@ -1,7 +1,10 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -41,6 +44,11 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
     : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
@@ -76,8 +84,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
 {
     buildQueryPlan(query_plan);
-    return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    return std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -182,7 +189,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
+    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);

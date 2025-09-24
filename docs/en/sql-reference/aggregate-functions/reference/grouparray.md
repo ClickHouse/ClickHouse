@@ -1,6 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparray
+description: 'Creates an array of argument values. Values can be added to the array
+  in any (indeterminate) order.'
 sidebar_position: 139
+slug: /sql-reference/aggregate-functions/reference/grouparray
+title: 'groupArray'
+doc_type: 'reference'
 ---
 
 # groupArray
@@ -16,7 +20,7 @@ In some cases, you can still rely on the order of execution. This applies to cas
 
 **Example**
 
-``` text
+```text
 SELECT * FROM default.ck;
 
 ┌─id─┬─name─────┐
@@ -30,13 +34,13 @@ SELECT * FROM default.ck;
 
 Query:
 
-``` sql
-select id, groupArray(10)(name) from default.ck group by id;
+```sql
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
 ```
 
 Result:
 
-``` text
+```text
 ┌─id─┬─groupArray(10)(name)─┐
 │  1 │ ['zhangsan','lisi']  │
 │  2 │ ['wangwu']           │

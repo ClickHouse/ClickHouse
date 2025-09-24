@@ -27,14 +27,6 @@ protected:
 private:
     static Block getSampleBlock();
 
-    enum ReplicatedDatabaseQueryStatus
-    {
-        /// Query is (successfully) finished
-        OK = 0,
-        /// Query is not finished yet, but replica is currently executing it
-        IN_PROGRESS = 1,
-        /// Replica is not available or busy with previous queries. It will process query asynchronously
-        QUEUED = 2,
-    };
+
 };
 }

@@ -8,6 +8,9 @@
     <!-- For tests which check compatibility with older versions. -->
     <users_config>users.xml</users_config>
 
+    <mlock_executable>false</mlock_executable>
+    <skip_binary_checksum_checks>true</skip_binary_checksum_checks>
+
   <logger>
         <level>test</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
@@ -30,6 +33,19 @@
 
     <custom_cached_disks_base_directory replace="replace">/</custom_cached_disks_base_directory>
 
+    <!-- Reduce memory consumption a lot, especially make sense for wide system tables and santizier builds -->
+    <!-- Simple merge of dozen of rows of system.metric_log can consume gigabytes of memory -->
+    <merge_tree>
+        <vertical_merge_algorithm_min_rows_to_activate>1</vertical_merge_algorithm_min_rows_to_activate>
+        <vertical_merge_algorithm_min_columns_to_activate>1</vertical_merge_algorithm_min_columns_to_activate>
+    </merge_tree>
+
     <!-- Remove the default remote server to avoid people depending on its hardcoded config -->
     <remote_servers remove="remove"></remote_servers>
+
+    <!-- Allow sending query plan -->
+    <process_query_plan_packet>true</process_query_plan_packet>
+
+    <jemalloc_flush_profile_interval_bytes>1073741824</jemalloc_flush_profile_interval_bytes>
+    <jemalloc_flush_profile_on_memory_exceeded>1</jemalloc_flush_profile_on_memory_exceeded>
 </clickhouse>

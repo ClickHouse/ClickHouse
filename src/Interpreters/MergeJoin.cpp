@@ -2,10 +2,10 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-
+#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/IJoin.h>
 #include <Core/SortCursor.h>
-#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -18,6 +18,12 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeJoinBlocksCacheBytes;
+    extern const Metric MergeJoinBlocksCacheCount;
+}
 
 namespace DB
 {
@@ -477,10 +483,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_)
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(*right_sample_block_)
     , is_any_join(table_join->strictness() == JoinStrictness::Any)
     , is_all_join(table_join->strictness() == JoinStrictness::All)
     , is_semi_join(table_join->strictness() == JoinStrictness::Semi)
@@ -517,8 +523,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
             throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                            "No limit for MergeJoin (max_rows_in_join, max_bytes_in_join "
-                            "or default_max_bytes_in_join have to be set)");
+                            "No limit for MergeJoin (max_rows_in_join or max_bytes_in_join settings must be set)");
     }
 
     if (!table_join->oneDisjunct())
@@ -603,7 +608,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(),
+        builder.getSharedHeader(),
         right_sort_description,
         max_rows_in_right_block,
         /*max_block_bytes=*/0,
@@ -611,7 +616,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*increase_sort_description_compile_attempts=*/false,
         /*max_bytes_before_remerge_*/0,
         /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*max_bytes_before_external_sort_*/0,
+        /*max_bytes_in_block_before_external_sort_*/0,
+        /*max_bytes_in_query_before_external_sort_*/0,
         /*tmp_data_*/nullptr,
         /*min_free_disk_space_*/0));
 
@@ -651,7 +657,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks.bytes * rows_limit / right_blocks.row_count;
 
-    cached_right_blocks = std::make_unique<Cache>(memory_limit);
+    cached_right_blocks = std::make_unique<Cache>(CurrentMetrics::MergeJoinBlocksCacheBytes, CurrentMetrics::MergeJoinBlocksCacheCount, memory_limit);
 }
 
 bool MergeJoin::saveRightBlock(Block && block)
@@ -701,10 +707,39 @@ void MergeJoin::checkTypesOfKeys(const Block & block) const
     JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
 }
 
-void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
+class MergeJoinResult : public IJoinResult
+{
+    Block block;
+    std::optional<MergeJoin::NotProcessed> not_processed;
+    MergeJoin & merge_join;
+
+public:
+    MergeJoinResult(Block block_, MergeJoin & merge_join_)
+        : block(std::move(block_)), merge_join(merge_join_) {}
+
+    JoinResultBlock next() override
+    {
+        if (!not_processed)
+        {
+            merge_join.joinBlock(block, not_processed);
+            return {std::move(block), !not_processed.has_value()};
+        }
+
+        block = not_processed->block;
+        merge_join.joinBlock(block, not_processed);
+        return {std::move(block), !not_processed.has_value()};
+    }
+};
+
+JoinResultPtr MergeJoin::joinBlock(Block block)
+{
+    return std::make_unique<MergeJoinResult>(std::move(block), *this);
+}
+
+void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed)
 {
     Names lowcard_keys = lowcard_right_keys;
-    if (block)
+    if (!block.empty())
     {
         /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
@@ -730,9 +765,9 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (!not_processed && left_blocks_buffer)
     {
-        if (!block || block.rows())
+        if (block.empty() || block.rows())
             block = left_blocks_buffer->exchange(std::move(block));
-        if (!block)
+        if (block.empty())
             return;
     }
 
@@ -753,14 +788,14 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     /// Back thread even with no data. We have some unfinished data in buffer.
     if (!not_processed && left_blocks_buffer)
-        not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0, 0});
+        not_processed = NotProcessed{{}, 0, 0, 0, 0};
 
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
 }
 
 template <bool in_memory, bool is_all>
-void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
+void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not_processed)
 {
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
@@ -1013,16 +1048,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 
 /// Split block into processed (result) and not processed. Not processed block would be joined next time.
 template <bool is_all>
-ExtraBlockPtr MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+std::optional<MergeJoin::NotProcessed> MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                                     size_t left_position [[maybe_unused]], size_t left_key_tail [[maybe_unused]],
                                     size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
 {
-    ExtraBlockPtr not_processed;
+    std::optional<NotProcessed> not_processed;
 
     if constexpr (is_all)
     {
-        not_processed = std::make_shared<NotProcessed>(
-            NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number});
+        not_processed = NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number};
         not_processed->block.swap(processed);
 
         changeLeftColumns(processed, std::move(left_columns));
@@ -1048,8 +1082,14 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getAbsolutePath(), materializeBlock(right_sample_block));
-            return std::make_shared<Block>(input.block_in->read());
+            auto input = flushed_right_blocks[pos].getReadStream();
+            auto result = std::make_shared<Block>(input->read());
+            if (Block eof_block = input->read(); !eof_block.empty())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block per file, got block {} in file {}",
+                    eof_block.dumpStructure(), flushed_right_blocks[pos].getHolder()->describeFilePath());
+            }
+            return result;
         };
 
         return cached_right_blocks->getOrSet(pos, load_func).first;
@@ -1060,9 +1100,8 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getGlobalTemporaryVolume(),
-                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
-                    table_join->temporaryFilesCodec());
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTempDataOnDisk(),
+                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge);
     disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
 }
@@ -1160,9 +1199,11 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    auto kind = table_join->kind();
-    auto strictness = table_join->strictness();
+    return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
+}
 
+bool MergeJoin::isSupported(JoinKind kind, JoinStrictness strictness)
+{
     bool is_any = (strictness == JoinStrictness::Any);
     bool is_all = (strictness == JoinStrictness::All);
     bool is_semi = (strictness == JoinStrictness::Semi);
@@ -1170,7 +1211,7 @@ bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
     bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
 
-    return (all_join || special_left) && table_join->oneDisjunct();
+    return all_join || special_left;
 }
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)

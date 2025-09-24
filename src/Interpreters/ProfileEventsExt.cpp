@@ -1,17 +1,22 @@
-#include "ProfileEventsExt.h"
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace ProfileEvents
 {
@@ -31,7 +36,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     auto & offsets = column_map->getNestedColumn().getOffsets();
     auto & tuple_column = column_map->getNestedData();
     auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
     for (Event event = Event(0); event < Counters::num_counters; ++event)
@@ -43,7 +48,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
 
         const char * desc = getName(event);
         key_column.insertData(desc, strlen(desc));
-        value_column.insert(value);
+        value_column.getData().push_back(value);
         size++;
     }
 
@@ -125,7 +130,14 @@ DB::Block getProfileEvents(
 {
     using namespace DB;
 
+    if (!CurrentThread::isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CurrentThread is not initialized");
+
     auto thread_group = CurrentThread::getGroup();
+
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Current thread is not attached to any thread group");
+
     ThreadIdToCountersSnapshot new_snapshots;
 
     ProfileEventsSnapshot group_snapshot;

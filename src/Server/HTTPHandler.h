@@ -14,7 +14,7 @@
 #include <Common/re2.h>
 #include <Access/Credentials.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPResponseHeaderWriter.h>
 
 namespace CurrentMetrics
 {
@@ -35,7 +35,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
 struct HTTPHandlerConnectionConfig
 {
-    std::optional<BasicCredentials> credentials;
+    std::optional<AlwaysAllowCredentials> credentials;
 
     /// TODO:
     /// String quota;
@@ -60,13 +60,16 @@ public:
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
 
+protected:
+    LoggerPtr log;
+
 private:
     struct Output
     {
         /* Raw data
          * ↓
          * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
-         * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
+         * ↓ (forwards data if an overflow occurs or explicitly via pushDelayedResults)
          * CompressedWriteBuffer out_maybe_compressed (optional)
          * ↓
          * WriteBufferFromHTTPServerResponse out
@@ -100,38 +103,11 @@ private:
             return out_maybe_delayed_and_compressed && out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        void finalize()
-        {
-            if (finalized)
-                return;
-            finalized = true;
+        void pushDelayedResults() const;
 
-            if (out_delayed_and_compressed_holder)
-                out_delayed_and_compressed_holder->finalize();
-            if (out_compressed_holder)
-                out_compressed_holder->finalize();
-            if (wrap_compressed_holder)
-                wrap_compressed_holder->finalize();
-            if (out_holder)
-                out_holder->finalize();
-        }
+        void finalize();
 
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_delayed_and_compressed_holder)
-                out_delayed_and_compressed_holder->cancel();
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (wrap_compressed_holder)
-                wrap_compressed_holder->cancel();
-            if (out_holder)
-                out_holder->cancel();
-        }
-
+        void cancel();
 
         bool isCanceled() const
         {
@@ -145,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -183,6 +158,8 @@ private:
         HTTPServerRequest & request,
         HTTPServerResponse & response,
         Output & used_output);
+
+    void releaseOrCloseSession(const String & session_id, bool close_session);
 
     static void pushDelayedResults(Output & used_output);
 

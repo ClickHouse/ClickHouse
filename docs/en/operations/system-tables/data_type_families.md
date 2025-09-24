@@ -1,7 +1,10 @@
 ---
-slug: /en/operations/system-tables/data_type_families
+description: 'System table containing information about supported data types'
+keywords: ['system table', 'data_type_families']
+slug: /operations/system-tables/data_type_families
+title: 'system.data_type_families'
+doc_type: 'reference'
 ---
-# data_type_families
 
 Contains information about supported [data types](../../sql-reference/data-types/index.md).
 
@@ -13,11 +16,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 ```
 
-``` text
+```text
 ┌─name───────┬─case_insensitive─┬─alias_to─┐
 │ LONGBLOB   │                1 │ String   │
 │ LONGTEXT   │                1 │ String   │

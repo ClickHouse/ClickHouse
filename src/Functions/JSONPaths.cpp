@@ -376,143 +376,203 @@ private:
 
 REGISTER_FUNCTION(JSONPaths)
 {
-    factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONAllPaths
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of all paths stored in each row in JSON column.
-)",
-        .syntax = {"JSONAllPaths(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONAllPaths(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of all paths in the JSON column.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONAllPaths(json) FROM test;
-)",
+            )",
             R"(
 ┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
 │ {"a":"42"}                           │ ['a']              │
 │ {"b":"Hello"}                        │ ['b']              │
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
 └──────────────────────────────────────┴────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(documentation);
+    }
 
-    factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONAllPathsWithTypes
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of all paths and their data types stored in each row in JSON column.
-)",
-        .syntax = {"JSONAllPathsWithTypes(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONAllPathsWithTypes(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a map of all paths and their data types in the JSON column.", {"Map(String, String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONAllPathsWithTypes(json) FROM test;
-)",
+            )",
             R"(
 ┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
 │ {"a":"42"}                           │ {'a':'Int64'}                             │
 │ {"b":"Hello"}                        │ {'b':'String'}                            │
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
 └──────────────────────────────────────┴───────────────────────────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
+    }
 
-    factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONDynamicPaths
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of dynamic paths that are stored as separate subcolumns in JSON column.
-)",
-        .syntax = {"JSONDynamicPaths(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONDynamicPaths(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of dynamic paths in the JSON column.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONDynamicPaths(json) FROM test;
-)",
+            )",
             R"(
 ┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
 │ {"a":"42"}                           │ ['a']                  │
 │ {"b":"Hello"}                        │ []                     │
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
 └──────────────────────────────────────┴────────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsImpl>>(documentation);
+    }
 
-    factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsWithTypesImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONDynamicPathsWithTypes
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of dynamic paths that are stored as separate subcolumns and their types in each row in JSON column.
-)",
-        .syntax = {"JSONDynamicPathsWithTypes(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONDynamicPathsWithTypes(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a map of dynamic paths and their data types in the JSON column.", {"Map(String, String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
-)",
+            )",
             R"(
 ┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
 │ {"a":"42"}                           │ {'a':'Int64'}                   │
 │ {"b":"Hello"}                        │ {}                              │
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
 └──────────────────────────────────────┴─────────────────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsWithTypesImpl>>(documentation);
+    }
 
-    factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONSharedDataPaths
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of paths that are stored in shared data structure in JSON column.
-)",
-        .syntax = {"JSONDynamicPaths(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONSharedDataPaths(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of paths stored in shared data structure in the JSON column.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONSharedDataPaths(json) FROM test;
-)",
+            )",
             R"(
 ┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
 │ {"a":"42"}                           │ []                        │
 │ {"b":"Hello"}                        │ ['b']                     │
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
 └──────────────────────────────────────┴───────────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsImpl>>(documentation);
+    }
 
-    factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsWithTypesImpl>>(FunctionDocumentation{
-        .description = R"(
+    /// JSONSharedDataPathsWithTypes
+    {
+        FunctionDocumentation::Description description = R"(
 Returns the list of paths that are stored in shared data structure and their types in each row in JSON column.
-)",
-        .syntax = {"JSONDynamicPathsWithTypes(json)"},
-        .arguments = {{"json", "JSON column"}},
-        .examples = {{{
-            "Example",
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONSharedDataPathsWithTypes(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a map of paths stored in shared data structure and their data types in the JSON column.", {"Map(String, String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
-SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
-)",
+SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
+            )",
             R"(
-┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {'a':'Int64'}                   │
-│ {"b":"Hello"}                        │ {}                              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
-└──────────────────────────────────────┴─────────────────────────────────┘
-)"}}},
-        .categories{"JSON"},
-    });
+┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":"42"}                           │ {}                                  │
+│ {"b":"Hello"}                        │ {'b':'String'}                      │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
+└──────────────────────────────────────┴─────────────────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsWithTypesImpl>>(documentation);
+    }
 }
 
 }

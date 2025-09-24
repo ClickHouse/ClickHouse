@@ -1,5 +1,7 @@
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/FileLogSource.h>
@@ -20,7 +22,7 @@ FileLogSource::FileLogSource(
     size_t stream_number_,
     size_t max_streams_number_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -49,7 +51,7 @@ FileLogSource::~FileLogSource()
     try
     {
         if (!finished)
-            onFinish();
+            close();
     }
     catch (...)
     {
@@ -57,7 +59,7 @@ FileLogSource::~FileLogSource()
     }
 }
 
-void FileLogSource::onFinish()
+void FileLogSource::close()
 {
     storage.closeFilesAndStoreMeta(start, end);
     storage.reduceStreams();
@@ -71,9 +73,9 @@ Chunk FileLogSource::generate()
 
     if (!consumer || consumer->noRecords())
     {
-        /// There is no onFinish for ISource, we call it
+        /// There is no close for ISource, we call it
         /// when no records return to close files
-        onFinish();
+        close();
         return {};
     }
 
@@ -81,7 +83,13 @@ Chunk FileLogSource::generate()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -158,7 +166,7 @@ Chunk FileLogSource::generate()
 
     if (total_rows == 0)
     {
-        onFinish();
+        close();
         return {};
     }
 

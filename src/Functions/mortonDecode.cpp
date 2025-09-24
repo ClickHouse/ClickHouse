@@ -316,54 +316,78 @@ private:
 
 REGISTER_FUNCTION(MortonDecode)
 {
-    factory.registerFunction<FunctionMortonDecode>(FunctionDocumentation{
-        .description=R"(
-Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple
+    FunctionDocumentation::Description description = R"(
+Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
 
-The function has two modes of operation:
-- Simple
-- Expanded
+As with the `mortonEncode` function, this function has two modes of operation:
+- **Simple**
+- **Expanded**
 
-Simple: accepts a resulting tuple size as a first argument and the code as a second argument.
-[example:simple]
-Will decode into: `(1,2,3,4)`
-The resulting tuple size cannot be more than 8
+**Simple mode**
 
-Expanded: accepts a range mask (tuple) as a first argument and the code as a second argument.
-Each number in mask configures the amount of range shrink
-1 - no shrink
-2 - 2x shrink
-3 - 3x shrink
-....
-Up to 8x shrink.
-[example:range_shrank]
-Note: see mortonEncode() docs on why range change might be beneficial.
-Still limited to 8 numbers at most.
+Accepts a resulting tuple size as the first argument and the code as the second argument.
 
-Morton code for one argument is always the argument itself (as a tuple).
-[example:identity]
-Produces: `(1)`
+**Expanded mode**
 
-You can shrink one argument too:
-[example:identity_shrank]
-Produces: `(128)`
+Accepts a range mask (tuple) as the first argument and the code as the second argument.
+Each number in the mask configures the amount of range shrink:
 
-The function accepts a column of codes as a second argument:
-[example:from_table]
+* `1` - no shrink
+* `2` - 2x shrink
+* `3` - 3x shrink
+⋮
+* Up to 8x shrink.
 
-The range tuple must be a constant:
-[example:from_table_range]
-)",
-        .examples{
-            {"simple", "SELECT mortonDecode(4, 2149)", ""},
-            {"range_shrank", "SELECT mortonDecode((1,2), 1572864)", ""},
-            {"identity", "SELECT mortonDecode(1, 1)", ""},
-            {"identity_shrank", "SELECT mortonDecode(tuple(2), 32768)", ""},
-            {"from_table", "SELECT mortonDecode(2, code) FROM table", ""},
-            {"from_table_range", "SELECT mortonDecode((1,2), code) FROM table", ""},
-            },
-        .categories {"ZCurve", "Morton coding"}
-    });
+Range expansion can be beneficial when you need a similar distribution for
+arguments with wildly different ranges (or cardinality). For example: 'IP Address' `(0...FFFFFFFF)`
+and 'Country code' `(0...FF)`. As with the encode function, this is limited to
+8 numbers at most.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+-- Simple mode
+mortonDecode(tuple_size, code)
+
+-- Expanded mode
+mortonDecode(range_mask, code)
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple_size", "Integer value no more than 8.", {"UInt8/16/32/64"}},
+        {"range_mask", "For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers. Each number in the mask configures the amount of range shrink.", {"Tuple(UInt8/16/32/64)"}},
+        {"code", "UInt64 code.", {"UInt64"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Simple mode", "SELECT mortonDecode(3, 53)", R"(["1", "2", "3"])"},
+        {"Single argument", "SELECT mortonDecode(1, 1)", R"(["1"])"},
+        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768))", R"(["128"])"},
+        {"Column usage",
+         R"(
+-- First create the table and insert some data
+CREATE TABLE morton_numbers(
+    n1 UInt32,
+    n2 UInt32,
+    n3 UInt16,
+    n4 UInt16,
+    n5 UInt8,
+    n6 UInt8,
+    n7 UInt8,
+    n8 UInt8
+)
+ENGINE=MergeTree()
+ORDER BY n1;
+INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
+
+-- Use column names instead of constants as function arguments
+SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
+         )",
+         "1 2 3 4 5 6 7 8"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMortonDecode>(documentation);
 }
 
 }

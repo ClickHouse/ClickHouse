@@ -61,21 +61,28 @@ using FunctionSimpleJSONExtractRaw = FunctionsStringSearchToString<ExtractParamT
 
 REGISTER_FUNCTION(VisitParamExtractRaw)
 {
-    factory.registerFunction<FunctionSimpleJSONExtractRaw>(FunctionDocumentation{
-        .description = "Returns the value of the field named field_name as a String, including separators.",
-        .syntax = "simpleJSONExtractRaw(json, field_name)",
-        .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
-        .returned_value
-        = "It returns the value of the field as a String including separators if the field exists, or an empty String otherwise.",
-        .examples
-        = {{.name = "simple",
-            .query = R"(CREATE TABLE jsons
+    FunctionDocumentation::Description description = R"(
+Returns the value of the field named `field_name` as a `String`, including separators.
+)";
+    FunctionDocumentation::Syntax syntax = "simpleJSONExtractRaw(json, field_name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"field_name", "The name of the field to search for.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise",
+        {"String"}
+    };
+    FunctionDocumentation::Examples example = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE jsons
 (
-    json String
+    `json` String
 )
-ENGINE = Memory;
+ENGINE = MergeTree
+ORDER BY tuple();
 
 INSERT INTO jsons VALUES ('{"foo":"-4e3"}');
 INSERT INTO jsons VALUES ('{"foo":-3.4}');
@@ -83,13 +90,22 @@ INSERT INTO jsons VALUES ('{"foo":5}');
 INSERT INTO jsons VALUES ('{"foo":{"def":[1,2,3]}}');
 INSERT INTO jsons VALUES ('{"baz":2}');
 
-SELECT simpleJSONExtractRaw(json, 'foo') FROM jsons ORDER BY json;)",
-            .result = R"(
+SELECT simpleJSONExtractRaw(json, 'foo') FROM jsons ORDER BY json;
+        )",
+        R"(
+
 "-4e3"
 -3.4
 5
-{"def":[1,2,3]})"}},
-        .categories{"JSON"}});
+{"def":[1,2,3]}
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<FunctionSimpleJSONExtractRaw>(documentation);
     factory.registerAlias("visitParamExtractRaw", "simpleJSONExtractRaw");
 }
 

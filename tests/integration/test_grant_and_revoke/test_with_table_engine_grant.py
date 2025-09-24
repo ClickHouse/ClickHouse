@@ -192,7 +192,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
+        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -386,6 +386,26 @@ def test_implicit_create_temporary_table_grant():
         "CREATE TEMPORARY TABLE tmp(name String)", user="A"
     )
 
+def test_implicit_create_temporary_view_grant():
+    instance.query("CREATE USER A")
+    expected_error = "Not enough privileges"
+
+    # No privs -> should fail
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A"
+    )
+
+    # Grant the correct privilege for temp views
+    instance.query("GRANT CREATE VIEW ON *.* TO A")
+
+    # Now it should succeed
+    instance.query("CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A")
+
+    # Revoke and ensure it fails again
+    instance.query("REVOKE CREATE VIEW ON *.* FROM A")
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp2(name String) AS SELECT 'y'", user="A"
+    )
 
 def test_introspection():
     instance.query("CREATE USER A")
@@ -517,8 +537,8 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "test", "table", "\\N", 0, 0],
-            ["B", "\\N", "CREATE", "\\N", "\\N", "\\N", 0, 1],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1],
         ]
     )
 

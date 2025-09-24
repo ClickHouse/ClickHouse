@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/UUIDv7Utils.h>
 
 namespace DB
 {
@@ -9,120 +10,14 @@ namespace DB
 namespace
 {
 
-/* Bit layouts of UUIDv7
-
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-*/
-
-/// bit counts
-constexpr auto rand_a_bits_count = 12;
-constexpr auto rand_b_bits_count = 62;
-constexpr auto rand_b_low_bits_count = 32;
-constexpr auto counter_high_bits_count = rand_a_bits_count;
-constexpr auto counter_low_bits_count = 30;
-constexpr auto bits_in_counter = counter_high_bits_count + counter_low_bits_count;
-constexpr uint64_t counter_limit = (1ull << bits_in_counter);
-
-/// bit masks for UUIDv7 components
-constexpr uint64_t variant_2_mask  = (2ull << rand_b_bits_count);
-constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
-constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;
-constexpr uint64_t rand_b_with_counter_bits_mask = (1ull << rand_b_low_bits_count) - 1;
-constexpr uint64_t counter_low_bits_mask = (1ull << counter_low_bits_count) - 1;
-constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
-
 uint64_t getTimestampMillisecond()
 {
     timespec tp;
-    clock_gettime(CLOCK_REALTIME, &tp); /// NOLINT(cert-err33-c)
+    clock_gettime(CLOCK_REALTIME, &tp);/// NOLINT(cert-err33-c)
     const uint64_t sec = tp.tv_sec;
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
 
-void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
-{
-    UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & rand_a_bits_mask) | (timestamp << 16) | 0x7000;
-}
-
-void setVariant(UUID & uuid)
-{
-    UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_bits_mask) | variant_2_mask;
-}
-
-struct CounterFields
-{
-    uint64_t last_timestamp = 0;
-    uint64_t counter = 0;
-
-    void resetCounter(const UUID & uuid)
-    {
-        const uint64_t counter_low_bits = (UUIDHelpers::getLowBytes(uuid) >> rand_b_low_bits_count) & counter_low_bits_mask;
-        const uint64_t counter_high_bits = UUIDHelpers::getHighBytes(uuid) & counter_high_bits_mask;
-        counter = (counter_high_bits << 30) | counter_low_bits;
-    }
-
-    void incrementCounter(UUID & uuid)
-    {
-        if (++counter == counter_limit) [[unlikely]]
-        {
-            ++last_timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-        else
-        {
-            UUIDHelpers::getHighBytes(uuid) = (last_timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
-            UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask | ((counter & counter_low_bits_mask) << rand_b_low_bits_count);
-        }
-    }
-
-    void generate(UUID & uuid, uint64_t timestamp)
-    {
-        const bool need_to_increment_counter = (last_timestamp == timestamp) || ((last_timestamp > timestamp) & (last_timestamp < timestamp + 10000));
-        if (need_to_increment_counter)
-        {
-            incrementCounter(uuid);
-        }
-        else
-        {
-            last_timestamp = timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-    }
-};
-
-
-struct Data
-{
-    /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline CounterFields fields;
-    static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
-    std::lock_guard<SharedMutex> guard;
-
-    Data()
-        : guard(mutex)
-    {}
-
-    void generate(UUID & uuid, uint64_t timestamp)
-    {
-        fields.generate(uuid, timestamp);
-    }
-};
-
-}
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
@@ -171,7 +66,7 @@ public:
             uint64_t timestamp = getTimestampMillisecond();
             for (UUID & uuid : vec_to)
             {
-                Data data;
+                UUIDv7Utils::Data data;
                 data.generate(uuid, timestamp);
             }
         }
@@ -187,7 +82,8 @@ public:
     using Self = FunctionGenerateUUIDv7Base;
     using Parent = TargetSpecific::Default::FunctionGenerateUUIDv7Base;
 
-    explicit FunctionGenerateUUIDv7Base(ContextPtr context) : selector(context)
+    explicit FunctionGenerateUUIDv7Base(ContextPtr context)
+        : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
@@ -213,14 +109,52 @@ private:
 
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
-    FunctionDocumentation::Description description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "SELECT generateUUIDv7()";
-    FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A value of type UUID version 7.";
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
-    FunctionDocumentation::Categories categories = {"UUID"};
+    /// generateUUIDv7 documentation
+    FunctionDocumentation::Description description_generateUUIDv7 = R"(
+Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories});
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
+
+:::note
+As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_generateUUIDv7 = "generateUUIDv7([expr])";
+    FunctionDocumentation::Arguments arguments_generateUUIDv7 = {
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
+    FunctionDocumentation::Examples examples_generateUUIDv7 = {
+    {
+        "Usage example",
+        R"(
+SELECT generateUUIDv7(number) FROM numbers(3);
+        )",
+        R"(
+┌─generateUUIDv7(number)───────────────┐
+│ 019947fb-5766-7ed0-b021-d906f8f7cebb │
+│ 019947fb-5766-7ed0-b021-d9072d0d1e07 │
+│ 019947fb-5766-7ed0-b021-d908dca2cf63 │
+└──────────────────────────────────────┘
+        )"
+    },
+    {
+        "Common subexpression elimination",
+        R"(
+SELECT generateUUIDv7(1), generateUUIDv7(1);
+        )",
+        R"(
+┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(1)────────────────────┐
+│ 019947ff-0f87-7d88-ace0-8b5b3a66e0c1 │ 019947ff-0f87-7d88-ace0-8b5b3a66e0c1 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv7 = {24, 5};
+    FunctionDocumentation::Category category_generateUUIDv7 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_generateUUIDv7 = {description_generateUUIDv7, syntax_generateUUIDv7, arguments_generateUUIDv7, returned_value_generateUUIDv7, examples_generateUUIDv7, introduced_in_generateUUIDv7, category_generateUUIDv7};
+
+    factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation_generateUUIDv7);
 }
-
+}
 }

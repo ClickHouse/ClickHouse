@@ -2,6 +2,7 @@
 
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/WithRetries.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace DB
@@ -28,6 +29,8 @@ public:
 
     ~BackupCoordinationStageSync();
 
+    void startup();
+
     /// Sets that the BACKUP or RESTORE query was sent to other hosts.
     void setQueryIsSentToOtherHosts();
     bool isQuerySentToOtherHosts() const;
@@ -41,16 +44,16 @@ public:
 
     /// Lets other hosts know that the current host has encountered an error.
     /// The function returns true if it successfully created the error node or if the error node was found already exist.
-    bool setError(std::exception_ptr exception, bool throw_if_error);
+    void setError(std::exception_ptr exception, bool throw_if_error);
     bool isErrorSet() const;
 
     /// Waits until the hosts other than the current host finish their work. Must be called before finish().
     /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
-    bool waitOtherHostsFinish(bool throw_if_error) const;
+    void waitOtherHostsFinish(bool throw_if_error) const;
     bool otherHostsFinished() const;
 
     /// Lets other hosts know that the current host has finished its work.
-    bool finish(bool throw_if_error);
+    void finish(bool throw_if_error);
     bool finished() const;
 
     /// Returns true if all the hosts have finished.
@@ -72,7 +75,7 @@ private:
     void createRootNodes();
 
     /// Atomically creates both 'start' and 'alive' nodes and also checks that there is no concurrent backup or restore if `allow_concurrency` is false.
-    void createStartAndAliveNodesAndCheckConcurrency(BackupConcurrencyCounters & concurrency_counters_);
+    void createStartAndAliveNodesAndCheckConcurrency();
     void createStartAndAliveNodesAndCheckConcurrency(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserialize the version of a node stored in the 'start' node.
@@ -97,7 +100,8 @@ private:
     String getStageNodePath(const String & stage) const;
 
     /// Lets other hosts know that the current host has encountered an error.
-    bool setError(const Exception & exception, bool throw_if_error);
+    void setError(const Exception & exception, bool throw_if_error);
+    [[noreturn]] void rethrowSetError() const;
     void createErrorNode(const Exception & exception, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserializes an error stored in the error node.
@@ -121,15 +125,15 @@ private:
     bool checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const TSA_REQUIRES(mutex);
 
     /// Creates the 'finish' node.
-    bool finishImpl(bool throw_if_error, WithRetries::Kind retries_kind);
+    void finishImpl(bool throw_if_error, WithRetries::Kind retries_kind);
     void createFinishNodeAndRemoveAliveNode(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper, bool throw_if_error);
 
     /// Returns the version used by the initiator.
     int getInitiatorVersion() const;
 
     /// Waits until all the other hosts finish their work.
-    bool waitOtherHostsFinishImpl(const String & reason, std::optional<std::chrono::seconds> timeout, bool throw_if_error) const;
-    bool checkIfOtherHostsFinish(const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool & result, bool throw_if_error) const TSA_REQUIRES(mutex);
+    void waitOtherHostsFinishImpl(const String & reason, std::optional<std::chrono::seconds> timeout, bool throw_if_error) const;
+    bool checkIfOtherHostsFinish(const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool throw_if_error) const TSA_REQUIRES(mutex);
 
     /// Returns true if all the hosts have finished.
     bool allHostsFinishedNoLock() const TSA_REQUIRES(mutex);
@@ -146,6 +150,7 @@ private:
     const String current_host_desc;
     const Strings all_hosts;
     const bool allow_concurrency;
+    BackupConcurrencyCounters & concurrency_counters;
 
     /// A reference to a field of the parent object which is either BackupCoordinationOnCluster or RestoreCoordinationOnCluster.
     const WithRetries & with_retries;
@@ -207,7 +212,9 @@ private:
 
         bool operator ==(const State & other) const;
         bool operator !=(const State & other) const;
+
         void merge(const State & other);
+        void addErrorInfo(std::exception_ptr exception, const String & host);
     };
 
     State state TSA_GUARDED_BY(mutex);
@@ -217,7 +224,7 @@ private:
     bool should_stop_watching_thread TSA_GUARDED_BY(mutex) = false;
 
     bool query_is_sent_to_other_hosts TSA_GUARDED_BY(mutex) = false;
-    bool tried_to_finish TSA_GUARDED_BY(mutex) = false;
+    bool tried_to_finish[2] TSA_GUARDED_BY(mutex) = {false, false};
     bool tried_to_set_error TSA_GUARDED_BY(mutex) = false;
 
     mutable std::mutex mutex;

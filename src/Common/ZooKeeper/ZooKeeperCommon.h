@@ -1,18 +1,19 @@
 #pragma once
 
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Interpreters/ZooKeeperLog.h>
 
-#include <boost/noncopyable.hpp>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <vector>
 #include <memory>
 #include <cstdint>
 #include <optional>
 #include <functional>
 
+namespace DB
+{
+class ReadBuffer;
+class WriteBuffer;
+}
 
 namespace Coordination
 {
@@ -41,9 +42,12 @@ struct ZooKeeperRequest : virtual Request
 {
     XID xid = 0;
     bool has_watch = false;
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback;
     /// If the request was not send and the error happens, we definitely sure, that it has not been processed by the server.
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
+
+    bool add_root_path = true;
 
     bool restored_from_zookeeper_log = false;
 
@@ -157,11 +161,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
 
     void write(WriteBuffer & out, bool use_xid_64) const override;
 
-    OpNum getOpNum() const override
-    {
-        chassert(false);
-        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
-    }
+    OpNum getOpNum() const override;
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
     int32_t tryGetOpNum() const override { return 0; }
@@ -212,10 +212,7 @@ struct ZooKeeperCloseRequest final : ZooKeeperRequest
 
 struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
-    void readImpl(ReadBuffer &) override
-    {
-        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
-    }
+    void readImpl(ReadBuffer &) override;
 
     void writeImpl(WriteBuffer &) const override {}
     size_t sizeImpl() const override { return 0; }
@@ -695,5 +692,10 @@ enum class PathMatchResult : uint8_t
 };
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);
+
+std::string_view parentNodePath(std::string_view path);
+
+std::string_view getBaseNodeName(std::string_view path);
+
 
 }

@@ -18,11 +18,13 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
+    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
     FunctionsConversion_impl0.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
+    generateSnowflakeID.cpp
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -58,17 +60,10 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
-        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
 )
-
-if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
-endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
@@ -85,6 +80,10 @@ endif ()
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()
+
+if (TARGET ch_contrib::bech32)
+    list (APPEND PRIVATE_LIBS ch_contrib::bech32)
+endif()
 
 if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
@@ -138,6 +137,9 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 add_subdirectory(Kusto)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 
+add_subdirectory(TimeSeries)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
+
 if (TARGET ch_contrib::datasketches)
     add_subdirectory(UniqTheta)
     list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_uniqtheta>)
@@ -147,7 +149,6 @@ add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
 add_subdirectory(keyvaluepair)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

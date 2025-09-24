@@ -2,6 +2,7 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
@@ -11,7 +12,7 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -204,6 +205,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 #endif
         FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
         factory.registerCommand(profile_events_command);
+
+        FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
+        factory.registerCommand(toggle_request_logging);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -648,19 +652,17 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 
 String JemallocEnableProfile::run()
 {
-    setJemallocProfileActive(true);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 
 String JemallocDisableProfile::run()
 {
-    setJemallocProfileActive(false);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 #endif
 
@@ -689,6 +691,14 @@ String ProfileEventsCommand::run()
 #endif
 
     return ret.str();
+}
+
+String ToggleRequestLogging::run()
+{
+    const auto & keeper_context = keeper_dispatcher.getKeeperContext();
+    auto old_value = keeper_context->shouldLogRequests();
+    keeper_context->setLogRequests(!old_value);
+    return old_value ? "disabled" : "enabled";
 }
 
 }

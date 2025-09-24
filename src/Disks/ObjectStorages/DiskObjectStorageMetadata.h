@@ -56,6 +56,7 @@ public:
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
+    bool tryDeserializeFromString(const std::string & data) noexcept;
     /// This method was deleted from public fork recently by Azat
     void createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
@@ -65,6 +66,17 @@ public:
     const ObjectKeysWithMetadata & getKeysWithMeta() const
     {
         return keys_with_meta;
+    }
+
+    StoredObjects getStorageObjects(const std::string & local_path)
+    {
+        StoredObjects objects;
+        objects.reserve(keys_with_meta.size());
+        for (const auto & [object_key, object_meta] : keys_with_meta)
+        {
+            objects.emplace_back(object_key.serialize(), local_path, object_meta.size_bytes);
+        }
+        return objects;
     }
 
     bool isReadOnly() const
@@ -105,6 +117,13 @@ public:
     void setInlineData(const std::string & data)
     {
         inline_data = data;
+    }
+
+    void resetData()
+    {
+        inline_data.clear();
+        keys_with_meta.clear();
+        total_size = 0;
     }
 
     const std::string & getInlineData() const

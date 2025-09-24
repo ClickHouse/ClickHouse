@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -126,6 +127,9 @@ struct RestoreSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether native copy is allowed for AzureBlobStorage
+    bool allow_azure_native_copy = true;
+
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;
 
@@ -155,8 +159,8 @@ struct RestoreSettings
     /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
 
-    /// The maximum read speed in bytes per second for a backup. Zero means unlimited.
-    std::optional<UInt64> max_backup_bandwidth;
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

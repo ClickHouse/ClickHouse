@@ -131,33 +131,65 @@ public:
 
 REGISTER_FUNCTION(DateTimeToSnowflakeID)
 {
+    /// dateTimeToSnowflakeID documentation
+    FunctionDocumentation::Description description_dateTimeToSnowflakeID = R"(
+Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+    )";
+    FunctionDocumentation::Syntax syntax_dateTimeToSnowflakeID = "dateTimeToSnowflakeID(value[, epoch])";
+    FunctionDocumentation::Arguments arguments_dateTimeToSnowflakeID = {
+        {"value", "Date with time.", {"DateTime", "DateTime64"}},
+        {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_dateTimeToSnowflakeID = {
     {
-        FunctionDocumentation::Description description = R"(Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
-        FunctionDocumentation::Syntax syntax = "dateTimeToSnowflakeID(value[, epoch])";
-        FunctionDocumentation::Arguments arguments = {
-            {"value", "Date with time. [DateTime](../data-types/datetime.md)."},
-            {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md)"}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = "Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.";
-        FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
-
-        factory.registerFunction<FunctionDateTimeToSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
+        "Usage example",
+        R"(
+SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowflakeID(dt) AS res;
+        )",
+        R"(
+┌──────────────────dt─┬─────────────────res─┐
+│ 2021-08-15 18:57:56 │ 6832626392367104000 │
+└─────────────────────┴─────────────────────┘
+        )"
     }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTimeToSnowflakeID = {24, 6};
+    FunctionDocumentation::Category category_dateTimeToSnowflakeID = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTimeToSnowflakeID = {description_dateTimeToSnowflakeID, syntax_dateTimeToSnowflakeID, arguments_dateTimeToSnowflakeID, returned_value_dateTimeToSnowflakeID, examples_dateTimeToSnowflakeID, introduced_in_dateTimeToSnowflakeID, category_dateTimeToSnowflakeID};
 
-    {
-        FunctionDocumentation::Description description = R"(Converts a [DateTime64](../data-types/datetime64.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
-        FunctionDocumentation::Syntax syntax = "dateTime64ToSnowflakeID(value[, epoch])";
-        FunctionDocumentation::Arguments arguments = {
-            {"value", "Date with time. [DateTime64](../data-types/datetime.md)."},
-            {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md)"}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = "Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.";
-        FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shanghai'))", "6832626394434895872"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
+    factory.registerFunction<FunctionDateTimeToSnowflakeID>(documentation_dateTimeToSnowflakeID);
 
-        factory.registerFunction<FunctionDateTime64ToSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
-    }
+    /// dateTime64ToSnowflakeID documentation
+    FunctionDocumentation::Description description_dateTime64ToSnowflakeID = R"(
+Converts a [`DateTime64`](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
+    )";
+    FunctionDocumentation::Syntax syntax_dateTime64ToSnowflakeID = "dateTime64ToSnowflakeID(value[, epoch])";
+    FunctionDocumentation::Arguments arguments_dateTime64ToSnowflakeID = {
+        {"value", "Date with time.", {"DateTime", "DateTime64"}},
+        {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_dateTime64ToSnowflakeID = {
+   {
+       "Usage example",
+       R"(
+SELECT toDateTime64('2025-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime64ToSnowflakeID(dt) AS res;
+       )",
+       R"(
+┌──────────────────────dt─┬─────────────────res─┐
+│ 2025-08-15 18:57:56.493 │ 7362075066076495872 │
+└─────────────────────────┴─────────────────────┘
+       )"
+       }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTime64ToSnowflakeID = {24, 6};
+    FunctionDocumentation::Category category_dateTime64ToSnowflakeID = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTime64ToSnowflakeID = {description_dateTime64ToSnowflakeID, syntax_dateTime64ToSnowflakeID, arguments_dateTime64ToSnowflakeID, returned_value_dateTime64ToSnowflakeID, examples_dateTime64ToSnowflakeID, introduced_in_dateTime64ToSnowflakeID, category_dateTime64ToSnowflakeID};
+
+    factory.registerFunction<FunctionDateTime64ToSnowflakeID>(documentation_dateTime64ToSnowflakeID);
 }
 
 }

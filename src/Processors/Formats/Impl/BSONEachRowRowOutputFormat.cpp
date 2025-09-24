@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -45,7 +47,7 @@ static String toValidUTF8String(const String & name, const FormatSettings & sett
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -458,7 +460,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->hasExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
             String current_path = path + "." + name;
@@ -540,9 +542,11 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings, FormatFilterInfoPtr /*format_filter_info*/)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
+    factory.markOutputFormatNotTTYFriendly("BSONEachRow");
+    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }

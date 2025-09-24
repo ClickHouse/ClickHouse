@@ -8,14 +8,15 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -239,6 +240,7 @@ public:
         auto & haystack_argument = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         ColumnPtr column_haystack = haystack_argument.column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
+
 
         size_t origin_input_rows_count = input_rows_count;
         bool need_transform = false;

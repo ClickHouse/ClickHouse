@@ -1,6 +1,11 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/sumwithoverflow
+description: 'Computes the sum of the numbers, using the same data type for the result
+  as for the input parameters. If the sum exceeds the maximum value for this data
+  type, it is calculated with overflow.'
 sidebar_position: 200
+slug: /sql-reference/aggregate-functions/reference/sumwithoverflow
+title: 'sumWithOverflow'
+doc_type: 'reference'
 ---
 
 # sumWithOverflow
@@ -62,7 +67,6 @@ FROM employees;
 ```
 
 Result:
-
 
 ```response
    ┌─no_overflow─┬─overflow─┬─toTypeName(no_overflow)─┬─toTypeName(overflow)─┐

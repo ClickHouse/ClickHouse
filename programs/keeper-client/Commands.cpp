@@ -1,9 +1,12 @@
 
-#include "Commands.h"
+#include <Commands.h>
 #include <Common/StringUtils.h>
 #include <queue>
-#include "KeeperClient.h"
-#include "Parsers/CommonParsers.h"
+#include <KeeperClient.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB
@@ -114,13 +117,21 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     int mode = zkutil::CreateMode::Persistent;
 
     if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
-        mode = zkutil::CreateMode::Persistent;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::PersistentSequential;
+        else
+            mode = zkutil::CreateMode::Persistent;
+    }
     else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::PersistentSequential;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::EphemeralSequential;
+        else
+            mode = zkutil::CreateMode::Ephemeral;
+    }
 
     node->args.push_back(std::move(mode));
 
@@ -559,7 +570,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String leaving;
     String new_members;
 
-    auto operation = query->args[0].safeGet<ReconfigCommand::Operation>();
+    auto operation = query->args[0].safeGet<UInt8>();
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
@@ -803,6 +814,62 @@ void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     while (!operation.isTryLimitReached() && !operation.isCompleted())
         operation.perform();
+}
+
+bool GetAclCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return true;
+
+    node->args.push_back(std::move(src_path));
+    return true;
+}
+
+void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    String path;
+    if (!query->args.empty())
+        path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    else
+        path = client->cwd;
+
+    auto acls = client->zookeeper->getACL(path);
+
+    static constexpr std::array<std::pair<int32_t, std::string_view>, 5> perms_map{{
+        {Coordination::ACL::Read, "READ"},
+        {Coordination::ACL::Write, "WRITE"},
+        {Coordination::ACL::Create, "CREATE"},
+        {Coordination::ACL::Delete, "DELETE"},
+        {Coordination::ACL::Admin, "ADMIN"},
+    }};
+
+    for (const auto & acl : acls)
+    {
+        std::cout << fmt::format("[{}] {} ", acl.scheme, acl.id);
+        if (acl.permissions == Coordination::ACL::All)
+        {
+            std::cout << "ALL";
+        }
+        else
+        {
+            bool first = true;
+            for (const auto & [perm, name] : perms_map)
+            {
+                if (acl.permissions & perm)
+                {
+                    if (!first)
+                        std::cout << "|";
+                    std::cout << name;
+                    first = false;
+                }
+            }
+            if (first)
+                std::cout << "NONE";
+        }
+        std::cout << "\n";
+    }
+
 }
 
 }

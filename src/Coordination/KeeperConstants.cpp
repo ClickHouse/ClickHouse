@@ -281,6 +281,7 @@
     M(LogWarning) \
     M(LogError) \
     M(LogFatal) \
+    M(LoggerElapsedNanoseconds) \
 \
     M(InterfaceHTTPSendBytes) \
     M(InterfaceHTTPReceiveBytes) \
@@ -299,6 +300,9 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+\
+    M(JemallocFailedAllocationSampleTracking) \
+    M(JemallocFailedDeallocationSampleTracking) \
 
 namespace ProfileEvents
 {

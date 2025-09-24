@@ -5,17 +5,45 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase64Decode
+{
+    static constexpr auto name = "base64Decode";
+};
+
+using Base64DecodeImpl = BaseXXDecode<Base64DecodeTraits<Base64Variant::Normal>, NameBase64Decode, BaseXXDecodeErrorHandling::ThrowException>;
+using FunctionBase64Decode = FunctionBaseXXConversion<Base64DecodeImpl>;
+}
 
 REGISTER_FUNCTION(Base64Decode)
 {
-    FunctionDocumentation::Description description = R"(Accepts a String and decodes it from base64, according to RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648#section-4). Throws an exception in case of an error. Alias: FROM_BASE64.)";
-    FunctionDocumentation::Syntax syntax = "base64Decode(encoded)";
-    FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, an exception is thrown."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT base64Decode('Y2xpY2tob3VzZQ==')", "clickhouse"}};
-    FunctionDocumentation::Categories categories = {"String encoding"};
+    FunctionDocumentation::Description description = R"(
+Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation, according to RFC 4648.
+Throws an exception in case of error.
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, categories});
+)";
+    FunctionDocumentation::Syntax syntax = "base64Decode(encoded)";
+    FunctionDocumentation::Arguments arguments = {
+        {"encoded", "String column or constant to decode. If the string is not valid Base64-encoded, an exception is thrown.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the decoded string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT base64Decode('Y2xpY2tob3VzZQ==')",
+        R"(
+┌─base64Decode('Y2xpY2tob3VzZQ==')─┐
+│ clickhouse                       │
+└──────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBase64Decode>(documentation);
 
     /// MySQL compatibility alias.
     factory.registerAlias("FROM_BASE64", "base64Decode", FunctionFactory::Case::Insensitive);

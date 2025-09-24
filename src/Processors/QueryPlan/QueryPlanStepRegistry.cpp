@@ -41,6 +41,7 @@ void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
+void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
@@ -48,6 +49,11 @@ void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
+void registerJoinStep(QueryPlanStepRegistry & registry);
+
+void registerReadFromTableStep(QueryPlanStepRegistry & registry);
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -58,6 +64,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerDistinctStep(registry);
     registerSortingStep(registry);
     registerAggregatingStep(registry);
+    registerMergingAggregatedStep(registry);
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
     registerLimitStep(registry);
@@ -65,6 +72,11 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerFilterStep(registry);
     registerTotalsHavingStep(registry);
     registerExtremesStep(registry);
+    registerJoinStep(registry);
+
+    registerReadFromTableStep(registry);
+    registerReadFromTableFunctionStep(registry);
+    registerBuildRuntimeFilterStep(registry);
 }
 
 }

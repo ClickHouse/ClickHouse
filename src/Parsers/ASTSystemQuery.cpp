@@ -1,11 +1,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
-#include <magic_enum.hpp>
 
 
 namespace DB
@@ -95,14 +94,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(identifier)
+                     ;
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        ostr << keyword;
         return ostr;
     };
 
@@ -116,6 +115,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
+
+        if (if_exists)
+            print_keyword(" IF EXISTS");
+
+        return ostr;
+    };
+
+    auto print_restore_database_replica = [&]() -> WriteBuffer &
+    {
+        chassert(database);
+
+        ostr << " ";
+        print_identifier(getDatabase());
+
         return ostr;
     };
 
@@ -175,6 +188,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_CLEANUP:
         case Type::LOAD_PRIMARY_KEY:
         case Type::UNLOAD_PRIMARY_KEY:
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
         {
             if (table)
             {
@@ -226,7 +243,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                ostr << settings.nl_or_ws << "SETTINGS ";
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -264,13 +281,27 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            print_identifier(database->as<ASTIdentifier>()->name());
+            database->format(ostr, settings, state, frame);
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
             break;
         }
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
+        case Type::DROP_CATALOG_REPLICA:
         {
             print_drop_replica();
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            if (database)
+            {
+                print_restore_database_replica();
+            }
             break;
         }
         case Type::SUSPEND:
@@ -315,10 +346,28 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::DROP_DISTRIBUTED_CACHE:
+        {
+            if (distributed_cache_drop_connections)
+                print_keyword(" CONNECTIONS");
+            else if (!distributed_cache_server_id.empty())
+                ostr << " " << distributed_cache_server_id;
+            break;
+        }
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");
             ostr << quoteString(backup_name);
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+            ostr << quoteString(backup_name);
+            if (backup_source)
+            {
+                print_keyword(" FROM ");
+                backup_source->format(ostr, settings);
+            }
             break;
         }
         case Type::START_LISTEN:
@@ -377,7 +426,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
@@ -403,25 +454,52 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::FLUSH_LOGS:
+        {
+            bool comma = false;
+            for (const auto & cur_log : logs)
+            {
+                if (comma)
+                    ostr << ',';
+                else
+                    comma = true;
+                ostr << ' ';
+                print_identifier(cur_log);
+            }
+            break;
+        }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+#if USE_JEMALLOC
+            if (!jemalloc_profile_path.empty())
+            {
+                print_keyword(" TO ");
+                ostr << quoteString(jemalloc_profile_path);
+            }
+#endif
+            break;
+        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
+        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
+        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -434,13 +512,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
-        case Type::FLUSH_LOGS:
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
         case Type::DROP_PAGE_CACHE:
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+        case Type::START_REPLICATED_DDL_QUERIES:
             break;
         case Type::UNKNOWN:
         case Type::END:

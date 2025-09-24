@@ -36,12 +36,12 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -125,6 +125,11 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
+        if (ASTPtr explained_query = explain_query.getExplainedQuery())
+            if (const auto * explained_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(explained_query.get()))
+                if (explained_query_with_output->hasOutputOptions())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
+
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
@@ -135,7 +140,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = queryToString(settings_ast);
+            settings_str = settings_ast->formatWithSecretsOneLine();
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -433,7 +438,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
+    auto type_literal = std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine());
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
@@ -505,7 +510,10 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function.window_definition, expected);
+    auto res = parser_definition.parse(pos, function.window_definition, expected);
+    if (function.window_definition)
+        function.children.push_back(function.window_definition);
+    return res;
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
@@ -561,6 +569,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
         {
+            node->children.push_back(node->frame_begin_offset);
             // We will evaluate the expression for offset expression later.
             node->frame_begin_type = WindowFrame::BoundaryType::Offset;
         }
@@ -608,6 +617,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_expression.parse(pos, node->frame_end_offset, expected))
             {
+                node->children.push_back(node->frame_end_offset);
                 // We will evaluate the expression for offset expression later.
                 node->frame_end_type = WindowFrame::BoundaryType::Offset;
             }
@@ -1223,7 +1233,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         return makeStringLiteral(pos, node, "");
 
     PODArray<UInt8> res;
-    res.resize((pos->size() + word_size) / word_size + 1);
+    res.resize((str_end - str_begin + word_size - 1) / word_size);
     char * res_begin = reinterpret_cast<char *>(res.data());
     char * res_pos = res_begin;
 
@@ -1236,7 +1246,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -1596,6 +1606,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ON",
     "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
+    "PARALLEL",
     "PREWHERE",
     "RIGHT",
     "SAMPLE",
@@ -1723,7 +1734,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (with_open_round_bracket)
@@ -2190,6 +2201,18 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!elem_p.parse(pos, expr_elem, expected))
         return false;
 
+    /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
+    /// does not expect an alias after the expression. However, in certain cases,
+    /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
+    /// This is the case when it parses a single expression in parentheses, e.g.,
+    /// it does not allow
+    /// 1 AS x
+    /// but it can parse
+    /// (1 AS x)
+    /// which we should not allow as well.
+    if (!expr_elem->tryGetAlias().empty())
+        return false;
+
     if (!allow_order)
     {
         node = std::move(expr_elem);
@@ -2450,7 +2473,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

@@ -38,11 +38,11 @@ struct MySQLSettingsImpl : public BaseSettings<MySQLSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
 
 namespace MySQLSetting
 {
-LIST_OF_MYSQL_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_MYSQL_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -137,5 +137,10 @@ void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collec
         if (named_collection.has(setting_name))
             impl->set(setting_name, named_collection.get<String>(setting_name));
     }
+}
+
+bool MySQLSettings::hasBuiltin(std::string_view name)
+{
+    return MySQLSettingsImpl::hasBuiltin(name);
 }
 }

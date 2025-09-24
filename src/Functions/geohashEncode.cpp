@@ -82,7 +82,7 @@ private:
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
         out_offsets.resize(input_rows_count);
-        out_vec.resize(input_rows_count * (GEOHASH_MAX_TEXT_LENGTH + 1));
+        out_vec.resize(input_rows_count * GEOHASH_MAX_TEXT_LENGTH);
 
         char * begin = reinterpret_cast<char *>(out_vec.data());
         char * pos = begin;
@@ -96,8 +96,7 @@ private:
             const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
-            *pos = '\0';
-            out_offsets[i] = ++pos - begin;
+            out_offsets[i] = pos - begin;
         }
         out_vec.resize(pos - begin);
 
@@ -112,7 +111,40 @@ private:
 
 REGISTER_FUNCTION(GeohashEncode)
 {
-    factory.registerFunction<FunctionGeohashEncode>();
+    FunctionDocumentation::Description description = R"(
+Encodes longitude and latitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
+
+:::
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+
+For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashEncode(longitude, latitude, [precision])";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude", "Longitude part of the coordinate to encode. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude", "Latitude part of the coordinate to encode. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Optional. Length of the resulting encoded string. Default: 12. Range: `[1, 12]`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used)",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage with default precision",
+            "SELECT geohashEncode(-5.60302734375, 42.593994140625) AS res",
+            R"(
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 
 }

@@ -1,0 +1,36 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+            <cache_dynamic_resize>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>100000</max_size>
+                <max_elements>100</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <cache_policy>LRU</cache_policy>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_reload/</path>
+            </cache_dynamic_resize>
+            <cache_dynamic_resize_disabled>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>100000</max_size>
+                <max_elements>100</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <cache_policy>LRU</cache_policy>
+                <allow_dynamic_cache_resize>0</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_reload_disabled/</path>
+            </cache_dynamic_resize_disabled>
+        </disks>
+    </storage_configuration>
+    <filesystem_cache_log>
+            <database>system</database>
+            <table>filesystem_cache_log</table>
+    </filesystem_cache_log>
+</clickhouse>

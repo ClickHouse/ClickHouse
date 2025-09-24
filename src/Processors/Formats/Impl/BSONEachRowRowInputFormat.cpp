@@ -7,7 +7,6 @@
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -51,13 +50,13 @@ namespace
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_.columns())
-    , types(header_.getDataTypes())
+    , prev_positions(header_->columns())
+    , types(header_->getDataTypes())
 {
-    name_map = getPort().getHeader().getNamesToIndexesMap();
+    name_map = getNamesToIndexesMap(getPort().getHeader());
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
@@ -66,7 +65,7 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
         && name == prev_positions[key_index]->first)
     {
         return prev_positions[key_index]->second;
@@ -257,14 +256,13 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size + 1;
+        size_t offset = old_chars_size + size;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
-            data.back() = 0;
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
         }
         catch (...)
         {
@@ -414,11 +412,11 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
             auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
             if (!try_get_index)
                 throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                                "tuple doesn't have element with name \"{}\"",
-                                data_type->getName(),
-                                name);
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                    "tuple doesn't have element with name \"{}\"",
+                    data_type->getName(),
+                    name.toView());
             index = *try_get_index;
         }
 
@@ -803,7 +801,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
@@ -1061,7 +1059,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 

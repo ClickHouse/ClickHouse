@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
 
 
@@ -29,10 +30,9 @@ namespace ErrorCodes
 
 PasteJoinAlgorithm::PasteJoinAlgorithm(
     JoinPtr table_join_,
-    const Blocks & input_headers,
-    size_t max_block_size_)
+    const SharedHeaders & input_headers,
+    [[maybe_unused]] size_t max_block_size_)
     : table_join(table_join_)
-    , max_block_size(max_block_size_)
     , log(getLogger("PasteJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
@@ -117,8 +117,8 @@ IMergingAlgorithm::Status PasteJoinAlgorithm::merge()
 
 PasteJoinTransform::PasteJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<PasteJoinAlgorithm>(
@@ -131,7 +131,6 @@ PasteJoinTransform::PasteJoinTransform(
         table_join, input_headers, max_block_size)
     , log(getLogger("PasteJoinTransform"))
 {
-    LOG_TRACE(log, "Use PasteJoinTransform");
 }
 
 void PasteJoinTransform::onFinish() {};

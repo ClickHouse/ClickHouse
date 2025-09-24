@@ -1,18 +1,16 @@
-#include "ProgressIndication.h"
+#include <Common/ProgressIndication.h>
 #include <algorithm>
 #include <cstddef>
-#include <iostream>
 #include <mutex>
 #include <numeric>
-#include <filesystem>
-#include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
-#include "Common/formatReadable.h"
+#include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define CLEAR_TO_END_OF_LINE "\033[K"
@@ -133,7 +131,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
+    auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
 
     if (!written_progress_chars)
     {

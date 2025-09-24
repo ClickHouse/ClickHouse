@@ -198,7 +198,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         auto min_volume_index = policy->getVolumeIndexByDiskName(move.first->getName()) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
-            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index);
+            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index).value_or(nullptr);
             if (!reservation)
             {
                 /// Next parts to move from this disk has greater size and same min volume index.
@@ -241,7 +241,6 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
-        moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
         String relative_path = part->getDataPartStorage().getPartDirectory();
         if (disk->existsFile(path_to_clone + relative_path))

@@ -1,16 +1,18 @@
-#include "Keeper.h"
+#include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
 #include <filesystem>
-#include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
+#include <Common/DateLUT.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
@@ -42,7 +44,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include "Core/Defines.h"
+#include <Core/Defines.h>
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"
@@ -52,10 +54,6 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
-#endif
-
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -94,6 +92,14 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -307,11 +313,15 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config());
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
     Poco::Logger * log = &logger();
-
-    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 
@@ -363,7 +373,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
+    assertProcessUserMatchesDataOwner(path, [&](const PreformattedMessage & message){ LOG_WARNING(log, fmt::runtime(message.text)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 
@@ -385,7 +395,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(config().getUInt64("memory_worker_period_ms", 0));
+    MemoryWorker memory_worker(
+        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
     memory_worker.start();
 
     static ServerErrorHandler error_handler;
@@ -394,7 +405,7 @@ try
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
@@ -454,6 +465,7 @@ try
 
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
     auto tcp_send_timeout = config().getInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC);
+    auto tcp_nodelay = config().getBool("keeper_server.tcp_nodelay", true);
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -465,6 +477,10 @@ try
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
+
+            Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
+            tcp_params->setNoDelay(tcp_nodelay);
+
             servers->emplace_back(
                 listen_host,
                 port_name,
@@ -472,7 +488,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket, tcp_params));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -483,6 +499,10 @@ try
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
+
+            Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
+            tcp_params->setNoDelay(tcp_nodelay);
+
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
@@ -490,7 +510,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket, tcp_params));
 #else
             UNUSED(port);
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -560,8 +580,7 @@ try
 
     async_metrics.start();
 
-    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
-    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+    Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
@@ -577,7 +596,7 @@ try
         config_path,
         extra_paths,
         getKeeperPath(config()),
-        std::move(unused_cache),
+        /* zk_node_cache_= */ nullptr,
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
@@ -656,10 +675,6 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
-
-#if USE_GWP_ASAN
-    GWPAsan::initFinished();
-#endif
 
     LOG_INFO(log, "Ready for connections.");
 

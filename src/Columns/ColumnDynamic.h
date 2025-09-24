@@ -143,6 +143,8 @@ public:
 
     void get(size_t n, Field & res) const override;
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+
     bool isDefaultAt(size_t n) const override
     {
         return variant_column_ptr->isDefaultAt(n);
@@ -194,6 +196,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -275,9 +278,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns);
+    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
 
     void ensureOwnership() override
     {
@@ -304,16 +307,13 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
+    ColumnCheckpointPtr getCheckpoint() const override;
 
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
@@ -321,10 +321,16 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+        variant_column->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
 
@@ -385,6 +391,7 @@ public:
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+    size_t getGlobalMaxDynamicTypes() const { return global_max_dynamic_types; }
 
     /// Check if we can add new variant types.
     /// Shared variant doesn't count in the limit but always presents,
@@ -403,7 +410,7 @@ public:
         return name;
     }
 
-    static DataTypePtr getSharedVariantDataType();
+    static const DataTypePtr & getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
@@ -443,6 +450,7 @@ public:
     const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) { return getVariantSerialization(variant_type, variant_type->getName()); }
 
     String getTypeNameAt(size_t row_num) const;
+    DataTypePtr getTypeAt(size_t row_num) const;
     void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
@@ -490,6 +498,16 @@ private:
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
     std::unordered_map<String, SerializationPtr> serialization_cache;
 };
+
+struct DynamicColumnCheckpoint : public ColumnCheckpoint
+{
+    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    {
+    }
+
+    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+};
+
 
 void extendVariantColumn(
     IColumn & variant_column,

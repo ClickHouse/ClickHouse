@@ -1,4 +1,5 @@
 #include <Interpreters/AggregationMethod.h>
+#include <Interpreters/AggregatedData.h>
 
 namespace DB
 {
@@ -165,6 +166,7 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
         }
     }
 }
+
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
@@ -193,6 +195,7 @@ void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumn
     for (auto & column : key_columns)
         pos = column->deserializeAndInsertFromArena(pos);
 }
+
 template struct AggregationMethodSerialized<AggregatedDataWithStringKey>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>;

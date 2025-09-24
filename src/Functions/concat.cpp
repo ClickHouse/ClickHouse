@@ -10,8 +10,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/map.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -145,13 +145,13 @@ private:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
-                    write_helper.rowWritten();
+                    write_helper.finishRow();
                 }
                 write_helper.finalize();
 
@@ -227,7 +227,7 @@ public:
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 
@@ -250,8 +250,75 @@ private:
 
 REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionConcatAssumeInjective>();
+    FunctionDocumentation::Description description = R"(
+Concatenates the given arguments.
+
+Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
+As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+)";
+    FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s1, s2, ...", "Any number of values of arbitrary type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the String created by concatenating the arguments. If any of arguments is `NULL`, the function returns `NULL`. If there are no arguments, it returns an empty string.",
+        {"Nullable(String)"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "String concatenation",
+        "SELECT concat('Hello, ', 'World!')",
+        R"(
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+        )"
+    },
+    {
+        "Number concatenation",
+        "SELECT concat(42, 144)",
+        R"(
+┌─concat(42, 144)─┐
+│ 42144           │
+└─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    FunctionDocumentation::Description description_injective = R"(
+Like [`concat`](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective,
+i.e, it returns different results for different arguments.
+
+Can be used for optimization of `GROUP BY`.
+)";
+    FunctionDocumentation::Syntax syntax_injective = "concatAssumeInjective([s1, s2, ...])";
+    FunctionDocumentation::Arguments arguments_injective = {
+        {"s1, s2, ...", "Any number of values of arbitrary type.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_injective = {
+        "Returns the string created by concatenating the arguments. If any of argument values is `NULL`, the function returns `NULL`. If no arguments are passed, it returns an empty string.",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples_injective = {
+    {
+        "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
+        R"(
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, returned_value_injective, examples_injective, introduced_in, category};
+
+    factory.registerFunction<ConcatOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionConcatAssumeInjective>(documentation_injective);
 }
 
 }

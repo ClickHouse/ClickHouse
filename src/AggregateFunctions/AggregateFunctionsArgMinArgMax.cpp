@@ -4,8 +4,8 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+
 
 namespace DB
 {
@@ -35,7 +35,7 @@ public:
     const ValueType & value() const { return value_data; }
 
     AggregateFunctionArgMinMaxData() = default;
-    explicit AggregateFunctionArgMinMaxData(TypeIndex) {}
+    explicit AggregateFunctionArgMinMaxData(const DataTypePtr &) {}
 
     static bool allocatesMemoryInArena(TypeIndex)
     {
@@ -61,9 +61,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxDataGeneric(TypeIndex result_type) : value_data()
+    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) : value_data()
     {
-        generateSingleValueFromTypeIndex(result_type, result_data);
+        generateSingleValueFromType(result_type, result_data);
     }
 
     static bool allocatesMemoryInArena(TypeIndex result_type_index)
@@ -85,7 +85,9 @@ class AggregateFunctionArgMinMax final
 {
 private:
     const DataTypePtr & type_val;
+    const DataTypePtr data_type_res;
     const SerializationPtr serialization_res;
+    const DataTypePtr data_type_val;
     const SerializationPtr serialization_val;
     const TypeIndex result_type_index;
 
@@ -96,7 +98,9 @@ public:
     explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_)
         : Base(argument_types_, {}, argument_types_[0])
         , type_val(this->argument_types[1])
+        , data_type_res(this->argument_types[0])
         , serialization_res(this->argument_types[0]->getDefaultSerialization())
+        , data_type_val(this->argument_types[1])
         , serialization_val(this->argument_types[1]->getDefaultSerialization())
         , result_type_index(WhichDataType(this->argument_types[0]).idx)
     {
@@ -118,7 +122,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) Data(result_type_index);
+        new (place) Data(data_type_res);
     }
 
     String getName() const override
@@ -229,8 +233,8 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).result().read(buf, *serialization_res, arena);
-        this->data(place).value().read(buf, *serialization_val, arena);
+        this->data(place).result().read(buf, *serialization_res, data_type_res, arena);
+        this->data(place).value().read(buf, *serialization_val, data_type_val, arena);
         if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -247,7 +251,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).result().insertResultInto(to);
+        this->data(place).result().insertResultInto(to, this->result_type);
     }
 };
 
@@ -367,7 +371,9 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string & name, 
         if (which.idx == TypeIndex::String)
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(argument_types));
 
-        return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(argument_types));
+        if (canUseFieldForValueData(value_type))
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(argument_types));
+        return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGenericWithColumn>, isMin>(argument_types));
     }
     return result;
 }

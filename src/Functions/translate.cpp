@@ -74,29 +74,30 @@ struct TranslateImpl
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
-            const UInt8 * src_end = data.data() + offsets[i] - 1;
+            const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
             {
                 if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
                 {
-                    *dst++ = map[*src];
+                    *dst = map[*src];
+                    ++dst;
                     ++data_size;
                 }
                 else if (*src > ascii_upper_bound)
                 {
-                    *dst++ = *src;
+                    *dst = *src;
+                    ++dst;
                     ++data_size;
                 }
 
                 ++src;
             }
 
-            /// Technically '\0' can be mapped into other character,
-            ///  so we need to process '\0' delimiter separately
-            *dst++ = 0;
-            res_offsets[i] = ++data_size;
+            res_offsets[i] = data_size;
         }
+
+        res_data.resize(data_size);
     }
 
     static void vectorFixed(
@@ -160,7 +161,7 @@ struct TranslateUTF8Impl
             std::optional<UInt32> res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
-                res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
+                res_from = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(map_from_ptr), len_from);
 
             if (!res_from)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be a valid UTF-8 string");
@@ -170,7 +171,7 @@ struct TranslateUTF8Impl
                 size_t len_to = UTF8::seqLength(*map_to_ptr);
 
                 if (map_to_ptr + len_to <= map_to_end)
-                    res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
+                    res_to = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(map_to_ptr), len_to);
 
                 if (!res_to)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
@@ -216,14 +217,14 @@ struct TranslateUTF8Impl
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
-            const UInt8 * src_end = data.data() + offsets[i] - 1;
+            const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
             {
-                /// Maximum length of UTF-8 sequence is 4 bytes + 1 zero byte
-                if (data_size + 5 > res_data.size())
+                /// Maximum length of UTF-8 sequence is 4 bytes
+                if (data_size + 4 > res_data.size())
                 {
-                    res_data.resize(data_size * 2 + 5);
+                    res_data.resize(data_size * 2 + 4);
                     dst = res_data.data() + data_size;
                 }
 
@@ -235,7 +236,7 @@ struct TranslateUTF8Impl
                         continue;
                     }
 
-                    size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], dst, 4);
+                    size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
                     assert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
@@ -249,7 +250,7 @@ struct TranslateUTF8Impl
 
                 if (src + src_len <= src_end)
                 {
-                    auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_len);
+                    auto src_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(src), src_len);
 
                     if (src_code_point)
                     {
@@ -260,7 +261,7 @@ struct TranslateUTF8Impl
                             if (it->getMapped() == max_uint32)
                                 continue;
 
-                            size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
+                            size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
                             assert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
@@ -280,11 +281,6 @@ struct TranslateUTF8Impl
                 data_size += src_len;
             }
 
-            /// Technically '\0' can be mapped into other character,
-            ///  so we need to process '\0' delimiter separately
-            *dst++ = 0;
-
-            ++data_size;
             res_offsets[i] = data_size;
         }
 
@@ -337,12 +333,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
                 arguments[2]->getName(), getName());
 
-        if (isString(arguments[0]))
-            return std::make_shared<DataTypeString>();
-
-        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        chassert(ptr);
-        return std::make_shared<DataTypeFixedString>(ptr->getN());
+        return arguments[0];
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -361,9 +352,18 @@ public:
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
 
-        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
-        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
-
+        size_t map_from_size;
+        size_t map_to_size;
+        if constexpr (std::is_same_v<Impl, TranslateUTF8Impl>)
+        {
+            map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
+            map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
+        }
+        else
+        {
+            map_from_size = map_from.size();
+            map_to_size = map_to.size();
+        }
         if (map_from_size < map_to_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
@@ -405,8 +405,70 @@ using FunctionTranslateUTF8 = FunctionTranslate<TranslateUTF8Impl, NameTranslate
 
 REGISTER_FUNCTION(Translate)
 {
-    factory.registerFunction<FunctionTranslateASCII>();
-    factory.registerFunction<FunctionTranslateUTF8>();
+    FunctionDocumentation::Description translate_description = R"(
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings.
+`from` and `to` must be constant ASCII strings.
+If `from` and `to` have equal sizes, each occurrence of the first character of `first` in `s` is replaced by the first character of `to`, the second character of `first` in `s` is replaced by the second character of `to`, etc.
+If `from` contains more characters than `to`, all occurrences of the characters at the end of `from` that have no corresponding character in `to` are deleted from `s`.
+Non-ASCII characters in `s` are not modified by the function.
+)";
+    FunctionDocumentation::Syntax translate_syntax = "translate(s, from, to)";
+    FunctionDocumentation::Arguments translate_arguments = {
+        {"s", "The input string to translate.", {"String"}},
+        {"from", "A constant ASCII string containing characters to replace.", {"const String"}},
+        {"to", "A constant ASCII string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue translate_returned_value = {"Returns a string with character translations applied.", {"String"}};
+    FunctionDocumentation::Examples translate_examples = {
+    {
+        "Character mapping",
+        "SELECT translate('Hello, World!', 'delor', 'DELOR') AS res",
+        R"(
+┌─res───────────┐
+│ HELLO, WORLD! │
+└───────────────┘
+        )"
+    },
+    {
+        "Different lengths",
+        "SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res",
+        R"(
+┌─res───┐
+│ CLICK │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn translate_introduced_in = {22, 7};
+    FunctionDocumentation::Category translate_category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
+
+    FunctionDocumentation::Description utf8_description = R"(
+Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+)";
+    FunctionDocumentation::Syntax utf8_syntax = "translateUTF8(s, from, to)";
+    FunctionDocumentation::Arguments utf8_arguments = {
+        {"s", "UTF-8 input string to translate.", {"String"}},
+        {"from", "A constant UTF-8 string containing characters to replace.", {"const String"}},
+        {"to", "A constant UTF-8 string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue utf8_returned_value = {"Returns a `String` data type value.", {"String"}};
+    FunctionDocumentation::Examples utf8_examples = {
+    {
+        "UTF-8 character translation",
+        "SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;",
+        R"(
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateUTF8>(utf8_documentation);
 }
 
 }

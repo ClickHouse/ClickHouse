@@ -1,10 +1,19 @@
 ---
-slug: /en/sql-reference/statements/alter/statistics
+description: 'Documentation for Manipulating Column Statistics'
+sidebar_label: 'STATISTICS'
 sidebar_position: 45
-sidebar_label: STATISTICS
+slug: /sql-reference/statements/alter/statistics
+title: 'Manipulating Column Statistics'
+doc_type: 'reference'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # Manipulating Column Statistics
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 The following operations are available:
 
@@ -16,17 +25,17 @@ The following operations are available:
 
 -   `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - Deletes all statistics objects in all parts for the specified columns. Statistics objects can be rebuild using `ALTER TABLE MATERIALIZE STATISTICS`.
 
--   `ALTER TABLE [db.]table MATERIALIZE STATISTICS [IF EXISTS] (column list)` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
+-   `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
 
 The first two commands are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing statistics metadata via ZooKeeper.
 
-## Example:
+## Example: {#example}
 
 Adding two statistics types to two columns:
 
-```
+```sql
 ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 

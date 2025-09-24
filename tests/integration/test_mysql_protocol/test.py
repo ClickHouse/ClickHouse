@@ -29,8 +29,21 @@ node = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
+)
+
+node_secure = cluster.add_instance(
+    "node_secure",
+    main_configs=[
+        "configs/ssl_conf.xml",
+        "configs/mysql_secure.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
+    user_configs=["configs/users.xml"],
+    with_mysql_client=True,
+    with_mysql_dotnet_client=True
 )
 
 server_port = 9001
@@ -178,7 +191,7 @@ def test_mysql_client(started_cluster):
 
     assert (
         "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
-        "ERROR 516 (00000): default: Authentication failed: password is incorrect, or there is no user with such name"
+        "ERROR 516 (HY000): default: Authentication failed: password is incorrect, or there is no user with such name"
         in stderr.decode()
     )
 
@@ -198,7 +211,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
+            "ERROR 81 (HY000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -226,6 +239,39 @@ def test_mysql_client(started_cluster):
         ["column", "0", "0", "1", "1", "5", "5", "tmp_column", "0", "1", ""]
     )
 
+def test_mysql_client_secure(started_cluster):
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123 --ssl-mode=required -e "select 1 as a;"
+    """.format(
+            host=started_cluster.get_instance_ip("node_secure"), port=server_port
+        ),
+        demux=True,
+    )
+
+    logging.debug(f"test_mysql_client code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert stdout.decode() == "\n".join(["a", "1", ""])
+
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123 --ssl-mode=disabled -e "select 1 as a;"
+    """.format(
+            host=started_cluster.get_instance_ip("node_secure"), port=server_port
+        ),
+        demux=True,
+    )
+
+    logging.debug(f"test_mysql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert (
+        "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
+        "ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 0"
+        in stderr.decode()
+    )
+
+    assert node_secure.contains_in_log(
+        f"<Error> MySQLHandler: DB::Exception: SSL connection required."
+    ) 
+
 
 def test_mysql_client_exception(started_cluster):
     # Poco exception.
@@ -242,7 +288,7 @@ def test_mysql_client_exception(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 279 (00000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
+            "ERROR 279 (HY000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -899,3 +945,21 @@ def setup_java_client(started_cluster, binary: Literal["true", "false"]):
     ).format(
         host=started_cluster.get_instance_ip("node"), port=server_port, binary=binary
     )
+
+
+def test_mysql_dotnet_client(started_cluster):
+    node = cluster.instances["node"]
+
+    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
+        reference = fp.read()
+
+    res = started_cluster.exec_in_container(
+        started_cluster.mysql_dotnet_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+        ],
+    )
+    # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
+    assert reference in res

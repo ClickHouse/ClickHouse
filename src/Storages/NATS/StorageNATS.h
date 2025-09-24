@@ -3,18 +3,25 @@
 #include <atomic>
 #include <mutex>
 #include <uv.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
+#include <Storages/NATS/NATSSettings.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
 {
 
-class NATSConsumer;
-using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
+class INATSConsumer;
+using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
+
+class INATSProducer;
+using INATSProducerPtr = std::unique_ptr<INATSProducer>;
+
 struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
@@ -30,9 +37,9 @@ public:
 
     ~StorageNATS() override;
 
-    std::string getName() const override { return "NATS"; }
+    std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -60,18 +67,16 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(NATSConsumerPtr consumer);
-    NATSConsumerPtr popConsumer();
-    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(INATSConsumerPtr consumer);
+    INATSConsumerPtr popConsumer();
+    INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
 
-    void incrementReader();
-    void decrementReader();
-
-    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
-
 private:
+    String getStreamName() const;
+    String getConsumerName() const;
+
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
@@ -83,60 +88,51 @@ private:
 
     LoggerPtr log;
 
-    NATSConnectionManagerPtr connection; /// Connection for all consumers
+    NATSHandler event_handler;
+    std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
+
+    NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
-    size_t num_created_consumers = 0;
+    std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
-    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
+    std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder initialize_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
-
-    /// In select query we start event loop, but do not stop it
-    /// after that select is finished. Then in a thread, which
-    /// checks for MV we also check if we have select readers.
-    /// If not - we turn off the loop. The checks are done under
-    /// mutex to avoid having a turned off loop when select was
-    /// started.
-    std::mutex loop_mutex;
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
-    NATSConsumerPtr createConsumer();
+    INATSConsumerPtr createConsumer();
+    INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
 
-
     /// Functions working in the background
+    void initializeConsumersFunc();
     void streamingToViewsFunc();
-    void loopingFunc();
-    void connectionFunc();
 
-    bool initBuffers();
+    void createConsumersConnection();
+    void createConsumers();
 
-    void startLoop();
-    void stopLoop();
-    void stopLoopIfNoReaders();
+    bool subscribeConsumers();
+    void unsubscribeConsumers();
+
+    void stopEventLoop();
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
@@ -144,7 +140,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

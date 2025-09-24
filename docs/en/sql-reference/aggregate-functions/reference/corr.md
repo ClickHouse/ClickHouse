@@ -1,6 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corr
+description: 'Calculates the Pearson correlation coefficient.'
 sidebar_position: 117
+slug: /sql-reference/aggregate-functions/reference/corr
+title: 'corr'
+doc_type: 'reference'
 ---
 
 # corr
@@ -11,7 +14,7 @@ $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{\sqrt{\Sigma{(x - \bar{x})^2} * \Sigma{(y - \bar{y})^2}}}
 $$
 
-
+<br/>
 :::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrstable.md) function. It is slower but provides a more accurate result.
 :::
@@ -24,8 +27,8 @@ corr(x, y)
 
 **Arguments**
 
-- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
-- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md).
+- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md).
 
 **Returned Value**
 

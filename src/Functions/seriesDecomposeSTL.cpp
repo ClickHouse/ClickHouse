@@ -180,40 +180,20 @@ public:
 };
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
-    factory.registerFunction<FunctionSeriesDecomposeSTL>(FunctionDocumentation{
-        .description = R"(
-Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
-
-**Syntax**
-
-``` sql
-seriesDecomposeSTL(series, period);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values
-- `period` - A positive number
-
-The number of data points in `series` should be at least twice the value of `period`.
-
-**Returned value**
-
-- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
-```
-
-Result:
-
-``` text
+    FunctionDocumentation::Description description = R"(
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+    )";
+    FunctionDocumentation::Syntax syntax = "seriesDecomposeSTL(series, period)";
+    FunctionDocumentation::Arguments arguments = {
+        {"series", "An array of numeric values", {"Array((U)Int8/16/32/64)", "Array(Float*)"}},
+        {"period", "A positive integer", {"UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of four arrays where the first array includes seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.", {"Array(Array(Float32), Array(Float32), Array(Float32), Array(Float32))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Decompose series data using STL",
+        "SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0",
+        R"(
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
         -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
@@ -234,7 +214,13 @@ Result:
         10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```)",
-        .categories{"Time series analysis"}});
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }
 }

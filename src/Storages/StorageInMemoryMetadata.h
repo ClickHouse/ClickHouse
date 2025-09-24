@@ -1,22 +1,24 @@
 #pragma once
 
-#include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
-#include <Storages/MaterializedView/RefreshSchedule.h>
 
 #include <Common/MultiVersion.h>
 
 namespace DB
 {
+
+class ClientInfo;
+class ASTSQLSecurity;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
@@ -122,7 +124,7 @@ struct StorageInMemoryMetadata
     /// Returns a copy of the context with the correct user from SQL security options.
     /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
     /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
-    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info = nullptr) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -143,6 +145,9 @@ struct StorageInMemoryMetadata
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
+
+    /// Returns true if only rows TTL is set, not even rows where.
+    bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
@@ -276,6 +281,15 @@ struct StorageInMemoryMetadata
     /// contains only the columns of the table, and all the columns are different.
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
+
+    /// Returns a IStorage::ColumnSizeByName with made up numbers.
+    /// Used for making PREWHERE work for Parquet input format.
+    /// TODO [parquet]: Propagate real sizes from file metadata instead. We should probably put file
+    ///                 metadata into SchemaCache, similar to row count.
+    std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
+
+    /// Elements of `columns` that have `default_desc.expression == nullptr`.
+    NameSet getColumnsWithoutDefaultExpressions() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

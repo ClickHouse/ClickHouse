@@ -14,16 +14,22 @@
 </div>
 
 ## How To Install (Linux, macOS, FreeBSD)
+
 ```
 curl https://clickhouse.com/ | sh
 ```
+
+## Open House Conference, Oct 28 2025
+
+[<img width="1280" height="368" alt="Open House Conference in Amsterdam will be held on Oct 28 2025 at Artis Royal Zoo" src="https://github.com/user-attachments/assets/7ee3c1c6-ef81-4523-924b-7b55f9f6b975" />
+](https://clickhouse.com/openhouse/amsterdam)
 
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
 * [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
-* [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
-* [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
+* [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
+* [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
@@ -33,41 +39,64 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
+Join us for the [ClickHouse **25.9** Community Call](https://clickhouse.com/company/events/v25-9-community-release-call) happening on September 25.
 
-* [v24.12 Community Call](https://clickhouse.com/company/events/v24-12-community-release-call) - December 19
+ClickHouse **Release 25.8** is published! This release included a new Parquet reader, better Azure storage integration and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.8/), [Video](https://www.youtube.com/watch?v=HB_-vji9RB0), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#258).
 
 ## Upcoming Events
 
-Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
+Keep an eye out for upcoming meetups and events around the world.
+Somewhere else you want us to be?
+Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
+You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/305126993/) - Jan 23
-* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/305146729/) - Feb 5
-* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10
+* [Pune Meetup](https://www.meetup.com/clickhouse-pune-user-group/events/310644227/) - September 20, 2025
+* [Denver Meetup](https://www.meetup.com/clickhouse-denver-user-group/events/310965415/) - September 20, 2025
+* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/310761753/) - September 25, 2025
+* [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/310761395/) - September 30, 2025
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/310875919/) - September 30, 2025
+* [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/310124151) - September 30, 2025
+* [Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/310123657) - October 1, 2025
+* [Iceberg SF Meetup](https://lu.ma/hbt7ahud) - October 1, 2025
+* [Seattle AI Night ClickHouse+Docker](https://www.meetup.com/clickhouse-seattle-user-group/events/310972841) - October 2, 2025
+* [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/310154432) - October 9, 2025
+* [Chicago Meetup](https://www.meetup.com/clickhouse-chicago-meetup-group/events/311133057) - October 9, 2025
+* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/310154576) - October 15, 2025
+* [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/311069048) - November 13, 2025
+* [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/310154624) - November 20, 2025
 
-Recently completed meetups
+Recent meetups
+* [Beijing Meetup](https://mp.weixin.qq.com/s/WltEVYwTKxek0t8SKJRTjQ) - September 20, 2025
+* [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/310536674) - September 16, 2025
+* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/310122820) - September 16, 2025
+* [Bangkok Meetup](https://www.meetup.com/clickhouse-thailand-meetup-group/events/310647332/) - September 16, 2025
+* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/309165659) - September 9, 2025
+* [New York AI Meetup + Docker](https://www.meetup.com/clickhouse-new-york-user-group/events/310320693) - September 9, 2025
+* [Raleigh Meetup](https://www.meetup.com/clickhouse-nc-meetup-group/events/310348573/) - September 4, 2025
+* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/310521318/) - September 4, 2025
+* [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
+* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26, 2025
+* [Manila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
+* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
+* [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
+* [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025
+* [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/309468074/) - August 6, 2025
+* [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819394/) - August 5, 2025
 
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
-* [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
-* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
-* [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
-* [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - November 12
-* [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096564/) - October 22
-* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/303212064/) - October 3
-* [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/303191359/) - October 1
 
 ## Recent Recordings
-* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v24.8 LTS Release Call**](https://www.youtube.com/watch?v=AeLmp2jc51k) All the features of 24.8 LTS, one convenient video! Watch it now!
-  
- ## Interested in joining ClickHouse and making it your full-time job? 
-  
-We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics. Here, you will have an opportunity to solve some of the most cutting-edge technical challenges and have direct ownership of your work and vision. If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
-  
-Check out our **current openings** here: https://clickhouse.com/company/careers 
-  
-Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 
+
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. 
+* **Recording available**: [**v25.3 LTS Release Call**](https://www.youtube.com/watch?v=iCKEzp0_Z2Q) All the features of 25.3 LTS, one convenient video! Watch it now!
+
+ ## Interested in joining ClickHouse and making it your full-time job?
+
+We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics.
+Here, you will have an opportunity to solve some of the technical challenges and have direct ownership of your work and vision.
+If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
+
+Check out our **current openings** here: https://clickhouse.com/company/careers
+
+Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse?
+Email careers@clickhouse.com!

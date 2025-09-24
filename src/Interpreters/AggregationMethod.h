@@ -1,16 +1,8 @@
 #pragma once
 #include <vector>
 #include <Common/ColumnsHashing.h>
-#include <Interpreters/AggregationCommon.h>
-#include <Interpreters/AggregatedData.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
-
 namespace DB
 {
 class IColumn;
@@ -286,7 +278,9 @@ struct AggregationMethodSerialized
 
     AggregationMethodSerialized() = default;
 
-    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint) { }
+    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint)
+    {
+    }
 
     template <typename Other>
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)

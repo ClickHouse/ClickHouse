@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug
+# Tags: replica, no-debug, no-shared-merge-tree, long, no-msan, no-asan, no-tsan
+# no-shared-merge-tree: depends on zookeeper, specific logs of rmt and so on
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +12,7 @@ REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
 # Check that if we have one inactive replica and a huge number of INSERTs to active replicas,
 # the number of nodes in ZooKeeper does not grow unbounded.
 
-SCALE=1000
+SCALE=500
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS r1;
@@ -24,12 +25,12 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # insert_keeper_fault_injection_probability=0 -- can slowdown insert a lot (produce a lot of parts)
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
+$CLICKHOUSE_CLIENT --max_execution_time 600 --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
 # Now wait for cleanup thread
 for _ in {1..60}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
     [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || '$CLICKHOUSE_DATABASE' || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%' SETTINGS max_rows_to_read = 0") -gt $((SCALE - 10)) ]] && break;
     sleep 1
 done

@@ -1,7 +1,10 @@
 ---
-slug: /en/operations/system-tables/contributors
+description: 'System table containing information about contributors.'
+keywords: ['system table', 'contributors']
+slug: /operations/system-tables/contributors
+title: 'system.contributors'
+doc_type: 'reference'
 ---
-# contributors
 
 Contains information about contributors. The order is random at query execution time.
 
@@ -11,11 +14,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.contributors LIMIT 10
 ```
 
-``` text
+```text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 │ Max Vetrov       │
@@ -32,11 +35,11 @@ SELECT * FROM system.contributors LIMIT 10
 
 To find out yourself in the table, use a query:
 
-``` sql
+```sql
 SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 ```
 
-``` text
+```text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘

@@ -132,7 +132,7 @@ QUERY id: 0
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
         LIST id: 7, nodes: 1
-          COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          COLUMN id: 8, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS enable_analyzer=1
 6. test group by with subquery alias
 3
@@ -164,7 +164,7 @@ QUERY id: 0
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
         LIST id: 7, nodes: 1
-          COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          COLUMN id: 8, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS enable_analyzer=1
 7. test group by with compound column name
 3
@@ -196,7 +196,7 @@ QUERY id: 0
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
         LIST id: 7, nodes: 1
-          COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          COLUMN id: 8, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS enable_analyzer=1
 8. test group by with select expression alias
 3
@@ -228,5 +228,5 @@ QUERY id: 0
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
         LIST id: 7, nodes: 1
-          COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          COLUMN id: 8, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS enable_analyzer=1

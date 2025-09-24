@@ -61,7 +61,7 @@ class CI:
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_AARCH64,
+                JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -75,10 +75,10 @@ class CI:
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
                 BuildNames.PACKAGE_ASAN,
+                BuildNames.BINARY_TIDY,
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
-                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
     }  # type: Dict[str, LabelConfig]
@@ -174,7 +174,6 @@ class CI:
                 compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
-                static_binary_name="debug-amd64",
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
@@ -201,7 +200,7 @@ class CI:
                 compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
-                comment="For ARMv8.1 and older",
+                comment="ARMv8.1_and_older",
             ),
         ),
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(
@@ -287,59 +286,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
-        JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
-        JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN]
-        ),
-        JobNames.STATEFUL_TEST_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN]
-        ),
-        JobNames.STATEFUL_TEST_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN]
-        ),
-        JobNames.STATEFUL_TEST_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG]
-        ),
-        JobNames.STATEFUL_TEST_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
-        ),
-        JobNames.STATEFUL_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG]
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN],
-            random_bucket="parrepl_with_sanitizer",
-            timeout=3600,
-        ),
-        JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_ASAN_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
@@ -372,11 +319,19 @@ class CI:
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
         ),
-        JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
+        ),
+        JobNames.STATELESS_TEST_ASYNC_INSERT_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
+        ),
+        JobNames.STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            num_batches=3,
+            release_only=True,
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -389,7 +344,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN],
         ),
         JobNames.STRESS_TEST_ASAN: CommonJobConfigs.STRESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
             random_bucket="stress_with_sanitizer",
         ),
         JobNames.STRESS_TEST_UBSAN: CommonJobConfigs.STRESS_TEST.with_properties(
@@ -433,20 +388,21 @@ class CI:
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=6,
+            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
             runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=4,
+            num_batches=6,
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
@@ -484,7 +440,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG],
         ),
         JobNames.AST_FUZZER_TEST_ASAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
         ),
         JobNames.AST_FUZZER_TEST_MSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_MSAN],
@@ -493,6 +449,21 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN],
         ),
         JobNames.AST_FUZZER_TEST_UBSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_UBSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_DEBUG: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG],
+        ),
+        JobNames.BUZZHOUSE_TEST_ASAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_MSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_MSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_TSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_TSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_UBSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
@@ -576,12 +547,14 @@ class CI:
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
+            run_command="fast_test_check.py",
             timeout=2400,
             runner_type=Runners.BUILDER,
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
             runner_type=Runners.STYLE_CHECKER_AARCH64,
+            run_command="style_check.py",
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
@@ -617,12 +590,28 @@ class CI:
                     break
             else:
                 stage_type = WorkflowStages.BUILDS_2
+            if job_name in (
+                BuildNames.PACKAGE_RELEASE,
+                BuildNames.PACKAGE_AARCH64,
+            ):
+                stage_type = WorkflowStages.BUILDS_0
         elif cls.is_docs_job(job_name):
             stage_type = WorkflowStages.TESTS_1
         elif cls.is_test_job(job_name):
             if job_name in CI.JOB_CONFIGS:
                 if job_name in REQUIRED_CHECKS:
                     stage_type = WorkflowStages.TESTS_1
+                    required_builds = cls.get_job_config(job_name).required_builds
+                    if required_builds:
+                        if any(
+                            build
+                            in (
+                                BuildNames.PACKAGE_RELEASE,
+                                BuildNames.PACKAGE_AARCH64,
+                            )
+                            for build in required_builds
+                        ):
+                            stage_type = WorkflowStages.TESTS_0
                 else:
                     stage_type = WorkflowStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
@@ -632,12 +621,16 @@ class CI:
 
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
+        # remove job batch if it exists in check name (hack for migration to praktika)
+        check_name = check_name.replace("arm_", "").replace(
+            "amd_", ""
+        )  # hack for new names in praktika
+        check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod
     def get_required_build_name(cls, check_name: str) -> str:
-        assert check_name in cls.JOB_CONFIGS
-        required_builds = cls.JOB_CONFIGS[check_name].required_builds
+        required_builds = cls.get_job_config(check_name).required_builds
         assert required_builds and len(required_builds) == 1
         return required_builds[0]
 
@@ -752,6 +745,32 @@ class CI:
         return True
 
 
+BUILD_NAMES_MAPPING = {
+    "Build (amd_debug)": BuildNames.PACKAGE_DEBUG,
+    "Build (amd_release)": BuildNames.PACKAGE_RELEASE,
+    "Build (amd_binary)": BuildNames.BINARY_RELEASE,
+    "Build (amd_asan)": BuildNames.PACKAGE_ASAN,
+    "Build (amd_tsan)": BuildNames.PACKAGE_TSAN,
+    "Build (amd_msan)": BuildNames.PACKAGE_MSAN,
+    "Build (amd_ubsan)": BuildNames.PACKAGE_UBSAN,
+    "Build (arm_release)": BuildNames.PACKAGE_AARCH64,
+    "Build (arm_asan)": BuildNames.PACKAGE_AARCH64_ASAN,
+    "Build (arm_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
+    "Build (arm_binary)": BuildNames.BINARY_AARCH64,
+    "Build (amd_tidy)": BuildNames.BINARY_TIDY,
+    "Build (amd_darwin)": BuildNames.BINARY_DARWIN,
+    "Build (arm_darwin)": BuildNames.BINARY_DARWIN_AARCH64,
+    "Build (arm_v80compat)": BuildNames.BINARY_AARCH64_V80COMPAT,
+    "Build (amd_freebsd)": BuildNames.BINARY_FREEBSD,
+    "Build (ppc64le)": BuildNames.BINARY_PPC64LE,
+    "Build (amd_compat)": BuildNames.BINARY_AMD64_COMPAT,
+    "Build (amd_musl)": BuildNames.BINARY_AMD64_MUSL,
+    "Build (riscv64)": BuildNames.BINARY_RISCV64,
+    "Build (s390x)": BuildNames.BINARY_S390X,
+    "Build (loongarch64)": BuildNames.BINARY_LOONGARCH64,
+    "Build (fuzzers)": BuildNames.FUZZERS,
+}
+
 if __name__ == "__main__":
     parser = ArgumentParser(
         formatter_class=ArgumentDefaultsHelpFormatter,
@@ -764,9 +783,11 @@ if __name__ == "__main__":
         help="if set, the ENV parameters are provided for shell export",
     )
     args = parser.parse_args()
-    assert (
-        args.build_name in CI.JOB_CONFIGS
-    ), f"Build name [{args.build_name}] is not valid"
-    build_config = CI.JOB_CONFIGS[args.build_name].build_config
+    if args.build_name in BUILD_NAMES_MAPPING:
+        build_name = BUILD_NAMES_MAPPING[args.build_name]
+    else:
+        build_name = args.build_name
+    assert build_name in CI.JOB_CONFIGS, f"Build name [{build_name}] is not valid"
+    build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config, "--export must not be used for non-build jobs"
     print(build_config.export_env(args.export))

@@ -16,7 +16,7 @@ namespace DB
 struct Settings;
 struct S3AuthSettingsImpl;
 
-/// List of available types supported in MaterializedMySQLSettings object
+/// List of available types supported in the Settings object
 #define S3AUTH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64) \
@@ -62,6 +62,9 @@ struct S3AuthSettings
 
     std::unordered_set<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+
+    void serialize(WriteBuffer & out, ContextPtr context) const;
+    static S3AuthSettings deserialize(ReadBuffer & in, ContextPtr context);
 
 private:
     std::unique_ptr<S3AuthSettingsImpl> impl;

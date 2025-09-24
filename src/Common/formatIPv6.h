@@ -8,12 +8,13 @@
 #include <base/hex.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/MemorySanitizer.h>
 #include <Common/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;
-constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;     /// Does not count tail zero byte.
-constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byte.
+constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;
+constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;
 
 namespace DB
 {
@@ -26,10 +27,10 @@ extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string
   */
 void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_bytes_count = 0);
 
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
+/** An optimized version of parsing IPv4 string.
  *
  * Parses the input string `src` and stores binary host-endian value into buffer pointed by `dst`,
- * which should be long enough.
+ * which should accommodate four bytes.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
  * In case of failure doesn't modify buffer pointed by `dst`.
@@ -39,16 +40,15 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  *           To parse strings use overloads below.
  *
  * @param src         - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
- * @param eof         - function returning true if iterator riched the end - warning - can break iterator's continuity.
+ * @param eof         - function returning true if iterator reached the end - warning - can break iterator's continuity.
  * @param dst         - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
  * @param first_octet - preparsed first octet
  * @return            - true if parsed successfully, false otherwise.
  */
-template <typename T, typename EOFfunction>
-requires (std::is_same_v<std::remove_cv_t<T>, char>)
-inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
+template <typename T, typename IsEOF>
+inline bool parseIPv4(T & src, IsEOF eof, unsigned char * dst, int32_t first_octet = -1)
 {
-    if (src == nullptr || first_octet > 255)
+    if (first_octet > 255)
         return false;
 
     UInt32 result = 0;
@@ -59,7 +59,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
         offset -= 8;
     }
 
-    for (; true; offset -= 8, ++src)
+    while (true)
     {
         if (eof())
             return false;
@@ -80,18 +80,33 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
 
         if (offset == 0)
             break;
+
+        offset -= 8;
+        ++src;
     }
 
     memcpy(dst, &result, sizeof(result));
     return true;
 }
 
+
+#if defined(__SSE4_1__)
+int parseIPv4SSE(const char * ipv4_string, size_t ipv4_string_length, uint32_t * destination);
+#endif
+
+
 /// returns pointer to the right after parsed sequence or null on failed parsing
 inline const char * parseIPv4(const char * src, const char * end, unsigned char * dst)
 {
+#if defined(__SSE4_1__)
+    if (parseIPv4SSE(src, end - src, reinterpret_cast<uint32_t *>(dst)))
+        return end;
+    return nullptr;
+#else
     if (parseIPv4(src, [&src, end](){ return src == end; }, dst))
         return src;
     return nullptr;
+#endif
 }
 
 /// returns true if whole buffer was parsed successfully
@@ -108,14 +123,7 @@ inline const char * parseIPv4(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv4whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv4(src, dst);
-    return end != nullptr && *end == '\0';
-}
-
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
+/** An optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
@@ -130,24 +138,21 @@ inline bool parseIPv4whole(const char * src, unsigned char * dst)
 * @param first_block - preparsed first block
 * @return            - true if parsed successfully, false otherwise.
 */
-template <typename T, typename EOFfunction>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_block = -1)
+template <typename T, typename IsEOF>
+inline bool parseIPv6(T & src, IsEOF eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
     {
-        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        memset(dst, '\0', IPV6_BINARY_LENGTH);
         return false;
     };
 
-    if (src == nullptr || eof())
+    if (eof())
         return clear_dst();
 
     int groups = 0;                 /// number of parsed groups
     unsigned char * iter = dst;     /// iterator over dst buffer
     unsigned char * zptr = nullptr; /// pointer into dst buffer array where all-zeroes block ("::") is started
-
-    std::memset(dst, '\0', IPV6_BINARY_LENGTH);
 
     if (first_block >= 0)
     {
@@ -230,7 +235,7 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
         group_start = false;
 
         UInt16 val = 0;   /// current decoded group
-        int xdigits = 0;  /// number of decoded hex digits in current group
+        int xdigits = 0;  /// number of decoded hex digits in the current group
 
         for (; !eof() && xdigits < 4; ++src, ++xdigits)
         {
@@ -255,8 +260,8 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
     if (zptr != nullptr) /// process all-zeroes block
     {
         size_t msize = iter - zptr;
-        std::memmove(dst + IPV6_BINARY_LENGTH - msize, zptr, msize);
-        std::memset(zptr, '\0', IPV6_BINARY_LENGTH - (iter - dst));
+        memmove(dst + IPV6_BINARY_LENGTH - msize, zptr, msize);
+        memset(zptr, '\0', IPV6_BINARY_LENGTH - (iter - dst));
     }
 
     return true;
@@ -271,7 +276,7 @@ inline const char * parseIPv6(const char * src, const char * end, unsigned char 
 }
 
 /// returns true if whole buffer was parsed successfully
-inline bool parseIPv6whole(const char * src, const char * end, unsigned char * dst)
+inline bool parseIPv6Whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv6(src, end, dst) == end;
 }
@@ -284,14 +289,7 @@ inline const char * parseIPv6(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv6whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv6(src, dst);
-    return end != nullptr && *end == '\0';
-}
-
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
+/** An optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` IPv6 or possible IPv4 into IPv6 and stores binary big-endian value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
@@ -304,13 +302,12 @@ inline bool parseIPv6whole(const char * src, unsigned char * dst)
 * @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
 * @return    - true if parsed successfully, false otherwise.
 */
-template <typename T, typename EOFfunction>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
+template <typename T, typename IsEOF>
+inline bool parseIPv6orIPv4(T & src, IsEOF eof, unsigned char * dst)
 {
     const auto clear_dst = [dst]()
     {
-        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        memset(dst, '\0', IPV6_BINARY_LENGTH);
         return false;
     };
 
@@ -425,7 +422,8 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
     for (size_t octet = 0; octet < padding; ++octet)
     {
         *dst++ = '0';
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t octet = 4 - src_size; octet < limit; ++octet)
@@ -440,18 +438,17 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
 
         memcpy(dst, str, len);
         dst += len;
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t mask = 0; mask < mask_tail_octets; ++mask)
     {
+        if (mask > 0)
+            *dst++ = '.';
         memcpy(dst, mask_string, mask_length);
         dst += mask_length;
-
-        *dst++ = '.';
     }
-
-    dst[-1] = '\0';
 }
 
 inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")

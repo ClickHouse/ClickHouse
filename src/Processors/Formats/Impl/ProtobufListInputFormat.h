@@ -6,6 +6,7 @@
 #    include <Formats/FormatSchemaInfo.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ class ProtobufListInputFormat final : public IRowInputFormat
 public:
     ProtobufListInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool flatten_google_wrappers_,
@@ -44,6 +45,7 @@ private:
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 
@@ -57,6 +59,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
+    bool oneof_presence;
     const String google_protos_path;
 };
 

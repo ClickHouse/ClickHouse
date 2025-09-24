@@ -1,7 +1,10 @@
 ---
-slug: /en/operations/system-tables/build_options
+description: 'System table containing information about ClickHouse server''s build options.'
+slug: /operations/system-tables/build_options
+title: 'system.build_options'
+keywords: ['system table', 'build_options']
+doc_type: 'reference'
 ---
-# build_options
 
 Contains information about the ClickHouse server's build options.
 
@@ -12,11 +15,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.build_options LIMIT 5
 ```
 
-``` text
+```text
 ┌─name─────────────┬─value─┐
 │ USE_BROTLI       │ 1     │
 │ USE_BZIP2        │ 1     │

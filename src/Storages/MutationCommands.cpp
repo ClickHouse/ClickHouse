@@ -1,7 +1,6 @@
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -29,6 +28,11 @@ namespace ErrorCodes
 bool MutationCommand::isBarrierCommand() const
 {
     return type == RENAME_COLUMN;
+}
+
+bool MutationCommand::affectsAllColumns() const
+{
+    return type == DELETE || type == APPLY_DELETED_MASK;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
@@ -68,8 +72,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = APPLY_DELETED_MASK;
-        if (command->predicate)
-            res.predicate = command->predicate->clone();
+        if (command->partition)
+            res.partition = command->partition->clone();
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::APPLY_PATCHES)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = APPLY_PATCHES;
         if (command->partition)
             res.partition = command->partition->clone();
         return res;
@@ -93,7 +104,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+        {
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        }
         return res;
     }
     if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -127,7 +141,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
         if (nullptr == ast_col_decl.type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", serializeAST(*command));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command->formatForErrorMessage());
         res.column_name = ast_col_decl.name;
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;
@@ -221,9 +235,7 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
 
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(with_pure_metadata_commands), commands_buf, /* hilite = */ false, /* one_line = */ true);
-    writeEscapedString(commands_buf.str(), out);
+    writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
 }
 
 void MutationCommands::readText(ReadBuffer & in)
@@ -247,9 +259,7 @@ void MutationCommands::readText(ReadBuffer & in)
 
 std::string MutationCommands::toString() const
 {
-    WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
-    return commands_buf.str();
+    return ast()->formatWithSecretsOneLine();
 }
 
 
@@ -261,6 +271,16 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
             return true;
     }
     return false;
+}
+
+bool MutationCommands::hasAnyUpdateCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
+}
+
+bool MutationCommands::hasOnlyUpdateCommands() const
+{
+    return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
 }
 
 bool MutationCommands::containBarrierCommand() const

@@ -1,21 +1,14 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-
-#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
-
-#include <shared_mutex>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
-
-struct UnlinkMetadataFileOperationOutcome;
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
 /// Stores metadata on a separate disk
 /// (used for object storages, like S3 and related).
@@ -37,6 +30,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
+    /// Metadata on disk for an empty file can store empty list of blobs and size=0
+    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
+
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
     bool existsFileOrDirectory(const std::string & path) const override;
@@ -50,6 +46,8 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
@@ -73,12 +71,15 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+
+    bool isReadOnly() const override { return disk->isReadOnly(); }
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     const MetadataStorageFromDisk & metadata_storage;
+    MetadataOperationsHolder operations;
 
 public:
     explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
@@ -89,7 +90,7 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit(const TransactionCommitOptionsVariant & options) final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -97,9 +98,11 @@ public:
 
     void createEmptyMetadataFile(const std::string & path) override;
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    bool supportAddingBlobToMetadata() override { return true; }
+
+    void addBlobToMetadata(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
@@ -110,6 +113,8 @@ public:
     void setReadOnly(const std::string & path) override;
 
     void unlinkFile(const std::string & path) override;
+
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -127,11 +132,9 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
-
 
 }

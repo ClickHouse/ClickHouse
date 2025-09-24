@@ -5,7 +5,6 @@
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
-#include <Parsers/formatAST.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -39,18 +38,18 @@ RestoreCoordinationOnCluster::RestoreCoordinationOnCluster(
     , cleaner(/* is_restore = */ true, zookeeper_path, with_retries, log)
     , stage_sync(/* is_restore = */ true, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_restore_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
-    try
-    {
-        createRootNodes();
-    }
-    catch (...)
-    {
-        stage_sync.setError(std::current_exception(), /* throw_if_error = */ false);
-        throw;
-    }
+    /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
+    if (current_host != kInitiator)
+        setRestoreQueryIsSentToOtherHosts();
 }
 
 RestoreCoordinationOnCluster::~RestoreCoordinationOnCluster() = default;
+
+void RestoreCoordinationOnCluster::startup()
+{
+    stage_sync.startup();
+    createRootNodes();
+}
 
 void RestoreCoordinationOnCluster::createRootNodes()
 {
@@ -68,6 +67,8 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
+
+            zk->createIfNotExists(zookeeper_path + "/shared_databases_acquired", "");
         });
 }
 
@@ -89,34 +90,39 @@ Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const S
     return {};
 }
 
-bool RestoreCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
+void RestoreCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
-    return stage_sync.setError(exception, throw_if_error);
+    stage_sync.setError(exception, throw_if_error);
 }
 
-bool RestoreCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
+bool RestoreCoordinationOnCluster::isErrorSet() const
 {
-    return stage_sync.waitOtherHostsFinish(throw_if_error);
+    return stage_sync.isErrorSet();
 }
 
-bool RestoreCoordinationOnCluster::finish(bool throw_if_error)
+void RestoreCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
 {
-    return stage_sync.finish(throw_if_error);
+    stage_sync.waitOtherHostsFinish(throw_if_error);
 }
 
-bool RestoreCoordinationOnCluster::cleanup(bool throw_if_error)
+void RestoreCoordinationOnCluster::finish(bool throw_if_error)
 {
-    /// All the hosts must finish before we remove the coordination nodes.
-    bool expect_other_hosts_finished = stage_sync.isQuerySentToOtherHosts() || !stage_sync.isErrorSet();
-    bool all_hosts_finished = stage_sync.finished() && (stage_sync.otherHostsFinished() || !expect_other_hosts_finished);
-    if (!all_hosts_finished)
-    {
-        auto unfinished_hosts = expect_other_hosts_finished ? stage_sync.getUnfinishedHosts() : Strings{current_host};
-        LOG_INFO(log, "Skipping removing nodes from ZooKeeper because hosts {} didn't finish",
-                 BackupCoordinationStageSync::getHostsDesc(unfinished_hosts));
-        return false;
-    }
-    return cleaner.cleanup(throw_if_error);
+    stage_sync.finish(throw_if_error);
+}
+
+bool RestoreCoordinationOnCluster::finished() const
+{
+    return stage_sync.finished();
+}
+
+bool RestoreCoordinationOnCluster::allHostsFinished() const
+{
+    return stage_sync.allHostsFinished();
+}
+
+void RestoreCoordinationOnCluster::cleanup(bool throw_if_error)
+{
+    cleaner.cleanup(throw_if_error);
 }
 
 ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKeeperRetriesInfo() const
@@ -125,6 +131,32 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
                                 static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
                                 process_list_element};
+}
+
+bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & database_name)
+{
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// We need to check who created that node
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
 }
 
 bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -275,7 +307,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)
 {
-    String query_str = serializeAST(create_query);
+    String query_str = create_query.formatWithSecretsOneLine();
     CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     String new_uuids_str = new_uuids.toString();
 

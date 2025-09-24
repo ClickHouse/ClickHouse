@@ -4,17 +4,24 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Parsers/queryToString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FUNCTION;
+}
 
 enum class FunctionOrigin : int8_t
 {
@@ -54,7 +61,7 @@ namespace
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
         {
             if (factory.isAlias(name))
             {
@@ -64,16 +71,20 @@ namespace
                 res_columns[9]->insertDefault();
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
+                res_columns[12]->insertDefault();
+                res_columns[13]->insertDefault();
             }
             else
             {
                 auto documentation = factory.getDocumentation(name);
                 res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntax);
+                res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returned_value);
-                res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.categoriesAsString());
+                res_columns[9]->insert(documentation.parametersAsString());
+                res_columns[10]->insert(documentation.returnedValueAsString());
+                res_columns[11]->insert(documentation.examplesAsString());
+                res_columns[12]->insert(documentation.introducedInAsString());
+                res_columns[13]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -84,12 +95,14 @@ namespace
             res_columns[9]->insertDefault();
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
+            res_columns[12]->insertDefault();
+            res_columns[13]->insertDefault();
         }
     }
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
+std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -107,12 +120,14 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
-        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
+        {"arguments", std::make_shared<DataTypeString>(), "The function arguments."},
+        {"parameters", std::make_shared<DataTypeString>(), "The function parameters (only for aggregate function)."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
+        {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
     };
 }
@@ -137,7 +152,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
+        String create_query;
+        try
+        {
+            create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
+                tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
+            else
+                throw;
+        }
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

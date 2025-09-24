@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeMap.h>
@@ -71,8 +72,8 @@ struct FunctionDetectLanguageImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        /// Constant 3 is based on the fact that in general we need 2 characters for ISO code + 1 zero byte
-        res_data.reserve(input_rows_count * 3);
+        /// In general we need 2 characters for ISO code
+        res_data.reserve(input_rows_count * 2);
         res_offsets.resize(input_rows_count);
 
         bool is_reliable;
@@ -81,7 +82,7 @@ struct FunctionDetectLanguageImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
+            const size_t str_len = offsets[i] - offsets[i - 1];
 
             std::string_view res;
 
@@ -98,12 +99,10 @@ struct FunctionDetectLanguageImpl
                 res = "un";
             }
 
-            res_data.resize(res_offset + res.size() + 1);
+            res_data.resize(res_offset + res.size());
             memcpy(&res_data[res_offset], res.data(), res.size());
 
-            res_data[res_offset + res.size()] = 0;
-            res_offset += res.size() + 1;
-
+            res_offset += res.size();
             res_offsets[i] = res_offset;
         }
     }
@@ -181,7 +180,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = input_data.data() + input_offsets[i - 1];
-            const size_t str_len = input_offsets[i] - input_offsets[i - 1] - 1;
+            const size_t str_len = input_offsets[i] - input_offsets[i - 1];
 
             if (UTF8::isValidUTF8(str, str_len))
             {

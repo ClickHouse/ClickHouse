@@ -70,7 +70,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset - 1;
+                const size_t string_size = next_offset - current_offset;
 
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
@@ -124,7 +124,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset - 1;
+                const size_t string_size = next_offset - current_offset;
 
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
@@ -171,23 +171,42 @@ public:
 
 REGISTER_FUNCTION(Timestamp)
 {
-    factory.registerFunction<FunctionTimestamp>(FunctionDocumentation{
-        .description = R"(
-Converts the first argument 'expr' to type DateTime64(6).
-If the second argument 'expr_time' is provided, it adds the specified time to the converted value.
-:::)",
-        .syntax = "timestamp(expr[, expr_time])",
-        .arguments = {
-            {"expr", "Date or date with time. Type: String."},
-            {"expr_time", "Time to add. Type: String."}
-        },
-        .returned_value = "The result of conversion and, optionally, addition. Type: DateTime64(6).",
-        .examples = {
-            {"timestamp", "SELECT timestamp('2013-12-31')", "2013-12-31 00:00:00.000000"},
-            {"timestamp", "SELECT timestamp('2013-12-31 12:00:00')", "2013-12-31 12:00:00.000000"},
-            {"timestamp", "SELECT timestamp('2013-12-31 12:00:00', '12:00:00.11')", "2014-01-01 00:00:00.110000"},
-        },
-        .categories{"DateTime"}}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Converts the first argument `expr` to type [`DateTime64(6)`](/sql-reference/data-types/datetime64).
+If a second argument `expr_time` is provided, it adds the specified time to the converted value.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+    timestamp(expr[, expr_time])
+    )";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"expr", "Date or date with time.", {"String"}},
+        {"expr_time", "Optional. Time to add to the converted value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the converted value of `expr`, or `expr` with added time", {"DateTime64(6)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Convert date string to DateTime64(6)", R"(
+SELECT timestamp('2023-12-31') AS ts;
+    )",
+        R"(
+┌─────────────────────────ts─┐
+│ 2023-12-31 00:00:00.000000 │
+└────────────────────────────┘
+    )"},
+        {"Add time to date string", R"(
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
+    )",
+        R"(
+┌─────────────────────────ts─┐
+│ 2024-01-01 00:00:00.110000 │
+└────────────────────────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTimestamp>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

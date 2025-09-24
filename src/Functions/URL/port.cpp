@@ -77,7 +77,7 @@ private:
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
 }
@@ -135,16 +135,64 @@ struct FunctionPortRFC : public FunctionPortImpl<true>
 
 REGISTER_FUNCTION(Port)
 {
-    factory.registerFunction<FunctionPort>(FunctionDocumentation
+    /// port documentation
+    FunctionDocumentation::Description description_port = R"(
+Returns the port of a URL, or the `default_port` if the URL contains no port or cannot be parsed.
+    )";
+    FunctionDocumentation::Syntax syntax_port = "port(url[, default_port])";
+    FunctionDocumentation::Arguments arguments_port = {
+        {"url", "URL.", {"String"}},
+        {"default_port", "Optional. The default port number to be returned. `0` by default.", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_port = {"Returns the port of the URL, or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
+    FunctionDocumentation::Examples examples_port = {
     {
-        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        .categories{"URL"}
-    });
-    factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
+        "Usage example",
+        R"(
+SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/docs', 443);
+        )",
+        R"(
+┌─port('https://clickhouse.com:8443/docs')─┬─port('https://clickhouse.com/docs', 443)─┐
+│                                     8443 │                                      443 │
+└──────────────────────────────────────────┴──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_port = {20, 5};
+    FunctionDocumentation::Category category_port = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_port = {description_port, syntax_port, arguments_port, returned_value_port, examples_port, introduced_in_port, category_port};
+
+    factory.registerFunction<FunctionPort>(documentation_port);
+
+    /// portRFC documentation
+    FunctionDocumentation::Description description_portRFC = R"(
+Returns the port or `default_port` if the URL contains no port or cannot be parsed.
+Similar to [`port`](#port), but [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) conformant.
+    )";
+    FunctionDocumentation::Syntax syntax_portRFC = "portRFC(url[, default_port])";
+    FunctionDocumentation::Arguments arguments_portRFC = {
+        {"url", "URL.", {"String"}},
+        {"default_port", "Optional. The default port number to be returned. `0` by default.", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_portRFC = {"Returns the port or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
+    FunctionDocumentation::Examples examples_portRFC = {
     {
-        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
-        .categories{"URL"}
-    });
+        "Usage example",
+        R"(
+SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:password@example.com:8080/');
+        )",
+        R"(
+┌─port('http:/⋯com:8080/')─┬─portRFC('htt⋯com:8080/')─┐
+│                        0 │                     8080 │
+└──────────────────────────┴──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_portRFC = {22, 10};
+    FunctionDocumentation::Category category_portRFC = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_portRFC = {description_portRFC, syntax_portRFC, arguments_portRFC, returned_value_portRFC, examples_portRFC, introduced_in_portRFC, category_portRFC};
+
+    factory.registerFunction<FunctionPortRFC>(documentation_portRFC);
 }
 
 }
