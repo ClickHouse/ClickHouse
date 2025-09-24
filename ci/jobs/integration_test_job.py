@@ -261,7 +261,7 @@ def main():
         ):
 
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} --session-timeout=7200 -n 1 --dist=loadfile",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
