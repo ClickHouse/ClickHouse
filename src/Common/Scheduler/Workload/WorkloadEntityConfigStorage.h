@@ -15,7 +15,6 @@ class WorkloadEntityConfigStorage : public WorkloadEntityStorageBase
 {
 public:
     explicit WorkloadEntityConfigStorage(const ContextPtr & global_context_);
-
     bool loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
 private:
@@ -33,8 +32,6 @@ private:
         WorkloadEntityType entity_type,
         const String & entity_name,
         bool throw_if_not_exists) override;
-
-
 };
 
 }
