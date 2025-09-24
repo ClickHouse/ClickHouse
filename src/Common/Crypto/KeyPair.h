@@ -37,6 +37,7 @@ public:
 
     static KeyPair fromFile(const std::string & path, const std::string & password = "");
     static KeyPair fromPEMString(const std::string & pem, const std::string & password = "");
+    static KeyPair fromPEMString(const std::string_view & pem, const std::string & password = "");
     static KeyPair fromBIO(BIO_ptr bio, const std::string & password = "");
     static KeyPair generateRSA(uint32_t bits = 2048, uint32_t exponent = RSA_F4);
 

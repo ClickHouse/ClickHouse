@@ -55,6 +55,12 @@ KeyPair KeyPair::fromFile(const std::string & path, const std::string & password
 
 KeyPair KeyPair::fromPEMString(const std::string & pem, const std::string & password)
 {
+    std::string_view sv{pem};
+    return KeyPair::fromPEMString(sv, password);
+}
+
+KeyPair KeyPair::fromPEMString(const std::string_view & pem, const std::string & password)
+{
     BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), pem.length()), BIO_free);
 
     if (!pem_bio)
