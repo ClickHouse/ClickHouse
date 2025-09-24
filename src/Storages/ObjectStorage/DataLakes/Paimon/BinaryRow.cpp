@@ -14,6 +14,13 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+}
 
 namespace Paimon
 {

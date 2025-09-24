@@ -36,6 +36,10 @@
 namespace DB
 {
 using namespace Paimon;
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,

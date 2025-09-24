@@ -75,8 +75,6 @@ public:
 String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
 
-
-
 template <typename T>
 void getValueFromJSON(T & t, const Poco::JSON::Object::Ptr & json, const String & key)
 {

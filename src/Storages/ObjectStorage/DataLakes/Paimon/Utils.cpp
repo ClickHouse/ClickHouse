@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int BAD_ARGUMENTS;
 }
 }
 namespace Paimon
