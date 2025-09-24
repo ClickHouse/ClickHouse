@@ -20,6 +20,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override;
 

@@ -7,6 +7,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Common/JSONBuilder.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -35,10 +37,10 @@ LazilyReadStep::LazilyReadStep(
 
 void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ColumnLazyTransform>(header, std::move(lazy_column_reader));
-    });
+                                { return std::make_shared<ColumnLazyTransform>(header, std::move(lazy_column_reader), updater); });
 }
 
 void LazilyReadStep::describeActions(FormatSettings & settings) const

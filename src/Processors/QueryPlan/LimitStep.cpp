@@ -7,6 +7,8 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -40,8 +42,9 @@ LimitStep::LimitStep(
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
+        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description, updater);
 
     pipeline.addTransform(std::move(transform));
 }

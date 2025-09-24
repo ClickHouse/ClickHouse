@@ -18,10 +18,10 @@ Block ColumnLazyTransform::transformHeader(Block header)
     return header;
 }
 
-ColumnLazyTransform::ColumnLazyTransform(
-    SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_)
+ColumnLazyTransform::ColumnLazyTransform(SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, UpdaterPtr updater_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_)), true)
     , lazy_column_reader(std::move(lazy_column_reader_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -51,5 +51,8 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     }
 
     chunk.setColumns(block.getColumns(), rows_size);
+
+    if (updater)
+        (*updater)(chunk.bytes());
 }
 }
