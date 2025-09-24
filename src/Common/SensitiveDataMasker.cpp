@@ -14,7 +14,9 @@
 #include <Common/ProfileEvents.h>
 
 
-#include <iostream>
+#ifndef NDEBUG
+#    include <iostream>
+#endif
 
 
 namespace ProfileEvents
