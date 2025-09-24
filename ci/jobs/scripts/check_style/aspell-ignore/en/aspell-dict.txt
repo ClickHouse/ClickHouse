@@ -1883,6 +1883,7 @@ MySQLThreads
 MySQLWire
 mytable
 Nagios
+naiveBayesClassifier
 Nambiar
 namedatabases
 namenetworks
@@ -3185,6 +3186,7 @@ TransactionsWaitCSNMode
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
