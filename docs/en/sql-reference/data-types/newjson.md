@@ -670,15 +670,6 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 The `JSON` data type can store only a limited number of paths as separate sub-columns internally. 
 By default, this limit is `1024`, but you can change it in the type declaration using parameter `max_dynamic_paths`.
 
-:::tip Finding the number of dynamic paths used
-To find the number of dynamic paths in use for a JSON column, you can write:
-
-```
-SELECT length(distinctJSONPaths(json)) FROM test_json;
-```
-
-:::
-
 When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure. 
 It's still possible to read such paths as sub-columns, 
 but it might be less efficient ([see section about shared data](#shared-data-structure)). 
@@ -783,6 +774,8 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
+
+See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
 
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
