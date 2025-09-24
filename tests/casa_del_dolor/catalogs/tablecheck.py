@@ -9,6 +9,8 @@ from pyspark.sql.types import (
     ArrayType,
     MapType,
     TimestampType,
+    FloatType,
+    DoubleType,
 )
 
 from .laketables import SparkTable
@@ -28,6 +30,8 @@ class SparkAndClickHouseCheck:
         if isinstance(
             dtype,
             (
+                FloatType,
+                DoubleType,
                 MapType,
                 StructType,
                 StringType,
