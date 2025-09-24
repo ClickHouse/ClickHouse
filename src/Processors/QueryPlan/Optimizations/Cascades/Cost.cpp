@@ -139,7 +139,7 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
     statistics.column_statistics.insert(left_statistics.column_statistics.begin(), left_statistics.column_statistics.end());
     statistics.column_statistics.insert(right_statistics.column_statistics.begin(), right_statistics.column_statistics.end());
 
-    double join_selectivity = 1.0;
+    Float64 join_selectivity = 1.0;
     for (const auto & predicate_expression : join_step.getJoinOperator().expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
@@ -167,22 +167,9 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
             min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
         }
 
-        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) base on assumption that distinct values have equal probabilities
+        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities
         UInt64 max_number_of_distinct_values = std::max(left_number_of_distinct_values, right_number_of_distinct_values);
         Float64 predicate_selectivity = 1.0 / max_number_of_distinct_values;
-
-        /// If a column is the unique key in the table one one side of the join then the table on the other side
-        /// is just filtered in proportion of NDV_key/NDV_other
-        if (left_column_statistics != left_statistics.column_statistics.end() && left_number_of_distinct_values >= left_statistics.estimated_row_count)
-        {
-            Float64 predicate_selectivity_by_key = Float64(left_number_of_distinct_values) / right_number_of_distinct_values;
-            predicate_selectivity = std::min(predicate_selectivity, predicate_selectivity_by_key);
-        }
-        if (right_column_statistics != right_statistics.column_statistics.end() && right_number_of_distinct_values >= right_statistics.estimated_row_count)
-        {
-            Float64 predicate_selectivity_by_key = Float64(right_number_of_distinct_values) / left_number_of_distinct_values;
-            predicate_selectivity = std::min(predicate_selectivity, predicate_selectivity_by_key);
-        }
 
         /// NDV for join predicate columns can decrease if the other column has smaller NDV
         statistics.column_statistics[left_column].number_of_distinct_values = min_number_of_distinct_values;
@@ -195,7 +182,13 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
         join_selectivity *= predicate_selectivity;
     }
 
-    statistics.estimated_row_count = Float64(left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity);
+    statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
+
+    if (statistics.estimated_row_count < 0.01)
+    {
+        LOG_TEST(log, "Possibly incorrect estimation result: {}\nleft stats: {}\nright stats: {}\njoin_selectivity: {}",
+            statistics.dump(), left_statistics.dump(), right_statistics.dump(), join_selectivity);
+    }
 
     return statistics;
 }
