@@ -154,10 +154,10 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False
                     )
-                    spark_elements.append(f"_{i}: {next_tp}")
+                    spark_elements.append(f"_{i + 1}: {next_tp}")
                     struct_fields.append(
                         StructField(
-                            name=f"_{i}", dataType=next_spark, nullable=next_null
+                            name=f"_{i + 1}", dataType=next_spark, nullable=next_null
                         )
                     )
 
