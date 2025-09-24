@@ -814,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
