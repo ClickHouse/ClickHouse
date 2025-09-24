@@ -13,7 +13,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 
-
 #ifndef NDEBUG
 #    include <iostream>
 #endif
