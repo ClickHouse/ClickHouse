@@ -1474,7 +1474,7 @@ try
         global_context->setConfig(loaded_config.configuration);
     }
 
-    Vault::instance().load(config(), "vault");
+    Vault::instance().load(config(), "vault", global_context);
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
@@ -1936,7 +1936,7 @@ try
             extra_paths.emplace_back(key_path);
     }
 
-    Vault::instance().load(config(), "vault");
+    Vault::instance().load(config(), "vault", global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,

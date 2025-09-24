@@ -24,9 +24,11 @@ Vault & Vault::instance()
     return ret;
 }
 
-void Vault::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void Vault::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context_)
 {
     reset();
+
+    context = context_;
 
     url = config.getString(config_prefix + ".url", "");
 
@@ -54,8 +56,7 @@ String Vault::readSecret(const String & secret, const String & key)
     auto wb = DB::BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
-                  // TODO add context as parameter
-                  // .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                  .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
                   .withSkipNotFound(false)
                   .withHeaders(headers)
                   .create(credentials);
