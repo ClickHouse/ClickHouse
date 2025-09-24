@@ -7,6 +7,8 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Exact and approximate vector search
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
@@ -62,7 +64,7 @@ returns
 ```
 
 ## Approximate Vector Search: Quantization With `QBit` {#approximate-nearest-neighbor-search-qbit}
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 <ExperimentalBadge/>
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
