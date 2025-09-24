@@ -143,6 +143,8 @@ protected:
         ContextMutablePtr new_context = Context::createCopy(context);
         new_context->setSetting("use_skip_indexes_on_data_read", false);
 
+        /// TODO: we may also want to support query condition cache here as well
+
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             parts_ranges,
             metadata_snapshot,
