@@ -62,7 +62,6 @@ returns
 ```
 
 ## Approximate Vector Search: Quantization With `QBit` {#approximate-nearest-neighbor-search-qbit}
-import BetaBadge from '@theme/badges/BetaBadge';
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 <ExperimentalBadge/>
 
