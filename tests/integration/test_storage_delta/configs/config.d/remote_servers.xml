@@ -1,4 +1,5 @@
 <clickhouse>
+    <s3_retry_attempts>0</s3_retry_attempts>
     <text_log>
         <database>system</database>
         <table>text_log</table>
