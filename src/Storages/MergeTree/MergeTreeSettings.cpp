@@ -492,6 +492,10 @@ namespace ErrorCodes
     When enabled, merges build and store skip indices for new parts.
     Otherwise they can be created/stored by explicit MATERIALIZE INDEX
     )", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_merge, "", R"(
+    Excludes comma delimited list of specified skip indexes from being built and stored during merges.
+    TODO
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
