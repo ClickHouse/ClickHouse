@@ -10,6 +10,7 @@ from pyspark.sql.types import (
     ArrayType,
     MapType,
     TimestampType,
+    DateType,
     FloatType,
     DoubleType,
 )
@@ -40,6 +41,7 @@ class SparkAndClickHouseCheck:
                 CharType,
                 VarcharType,
                 TimestampType,
+                DateType
             ),
         ):
             # Map type is not comparable in Spark, Struct is complicated
