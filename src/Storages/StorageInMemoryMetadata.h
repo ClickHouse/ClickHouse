@@ -56,7 +56,6 @@ struct StorageInMemoryMetadata
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
 
-
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
     std::optional<String> definer;

@@ -131,12 +131,9 @@ namespace
 {
 Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(StorageMetadataPtr storage_metadata)
 {
-    if (!storage_metadata)
+    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
         return nullptr;
-    if (!storage_metadata->datalake_table_state.has_value())
-        return nullptr;
-    if (!std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()))
-        return nullptr;
+    chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 }
