@@ -1070,13 +1070,13 @@ def test_config_based_workloads_and_resources():
         node.query("DROP RESOURCE config_io_read")
         assert False, "Should not be able to drop config-defined resource"
     except Exception as ex:
-        assert "defined in server configuration" in str(ex)
+        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in config" in str(ex)
 
     try:
         node.query("DROP WORKLOAD production")
         assert False, "Should not be able to drop config-defined workload"
     except Exception as ex:
-        assert "defined in server configuration" in str(ex)
+        assert "It is not allowed to remove workload entity 'production' that is stored in config" in str(ex)
 
     # But SQL entities can be dropped
     node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
