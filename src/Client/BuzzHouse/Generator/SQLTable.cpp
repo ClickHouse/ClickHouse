@@ -1066,7 +1066,7 @@ void StatementGenerator::generateEngineDetails(
     else if (te->has_engine() && b.isFileEngine())
     {
         te->add_params()->set_in_out(b.file_format.value());
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
         if (b.file_comp.has_value())
         {
             te->add_params()->set_svalue(b.file_comp.value());
@@ -1230,7 +1230,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
     {
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
@@ -1263,7 +1263,7 @@ void StatementGenerator::generateEngineDetails(
         /// Set arrow flight params
         b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
         te->add_params()->set_svalue(b.host_params.value());
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
     }
 
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
@@ -1444,7 +1444,7 @@ void StatementGenerator::addTableColumnInternal(
             generateTableExpression(rg, false, def_value->mutable_expr());
         }
     }
-    if (t.isMergeTreeFamily())
+    if (t.isMergeTreeFamily() || rg.nextLargeNumber() < 4)
     {
         const auto & csettings = allColumnSettings.at(t.teng);
 
@@ -2193,7 +2193,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (!next.is_deterministic && next.isMergeTreeFamily() && rg.nextBool())
+    else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());

@@ -4,6 +4,7 @@ slug: /engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: 'StripeLog'
 title: 'StripeLog'
+doc_type: 'reference'
 ---
 
 # StripeLog

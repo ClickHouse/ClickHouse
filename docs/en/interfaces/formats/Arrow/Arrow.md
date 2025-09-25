@@ -6,6 +6,7 @@ keywords: ['Arrow']
 output_format: true
 slug: /interfaces/formats/Arrow
 title: 'Arrow'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

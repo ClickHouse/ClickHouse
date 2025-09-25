@@ -134,28 +134,9 @@
 02477_analyzer_array_join_with_join
 01483_merge_table_join_and_group_by
 03130_analyzer_array_join_prefer_column
-02769_compare_functions_nan
-00848_join_use_nulls_segfault
-02785_left_anti_join_bug
-02276_full_sort_join_unsupported
-01323_redundant_functions_in_order_by
-02911_cte_invalid_query_analysis
-02174_cte_scalar_cache_mv
-02526_merge_join_int_decimal
-01010_partial_merge_join
-00927_asof_join_long
 01147_partial_merge_full_join
-02933_paste_join
-01495_subqueries_in_with_statement
-03144_asof_join_ddb_doubles
-03200_subcolumns_join_use_nulls
-01720_join_implicit_cast.gen
-00952_input_function
-03246_json_subcolumn_correct_type
-01780_column_sparse_full
-01783_merge_engine_join_key_condition
+01010_partial_merge_join
 02789_filesystem_cache_alignment
-00475_in_join_db_table
 03325_sqlite_join_wrong_answer
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
@@ -173,11 +154,6 @@
     https://github.com/ClickHouse/clickhouse-private/issues/11666
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
-
-    https://github.com/ClickHouse/clickhouse-private/issues/14844
-02367_analyzer_table_alias_columns
-02989_join_using_parent_scope
-02514_if_with_lazy_low_cardinality
 
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
@@ -367,6 +343,7 @@
 03273_primary_index_cache_low_cardinality
     profile events
 03279_join_choose_build_table
+03279_join_choose_build_table_statistics
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
 03165_string_functions_with_token_text_indexes
@@ -504,6 +481,8 @@
 01480_binary_operator_monotonicity
     max rows: 10.00, current rows: 100.00
 01801_approx_total_rows_mergetree_reverse
+    max rows: 1.00, current rows: 2.00
+03628_named_tuple_element_in_order_by_key
 
 00955_test_final_mark_use
 01624_soft_constraints

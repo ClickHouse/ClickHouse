@@ -98,6 +98,7 @@ class ClickHouseProc:
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
+        self.log_export_host, self.log_export_password = None, None
 
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
@@ -303,22 +304,45 @@ profiles:
             res = res and Shell.check(command, verbose=True)
         return res
 
+    def install_vector_search_config(self):
+        # Large values are set, ClickHouse will auto downsize
+        c1 = """
+<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
+<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
+<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
+<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
+</clickhouse>
+        """
+        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+
+        with open(f"{temp_dir}/config.xml", "a") as config_file:
+            config_file.write(c1)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        self.log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
+        self.log_export_host, self.log_export_password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
@@ -333,7 +357,11 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
-        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+        if self.log_export_host:
+            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
+            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
+            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
@@ -382,14 +410,21 @@ profiles:
             strict=True,
         )
 
-        replicas=3 if self.is_db_replicated else 1
-        tsan_memory_limit_mb=Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        replicas = 3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb = (
+            Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        )
 
         env = os.environ.copy()
-        env["TSAN_OPTIONS"] = " ".join(filter(lambda x: x is not None, [
-            env.get("TSAN_OPTIONS", None),
-            f"memory_limit_mb={tsan_memory_limit_mb}",
-        ]))
+        env["TSAN_OPTIONS"] = " ".join(
+            filter(
+                lambda x: x is not None,
+                [
+                    env.get("TSAN_OPTIONS", None),
+                    f"memory_limit_mb={tsan_memory_limit_mb}",
+                ],
+            )
+        )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
 
@@ -730,11 +765,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for pid, profile in latest_profiles.items():
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                verbose=True
+                verbose=True,
             )
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                verbose=True
+                verbose=True,
             )
 
         Shell.check(

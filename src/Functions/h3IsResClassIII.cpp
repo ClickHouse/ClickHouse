@@ -87,7 +87,34 @@ public:
 
 REGISTER_FUNCTION(H3IsResClassIII)
 {
-    factory.registerFunction<FunctionH3IsResClassIII>();
+    FunctionDocumentation::Description description = R"(
+Returns whether an [H3](#h3-index) index has a resolution with Class III orientation.
+
+Class III resolutions have an odd-numbered resolution, while Class II resolutions are even-numbered.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3IsResClassIII(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the index has a Class III resolution (odd-numbered), `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check if H3 index has Class III resolution",
+            "SELECT h3IsResClassIII(617420388352917503) AS res",
+            R"(
+┌─res─┐
+│   1 │
+└─────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3IsResClassIII>(documentation);
 }
 
 }
