@@ -544,6 +544,11 @@
 /* Define to 1 if your compiler knows the visibility("hidden") attribute. */
 /* #undef HAVE_VISIBILITY_ATTRIBUTE */
 
+/* Define to 1 if you have the <xlocale.h> header file. */
+#if OS_DARWIN
+#define HAVE_XLOCALE_H 1
+#endif
+
 /* Define to 1 if you have the `vsnprintf' function. */
 #define HAVE_VSNPRINTF 1
 
