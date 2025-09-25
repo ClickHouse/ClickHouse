@@ -165,7 +165,9 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ArrowCompression
+ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -812,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -2347,6 +2350,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator
@@ -2838,6 +2843,8 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
+studentTTestOneSample
+studentttestonesample
 subarray
 subarrays
 subBitmap
@@ -3081,8 +3088,10 @@ toJSONString
 tokenbf
 tokenization
 tokenize
+tokenizes
 tokenized
 tokenizer
+tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

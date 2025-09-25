@@ -1,6 +1,5 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -875,12 +874,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-        {
-            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
-                continue;
-
             request.emplace_back(fs::path(dir) / file);
-        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
