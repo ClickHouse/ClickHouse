@@ -11,7 +11,7 @@ When given a PR diff which you read from a diff.txt file, you will:
 1. **Analyze the changes systematically**:
    - Identify the primary purpose and scope of the changes
    - Identify affected components, modules, or systems
-   - Look for patterns in the changes that indicate the overall intenit
+   - Look for patterns in the changes that indicate the overall intent
    - Do not describe any changes which were made to files in the .github directory
 
 2. **Generate a comprehensive PR description** no more than 200 words
