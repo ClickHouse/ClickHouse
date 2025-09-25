@@ -67,6 +67,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
@@ -128,6 +129,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
+    use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
