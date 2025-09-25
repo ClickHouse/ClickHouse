@@ -217,7 +217,7 @@ bool TemporaryDataReadBuffer::nextImpl()
     return true;
 }
 
-TemporaryDataBuffer::TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
     , file_holder(parent->file_provider(reserve_size))
@@ -311,6 +311,15 @@ void TemporaryDataBuffer::updateAllocAndCheck()
     stat.uncompressed_size = new_uncompressed_size;
 }
 
+
+void TemporaryDataBuffer::freeAlloc()
+{
+    if (parent)
+        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+    stat.compressed_size = 0;
+    stat.uncompressed_size = 0;
+}
+
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
@@ -332,7 +341,7 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
     , header(header_)
 {}
@@ -357,5 +366,6 @@ TemporaryDataBuffer::~TemporaryDataBuffer()
 {
     if (!finalized)
         cancel();
+    freeAlloc();
 }
 }

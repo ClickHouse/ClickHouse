@@ -623,7 +623,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(right_sample_block, tmp_data.get());
+            tmp_stream.emplace(right_sample_block, tmp_data);
 
         chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save.getSourceBlock());
