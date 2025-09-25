@@ -6909,13 +6909,13 @@ Enable jemalloc profiler.
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc profile samples in trace log.
     )", 0) \
-    DECLARE(Int32, os_threads_nice_value_query, 0, R"(
+    DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
-    )", 0) \
+    )", 0, os_thread_priority) \
     DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
 Linux nice value for materialized view threads. Lower values mean higher CPU priority.
 
@@ -7177,7 +7177,6 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
-    MAKE_OBSOLETE(M, Int64, os_thread_priority, 0) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
