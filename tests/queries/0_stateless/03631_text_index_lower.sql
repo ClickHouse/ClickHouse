@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS test_text_index_lower;
 
+SET enable_analyzer = 1;
 SET max_parallel_replicas = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET allow_experimental_full_text_index = 1;
