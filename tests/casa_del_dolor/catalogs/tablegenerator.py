@@ -10,7 +10,6 @@ from .laketables import (
     SparkColumn,
 )
 
-from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
@@ -608,13 +607,13 @@ class IcebergTableGenerator(LakeTableGenerator):
         result = spark.sql(
             f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
         ).collect()
-        return [x["snapshot_id"] for x in result]
+        return [r.snapshot_id for r in result]
 
     def get_timestamps(self, spark: SparkSession, table: SparkTable):
         result = spark.sql(
             f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
         ).collect()
-        return [x["made_current_at"] for x in result]
+        return [r.made_current_at for r in result]
 
     def generate_extra_statement(
         self,
@@ -984,15 +983,16 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
         if next_option in (3, 4):
             # Restore
-            dt = DeltaTable.forName(spark, table.get_table_full_path())
-            history_df = dt.history()
+            result = spark.sql(
+                f"DESCRIBE HISTORY {table.get_table_full_path()};"
+            ).collect()
+            snapshots = [r.version for r in result]
+            timestamps = [r.timestamp for r in result]
 
-            versions = [row.version for row in history_df.select("version").collect()]
-            if len(versions) > 0 and random.randint(1, 2) == 1:
-                return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(versions)};"
-            timestamps = [
-                row.version for row in history_df.select("timestamps").collect()
-            ]
+            if len(snapshots) > 0 and (
+                len(timestamps) == 0 or random.randint(1, 2) == 1
+            ):
+                return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(snapshots)};"
             if len(timestamps) > 0:
                 return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
             return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"

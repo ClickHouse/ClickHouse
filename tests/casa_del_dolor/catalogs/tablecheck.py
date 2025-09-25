@@ -1,8 +1,6 @@
-from datetime import datetime
-
 import logging
+import traceback
 import random
-from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -73,21 +71,15 @@ class SparkAndClickHouseCheck:
 
                 if table.lake_format == LakeFormat.Iceberg:
                     result = spark.sql(
-                        f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
+                        f"SELECT snapshot_id, committed_at FROM {table.get_table_full_path()}.snapshots;"
                     ).collect()
-                    snapshots = [x["snapshot_id"] for x in result]
-                    result = spark.sql(
-                        f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
-                    ).collect()
-                    timestamps = [x["made_current_at"] for x in result]
+                    snapshots = [r.snapshot_id for r in result]
+                    timestamps = [r.committed_at for r in result]
                 else:
-                    dt = DeltaTable.forName(spark, table.get_table_full_path())
-                    history_df = dt.history()
-
-                    snapshots = [
-                        row.version for row in history_df.select("version").collect()
-                    ]
-                    # timestamps = [row.version for row in history_df.select("timestamps").collect()]
+                    result = spark.sql(
+                        f"DESCRIBE HISTORY {table.get_table_full_path()};"
+                    ).collect()
+                    snapshots = [r.version for r in result]
 
                 if len(snapshots) > 0 and (
                     len(timestamps) == 0 or random.randint(1, 2) == 1
@@ -98,10 +90,7 @@ class SparkAndClickHouseCheck:
                     extra_predicate = f" on snapshot {next_snapshot}"
                 elif len(timestamps) > 0:
                     next_time = random.choice(timestamps)
-                    dt = datetime.strptime(next_time, "%Y-%m-%d %H:%M:%S")
-                    clickhouse_predicate = (
-                        f" SETTINGS iceberg_timestamp_ms = {int(dt.timestamp() * 1000)}"
-                    )
+                    clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {int(next_time.timestamp() * 1000)}"
                     spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
                     extra_predicate = f" on timestamp {next_time}"
 
@@ -162,7 +151,7 @@ class SparkAndClickHouseCheck:
             # ClickHouse arrays as strings don't have a space after the comma, add it
             clickhouse_strings = {
                 col.column_name: (
-                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), c0), ', ') || ']'"
+                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']'"
                     if isinstance(col.spark_type, (ArrayType))
                     else f"toString({col.column_name})"
                 )
@@ -193,5 +182,6 @@ class SparkAndClickHouseCheck:
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
+            traceback.print_exc()
             self.logger.error(str(e))
         return True
