@@ -20,14 +20,14 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
@@ -38,6 +38,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/TransactionID.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -1760,12 +1761,13 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
     auto creation_tid = version->getCreationTID();
+    auto removal_csn = version->getRemovalCSN();
     assert(
         !storage.data_parts_loading_finished || !creation_tid.isEmpty()
         || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !creation_tid.isPrehistoric();
-    bool removed_by_transaction = (version->getRemovalCSN() != 0)
-        || (version->isRemovalTIDLocked() && version->getRemovalTIDLock() != Tx::PrehistoricTID.getHash());
+    bool removed_by_transaction = (removal_csn != Tx::PrehistoricCSN) && ((removal_csn != 0)
+        || (version->isRemovalTIDLocked() && version->getRemovalTIDLock() != Tx::PrehistoricTID.getHash()));
     return created_by_transaction || removed_by_transaction;
 }
 
