@@ -15,7 +15,10 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, materialize_skip_indexes_on_merge = 1;
 
 -- negative test case
-ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge ='!@#$^#$&#$$%$,,.,3.45,45.';  -- { serverError CANNOT_PARSE_TEXT }
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge ='!@#$^#$&#$$%$,,.,3.45,45.';
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100);
+OPTIMIZE TABLE tab FINAL; -- { serverError CANNOT_PARSE_TEXT }
+TRUNCATE TABLE tab;
 
 CREATE VIEW explain_indexes
 AS SELECT trimLeft(explain) AS explain
@@ -47,10 +50,10 @@ SELECT '';
 SELECT 'After START MERGES and OPTIMIZE FINAL only idx_b should participate in filtering as idx_a is excluded';
 SELECT * FROM explain_indexes;
 
-ALTER TABLE tab MATERIALIZE INDEX `id,x_b`;
+ALTER TABLE tab MATERIALIZE INDEX idx_a;
 
 SELECT '';
-SELECT 'After explicit MATERIALIZE INDEX id,x_b should also be materialized';
+SELECT 'After explicit MATERIALIZE INDEX idx_a should also be materialized';
 SELECT * FROM explain_indexes;
 
 TRUNCATE TABLE tab;

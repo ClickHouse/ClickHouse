@@ -6,52 +6,53 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/Settings.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Disks/SingleDiskVolume.h>
+#include <IO/ReadBufferFromEmptyFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/CoalescingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtractColumnsStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeProjectionPartsTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <DataTypes/ObjectUtils.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <IO/ReadBufferFromEmptyFile.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Merges/CoalescingSortedTransform.h>
-#include <Processors/Merges/CollapsingSortedTransform.h>
-#include <Processors/Merges/SummingSortedTransform.h>
-#include <Processors/Merges/ReplacingSortedTransform.h>
-#include <Processors/Merges/GraphiteRollupSortedTransform.h>
-#include <Processors/Merges/AggregatingSortedTransform.h>
-#include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/TemporaryFiles.h>
-#include <Processors/QueryPlan/ExtractColumnsStep.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/Context.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -509,13 +510,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     prepareProjectionsToMergeAndRebuild();
 
+    auto merge_tree_settings = global_ctx->data->getSettings();
+
     /// Get list of skip indexes to exclude from merge
-    std::unordered_set<String> exclude_index_names
+    std::unordered_set<String> exclude_index_names;
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
     {
-        auto exlude_index_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
-        if (!exclude_index_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+        auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+        if (!exclude_indexes_string.empty())
+            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_ctx->context->getSettingsRef());
     }
 
     extractMergingAndGatheringColumns(exclude_index_names);
@@ -563,7 +566,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
-    auto merge_tree_settings = global_ctx->data->getSettings();
 
     if (!patch_parts.empty())
     {
@@ -640,7 +642,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             else
             {
                 global_ctx->merging_skip_indexes.clear();
-                const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
+                const auto & index_descriptions = global_ctx->metadata_snapshot->getSecondaryIndices();
                 for (const auto & index : index_descriptions)
                     if (!exclude_index_names.contains(index.name))
                         global_ctx->merging_skip_indexes.push_back(index);
