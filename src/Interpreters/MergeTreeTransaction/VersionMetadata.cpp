@@ -505,9 +505,7 @@ void VersionMetadata::loadAndVerifyMetadata(LoggerPtr logger)
 
 bool VersionMetadata::assertHasValidMetadata() const
 {
-    auto current_removal_tid_lock = getRemovalTIDLock();
     String content;
-
     try
     {
         auto persisted_info = readStoredMetadata(content);
@@ -540,13 +538,6 @@ bool VersionMetadata::assertHasValidMetadata() const
                 removal_csn.load(),
                 persisted_info.removal_csn);
 
-        if (persisted_info.removal_csn != 0 && current_removal_tid_lock == 0)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid removal_tid_lock, removal_csn {}, removal_tid_lock {}",
-                persisted_info.removal_csn,
-                current_removal_tid_lock);
-
         if (persisted_info.removal_csn != 0 && persisted_info.removal_tid.isEmpty())
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
@@ -563,12 +554,7 @@ bool VersionMetadata::assertHasValidMetadata() const
         writeToBuffer(expected);
         tryLogCurrentException(
             merge_tree_data_part->storage.log,
-            fmt::format(
-                "Metadata content {}\nexpected:\n{}\nlock: {}\nname: {}",
-                content,
-                expected.str(),
-                current_removal_tid_lock,
-                merge_tree_data_part->name));
+            fmt::format("Object {}, metadata content {}\nexpected:\n{}", getObjectName(), content, expected.str()));
         return false;
     }
 }
