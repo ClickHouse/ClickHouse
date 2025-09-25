@@ -11,6 +11,7 @@ from .laketables import (
     get_timestamp_for_table,
 )
 
+from pyspark.sql import SparkSession
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
 
@@ -224,6 +225,7 @@ class LakeTableGenerator:
     @abstractmethod
     def generate_extra_statement(
         self,
+        spark: SparkSession,
         table: SparkTable,
     ) -> str:
         return ""
@@ -602,24 +604,28 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
+    def get_snapshots(self, spark: SparkSession, table: SparkTable):
+        result = spark.sql(
+            f"SELECT snapshot_id FROM {table.get_namespace_path()}.snapshots;"
+        ).collect()
+        return [x["snapshot_id"] for x in result]
+
     def generate_extra_statement(
         self,
+        spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 9)
-        restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
+        next_option = random.randint(1, 13)
 
         if next_option == 1:
-            return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}')"
-        if next_option == 2:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{restore_to}'"
+                res += f", older_than => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}'"
             res += ")"
             return res
-        if next_option == 3:
+        if next_option == 2:
             next_strategy = random.choice(["sort", "binpack"])
 
             res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
@@ -634,33 +640,49 @@ class IcebergTableGenerator(LakeTableGenerator):
                 res += "'"
             res += ")"
             return res
-        if next_option == 4:
+        if next_option == 3:
             res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", use_caching => {random.choice(["true", "false"])}"
             res += ")"
             return res
-        if next_option == 5:
+        if next_option == 4:
             return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
-        if next_option == 6:
+        if next_option == 5:
             res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{restore_to}'"
+                res += f", older_than => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}'"
             if random.randint(1, 2) == 1:
                 res += f", stream_results => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
             res += ")"
             return res
+        if next_option == 6:
+            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
         if next_option == 7:
-            return f"CALL `{table.catalog_name}`.system.compute_table_stats('{table.get_namespace_path()}')"
+            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_table_full_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
         if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.compute_partition_stats('{table.get_table_full_path()}')"
-        if next_option == 9:
             return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
-        # if next_option == 10:
-        #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
-        return ""
+        snapshots = self.get_snapshots(spark, table)
+        if len(snapshots) > 0 and next_option in (9, 10, 11):
+            calls = [
+                "rollback_to_snapshot",
+                "set_current_snapshot",
+                "cherrypick_snapshot",
+            ]
+            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_table_full_path()}', snapshot_id => {random.choice(snapshots)})"
+        return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}')"
 
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
@@ -938,6 +960,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def generate_extra_statement(
         self,
+        spark: SparkSession,
         table: SparkTable,
     ) -> str:
         next_option = random.randint(1, 3)
@@ -947,8 +970,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Restore
-            restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
-            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}';"
         if next_option == 3:
             # Optimize
             return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
