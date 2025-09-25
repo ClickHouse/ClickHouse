@@ -52,7 +52,6 @@ from helpers.s3_tools import (
 from helpers.test_tools import TSV
 
 
-pytestmark = pytest.mark.skip(reason="Flaky tests")
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
 cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
@@ -1246,6 +1245,7 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
     )
 
 
+@pytest.mark.skip(reason="Flaky tests")
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
