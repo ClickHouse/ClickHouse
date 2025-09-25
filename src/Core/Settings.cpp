@@ -6927,7 +6927,7 @@ Use roaring bitmap for iceberg positional deletes.
 If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
-Mostly useful for testing (missing ORDER BY is a source of non-deterministic query results).
+Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

@@ -20,17 +20,17 @@ namespace Setting
 }
 
 /// Utility: append ORDER BY rand() to an order-by list
-void addRandomOrderBy(ListNode & order_by_list, ContextPtr context)
+void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 {
-    /// Build rand() with empty arg list
-    auto rand_fn = std::make_shared<FunctionNode>("rand");
-    auto & ff = FunctionFactory::instance();
-    auto resolver = ff.get("rand", context);
-    rand_fn->resolveAsFunction(resolver);
+    /// Build rand() node
+    auto & function_factory = FunctionFactory::instance();
+    auto resolver = function_factory.get("rand", context);
+    auto rand_function_node = std::make_shared<FunctionNode>("rand");
+    rand_function_node->resolveAsFunction(resolver);
 
-    /// Create and add one SortNode
-    auto sort = std::make_shared<SortNode>(rand_fn);
-    order_by_list.getNodes().push_back(std::move(sort));
+    /// Create and add ORDER BY rand() node
+    auto sort_node = std::make_shared<SortNode>(rand_function_node);
+    order_by_list_node.getNodes().push_back(std::move(sort_node));
 }
 
 /// If inject_random_order_for_select_without_order_by = 1, then inject `ORDER BY rand()` into top level query.
@@ -41,23 +41,23 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
     if (!settings[Setting::inject_random_order_for_select_without_order_by])
         return;
 
-    /// Case 1: top-level SELECT
-    if (auto * q = root->as<QueryNode>())
+    /// Case 1: Top-level SELECT
+    if (auto * query_node = root->as<QueryNode>())
     {
-        if (!q->hasOrderBy())
-            addRandomOrderBy(q->getOrderBy(), context);
+        if (!query_node->hasOrderBy())
+            addRandomOrderBy(query_node->getOrderBy(), context);
         return;
     }
 
-    /// Case 2: top-level UNION - inject into each branch
-    if (auto * u = root->as<UnionNode>())
+    /// Case 2: Top-level UNION - inject `ORDER BY rand()` into each branch
+    if (auto * union_node = root->as<UnionNode>())
     {
-        auto & branches = u->getQueries();
-        for (auto & branch_ptr : branches.getNodes())
+        auto & union_branches = union_node->getQueries();
+        for (auto & unio_branch_node : union_branches.getNodes())
         {
-            if (auto * branch_q = branch_ptr->as<QueryNode>())
-                if (!branch_q->hasOrderBy())
-                    addRandomOrderBy(branch_q->getOrderBy(), context);
+            if (auto * branch_node = unio_branch_node->as<QueryNode>())
+                if (!branch_node->hasOrderBy())
+                    addRandomOrderBy(branch_node->getOrderBy(), context);
         }
         return;
     }
