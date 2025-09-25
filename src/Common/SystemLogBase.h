@@ -227,7 +227,6 @@ public:
     static consteval size_t getDefaultReservedSize() { return 8192; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7500; }
     static consteval bool shouldNotifyFlushOnCrash() { return false; }
-    static consteval bool shouldWaitFlushOnCrash() { return false; }
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:

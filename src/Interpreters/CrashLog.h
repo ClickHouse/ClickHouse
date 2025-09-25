@@ -50,7 +50,6 @@ public:
     static consteval size_t getDefaultReservedSize() { return 1024; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 1000; }
     static consteval size_t shouldNotifyFlushOnCrash() { return true; }
-    static consteval size_t shouldWaitFlushOnCrash() { return true; }
 };
 
 }
