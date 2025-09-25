@@ -22,6 +22,12 @@ namespace DimensionalMetrics
         {"error_name"}
     );
 
+    MetricFamily & MergeTreeParts = Factory::instance().registerMetric(
+        "merge_tree_parts",
+        "Number of merge tree data parts, labelled by state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part_type (e.g. Wide, Compact, Unknown) and is_projection_part.",
+        {"part_state", "part_type", "part_is_projection"}
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);
@@ -85,6 +91,20 @@ namespace DimensionalMetrics
     const String & MetricFamily::getName() const { return name; }
     const String & MetricFamily::getDocumentation() const { return documentation; }
 
+    void add(MetricFamily & metric, LabelValues labels, Value amount)
+    {
+        metric.withLabels(std::move(labels)).increment(amount);
+    }
+
+    void sub(MetricFamily & metric, LabelValues labels, Value amount)
+    {
+        metric.withLabels(std::move(labels)).decrement(amount);
+    }
+
+    void set(MetricFamily & metric, LabelValues labels, Value value)
+    {
+        metric.withLabels(std::move(labels)).set(value);
+    }
 
     Factory & Factory::instance()
     {

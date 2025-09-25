@@ -214,11 +214,13 @@ void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatenc
 
     const Histogram::LabelValues first_byte_label_values = {method, attempt_label};
 
-    Histogram::AzureFirstByte.withLabels(first_byte_label_values).observe(latency);
+    Histogram::observe(
+        Histogram::AzureFirstByte, first_byte_label_values, latency);
 
     if (for_disk_azure)
     {
-        Histogram::DiskAzureFirstByte.withLabels(first_byte_label_values).observe(latency);
+        Histogram::observe(
+            Histogram::DiskAzureFirstByte, first_byte_label_values, latency);
     }
 }
 

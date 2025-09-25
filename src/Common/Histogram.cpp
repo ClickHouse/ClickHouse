@@ -140,6 +140,10 @@ namespace Histogram
     const String & MetricFamily::getName() const { return name; }
     const String & MetricFamily::getDocumentation() const { return documentation; }
 
+    void observe(MetricFamily & metric, LabelValues labels, Value value)
+    {
+        metric.withLabels(std::move(labels)).observe(value);
+    }
 
     Factory & Factory::instance()
     {

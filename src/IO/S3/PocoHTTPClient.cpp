@@ -357,11 +357,13 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
 
     const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
 
-    Histogram::S3FirstByte.withLabels(first_byte_label_values).observe(latency);
+    Histogram::observe(
+        Histogram::S3FirstByte, first_byte_label_values, latency);
 
     if (for_disk_s3)
     {
-        Histogram::DiskS3FirstByte.withLabels(first_byte_label_values).observe(latency);
+        Histogram::observe(
+            Histogram::DiskS3FirstByte, first_byte_label_values, latency);
     }
 }
 

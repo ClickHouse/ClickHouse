@@ -73,6 +73,10 @@ namespace DimensionalMetrics
     using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
     using MetricFamilies = std::vector<MetricFamilyPtr>;
 
+    void add(MetricFamily & metric, LabelValues labels, Value amount = 1.0);
+    void sub(MetricFamily & metric, LabelValues labels, Value amount = 1.0);
+    void set(MetricFamily & metric, LabelValues labels, Value value);
+
     class Factory
     {
     public:

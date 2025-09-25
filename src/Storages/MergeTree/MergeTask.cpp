@@ -1658,7 +1658,9 @@ try
 }
 catch (...)
 {
-    DimensionalMetrics::MergeFailures.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).increment();
+    DimensionalMetrics::add(
+        DimensionalMetrics::MergeFailures,
+        {String(ErrorCodes::getName(getCurrentExceptionCode()))});
     throw;
 }
 

@@ -77,6 +77,8 @@ namespace Histogram
     using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
     using MetricFamilies = std::vector<MetricFamilyPtr>;
 
+    void observe(MetricFamily & metric, LabelValues labels, Value value);
+
     class Factory
     {
     public:

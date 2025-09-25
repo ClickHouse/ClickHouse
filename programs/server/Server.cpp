@@ -946,7 +946,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        DimensionalMetrics::StartupScriptsFailureReason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
+        DimensionalMetrics::set(
+            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
+
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
