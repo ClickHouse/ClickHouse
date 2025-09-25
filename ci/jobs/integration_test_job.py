@@ -16,7 +16,7 @@ OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() / (1024**3), 1)
 MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 15
+MAX_MEM_PER_WORKER = 7
 MAX_WORKERS = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
 
@@ -66,7 +66,9 @@ def main():
     is_flaky_check = False
     is_bugfix_validation = False
     build_type = ""
-    workers = max(ncpu // MAX_CPUS_PER_WORKER, 1)
+    is_parallel = False
+    is_sequential = False
+    workers = MAX_WORKERS
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -75,7 +77,7 @@ def main():
     if "bugfix" in info.job_name.lower():
         is_bugfix_validation = True
 
-    batch_num, total_batches = 0, 0
+    batch_num, total_batches = 1, 1
     for to in job_params:
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
@@ -88,6 +90,10 @@ def main():
         elif to == "flaky":
             is_flaky_check = True
             repeat_option = "--count 50 --repeat-scope=function"
+        elif to == "parallel":
+            is_parallel = True
+        elif to == "sequential":
+            is_sequential = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -158,6 +164,13 @@ def main():
             for test_file in changed_test_modules
             if test_file in parallel_test_modules
         ]
+
+    if is_sequential:
+        parallel_test_modules = []
+        assert not is_parallel
+    elif is_parallel:
+        sequential_test_modules = []
+        assert not is_sequential
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -249,11 +262,19 @@ def main():
                 )
 
     if not info.is_local_run:
-        log_files = Shell.get_output(
-            "find ./tests/integration -name '*.log'"
-        ).splitlines()
-        log_files.extend(files)
-        files = [Utils.compress_files_gz(log_files, f"{temp_path}/logs.tar.gz")]
+        failed_suits = []
+        for test_result in test_results:
+            if not test_result.is_ok() and ".py" in test_result.name:
+                failed_suits.append(test_result.name.split("/")[0])
+        failed_suits = list(set(failed_suits))
+        log_files = []
+        for failed_suit in failed_suits:
+            log_files.extend(
+                Shell.get_output(
+                    f"find ./tests/integration/{failed_suit} -name '*.log'"
+                ).splitlines()
+            )
+        files.append(Utils.compress_files_gz(log_files, f"{temp_path}/logs.tar.gz"))
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
 

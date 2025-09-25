@@ -1092,11 +1092,143 @@ class ResultTranslator:
                             duration = entry.get("duration")
                             when = entry.get("when", "")
 
-                            # Convert node_id to more readable test name
-                            # Format: file_path::test_class::test_method[params]
-                            test_name = (
-                                node_id.split("::")[-1] if "::" in node_id else node_id
-                            )
+                            # Build a human-readable traceback string from longrepr
+                            traceback_str = ""
+                            if "longrepr" in entry:
+                                data = entry["longrepr"]
+                                # reprcrash: include file:line and message if present
+                                if (
+                                    data
+                                    and isinstance(data, dict)
+                                    and "reprcrash" in data
+                                ):
+                                    crash = data.get("reprcrash", {})
+                                    path = crash.get("path")
+                                    lineno = crash.get("lineno")
+                                    message = crash.get("message")
+                                    parts = []
+                                    has_rt = isinstance(data.get("reprtraceback"), dict)
+                                    if not has_rt:
+                                        if path is not None and lineno is not None:
+                                            parts.append(f"File: {path}:{lineno}")
+                                        if message:
+                                            parts.append(str(message))
+                                        if parts:
+                                            traceback_str += "\n".join(parts)
+                                # reprtraceback: collect lines
+                                if (
+                                    data
+                                    and isinstance(data, dict)
+                                    and "reprtraceback" in data
+                                ):
+                                    rt = data.get("reprtraceback", {})
+                                    if isinstance(rt, dict) and "reprentries" in rt:
+                                        composed = []
+                                        for re_entry in rt.get("reprentries", []):
+                                            dd = re_entry.get("data", {})
+                                            # include per-frame file location for full stack context
+                                            fileloc = (
+                                                dd.get("reprfileloc", {})
+                                                if isinstance(dd, dict)
+                                                else {}
+                                            )
+                                            fpath = fileloc.get("path")
+                                            flineno = fileloc.get("lineno")
+                                            fmsg = fileloc.get("message")
+                                            header_parts = []
+                                            if (
+                                                fpath is not None
+                                                and flineno is not None
+                                            ):
+                                                header_parts.append(
+                                                    f"File: {fpath}:{flineno}"
+                                                )
+                                            if fmsg:
+                                                header_parts.append(str(fmsg))
+                                            if header_parts:
+                                                composed.append(
+                                                    " - ".join(header_parts)
+                                                )
+                                            if isinstance(dd, dict) and dd.get("lines"):
+                                                composed.extend(dd["lines"])
+                                        if composed:
+                                            if traceback_str:
+                                                traceback_str += "\n"
+                                            traceback_str += "\n".join(composed)
+                                # chain: fallback/additional entries (only if no reprtraceback)
+                                elif (
+                                    data and isinstance(data, dict) and "chain" in data
+                                ):
+                                    try:
+                                        chain = data.get("chain", [])
+                                        for pair in chain:
+                                            # pair typically is [reprtraceback, reprcrash, context]
+                                            if not isinstance(pair, list):
+                                                continue
+                                            if len(pair) >= 1 and isinstance(
+                                                pair[0], dict
+                                            ):
+                                                rt = pair[0]
+                                                if "reprentries" in rt:
+                                                    for re_entry in rt.get(
+                                                        "reprentries", []
+                                                    ):
+                                                        dd = re_entry.get("data", {})
+                                                        fileloc = (
+                                                            dd.get("reprfileloc", {})
+                                                            if isinstance(dd, dict)
+                                                            else {}
+                                                        )
+                                                        fpath = fileloc.get("path")
+                                                        flineno = fileloc.get("lineno")
+                                                        fmsg = fileloc.get("message")
+                                                        header_parts = []
+                                                        if (
+                                                            fpath is not None
+                                                            and flineno is not None
+                                                        ):
+                                                            header_parts.append(
+                                                                f"File: {fpath}:{flineno}"
+                                                            )
+                                                        if fmsg:
+                                                            header_parts.append(
+                                                                str(fmsg)
+                                                            )
+                                                        if header_parts:
+                                                            if traceback_str:
+                                                                traceback_str += "\n"
+                                                            traceback_str += " - ".join(
+                                                                header_parts
+                                                            )
+                                                        if (
+                                                            isinstance(dd, dict)
+                                                            and "lines" in dd
+                                                            and dd["lines"]
+                                                        ):
+                                                            if traceback_str:
+                                                                traceback_str += "\n"
+                                                            traceback_str += "\n".join(
+                                                                dd["lines"]
+                                                            )
+                                            if len(pair) >= 2 and isinstance(
+                                                pair[1], dict
+                                            ):
+                                                crash = pair[1]
+                                                p = crash.get("path")
+                                                ln = crash.get("lineno")
+                                                msg = crash.get("message")
+                                                seg = []
+                                                if p is not None and ln is not None:
+                                                    seg.append(f"File: {p}:{ln}")
+                                                if msg:
+                                                    seg.append(str(msg))
+                                                if seg:
+                                                    if traceback_str:
+                                                        traceback_str += "\n"
+                                                    traceback_str += "\n".join(seg)
+                                    except Exception:
+                                        # Be resilient to unexpected shapes
+                                        pass
 
                             # Map pytest outcome to Result status
                             status = {
@@ -1117,24 +1249,57 @@ class ResultTranslator:
                                     test_failures[node_id] = {}
                                 test_failures[node_id][when] = status
 
+                            # Include captured sections (stdout/stderr) for failures to help debugging
+                            if outcome in ("failed", "error") and entry.get("sections"):
+                                try:
+                                    sec_chunks = []
+                                    for sec in entry.get("sections", []):
+                                        if isinstance(sec, list) and len(sec) == 2:
+                                            title, content = sec
+                                            if content:
+                                                sec_chunks.append(
+                                                    f"===== {title} =====\n{content}"
+                                                )
+                                    if sec_chunks:
+                                        sec_text = "\n".join(sec_chunks)
+                                        if traceback_str:
+                                            traceback_str += "\n" + sec_text
+                                        else:
+                                            traceback_str = sec_text
+                                except Exception:
+                                    pass
+
                             # Create or update test result
                             if node_id not in test_results:
                                 test_result = Result(
-                                    name=node_id, status=status, duration=duration
+                                    name=node_id,
+                                    status=status,
+                                    duration=duration,
+                                    info=traceback_str,
                                 )
                                 test_result.ext["when"] = when
                                 test_results[node_id] = test_result
                             else:
                                 # Always override with a failure, or keep existing failure
-                                existing_status = test_results[node_id].status
-                                if status in (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.ERROR,
+                                if (
+                                    status == Result.StatusExtended.FAIL
+                                    or test_results[node_id].status
+                                    == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
                                     test_results[node_id].duration = duration
+                                # Update info if we now have traceback
+                                if traceback_str:
+                                    if not test_results[node_id].info:
+                                        test_results[node_id].info = traceback_str
+                                    elif (
+                                        traceback_str not in test_results[node_id].info
+                                    ):
+                                        test_results[node_id].info += (
+                                            f"\n[{when}]\n" + traceback_str
+                                        )
                                 # Only update with non-failure if there's no existing failure
-                                elif existing_status not in (
+                                elif test_results[node_id].status not in (
                                     Result.StatusExtended.FAIL,
                                     Result.StatusExtended.ERROR,
                                 ):
@@ -1146,21 +1311,6 @@ class ResultTranslator:
                                     ):
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
-
-                            # Process sections (log output),
-                            # TODO: output in jsonl report too verbose without meaningful output - commented out
-                            # if "sections" in entry:
-                            #     logs = []
-                            #     for section in entry["sections"]:
-                            #         if isinstance(section, list) and len(section) == 2:
-                            #             section_title, section_content = section
-                            #             if section_content:
-                            #                 logs.append(f"===== {section_title} =====")
-                            #                 logs.append(section_content)
-                            #
-                            #     # Add logs to the result info
-                            #     if logs and not test_results[node_id].is_ok():
-                            #         test_results[node_id].info = "\n".join(logs)
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")
@@ -1208,10 +1358,10 @@ class ResultTranslator:
             return R
 
         except Exception as e:
-            print(f"Failed to parse pytest jsonl: {e}")
+            print(f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}")
             traceback.print_exc()
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
-                info=f"Failed to parse pytest jsonl: {e}",
+                info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
             )

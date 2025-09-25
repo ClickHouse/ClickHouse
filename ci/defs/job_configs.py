@@ -695,11 +695,20 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_binary, {batch}/{total_batches}",
+                parameter=f"amd_binary, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_LARGE,
+                requires=[ArtifactNames.CH_AMD_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_binary, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             )
-            for total_batches in (5,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[

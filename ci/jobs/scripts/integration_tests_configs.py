@@ -157,6 +157,7 @@ TEST_CONFIGS = [
     TC("test_disks_app_interactive/", 0, 0, 0, True, "no idea why i'm sequential"),
     TC("test_storage_delta_disks/", 0, 0, 0, True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_disks/", 0, 0, 0, True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_concurrent/", 0, 0, 0, True, "no idea why i'm sequential"),
 ]
 
 IMAGES_ENV = {
@@ -1048,6 +1049,7 @@ def get_optimal_test_batch(
     # LPT assign known-duration parallel groups
     for prefix, dur in p_known:
         idx = min(range(total_batches), key=lambda i: (parallel_weights[i], i))
+        # prefix, dur sorted in p_known starting with longest duration - keep the order in batches to decrease tail latency
         parallel_batches[idx].extend(parallel_groups[prefix])
         parallel_weights[idx] += dur
 
@@ -1058,11 +1060,12 @@ def get_optimal_test_batch(
 
     # Sequential batches: start from scaled parallel weights to account for worker concurrency
     sequential_batches: list[list[str]] = [[] for _ in range(total_batches)]
-    sequential_weights: list[int] = [w // max(num_workers, 1) for w in parallel_weights]
+    sequential_weights: list[int] = [0] * total_batches
 
     # LPT assign known-duration sequential groups
     for prefix, dur in s_known:
         idx = min(range(total_batches), key=lambda i: (sequential_weights[i], i))
+        # prefix, dur sorted in s_known starting with longest duration - keep the order in batches to decrease tail latency
         sequential_batches[idx].extend(sequential_groups[prefix])
         sequential_weights[idx] += dur
 
@@ -1082,11 +1085,4 @@ def get_optimal_test_batch(
     )
     assert total_assigned == len(tests)
 
-    # sort batches by duration to decrease tail latency
-    parallel_batches[batch_num - 1].sort(
-        key=lambda t: TEST_DURATIONS.get(t, 0), reverse=True
-    )
-    sequential_batches[batch_num - 1].sort(
-        key=lambda t: TEST_DURATIONS.get(t, 0), reverse=True
-    )
     return parallel_batches[batch_num - 1], sequential_batches[batch_num - 1]

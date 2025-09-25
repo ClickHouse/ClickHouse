@@ -696,6 +696,9 @@ class Utils:
 
     @classmethod
     def compress_files_gz(cls, files, archive_name):
+        files = [
+            os.path.relpath(file) if os.path.isabs(file) else file for file in files
+        ]
         for file in files:
             assert Path(file).is_file(), f"File does not exist [{file}]"
 
