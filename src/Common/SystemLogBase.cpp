@@ -77,6 +77,9 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
+    /// Queue resize can allocate enough memory hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+
     /// Should not log messages under mutex.
     bool buffer_size_rows_flush_threshold_exceeded = false;
 
