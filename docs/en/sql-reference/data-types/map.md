@@ -4,7 +4,6 @@ sidebar_label: 'Map(K, V)'
 sidebar_position: 36
 slug: /sql-reference/data-types/map
 title: 'Map(K, V)'
-doc_type: 'reference'
 ---
 
 # Map(K, V)
@@ -118,6 +117,7 @@ Result:
 - [map()](/sql-reference/functions/tuple-map-functions#map) function
 - [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
 - [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
+
 
 ## Related content {#related-content}
 

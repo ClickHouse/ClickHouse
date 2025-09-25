@@ -97,7 +97,6 @@ public:
     bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
-    std::optional<size_t> findPositionByName(std::string_view name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
@@ -127,7 +126,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    bool empty() const { return !columns(); }
+    explicit operator bool() const { return !!columns(); }
+    bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -192,6 +192,15 @@ private:
     friend class ActionsDAG;
 };
 
+
+/// Extends block with extra data in derived classes
+struct ExtraBlock
+{
+    Block block;
+
+    bool empty() const { return !block; }
+};
+
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
@@ -214,11 +223,5 @@ Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
-
-/// If the block has no columns, adds a dummy column with given number of rows.
-/// Without it, things like ExpressionActions can't tell many rows to output.
-/// Name of the new column is randomly generated and returned, so you can remove the column later.
-/// Returns empty string if the block is already not empty.
-String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 }

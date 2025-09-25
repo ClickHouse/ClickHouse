@@ -4,7 +4,6 @@ description: 'System table containing a list of time zones that are supported by
 keywords: ['system table', 'time_zones']
 slug: /operations/system-tables/time_zones
 title: 'system.time_zones'
-doc_type: 'reference'
 ---
 
 # system.time_zones

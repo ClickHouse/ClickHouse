@@ -9,7 +9,7 @@ String1_0	String2_0	String3_0	String4_0	1
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
     Join (JOIN FillRightFirst)
-      Expression ((WHERE + Before JOIN))
+      Expression
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey
@@ -19,7 +19,6 @@ Expression ((Projection + Before ORDER BY))
             Parts: 1/1
             Granules: 1/1
             Search Algorithm: binary search
-            Ranges: 1
       Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
         ReadFromMergeTree (default.t2)
         Indexes:
@@ -27,11 +26,10 @@ Expression ((Projection + Before ORDER BY))
             Condition: true
             Parts: 1/1
             Granules: 1/1
-            Ranges: 1
 Expression ((Project names + Projection))
   Filter (WHERE)
     Join (JOIN FillRightFirst)
-      Expression ((WHERE + Change column names to column identifiers))
+      Expression
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey
@@ -41,7 +39,6 @@ Expression ((Project names + Projection))
             Parts: 1/1
             Granules: 1/1
             Search Algorithm: binary search
-            Ranges: 1
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         ReadFromMergeTree (default.t2)
         Indexes:
@@ -49,4 +46,3 @@ Expression ((Project names + Projection))
             Condition: true
             Parts: 1/1
             Granules: 1/1
-            Ranges: 1

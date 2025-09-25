@@ -6,7 +6,6 @@ keywords: ['JSONColumns']
 output_format: true
 slug: /interfaces/formats/JSONColumns
 title: 'JSONColumns'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -26,9 +25,9 @@ In this format, all data is represented as a single JSON Object.
 The `JSONColumns` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -49,7 +48,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONColumns;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `JSONColumns` format:
 
@@ -72,7 +71,7 @@ The output will be in JSON format:
 }
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)

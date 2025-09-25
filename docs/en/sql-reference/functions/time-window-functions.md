@@ -1,15 +1,16 @@
 ---
 description: 'Documentation for Time Window Functions'
-sidebar_label: 'Time-window'
+sidebar_label: 'Time Window'
+sidebar_position: 175
 slug: /sql-reference/functions/time-window-functions
 title: 'Time Window Functions'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Time window functions
+
+# Time Window Functions
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

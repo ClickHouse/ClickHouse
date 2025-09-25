@@ -3,7 +3,6 @@ description: 'Calculates the `arg` value for a maximum `val` value.'
 sidebar_position: 109
 slug: /sql-reference/aggregate-functions/reference/argmax
 title: 'argMax'
-doc_type: 'reference'
 ---
 
 # argMax
@@ -66,7 +65,7 @@ ENGINE = Memory AS
 SELECT *
 FROM VALUES(('a', 1), ('b', 2), ('c', 2), (NULL, 3), (NULL, NULL), ('d', NULL));
 
-SELECT * FROM test;
+select * from test;
 ┌─a────┬────b─┐
 │ a    │    1 │
 │ b    │    2 │

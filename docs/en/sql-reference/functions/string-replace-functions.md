@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Functions for Replacing in Strings'
-sidebar_label: 'String replacement'
+sidebar_label: 'Replacing in Strings'
+sidebar_position: 150
 slug: /sql-reference/functions/string-replace-functions
 title: 'Functions for Replacing in Strings'
-doc_type: 'reference'
 ---
 
 # Functions for Replacing in Strings
@@ -344,8 +344,10 @@ printf(format, arg1, arg2, ...)
 Query:
 
 ```sql
-SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);
+select printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
+
+
 ```response
 ┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
 │ %Hello World 2024                            │

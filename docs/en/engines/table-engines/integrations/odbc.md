@@ -4,7 +4,6 @@ sidebar_label: 'ODBC'
 sidebar_position: 150
 slug: /engines/table-engines/integrations/odbc
 title: 'ODBC'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -19,7 +18,7 @@ To safely implement ODBC connections, ClickHouse uses a separate program `clickh
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,7 +27,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2],
     ...
 )
-ENGINE = ODBC(datasource, external_database, external_table)
+ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -41,13 +40,13 @@ The table structure can differ from the source table structure:
 
 **Engine Parameters**
 
-- `datasource` — Name of the section with connection settings in the `odbc.ini` file.
+- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
 These parameters can also be passed using [named collections](operations/named-collections.md).
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**
 
@@ -136,7 +135,7 @@ SELECT * FROM odbc_t
 └────────┴────────────────┘
 ```
 
-## See also {#see-also}
+## See Also {#see-also}
 
 - [ODBC dictionaries](/sql-reference/dictionaries#mysql)
 - [ODBC table function](../../../sql-reference/table-functions/odbc.md)

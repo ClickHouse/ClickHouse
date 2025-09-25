@@ -3,7 +3,6 @@ description: 'Documentation for EXCEPT Clause'
 sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
 title: 'EXCEPT Clause'
-doc_type: 'reference'
 ---
 
 # EXCEPT Clause
@@ -53,7 +52,7 @@ SELECT number
 FROM numbers(1, 10)
 EXCEPT
 SELECT number
-FROM numbers(3, 6)
+FROM numbers(3, 8)
 ```
 
 Result:

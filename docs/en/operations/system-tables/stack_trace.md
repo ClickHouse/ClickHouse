@@ -4,7 +4,6 @@ description: 'System table which contains stack traces of all server threads. Al
 keywords: ['system table', 'stack_trace']
 slug: /operations/system-tables/stack_trace
 title: 'system.stack_trace'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -5,9 +5,8 @@ sidebar_label: 'JDBC Driver'
 sidebar_position: 20
 slug: /interfaces/jdbc
 title: 'JDBC Driver'
-doc_type: 'guide'
 ---
 
-# JDBC driver
+# JDBC Driver
 
 Use the [official JDBC driver](/docs/integrations/language-clients/java/jdbc) (and Java client) to access ClickHouse from your Java applications.

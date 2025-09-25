@@ -3,7 +3,6 @@ description: 'Documentation for the TabSeparatedWithNamesAndTypes format'
 keywords: ['TabSeparatedWithNamesAndTypes']
 slug: /interfaces/formats/TabSeparatedWithNamesAndTypes
 title: 'TabSeparatedWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias                                          |
@@ -22,9 +21,9 @@ Otherwise, the first row will be skipped.
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using the following tsv file, named as `football.tsv`:
 
@@ -56,7 +55,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedWithNamesAndTypes;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `TabSeparatedWithNamesAndTypes` format:
 
@@ -90,4 +89,4 @@ Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

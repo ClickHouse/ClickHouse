@@ -21,7 +21,7 @@
 
 #include <expected>
 
-#include <Functions/StringHelpers.h>
+#include "StringHelpers.h"
 
 namespace DB
 {
@@ -658,7 +658,7 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -677,15 +677,11 @@ namespace
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
             if constexpr (return_type == ReturnType::DateTime)
-            {
                 data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
-            }
             else
             {
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
-                {
                     data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
-                }
                 else
                 {
                     /// The precision of the return type is the number of 'S' placeholders.
@@ -1839,7 +1835,12 @@ namespace
             [[nodiscard]]
             static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                std::string_view read_time_zone{cur, end};
+                String read_time_zone;
+                while (cur <= end)
+                {
+                    read_time_zone += *cur;
+                    ++cur;
+                }
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
@@ -1847,7 +1848,7 @@ namespace
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
                     parsed_value.time_zone_offset = timezone_offset;
-                    return end;
+                    return cur;
                 }
                 else
                     RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to parse date time from timezone {}", read_time_zone)

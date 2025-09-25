@@ -22,7 +22,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Utils.h>
 
 using namespace DB;

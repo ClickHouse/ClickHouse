@@ -4,7 +4,6 @@ description: 'System table containing metrics which can be calculated instantly,
 keywords: ['system table', 'metrics']
 slug: /operations/system-tables/metrics
 title: 'system.metrics'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -524,6 +523,14 @@ Number of threads in the ParallelFormattingOutputFormatThreads thread pool.
 ### ParallelFormattingOutputFormatThreadsActive {#parallelformattingoutputformatthreadsactive}
 
 Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.
+
+### ParallelParsingInputFormatThreads {#parallelparsinginputformatthreads}
+
+Number of threads in the ParallelParsingInputFormat thread pool.
+
+### ParallelParsingInputFormatThreadsActive {#parallelparsinginputformatthreadsactive}
+
+Number of threads in the ParallelParsingInputFormat thread pool running a task.
 
 ### PartMutation {#partmutation}
 

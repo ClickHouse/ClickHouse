@@ -69,7 +69,6 @@ public:
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
-    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
@@ -186,16 +185,6 @@ public:
     bool hasEqualValues() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
-    }
-
-    ColumnPtr updateFrom(const IColumn::Patch &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for ColumnUnique.");
-    }
-
-    void updateInplaceFrom(const IColumn::Patch &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for ColumnUnique.");
     }
 
     /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its

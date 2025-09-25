@@ -4,7 +4,6 @@ description: 'Creates an array of argument values. Values can be added to the ar
 sidebar_position: 139
 slug: /sql-reference/aggregate-functions/reference/grouparray
 title: 'groupArray'
-doc_type: 'reference'
 ---
 
 # groupArray
@@ -35,7 +34,7 @@ SELECT * FROM default.ck;
 Query:
 
 ```sql
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+select id, groupArray(10)(name) from default.ck group by id;
 ```
 
 Result:

@@ -1,4 +1,4 @@
-#include <LocalServer.h>
+#include "LocalServer.h"
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -16,7 +16,7 @@
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabaseOverlay.h>
+#include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -38,7 +38,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
-#include <Loggers/OwnSplitChannel.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
@@ -130,10 +129,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
-    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
 namespace ErrorCodes
@@ -271,11 +266,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
-
-    getFormatParsingThreadPool().initialize(
-        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
-        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
-        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 }
 
 
@@ -293,7 +283,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
 
     UUID default_database_uuid;
 
@@ -370,8 +360,6 @@ void LocalServer::tryInitPath()
         path = default_path.string();
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
-
-    fs::create_directories(path);
 
     global_context->setPath(fs::path(path) / "");
 
@@ -883,10 +871,6 @@ void LocalServer::processConfig()
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
-
-    Names allowed_disks_table_engines;
-    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
-    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);

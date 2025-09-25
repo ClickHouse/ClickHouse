@@ -45,30 +45,29 @@ using FunctionStringBytesUniq = FunctionStringBytes<StringBytesUniqImpl, NameStr
 
 REGISTER_FUNCTION(StringBytesUniq)
 {
-    FunctionDocumentation::Description description = R"(
-Counts the number of distinct bytes in a string.
-)";
-    FunctionDocumentation::Syntax syntax = "stringBytesUniq(s)";
+    FunctionDocumentation::Description description = "Counts the number of distinct bytes in a string.";
+    FunctionDocumentation::Syntax syntax = "stringBytesUniq(s);";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to analyze.", {"String"}}
+        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of distinct bytes in the string.", {"UInt16"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The number of distinct bytes in the string. [UInt16](../../sql-reference/data-types/int-uint.md).";
     FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT stringBytesUniq('Hello')",
-        R"(
-┌─stringBytesUniq('Hello')─┐
-│                        4 │
-└──────────────────────────┘
-        )"
-    }
+        {"Example", "SELECT stringBytesUniq('Hello, world!');", "10"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
 
-    factory.registerFunction<FunctionStringBytesUniq>(documentation);
+    FunctionDocumentation function_documentation = {
+        .description = description,
+        .syntax = syntax,
+        .arguments = arguments,
+        .returned_value = returned_value,
+        .examples = examples,
+        .introduced_in = introduced_in,
+        .category = category
+    };
+
+    factory.registerFunction<FunctionStringBytesUniq>(function_documentation);
 }
 
 }

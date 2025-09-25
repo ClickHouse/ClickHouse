@@ -22,18 +22,12 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
     if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
-    return {0 /*unknown*/, {}};
-}
-
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    serializeBinary(stream->compressed_hashing);
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -48,11 +42,6 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
-void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    deserializeBinary(*stream->getDataBuffer(), state.version);
-}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
@@ -147,6 +136,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
+
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
@@ -154,8 +144,24 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("text", textIndexCreator);
-    registerValidator("text", textIndexValidator);
+    registerCreator("text", ginIndexCreator);
+    registerValidator("text", ginIndexValidator);
+
+    /// ------
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    /// Index type 'gin' was renamed to 'text' in May 2025.
+    ///
+    /// To support loading tables with old indexes during a transition period, register these legacy indexes.
+    ///
+    /// TODO: remove this block one year after text indexes became GA.
+    registerCreator("full_text", ginIndexCreator);
+    registerValidator("full_text", ginIndexValidator);
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
+    registerCreator("gin", ginIndexCreator);
+    registerValidator("gin", ginIndexValidator);
+    /// ------
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()
