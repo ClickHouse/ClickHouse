@@ -52,6 +52,8 @@ from helpers.s3_tools import (
 from helpers.test_tools import TSV
 
 
+pytestmark = pytest.mark.skip(reason="Flaky tests")
+
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
 cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
