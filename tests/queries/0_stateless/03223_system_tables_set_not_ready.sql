@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-shared-merge-tree, use-rocksdb
+-- Tags: no-fasttest, no-shared-merge-tree
 -- Tag no-fasttest -- due to EmbeddedRocksDB
 -- Tag no-shared-merge-tree -- due to system.replication_queue
 

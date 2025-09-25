@@ -5,12 +5,11 @@ sidebar_label: 'MySQL'
 sidebar_position: 50
 slug: /engines/database-engines/mysql
 title: 'MySQL'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MySQL database engine
+# MySQL Database Engine
 
 <CloudNotSupportedBadge />
 
@@ -24,9 +23,9 @@ You cannot perform the following queries:
 - `CREATE TABLE`
 - `ALTER`
 
-## Creating a database {#creating-a-database}
+## Creating a Database {#creating-a-database}
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
@@ -38,7 +37,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `user` — MySQL user.
 - `password` — User password.
 
-## Data types support {#data_types-support}
+## Data Types Support {#data_types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
@@ -60,7 +59,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
-## Global variables support {#global-variables-support}
+## Global Variables Support {#global-variables-support}
 
 For better compatibility you may address global variables in MySQL style, as `@@identifier`.
 
@@ -74,15 +73,15 @@ By now these variables are stubs and don't correspond to anything.
 
 Example:
 
-```sql
+``` sql
 SELECT @@version;
 ```
 
-## Examples of use {#examples-of-use}
+## Examples of Use {#examples-of-use}
 
 Table in MySQL:
 
-```text
+``` text
 mysql> USE test;
 Database changed
 
@@ -106,15 +105,15 @@ mysql> select * from mysql_table;
 
 Database in ClickHouse, exchanging data with the MySQL server:
 
-```sql
+``` sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
 ```
 
-```sql
+``` sql
 SHOW DATABASES
 ```
 
-```text
+``` text
 ┌─name─────┐
 │ default  │
 │ mysql_db │
@@ -122,35 +121,35 @@ SHOW DATABASES
 └──────────┘
 ```
 
-```sql
+``` sql
 SHOW TABLES FROM mysql_db
 ```
 
-```text
+``` text
 ┌─name─────────┐
 │  mysql_table │
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-```text
+``` text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 └────────┴───────┘
 ```
 
-```sql
+``` sql
 INSERT INTO mysql_db.mysql_table VALUES (3,4)
 ```
 
-```sql
+``` sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-```text
+``` text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │

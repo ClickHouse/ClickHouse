@@ -14,7 +14,7 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
-#include <Common/Exception.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -28,45 +28,6 @@ namespace ErrorCodes
 namespace
 {
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
-
-Tuple parseTextIndexArgumentFromAST(const ASTPtr & arguments)
-{
-    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
-    if (identifier == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
-
-    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
-    if (literal == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
-
-    Tuple key_value_pair{};
-    key_value_pair.emplace_back(identifier->name());
-    key_value_pair.emplace_back(literal->value);
-    return key_value_pair;
-}
-
-bool parseTextIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
-{
-    parsed_arguments.reserve(arguments->children.size());
-
-    for (const auto & argument : arguments->children)
-    {
-        if (const auto * ast_function = argument->template as<ASTFunction>();
-            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
-        {
-            parsed_arguments.emplace_back(parseTextIndexArgumentFromAST(ast_function->arguments));
-        }
-        else
-        {
-            if (!parsed_arguments.empty())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
-            return false;
-        }
-    }
-
-    return true;
-}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -168,10 +129,6 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_text_index = index_type->name == TEXT_INDEX_NAME;
-        if (is_text_index && parseTextIndexArgumentsFromAST(index_type->arguments, result.arguments))
-            return result;
-
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
             const auto & child = index_type->arguments->children[i];
@@ -259,22 +216,4 @@ Names IndicesDescription::getAllRegisteredNames() const
     }
     return result;
 }
-
-ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
-{
-    auto index_type = makeASTFunction("minmax");
-    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-        std::make_shared<ASTIdentifier>(column_name), index_type,
-        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
-
-    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-    return index_ast;
-}
-
-IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
-{
-    auto index_ast = createImplicitMinMaxIndexAST(column_name);
-    return IndexDescription::getIndexFromAST(index_ast, columns, context);
-}
-
 }

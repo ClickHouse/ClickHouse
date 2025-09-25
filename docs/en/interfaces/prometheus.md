@@ -4,7 +4,6 @@ sidebar_label: 'Prometheus protocols'
 sidebar_position: 19
 slug: /interfaces/prometheus
 title: 'Prometheus Protocols'
-doc_type: 'reference'
 ---
 
 # Prometheus protocols
