@@ -83,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Obsolete setting."},
+            {"query_plan_push_down_volume_reducing_functions", false, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

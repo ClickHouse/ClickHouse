@@ -5455,6 +5455,9 @@ Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
+    DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
+Toggles a query-plan-level optimization which pushes volume-reducing functions (e.g., length()) down to reduce data movement.
+)", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \

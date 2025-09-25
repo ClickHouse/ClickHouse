@@ -103,6 +103,11 @@ public:
         return true;
     }
 
+    bool isSuitableForPushDownBeforeFilter() const override
+    {
+        return true;
+    }
+
     size_t getNumberOfArguments() const override
     {
         return 2;

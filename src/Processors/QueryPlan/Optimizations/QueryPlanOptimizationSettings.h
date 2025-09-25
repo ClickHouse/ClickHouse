@@ -77,6 +77,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
     double query_condition_cache_selectivity_threshold;
+    bool push_down_volume_reducing_functions;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
