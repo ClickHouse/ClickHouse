@@ -7,6 +7,9 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/Settings.h>
+#include "Common/Exception.h"
+#include "Core/Defines.h"
+#include "Interpreters/Context_fwd.h"
 
 namespace DB
 {
@@ -97,10 +100,10 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
     auto last_object_info = iterator->next(id);
     if (!last_object_info)
         return {};
-    
+
     auto buffer = object_storage->readObject(StoredObject(last_object_info->getPath()), getReadSettings());
     auto input_format = FormatFactory::instance().getInput(
-        configuration->format, *buffer, {}, getContext(), {});
+        configuration->format, *buffer, {}, getContext(), DBMS_DEFAULT_BUFFER_SIZE);
 
     auto bucket_sizes = input_format->getChunksByteSizes();
     if (bucket_sizes)
@@ -128,7 +131,7 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
         {
             auto copy_object_info = *last_object_info;
             copy_object_info.chunks_to_read = bucket;
-            pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));   
+            pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }
 

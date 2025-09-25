@@ -1,7 +1,7 @@
 #include <memory>
 #include <mutex>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 #if USE_PARQUET
 
@@ -620,7 +620,8 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
 
 std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
 {
-    initializeIfNeeded();
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
+    metadata = parquet::ReadMetaData(arrow_file);
     std::vector<size_t> sizes;
     for (int i = 0; i < metadata->num_row_groups(); ++i)
         sizes.push_back(metadata->RowGroup(i)->total_byte_size());
@@ -830,7 +831,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         }
 
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
-        if (num_blocks_to_skip.has_value() || row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
+        if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
         {
             row_group_batches.emplace_back();
             row_group_batches_skipped_rows.push_back(0);
@@ -844,17 +845,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().total_bytes_compressed += row_group_size;
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
-    }
-
-    if (num_blocks_to_skip.has_value())
-    {
-        if (row_group_batches_completed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Noooo la policia");
-        row_group_batches_completed = *num_blocks_to_skip;
-        row_group_to_read = row_group_batches_completed;
-        row_group_batches_started = *num_blocks_to_skip;
-        for (size_t i = 0; i < *num_blocks_to_skip; ++i)
-            row_group_batches[i].status = RowGroupBatchState::Status::Done;
     }
 }
 
@@ -1159,19 +1149,9 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     if (pool)
     {
         size_t max_decoding_threads = parser_shared_resources->getParsingThreadsPerReader();
-        if (!read_exactly_one_block)
-        {
-            while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
-                   row_group_batches_started < row_group_batches.size())
-                scheduleRowGroup(row_group_batches_started++);
-        }
-        else
-        {
-            if (row_group_batches_started < row_group_to_read)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Nooooo la policia");
-            if (row_group_batches_started == row_group_to_read)
-                scheduleRowGroup(row_group_batches_started++);
-        }
+        while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
+                row_group_batches_started < row_group_batches.size())
+            scheduleRowGroup(row_group_batches_started++);
         if (row_group_batch_touched)
         {
             auto & row_group = row_group_batches[*row_group_batch_touched];
@@ -1188,9 +1168,6 @@ Chunk ParquetBlockInputFormat::read()
 
     if (need_only_count)
     {
-        if (is_stopped || row_group_batches_completed == row_group_batches.size())
-            return {};
-
         auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
         size_t total_rows_before = std::accumulate(
                                        row_group_batches_skipped_rows.begin(),
@@ -1207,13 +1184,6 @@ Chunk ParquetBlockInputFormat::read()
     }
 
     std::unique_lock lock(mutex);
-    if (is_stopped || row_group_batches_completed == row_group_batches.size())
-        return {};
-
-    if (read_exactly_one_block && row_group_batches_completed > row_group_to_read) 
-    {
-        return {};
-    }
 
     while (true)
     {
@@ -1239,9 +1209,6 @@ Chunk ParquetBlockInputFormat::read()
             chassert(chunk.chunk_idx == row_group.next_chunk_idx - row_group.num_pending_chunks);
             --row_group.num_pending_chunks;
 
-            if (!read_exactly_one_block)
-                scheduleMoreWorkIfNeeded(chunk.row_group_batch_idx);
-
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
 
@@ -1264,9 +1231,6 @@ Chunk ParquetBlockInputFormat::read()
         }
 
         if (row_group_batches_completed == row_group_batches.size())
-            return {};
-
-        if (read_exactly_one_block && row_group_batches_completed > row_group_to_read) 
             return {};
 
         if (pool)

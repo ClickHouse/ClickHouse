@@ -55,6 +55,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"enable_split_in_distributed_processing", false, false, "New setting."},
+            {"distributed_processing_batch_size", 0, 0, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
