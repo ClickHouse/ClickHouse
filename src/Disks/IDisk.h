@@ -572,8 +572,6 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
-
     const String name;
 
     /// Base implementation of the function copy().
