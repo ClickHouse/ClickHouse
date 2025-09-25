@@ -338,8 +338,9 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
+            /// Use backup client instead of storage client because of backup-specific settings.
             copyS3File(
-                src_disk->getS3StorageClient(),
+                client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
