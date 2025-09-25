@@ -21,6 +21,8 @@ Columns:
 
 - `zookeeper_path` ([String](../../sql-reference/data-types/string.md)) - Path to database data in ClickHouse Keeper.
 
+- `shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the shard in the cluster.
+
 - `replica_name` ([String](../../sql-reference/data-types/string.md)) - Replica name in ClickHouse Keeper.
 
 - `replica_path` ([String](../../sql-reference/data-types/string.md)) - Path to replica data in ClickHouse Keeper.
