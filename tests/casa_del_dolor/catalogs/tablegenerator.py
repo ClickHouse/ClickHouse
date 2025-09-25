@@ -606,13 +606,13 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_snapshots(self, spark: SparkSession, table: SparkTable):
         result = spark.sql(
-            f"SELECT snapshot_id FROM {table.get_namespace_path()}.snapshots;"
+            f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
         ).collect()
         return [x["snapshot_id"] for x in result]
 
     def get_timestamps(self, spark: SparkSession, table: SparkTable):
         result = spark.sql(
-            f"SELECT made_current_at FROM {table.get_namespace_path()}.history;"
+            f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
         ).collect()
         return [x["made_current_at"] for x in result]
 
@@ -674,7 +674,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 7:
-            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_table_full_path()}'"
+            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
                 res += f", snapshot_id  => {random.choice(snapshots)}"
@@ -689,7 +689,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 "set_current_snapshot",
                 "cherrypick_snapshot",
             ]
-            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_table_full_path()}', snapshot_id => {random.choice(snapshots)})"
+            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
         timestamps = self.get_timestamps(spark, table)
         if len(timestamps) > 0 and next_option in (12, 13):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"

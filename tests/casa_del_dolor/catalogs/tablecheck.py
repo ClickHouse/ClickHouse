@@ -73,11 +73,11 @@ class SparkAndClickHouseCheck:
 
                 if table.lake_format == LakeFormat.Iceberg:
                     result = spark.sql(
-                        f"SELECT snapshot_id FROM {table.get_namespace_path()}.snapshots;"
+                        f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
                     ).collect()
                     snapshots = [x["snapshot_id"] for x in result]
                     result = spark.sql(
-                        f"SELECT made_current_at FROM {table.get_namespace_path()}.history;"
+                        f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
                     ).collect()
                     timestamps = [x["made_current_at"] for x in result]
                 else:

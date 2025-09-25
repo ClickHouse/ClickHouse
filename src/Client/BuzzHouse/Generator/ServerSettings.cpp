@@ -345,7 +345,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     {"decimal_check_overflow", trueOrFalseSettingNoOracle},
-    {"delta_lake_enable_engine_predicate", trueOrFalseSettingNoOracle},
+    {"delta_lake_enable_engine_predicate", trueOrFalseSetting},
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
     {"delta_lake_log_metadata", trueOrFalseSettingNoOracle},
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
