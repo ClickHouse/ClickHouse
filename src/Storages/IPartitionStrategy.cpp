@@ -194,11 +194,6 @@ NamesAndTypesList IPartitionStrategy::getPartitionColumns() const
     return partition_key_description.sample_block.getNamesAndTypesList();
 }
 
-const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
-{
-    return partition_key_description;
-}
-
 std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
                                                                  const NamesAndTypesList & partition_columns,
