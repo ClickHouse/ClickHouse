@@ -1,4 +1,3 @@
-import glob
 import json
 import logging
 import os
@@ -6,22 +5,18 @@ import random
 import string
 import time
 import uuid
-import threading
 from datetime import datetime
 from multiprocessing.dummy import Pool
 
-import delta
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pyspark
 import pytest
-from azure.storage.blob import BlobServiceClient
 from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
 from pyspark.sql.functions import (
     col,
-    current_timestamp,
     monotonically_increasing_id,
     row_number,
 )
@@ -30,7 +25,6 @@ from pyspark.sql.types import (
     BooleanType,
     DateType,
     IntegerType,
-    LongType,
     ShortType,
     StringType,
     DecimalType,
@@ -41,7 +35,6 @@ from pyspark.sql.types import (
 from decimal import Decimal
 from pyspark.sql.window import Window
 
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
@@ -52,7 +45,6 @@ from helpers.s3_tools import (
     S3Uploader,
     get_file_contents,
     list_s3_objects,
-    prepare_s3_bucket,
     upload_directory,
     LocalDownloader,
     LocalUploader,
