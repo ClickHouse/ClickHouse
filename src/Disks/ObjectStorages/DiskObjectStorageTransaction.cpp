@@ -827,6 +827,7 @@ void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bo
 void DiskObjectStorageTransaction::removeSharedRecursive(
     const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
+    chassert(metadata_storage.getType() != MetadataStorageType::Keeper || (file_names_remove_metadata_only.empty() && !keep_all_shared_data));
     auto operation = std::make_shared<RemoveRecursiveObjectStorageOperation>(
         object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only);
     operations_to_execute.emplace_back(std::move(operation));
@@ -862,6 +863,7 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 void DiskObjectStorageTransaction::removeSharedFiles(
     const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
+    chassert(metadata_storage.getType() != MetadataStorageType::Keeper || file_names_remove_metadata_only.empty());
     auto operation = std::make_shared<RemoveManyObjectStorageOperation>(object_storage, metadata_storage, files, keep_all_batch_data, file_names_remove_metadata_only);
     operations_to_execute.emplace_back(std::move(operation));
 }

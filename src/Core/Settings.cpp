@@ -5044,9 +5044,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
-Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
-)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -5576,6 +5573,9 @@ Serialize query plan for distributed processing
 )", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
+    DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
+Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
@@ -7023,6 +7023,10 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, allow_experimental_qbit_type, false, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
