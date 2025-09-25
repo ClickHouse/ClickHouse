@@ -35,6 +35,15 @@ FROM test_table_join_1 AS t1
 LEFT JOIN test_table_join_2 AS t2 USING (id)
 INNER JOIN test_table_join_3 AS t3 USING (id)
 ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+2314142518414636144	800
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+INNER JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan=0;
 2314142518414636144	800
 SELECT 'First JOIN LEFT second JOIN LEFT';
@@ -69,6 +78,15 @@ FROM test_table_join_1 AS t1
 LEFT JOIN test_table_join_2 AS t2 USING (id)
 LEFT JOIN test_table_join_3 AS t3 USING (id)
 ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+226951274137800912	1000
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+LEFT JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan=0;
 226951274137800912	1000
 SELECT 'First JOIN LEFT second JOIN RIGHT';
@@ -96,6 +114,15 @@ EXCEPT
     ORDER BY ALL ASC
     SETTINGS enable_parallel_replicas = 1, parallel_replicas_local_plan=0
 );
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+RIGHT JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+6134460278847160657	900
 SELECT
     sum(sipHash64(t1.*, t2.*, t3.*)),
     count()
@@ -137,6 +164,15 @@ FROM test_table_join_1 AS t1
 LEFT JOIN test_table_join_2 AS t2 USING (id)
 FULL JOIN test_table_join_3 AS t3 USING (id)
 ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+4047269034570325425	1100
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+FULL JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan=0;
 4047269034570325425	1100
 SELECT 'First JOIN LEFT second JOIN INNER';
@@ -164,6 +200,15 @@ EXCEPT
     ORDER BY ALL ASC
     SETTINGS enable_parallel_replicas = 1, parallel_replicas_local_plan=1
 );
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+INNER JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+2314142518414636144	800
 SELECT
     sum(sipHash64(t1.*, t2.*, t3.*)),
     count()
@@ -205,6 +250,15 @@ FROM test_table_join_1 AS t1
 LEFT JOIN test_table_join_2 AS t2 USING (id)
 LEFT JOIN test_table_join_3 AS t3 USING (id)
 ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+226951274137800912	1000
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+LEFT JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan=1;
 226951274137800912	1000
 SELECT 'First JOIN LEFT second JOIN RIGHT';
@@ -239,6 +293,15 @@ FROM test_table_join_1 AS t1
 LEFT JOIN test_table_join_2 AS t2 USING (id)
 RIGHT JOIN test_table_join_3 AS t3 USING (id)
 ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+6134460278847160657	900
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+RIGHT JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan=1;
 6134460278847160657	900
 SELECT 'First JOIN LEFT second JOIN FULL';
@@ -266,6 +329,15 @@ EXCEPT
     ORDER BY ALL ASC
     SETTINGS enable_parallel_replicas = 1, parallel_replicas_local_plan=1
 );
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+FULL JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+4047269034570325425	1100
 SELECT
     sum(sipHash64(t1.*, t2.*, t3.*)),
     count()
