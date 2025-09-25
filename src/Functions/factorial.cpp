@@ -108,7 +108,7 @@ The maximum positive value for the input argument is `20`, a value of `21` or gr
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the factorial of the input as UInt64. Returns 1 for input 0 or any negative value.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"factorial(10)", "3628800"}
+        {"Usage example", "factorial(10)", "3628800"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
