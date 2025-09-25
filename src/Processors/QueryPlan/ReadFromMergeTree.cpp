@@ -3133,7 +3133,6 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
         storage_snapshot->storage,
         storage_snapshot->metadata,
         std::move(new_virtual_columns),
-        storage_snapshot->object_columns,
         std::move(storage_snapshot->data));
 
     if (output_header != nullptr)
