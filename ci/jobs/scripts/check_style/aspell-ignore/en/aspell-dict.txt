@@ -997,6 +997,7 @@ flatbuffers
 flattenTuple
 flink
 Flink
+flipCoordinates
 fluentd
 FlyQL
 fmtlib
@@ -1856,6 +1857,17 @@ multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF
 multiSearchFirstPositionUTF
+multibuffer
+multibyte
+multidirectory
+multiif
+multiline
+multilinestring
+multiplyDecimal
+multipolygon
+multipolygons
+multiread
+multisearchany
 multisets
 multithread
 multithreaded
