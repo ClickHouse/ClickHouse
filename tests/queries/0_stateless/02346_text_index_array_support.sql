@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-parallel-replicas
 
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
@@ -17,12 +17,12 @@ ENGINE = MergeTree()
 ORDER BY (id)
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES (0, ['abc'], ['abc']);
-INSERT INTO tab VALUES (1, ['foo'], ['foo']);
-INSERT INTO tab VALUES (2, ['bar'], ['bar']);
-INSERT INTO tab VALUES (3, ['foo', 'bar'], ['foo', 'bar']);
-INSERT INTO tab VALUES (4, ['foo', 'baz'], ['foo', 'baz']);
-INSERT INTO tab VALUES (5, ['bar', 'baz'], ['bar', 'baz']);
+INSERT INTO tab SELECT number, ['abc'], ['abc'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['foo'], ['foo'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['bar'], ['bar'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['foo', 'bar'], ['foo', 'bar'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['foo', 'baz'], ['foo', 'baz'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['bar', 'baz'], ['bar', 'baz'] FROM numbers(1024);
 
 SELECT 'has support';
 
@@ -37,28 +37,28 @@ SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('bar', 3));
 SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3));
 
 SELECT '-- index analyzer with String';
-SELECT 'value exists only in 1 granule';
+SELECT 'value exists only in 1024 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr, 'abc')
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 2 granules';
+SELECT 'value exists only in 2048 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr, 'baz')
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 3 granules';
+SELECT 'value exists only in 3072 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr, 'foo')
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 3 granules';
+SELECT 'value exists only in 3072 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr, 'bar')
@@ -74,28 +74,28 @@ WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '
 LIMIT 2, 3;
 
 SELECT '-- index analyzer with FixedString';
-SELECT 'value exists only in 1 granule';
+SELECT 'value exists only in 1024 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('abc', 3))
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 2 granules';
+SELECT 'value exists only in 2048 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3))
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 3 granules';
+SELECT 'value exists only in 3072 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('foo', 3))
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
-SELECT 'value exists only in 3 granules';
+SELECT 'value exists only in 3072 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('bar', 3))

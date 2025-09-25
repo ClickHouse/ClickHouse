@@ -1,51 +1,51 @@
 has support
 -- with String
-3
-3
-2
+3072
+3072
+2048
 -- with FixedString
-3
-3
-2
+3072
+3072
+2048
 -- index analyzer with String
-value exists only in 1 granule
+value exists only in 1024 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 1/6
-value exists only in 2 granules
+Parts: 1/6
+Granules: 1024/6144
+value exists only in 2048 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 2/6
-value exists only in 3 granules
+Parts: 2/6
+Granules: 2048/6144
+value exists only in 3072 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 3/6
-value exists only in 3 granules
+Parts: 3/6
+Granules: 3072/6144
+value exists only in 3072 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 3/6
+Parts: 3/6
+Granules: 3072/6144
 value does not exist in granules
 Description: text GRANULARITY 1
-Parts: 0/1
-Granules: 0/6
+Parts: 0/6
+Granules: 0/6144
 -- index analyzer with FixedString
-value exists only in 1 granule
+value exists only in 1024 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 1/6
-value exists only in 2 granules
+Parts: 1/6
+Granules: 1024/6144
+value exists only in 2048 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 2/6
-value exists only in 3 granules
+Parts: 2/6
+Granules: 2048/6144
+value exists only in 3072 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 3/6
-value exists only in 3 granules
+Parts: 3/6
+Granules: 3072/6144
+value exists only in 3072 granules
 Description: text GRANULARITY 1
-Parts: 1/1
-Granules: 3/6
+Parts: 3/6
+Granules: 3072/6144
 value does not exist in granules
 Description: text GRANULARITY 1
-Parts: 0/1
-Granules: 0/6
+Parts: 0/6
+Granules: 0/6144
