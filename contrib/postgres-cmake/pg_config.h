@@ -721,8 +721,6 @@
 
 #define USE_OPENSSL_RANDOM 0
 
-#define FRONTEND 1
-
 /* Define to 1 to build with PAM support. (--with-pam) */
 #define USE_PAM 1
 
@@ -799,6 +797,10 @@
 #ifndef __cplusplus
 /* #undef inline */
 #endif
+
+/* Define to keyword to use for C99 restrict support, or to nothing if not
+   supported */
+#define pg_restrict __restrict
 
 /* Define to the type of a signed integer type wide enough to hold a pointer,
    if such a type exists, and if the system does not define it. */

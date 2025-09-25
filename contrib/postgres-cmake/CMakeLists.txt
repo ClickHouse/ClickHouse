@@ -62,6 +62,7 @@ set(SRCS
 
 add_library(_libpq ${SRCS})
 
+add_definitions(-DFRONTEND)
 add_definitions(-DOPENSSL_NO_ENGINE)
 
 target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
