@@ -337,19 +337,10 @@ const char * ColumnString::deserializeAndInsertAggregationStateValueFromArena(co
     const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size_with_zero_byte);
 
-    if (string_size_with_zero_byte == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted serialized string (zero length with terminator)");
-
-    const size_t payload_size = string_size_with_zero_byte - 1;
-
     const size_t old_size = chars.size();
-    if (payload_size > std::numeric_limits<size_t>::max() - old_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted serialized string (size overflow)");
-
-    const size_t new_size = old_size + payload_size;
+    const size_t new_size = old_size + string_size_with_zero_byte - 1;
     chars.resize(new_size);
-    if (payload_size)
-        memcpy(chars.data() + old_size, pos, payload_size);
+    memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
 
     offsets.push_back(new_size);
     return pos + string_size_with_zero_byte;

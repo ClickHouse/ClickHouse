@@ -267,24 +267,12 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & state = this->data(place);
-        auto & set = state.value;
+        auto & set = this->data(place).value;
         set.clear();
-        state.loaded_from_state = true;
 
         // Specialized here because there's no deserialiser for StringRef
         size_t size = 0;
-        try
-        {
-            readVarUInt(size, buf);
-        }
-        catch (...)
-        {
-            // Malformed state; keep empty set and empty alpha map.
-            set.resize(std::min<size_t>(1, reserved));
-            set.readAlphaMap(buf);
-            return;
-        }
+        readVarUInt(size, buf);
         if (unlikely(size > TOP_K_MAX_SIZE))
             throw Exception(
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -295,21 +283,13 @@ public:
         set.resize(std::min(size + 1, size_t(reserved)));
         for (size_t i = 0; i < size; ++i)
         {
-            try
-            {
-                auto ref = readStringBinaryInto(*arena, buf);
-                UInt64 count = 0;
-                UInt64 error = 0;
-                readVarUInt(count, buf);
-                readVarUInt(error, buf);
-                set.insert(ref, count, error);
-                arena->rollback(ref.size);
-            }
-            catch (...)
-            {
-                // Stop on malformed input; keep already read counters.
-                break;
-            }
+            auto ref = readStringBinaryInto(*arena, buf);
+            UInt64 count = 0;
+            UInt64 error = 0;
+            readVarUInt(count, buf);
+            readVarUInt(error, buf);
+            set.insert(ref, count, error);
+            arena->rollback(ref.size);
         }
 
         set.readAlphaMap(buf);
@@ -351,27 +331,16 @@ public:
         set.merge(this->data(rhs).value);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * res_arena) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
 
     {
-        if constexpr (!is_plain_column)
-        {
-            if (this->data(place).loaded_from_state)
-            {
-                ColumnArray & arr_to_guard = assert_cast<ColumnArray &>(to);
-                ColumnArray::Offsets & offsets_guard = arr_to_guard.getOffsets();
-                offsets_guard.push_back(offsets_guard.back());
-                return;
-            }
-        }
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
         auto result_vec = set.topK(threshold);
-
-        const size_t base_offset = offsets_to.back();
-        size_t inserted_count = 0;
+        size_t size = result_vec.size();
+        offsets_to.push_back(offsets_to.back() + size);
 
         IColumn & data_to = arr_to.getData();
 
@@ -383,66 +352,17 @@ public:
             IColumn & column_error = column_tuple.getColumn(2);
             for (auto &elem : result_vec)
             {
-                try
-                {
-                    column_count.insert(elem.count);
-                    column_error.insert(elem.error);
-                    StringRef safe_key = elem.key;
-                    if constexpr (!is_plain_column)
-                    {
-                        if (res_arena)
-                        {
-                            char * ptr = res_arena->alloc(safe_key.size);
-                            memcpy(ptr, safe_key.data, safe_key.size);
-                            safe_key = StringRef(ptr, safe_key.size);
-                        }
-                    }
-                    deserializeAndInsert<is_plain_column>(safe_key, column_key);
-                    if constexpr (!is_plain_column)
-                    {
-                        if (res_arena)
-                            res_arena->rollback(safe_key.size);
-                    }
-                    ++inserted_count;
-                }
-                catch (...)
-                {
-                    // Skip malformed entry
-                }
+                column_count.insert(elem.count);
+                column_error.insert(elem.error);
+                deserializeAndInsert<is_plain_column>(elem.key, column_key);
             }
-        }
-        else
+        } else
         {
             for (auto & elem : result_vec)
             {
-                try
-                {
-                    StringRef safe_key = elem.key;
-                    if constexpr (!is_plain_column)
-                    {
-                        if (res_arena)
-                        {
-                            char * ptr = res_arena->alloc(safe_key.size);
-                            memcpy(ptr, safe_key.data, safe_key.size);
-                            safe_key = StringRef(ptr, safe_key.size);
-                        }
-                    }
-                    deserializeAndInsert<is_plain_column>(safe_key, data_to);
-                    if constexpr (!is_plain_column)
-                    {
-                        if (res_arena)
-                            res_arena->rollback(safe_key.size);
-                    }
-                    ++inserted_count;
-                }
-                catch (...)
-                {
-                    // Skip malformed entry
-                }
+                deserializeAndInsert<is_plain_column>(elem.key, data_to);
             }
         }
-
-        offsets_to.push_back(base_offset + inserted_count);
     }
 };
 

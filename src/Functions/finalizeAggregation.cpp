@@ -77,25 +77,7 @@ public:
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
-        try
-        {
-            return ColumnAggregateFunction::convertToValues(std::move(mut_column));
-        }
-        catch (const Exception &)
-        {
-            // If corrupted/unsafe state leads to errors during finalize (notably for approx_top_k crafted states),
-            // return a safe default (empty result) instead of propagating fatal errors.
-            // Narrow this fallback to approx_top_k family by inspecting the argument type name.
-            String type_name = arguments[0].type->getName();
-            if (type_name.find("approx_top_k") != String::npos || type_name.find("approx_top_sum") != String::npos)
-            {
-                MutableColumnPtr res = return_type->createColumn();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    res->insertDefault();
-                return std::move(res);
-            }
-            throw;
-        }
+        return ColumnAggregateFunction::convertToValues(std::move(mut_column));
     }
 };
 

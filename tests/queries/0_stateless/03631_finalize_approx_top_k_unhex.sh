@@ -10,19 +10,12 @@ QUERY="SELECT finalizeAggregation(CAST(unhex('012A030000000000000003000000000000
 out="$( { printf '%s\n' "$QUERY"; } | ${CLICKHOUSE_CLIENT} -n 2>&1 )"
 status=$?
 
-if [ "$status" -ne 0 ]; then
+if [ "$status" -eq 0 ] && echo "$out" | grep -qE '^\s*\[\]\s*$'; then
+  echo OK
+  exit 0
+else
   echo "$out"
   exit 1
 fi
-
-if echo "$out" | grep -qE '^\s*\[\]\s*$'; then
-  echo OK
-  echo
-  echo
-  exit 0
-fi
-
-echo "$out"
-exit 1
 
 
