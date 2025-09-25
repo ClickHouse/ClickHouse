@@ -4,14 +4,24 @@
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
 
-namespace DB {
 
-void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, WriteBuffer & out) {
-    if (std::holds_alternative<Iceberg::TableStateSnapshot>(state)) {
+namespace DB
+{
+
+void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, WriteBuffer & out)
+{
+    if (std::holds_alternative<Iceberg::TableStateSnapshot>(state))
+    {
         writeIntBinary(ICEBERG_TABLE_STATE_SNAPSHOT, out);
-       std::get<Iceberg::TableStateSnapshot>(state).serialize(out);
-    } else {
+        std::get<Iceberg::TableStateSnapshot>(state).serialize(out);
+    }
+    else
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization for this DataLakeTableStateSnapshot type is not implemented");
     }
 }
