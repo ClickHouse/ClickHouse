@@ -923,7 +923,7 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 
     /// Compute the user space page cache size (in bytes) and subtract from total memory used if possible
     double user_space_cache_bytes{};
-    if (const auto *rss = getAsynchronousMetricValue(new_values, "MemoryResident"),
+    if (const auto * rss = getAsynchronousMetricValue(new_values, "MemoryResident"),
         *rss_wo_pc = getAsynchronousMetricValue(new_values, "MemoryResidentWithoutPageCache");
         rss && rss_wo_pc && rss->value >= rss_wo_pc->value)
     {
