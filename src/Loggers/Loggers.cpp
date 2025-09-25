@@ -284,7 +284,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             = config.getUInt64("text_log.buffer_size_rows_flush_threshold", log_settings.max_size_rows / 2);
 
         log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash", DB::TextLog::shouldNotifyFlushOnCrash());
-        log_settings.wait_flush_on_crash = config.getBool("text_log.wait_flush_on_crash", DB::TextLog::shouldWaitFlushOnCrash());
 
         log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
 

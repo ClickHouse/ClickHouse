@@ -294,9 +294,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
-    log_settings.queue_settings.wait_flush_on_crash = config.getBool(config_prefix + ".wait_flush_on_crash",
-                                                                       TSystemLog::shouldWaitFlushOnCrash());
-
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
