@@ -245,6 +245,12 @@ protected:
     void purge();
     void unsafeOpen();
 
+    void setRotationStrategy(RotateStrategy * rotate_strategy)
+    {
+        delete _pRotateStrategy;
+        _pRotateStrategy = rotate_strategy;
+    }
+
 private:
     LogFile * newLogFile();
     void archiveCorrupted(const std::string & path);
