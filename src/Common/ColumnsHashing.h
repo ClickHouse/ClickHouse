@@ -416,7 +416,7 @@ struct HashMethodSerialized
     bool shouldUseBatchSerialize() const
     {
 #if defined(__aarch64__)
-        // On ARM64 architectures, always use batch serialization for performance.
+        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
         return true;
 #endif
 
