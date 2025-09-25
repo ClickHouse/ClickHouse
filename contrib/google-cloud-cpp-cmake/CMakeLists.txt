@@ -106,15 +106,10 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA
 if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
     add_library(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_SOURCES})
-    add_dependencies(_google_cloud_cpp_kms google_cloud_cpp_kms_protos)
+    set(GOOGLE_CLOUD_CPP_KMS_DEPS google_cloud_cpp_grpc_utils google_cloud_cpp_kms_protos google_cloud_cpp_iam_v1_iam_policy_protos google_cloud_cpp_cloud_location_locations_protos)
 
-    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
-        google_cloud_cpp_grpc_utils
-        _google_cloud_cpp_kms
-        google_cloud_cpp_kms_protos
-        google_cloud_cpp_cloud_location_locations_protos
-        google_cloud_cpp_iam_v1_iam_policy_protos
-    )
+    add_dependencies(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
+    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS _google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
 
     target_include_directories(_google_cloud_cpp_kms SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
     target_include_directories(_google_cloud_cpp_kms SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})

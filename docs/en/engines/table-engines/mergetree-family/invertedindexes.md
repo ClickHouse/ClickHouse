@@ -43,6 +43,7 @@ CREATE TABLE tab
                                 [, ngram_size = N]
                                 [, separators = []]
                                 [, dictionary_block_size = D]
+                                [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
                                 [, bloom_filter_false_positive_rate = R]
                             ) [GRANULARITY 64]
@@ -105,6 +106,8 @@ The default values of the following advanced parameters will work well in virtua
 We do not recommend changing them.
 
 Optional parameter `dictionary_block_size` (default: 128) specifies the size of dictionary blocks in rows.
+
+Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
 Optional parameter `max_cardinality_for_embedded_postings` (default: 16) specifies the cardinality threshold below which posting lists should be embedded into dictionary blocks.
 

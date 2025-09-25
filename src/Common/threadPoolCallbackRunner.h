@@ -339,12 +339,9 @@ private:
 ///     }
 /// }
 ///
-/// Fun fact: ShutdownHelper can almost be replaced with std::shared_mutex.
+/// Fun fact: ShutdownHelper can almost be replaced with SharedMutex.
 /// Background tasks would do try_lock_shared(). Shutdown would do lock() and never unlock.
-/// Alas, std::shared_mutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
-/// (In Common/SharedMutex.h, the futex-based implementation has reliable try_lock_shared(), but the
-/// fallback absl implementation can fail spuriously. In Common/CancelableSharedMutex.h there's
-/// another suitable futex-based linux-only implementation.)
+/// Alas, SharedMutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
 class ShutdownHelper
 {
 public:
