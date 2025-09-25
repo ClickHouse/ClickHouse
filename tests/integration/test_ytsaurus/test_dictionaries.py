@@ -229,6 +229,9 @@ def test_yt_dictionary_cyrillic_strings(started_cluster):
         == "привет\nпривет\nпривет!!!\n"
     )
 
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
 
 @pytest.mark.parametrize(
     "primary_key_value, layout, dict_key",
