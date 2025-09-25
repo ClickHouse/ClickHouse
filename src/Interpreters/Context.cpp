@@ -225,6 +225,7 @@ namespace CurrentMetrics
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
+    extern const Metric ZooKeeperExpiredSessions;
 }
 
 
@@ -4311,6 +4312,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (shared->zookeeper->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperExpiredSessions);
+
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
 
