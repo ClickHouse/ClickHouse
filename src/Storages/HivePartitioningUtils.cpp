@@ -9,7 +9,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
-#include "DataTypes/IDataType.h"
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
