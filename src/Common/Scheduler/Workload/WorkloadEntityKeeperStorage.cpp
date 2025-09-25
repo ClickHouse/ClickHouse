@@ -98,23 +98,21 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
     return zookeeper;
 }
 
-bool WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    UNUSED(config);
+    WorkloadEntityStorageBase::loadEntities(config);
     /// loadEntities() is called at startup and on configuration reload, so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
-    bool changed = false;
     try
     {
         auto lock = getLock();
-        changed = refreshEntities(getZooKeeper());
+        refreshEntities(getZooKeeper());
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to load workload entities");
     }
     startWatchingThread();
-    return changed;
 }
 
 
@@ -234,11 +232,11 @@ std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const z
     return {data, stat.version};
 }
 
-bool WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper)
+void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper)
 {
     auto [data, version] = getDataAndSetWatch(zookeeper);
     if (version == current_version)
-        return false;
+        return;
 
     LOG_DEBUG(log, "Refreshing workload entities from keeper");
     ASTs queries;
@@ -266,11 +264,10 @@ bool WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
     }
 
-    bool changed = setLocalEntities(new_entities);
+    setLocalEntities(new_entities);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");
-    return changed;
 }
 
 }

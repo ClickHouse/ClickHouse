@@ -27,6 +27,8 @@ public:
 
     bool empty() const override;
 
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
+
     bool storeEntity(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
@@ -44,8 +46,6 @@ public:
 
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
-
-    void setNextStorage(std::unique_ptr<WorkloadEntityStorageBase> next_storage_);
 
     String getMasterThreadResourceName() override;
     String getWorkerThreadResourceName() override;
@@ -80,8 +80,7 @@ protected:
     /// Note that subscribers will be notified with a sequence of events.
     /// It is guaranteed that all itermediate states (between every pair of consecutive events)
     /// will be consistent (all references between entities will be valid)
-    /// Returns true if entities were changed, false if new_entities are the same as current entities
-    bool setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    void setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
 
     /// Serialize `local_entities` stored in memory plus one optional `change` into multiline string
     String serializeLocalEntities(std::optional<Event> change);

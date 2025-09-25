@@ -117,15 +117,11 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 }
 
 
-bool WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    UNUSED(config);
+    WorkloadEntityStorageBase::loadEntities(config);
     if (!entities_loaded)
-    {
         loadEntitiesImpl();
-        return true;
-    }
-    return false;
 }
 
 

@@ -127,10 +127,12 @@ void topologicallySortedWorkloadsImpl(const String & name, const ASTPtr & ast, c
     String parent = typeid_cast<ASTCreateWorkloadQuery *>(ast.get())->getWorkloadParent();
     if (!parent.empty())
     {
-        auto parent_iter = workloads.find(parent);
-        if (parent_iter == workloads.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload metadata inconsistency: Workload '{}' parent '{}' does not exist. This must be fixed manually.", name, parent);
-        topologicallySortedWorkloadsImpl(parent, parent_iter->second, workloads, visited, sorted_workloads);
+        if (auto parent_iter = workloads.find(parent); parent_iter != workloads.end())
+            topologicallySortedWorkloadsImpl(parent, parent_iter->second, workloads, visited, sorted_workloads);
+        else
+        {
+            // This is okay because parent workload could be defined outside of the current set of workloads (e.g. in another storage)
+        }
     }
 
     sorted_workloads.emplace_back(name, ast);
@@ -374,6 +376,12 @@ bool WorkloadEntityStorageBase::empty() const
     return entities.empty();
 }
 
+void WorkloadEntityStorageBase::loadEntities(const Poco::Util::AbstractConfiguration & config)
+{
+    if (next_storage)
+        next_storage->loadEntities(config);
+}
+
 bool WorkloadEntityStorageBase::storeEntity(
     const ContextPtr & current_context,
     WorkloadEntityType entity_type,
@@ -558,6 +566,7 @@ bool WorkloadEntityStorageBase::removeEntity(
         if (result == OperationResult::Ok)
         {
             Event event{entity_type, entity_name, {}};
+            local_entities.erase(entity_name);
             applyEvent(lock, event);
             unlockAndNotify(lock, {std::move(event)});
         }
@@ -642,7 +651,7 @@ std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() cons
     return std::unique_lock{mutex};
 }
 
-bool WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
+void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
 {
     std::unordered_map<String, ASTPtr> local_new_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
@@ -703,8 +712,6 @@ bool WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
 
     // Notify subscribers
     unlockAndNotify(lock, tx);
-
-    return !tx.empty();
 }
 
 void WorkloadEntityStorageBase::applyEvent(

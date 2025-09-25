@@ -11,7 +11,7 @@ WorkloadEntityConfigStorage::WorkloadEntityConfigStorage(const ContextPtr & glob
 {
 }
 
-bool WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Refreshing workload entities from configuration");
 
@@ -29,11 +29,8 @@ bool WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfigu
     }
 
     // Update entities in memory and notify subscribers
-    bool changed = setLocalEntities(new_entities);
-
+    setLocalEntities(new_entities);
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
-
-    return changed;
 }
 
 WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::storeEntityImpl(
