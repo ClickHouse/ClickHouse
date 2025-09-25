@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Common/DateLUT.h>
-#include <Common/StringUtils.h> 
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 namespace DB
