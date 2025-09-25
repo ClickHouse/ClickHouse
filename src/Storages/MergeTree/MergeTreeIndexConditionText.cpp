@@ -409,8 +409,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "has")
     {
-        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
-            return false;
         auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_HAS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
