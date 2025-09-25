@@ -201,12 +201,30 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
     store->set_storage_name(rg.pickRandomly(fc.disks));
 }
 
-void StatementGenerator::setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set)
+void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, const bool create, SettingValues * vals)
 {
-    const String & setting = rg.pickRandomly(settings);
+    std::uniform_int_distribution<size_t> settings_range(1, fc.hot_table_settings.size());
+    const size_t nsets = settings_range(rg.generator);
 
-    set->set_property(setting);
-    set->set_value(settings.at(setting).random_func(rg));
+    /// Add hot table settings
+    chassert(this->ids.empty());
+    for (size_t i = 0; i < fc.hot_table_settings.size(); i++)
+    {
+        this->ids.emplace_back(i);
+    }
+    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+
+    for (size_t i = 0; i < nsets; i++)
+    {
+        const String & next = fc.hot_table_settings[this->ids[i]];
+        SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+
+        sv->set_property(next);
+        sv->set_value(
+            ((create && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "enable_"))) || rg.nextBool()) ? "1"
+                                                                                                                                   : "0");
+    }
+    this->ids.clear();
 }
 
 void StatementGenerator::generateSettingValues(
@@ -214,7 +232,11 @@ void StatementGenerator::generateSettingValues(
 {
     for (size_t i = 0; i < nvalues; i++)
     {
-        setRandomSetting(rg, settings, vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value());
+        const String & setting = rg.pickRandomly(settings);
+        SetValue * set = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+
+        set->set_property(setting);
+        set->set_value(settings.at(setting).random_func(rg));
     }
 }
 
@@ -226,9 +248,37 @@ void StatementGenerator::generateSettingValues(
     generateSettingValues(rg, settings, settings_range(rg.generator), vals);
 }
 
+void StatementGenerator::generateHotTableSettingList(RandomGenerator & rg, SettingList * sl)
+{
+    std::uniform_int_distribution<size_t> settings_range(1, std::min<size_t>(fc.hot_table_settings.size(), 3));
+    const size_t nvalues = settings_range(rg.generator);
+
+    chassert(this->ids.empty());
+    for (size_t i = 0; i < fc.hot_table_settings.size(); i++)
+    {
+        this->ids.emplace_back(i);
+    }
+    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+    for (size_t i = 0; i < nvalues; i++)
+    {
+        const String & next = fc.hot_table_settings[this->ids[i]];
+
+        if (sl->has_setting())
+        {
+            sl->add_other_settings(next);
+        }
+        else
+        {
+            sl->set_setting(next);
+        }
+    }
+    this->ids.clear();
+}
+
 void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl)
 {
-    const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 7) + 1));
+    std::uniform_int_distribution<size_t> settings_range(1, std::min<size_t>(settings.size(), 5));
+    const size_t nvalues = settings_range(rg.generator);
 
     for (size_t i = 0; i < nvalues; i++)
     {
@@ -1825,6 +1875,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     /// Modify table engine settings
                     generateSettingValues(rg, engineSettings, svs);
                 }
+                if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+                {
+                    generateHotTableSettingsValues(rg, false, svs);
+                }
                 if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
                 {
                     /// Modify server settings
@@ -1846,6 +1900,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 {
                     /// Remove table engine settings
                     generateSettingList(rg, engineSettings, sl);
+                }
+                if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+                {
+                    generateHotTableSettingList(rg, sl);
                 }
                 if (!sl->has_setting() || rg.nextSmallNumber() < 4)
                 {

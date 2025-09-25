@@ -1347,48 +1347,10 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isMergeTreeFamily() && rg.nextBool())
+        if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
         {
-            /// Use wide and vertical merge settings more often
-            static const DB::Strings & behaviorSettings = {
-                "add_minmax_index_for_numeric_columns",
-                "add_minmax_index_for_string_columns",
-                "allow_coalescing_columns_in_partition_or_order_key",
-                "allow_experimental_replacing_merge_with_cleanup",
-                "allow_experimental_reverse_key",
-                "allow_floating_point_partition_key",
-                "allow_nullable_key",
-                "allow_summing_columns_in_partition_or_order_key",
-                "allow_suspicious_indices",
-                "allow_vertical_merges_from_compact_to_wide_parts",
-                "enable_block_number_column",
-                "enable_block_offset_column",
-                "min_bytes_for_full_part_storage",
-                "min_bytes_for_wide_part",
-                "min_rows_for_full_part_storage",
-                "min_rows_for_wide_part",
-                "vertical_merge_algorithm_min_bytes_to_activate",
-                "vertical_merge_algorithm_min_columns_to_activate",
-                "vertical_merge_algorithm_min_rows_to_activate",
-            };
-            const size_t nsets = (rg.nextLargeNumber() % behaviorSettings.size()) + 1;
-
-            chassert(this->ids.empty());
-            for (size_t i = 0; i < behaviorSettings.size(); i++)
-            {
-                this->ids.emplace_back(i);
-            }
-            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
             svs = svs ? svs : te->mutable_setting_values();
-            for (size_t i = 0; i < nsets; i++)
-            {
-                const String & next = behaviorSettings[this->ids[i]];
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-                sv->set_property(next);
-                sv->set_value((next[0] == 'a' || next[0] == 'e' || rg.nextBool()) ? "1" : "0");
-            }
-            this->ids.clear();
+            generateHotTableSettingsValues(rg, true, svs);
         }
         if (b.isAnyS3Engine() && rg.nextBool())
         {
