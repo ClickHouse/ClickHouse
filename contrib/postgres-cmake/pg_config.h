@@ -118,9 +118,13 @@
 #define HAVE_DECL_STRLCPY 1
 #endif
 
-/* Define to 1 if you have the declaration of `sys_siglist', and to 0 if you
+/* Define to 1 if you have the declaration of `strnlen', and to 0 if you
    don't. */
-#define HAVE_DECL_SYS_SIGLIST 1
+#define HAVE_DECL_STRNLEN 1
+
+/* Define to 1 if you have the declaration of `strsep', and to 0 if you don't.
+   */
+#define HAVE_DECL_STRSEP 1
 
 /* Define to 1 if you have the declaration of `vsnprintf', and to 0 if you
    don't. */
