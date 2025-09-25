@@ -994,6 +994,10 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     // - h:mm:ss needs 7 characters
     // - hhh:mm:ss needs 9 characters
 
+    // For the fast path we only accept colon-separated forms
+    // Pure-integer ("S" / "SS" / "seconds") is handled in the fallback
+    // to avoid consuming a single digit from inputs like "0:00:00" at a buffer boundary
+
     if (available_bytes > 0) // Always try optimistic path if we have some bytes
     {
         uint64_t hour = 0;
@@ -1077,31 +1081,6 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 
             return ReturnType(true);
         }
-        // SS
-        else if (available_bytes >= 2 && isNumericASCII(s[0]) && isNumericASCII(s[1]))
-        {
-            hour = 0;
-            minute = 0;
-            second = (s[0] - '0') * 10 + (s[1] - '0');
-
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
-            buf.position() += 2;
-
-            return ReturnType(true);
-        }
-        // S
-        else if (available_bytes >= 1 && isNumericASCII(s[0]))
-        {
-            hour = 0;
-            minute = 0;
-            second = s[0] - '0';
-
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
-            buf.position() += 1;
-
-            return ReturnType(true);
-        }
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(time, buf);
     }
     return readTimeTextFallback<ReturnType, t64_mode>(time, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }

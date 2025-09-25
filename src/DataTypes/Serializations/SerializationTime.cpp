@@ -113,10 +113,14 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
+    const char * begin = istr.position();
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '123808'
     {
         if (!tryReadTimeText(x, istr) || !checkChar('\'', istr))
+        {
+            istr.position() = const_cast<char *>(begin); // rollback on failure
             return false;
+        }
     }
     else
     {
@@ -180,27 +184,18 @@ void SerializationTime::serializeTextCSV(const IColumn & column, size_t row_num,
 void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-
     if (istr.eof())
         throwReadAfterEOF();
 
-    char maybe_quote = *istr.position();
+    /// Always read the whole CSV field first (handles quotes and escapes),
+    /// then parse from a bounded buffer to avoid mis-alignment on failures
+    String time_str;
+    readCSVString(time_str, istr, settings.csv);
 
-    if (maybe_quote == '\'' || maybe_quote == '"')
-    {
-        ++istr.position();
-        readTimeText(x, istr);
-        assertChar(maybe_quote, istr);
-    }
-    else
-    {
-        String time_str;
-        readCSVString(time_str, istr, settings.csv);
-        ReadBufferFromString buf(time_str);
-        readTimeText(x, buf);
-        if (!buf.eof())
-            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
-    }
+    ReadBufferFromString buf(time_str);
+    readTimeText(x, buf);
+    if (!buf.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
@@ -212,22 +207,11 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
     if (istr.eof())
         return false;
 
-    char maybe_quote = *istr.position();
-
-    if (maybe_quote == '\'' || maybe_quote == '"')
-    {
-        ++istr.position();
-        if (!tryReadTimeText(x, istr) || !checkChar(maybe_quote, istr))
-            return false;
-    }
-    else
-    {
-        String time_str;
-        readCSVString(time_str, istr, settings.csv);
-        ReadBufferFromString buf(time_str);
-        if (!tryReadTimeText(x, buf) || !buf.eof())
-            return false;
-    }
+    String time_str;
+    readCSVString(time_str, istr, settings.csv);
+    ReadBufferFromString buf(time_str);
+    if (!tryReadTimeText(x, buf) || !buf.eof())
+        return false;
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;

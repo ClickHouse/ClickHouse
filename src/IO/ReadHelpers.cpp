@@ -1627,111 +1627,67 @@ template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, cons
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 template <typename ReturnType, bool t64_mode>
-ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
+ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * /*allowed_date_delimiters*/, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+    if (!allowed_time_delimiters)
+        allowed_time_delimiters = ":";
 
-    /// hhh:mm:ss
-    static constexpr auto time_broken_down_length = 9;
+    const char * begin = buf.position();
 
-    char s[time_broken_down_length];
-    char * s_pos = s;
+    auto fail = [&]()->ReturnType
+    {
+        if constexpr (!throw_exception)
+            buf.position() = const_cast<char *>(begin); // rollback for try-parse
+        else
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time");
+        return ReturnType(false);
+    };
 
     int negative_multiplier = 1;
-
     if (!buf.eof() && *buf.position() == '-')
     {
         negative_multiplier = -1;
         ++buf.position();
+        if (buf.eof() || !isNumericASCII(*buf.position()))
+            return fail();
     }
 
-    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
-    while (s_pos < s + time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    Int64 a = 0;
+    if constexpr (throw_exception)
+        readIntText(a, buf);
+    else if (!tryReadIntText(a, buf))
+        return ReturnType(false);  // nothing consumed; no rollback needed
+
+    auto is_allowed_delim = [&](char ch){ return isSymbolIn(ch, allowed_time_delimiters); };
+    if (!buf.eof() && is_allowed_delim(*buf.position()))
     {
-        *s_pos = *buf.position();
-        ++s_pos;
-        ++buf.position();
-    }
+        ++buf.position(); // consume first delimiter
 
-    if (!t64_mode && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
-    {
-        const auto already_read_length = s_pos - s;
-        const size_t remaining_time_size = time_broken_down_length - already_read_length;
+        Int64 b = 0;
+        if constexpr (throw_exception)
+            readIntText(b, buf);
+        else if (!tryReadIntText(b, buf))
+            return fail();
 
-        size_t size = buf.read(s_pos, remaining_time_size);
-
-        if constexpr (!throw_exception)
-        {
-            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4])
-                || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
-                return false;
-
-            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                return false;
-        }
-
-        uint64_t hour = 0;
-        UInt8 minute = 0;
-        UInt8 second = 0;
-
-        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        if (!buf.eof() && is_allowed_delim(*buf.position()))
         {
             ++buf.position();
-
-            if (size != time_broken_down_length)
-            {
-                if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(s, size));
-                else
-                    return false;
-            }
-
-            if constexpr (!throw_exception)
-            {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4]) || !isNumericASCII(s[5])
-                    || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
-                    return false;
-
-                if (!isSymbolIn(s[3], allowed_time_delimiters) || !isSymbolIn(s[6], allowed_time_delimiters))
-                    return false;
-            }
-
-            hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
-            minute = (s[4] - '0') * 10 + (s[5] - '0');
-            second = (s[7] - '0') * 10 + (s[8] - '0');
-        }
-
-        time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
-    }
-    else
-    {
-        time = 0;
-        bool too_short = s_pos - s <= 4;
-
-        if (!too_short || t64_mode)
-        {
-            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
-            {
-                if constexpr (!throw_exception)
-                {
-                    if (!isNumericASCII(*digit_pos))
-                        return false;
-                }
-                time = time * 10 + *digit_pos - '0';
-            }
-        }
-        time *= negative_multiplier;
-
-        if (too_short && negative_multiplier != -1)
-        {
+            Int64 c = 0;
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time");
-            else
-                return false;
+                readIntText(c, buf);
+            else if (!tryReadIntText(c, buf))
+                return fail();
+
+            time = date_lut.makeTime(static_cast<UInt64>(a), static_cast<UInt8>(b), static_cast<UInt8>(c)) * negative_multiplier;
+            return ReturnType(true);
         }
 
+        time = date_lut.makeTime(0, static_cast<UInt8>(a), static_cast<UInt8>(b)) * negative_multiplier;
+        return ReturnType(true);
     }
 
+    time = static_cast<time_t>(a) * negative_multiplier;
     return ReturnType(true);
 }
 
