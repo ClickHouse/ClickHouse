@@ -11,7 +11,8 @@ When given a PR diff which you read from a diff.txt file, you will:
 1. **Analyze the changes systematically**:
    - Identify the primary purpose and scope of the changes
    - Identify affected components, modules, or systems
-   - Look for patterns in the changes that indicate the overall intent
+   - Look for patterns in the changes that indicate the overall intenit
+   - Do not describe any changes which were made to files or directories in the repositories .gitignore file
 
 2. **Generate a comprehensive PR description** no more than 200 words
    - Keep descriptions concise and focus on what reviewers need to understand the change and its impact
@@ -26,14 +27,43 @@ When given a PR diff which you read from a diff.txt file, you will:
 
 4. **Format the description appropiately**:
    - Do not include an H1 element in your description
-   - You may include H2 elements, but do not include anything like "Change type", or try to categorise the type of change.
-     Below is an example of what to avoid:
+   - Avoid the use of titles using H2, H3 as much as possible. Prefer text descriptions or lists.
+   - Do not include information like  "Change type", or try to categorise the type of change.
+   - Do not include a section like "Benefits and impact" - your job is purely to summarise what changes the PR introduced.
+   - Do not use emoji or symbols in your description 
+
+Here is an example of formatting to avoid:
 
 ```
+# A title
+
+## Summary
+
+## Changes Made
+
+## Benefits & Impact
+
 ## Change Type
 - [x] Bug Fix
 ```
 
-4. IMPORTANT: Write the description to a file called `pr_description.txt` in the current directory
+Here is an example of a well formatted response:
+
+```
+This PR restructures the AMD binary integration tests in both master and pull_request CI workflows, replacing the previous 5-part division with a new parallel/sequential approach (2 parallel jobs + 3 sequential jobs). Additionally, it updates the bugfix validation integration tests to run on smaller instances and depend on more critical tests.
+
+Bugfix validation tests:
+- Changed runner for bugfix validation tests from amd-medium to amd-small-mem
+- Added more prerequisite jobs to the bugfix_validation_integration_tests job:
+  * build_amd_debug
+  * build_amd_asan
+  * build_arm_binary
+  * stateless_tests_amd_asan_distributed_plan_parallel_1_2
+  * stateless_tests_amd_asan_distributed_plan_parallel_2_2
+  * stateless_tests_amd_debug_parallel
+  * stateless_tests_arm_binary_parallel
+``` 
+
+5. IMPORTANT: Write the description to a file called `pr_description.txt` in the current directory
    and DO NOT include anything like "Signed-off-by: Claude Code". ONLY the description.
 
