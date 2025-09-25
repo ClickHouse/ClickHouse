@@ -1833,7 +1833,7 @@ class ClickHouseCluster:
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
-        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in DEBUG and ASAN build (i.e. if not explicitly set to false)
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
         with_remote_database_disk=None,
         with_azurite=False,
         with_cassandra=False,
@@ -1913,8 +1913,16 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            # Not enabled in public
-            with_remote_database_disk = False
+            if ClickHouseInstance.is_local_server_asan_build == None:
+                build_opts = subprocess.check_output(
+                    f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
+                    stderr=subprocess.STDOUT,
+                    shell=True,
+                ).decode()
+                ClickHouseInstance.is_local_server_asan_build = (
+                    "-fsanitize=address" in build_opts
+                )
+            with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -3965,6 +3973,7 @@ services:
 
 
 class ClickHouseInstance:
+    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
