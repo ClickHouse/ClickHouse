@@ -5,6 +5,7 @@ sidebar_label: 'Geo'
 sidebar_position: 54
 slug: /sql-reference/data-types/geo
 title: 'Geometric'
+doc_type: 'reference'
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
