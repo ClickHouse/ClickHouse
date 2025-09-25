@@ -3,6 +3,7 @@ description: 'Computes quantile of a histogram using linear interpolation.'
 sidebar_position: 364
 slug: /sql-reference/aggregate-functions/reference/quantilePrometheusHistogram
 title: 'quantilePrometheusHistogram'
+doc_type: 'reference'
 ---
 
 # quantilePrometheusHistogram
