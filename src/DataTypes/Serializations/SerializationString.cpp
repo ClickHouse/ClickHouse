@@ -732,6 +732,7 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
 void SerializationString::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
+    settings.path.push_back(Substream::Regular);
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
         state = cached_state;
@@ -744,12 +745,19 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
     else
     {
         if (version == MergeTreeStringSerializationVersion::DEFAULT)
-            state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+        {
+            auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+            string_state->need_string_data = true;
+            state = string_state;
+        }
         else
+        {
             state = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+        }
 
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
     }
+    settings.path.pop_back();
 }
 
 void SerializationString::deserializeBinaryBulkWithSizeStream(

@@ -54,6 +54,7 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
 {
     if (version == MergeTreeStringSerializationVersion::DEFAULT)
     {
+        settings.path.push_back(Substream::Regular);
         if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
         {
             state = cached_state;
@@ -63,6 +64,7 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
             state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
             addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
         }
+        settings.path.pop_back();
     }
 }
 
