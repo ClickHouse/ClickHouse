@@ -155,6 +155,9 @@ public:
     std::string_view getDummyStats() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
 protected:
     void updateOutputHeader() override;
 
@@ -188,6 +191,9 @@ protected:
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
+
+private:
+    bool disjunctions_optimization_applied = false;
 };
 
 

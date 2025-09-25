@@ -506,7 +506,7 @@ def test_table_function():
 
     # FIXME
     assert "Failed to get table schema" in node.query_and_get_error(
-        "SELECT * FROM arrowflight(flight1, dataset = 'mytable')"
+        "SELECT * FROM arrowFlight(flight1, dataset = 'mytable')"
     )
 
     node.query("DROP TABLE mytable")
