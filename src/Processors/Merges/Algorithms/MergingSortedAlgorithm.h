@@ -20,6 +20,7 @@ public:
         const SortDescription & description_,
         size_t max_block_size_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
