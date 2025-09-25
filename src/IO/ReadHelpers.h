@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 /// Helper functions for formatted input.
@@ -1228,7 +1229,7 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
             // Check if we can continue with fractional part parsing
             if (buf.eof() || *buf.position() != '.')
             {
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time64: {}", e.message());
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse Time64: {}", e.message());
             }
             // If there's a dot, we'll try to parse as decimal below
             parse_success = false;
