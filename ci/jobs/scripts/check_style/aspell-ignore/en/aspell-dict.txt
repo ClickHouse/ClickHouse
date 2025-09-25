@@ -814,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -2349,6 +2350,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator

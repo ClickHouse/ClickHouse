@@ -26,6 +26,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
+        JobConfigs.pr_body.set_dependency([JobNames.STYLE_CHECK]),
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
