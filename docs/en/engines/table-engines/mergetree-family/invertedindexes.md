@@ -237,6 +237,26 @@ SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
 ```
 
+#### `has` {#functions-example-has}
+
+Function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+#### `mapContains` {#functions-example-mapcontains}
+
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias: `mapContainsKey`) matches against a single token in the keys of map.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+```
+
 ## Implementation {#implementation}
 
 ### Index layout {#index-layout}
