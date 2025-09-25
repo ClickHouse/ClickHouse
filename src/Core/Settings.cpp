@@ -6913,7 +6913,6 @@ Possible values:
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
 )", 0) \
-    \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler.
     )", 0) \
