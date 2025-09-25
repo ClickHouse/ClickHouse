@@ -63,6 +63,8 @@ class Job:
 
         enable_commit_status: bool = False
 
+        enable_gh_auth: bool = False
+
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
 
@@ -181,6 +183,11 @@ class Job:
         def set_allow_merge_on_failure(self, value):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
+            return res
+
+        def set_post_hooks(self, post_hooks):
+            res = copy.deepcopy(self)
+            res.post_hooks = post_hooks
             return res
 
         @staticmethod

@@ -12,6 +12,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -268,6 +269,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -938,6 +940,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
+        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
+            "startup_scripts_failure_reason",
+            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+            {"error_name"}
+        );
+        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -1459,14 +1467,14 @@ try
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
-    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
-    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
+    auto main_config_zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&] { return global_context->getZooKeeper(); });
+    Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
+            main_config_zk_node_cache.get(), main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -2031,6 +2039,7 @@ try
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
+            global_context->setMaxNamedCollectionNumToWarn(new_server_settings[ServerSetting::max_named_collection_num_to_warn]);
             global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
             global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);

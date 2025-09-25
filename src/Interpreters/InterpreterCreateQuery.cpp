@@ -56,7 +56,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
@@ -1972,7 +1971,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateVirtualColumns(*res);
 
-    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumnsDeprecated())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1980,7 +1979,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->getName());
     }
 
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumns())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "

@@ -15,8 +15,6 @@ S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER_AMD = ["self-hosted", "builder"]
-    BUILDER_ARM = ["self-hosted", "builder-aarch64"]
     FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
@@ -310,6 +308,7 @@ class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
+    PR_BODY = "Autogen PR description and changelog entry"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"
@@ -320,7 +319,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
+    DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -342,9 +341,8 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
-    COMPILER_CHCACHE = "chcache"
+    COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
-    COMPILER_CACHE = COMPILER_CACHE_LEGACY
 
 
 class ArtifactNames:

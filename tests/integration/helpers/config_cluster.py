@@ -29,3 +29,7 @@ kafka_sasl_pass = "ClickHouse_Kafka_P@ssw0rd"
 # NATS CREDENTIALS
 nats_user = "clickhouse"
 nats_pass = "ClickHouse_NATS_P@ssw0rd"
+
+# ARROWFLIGHT CREDENTIALS
+arrowflight_user = "admin"
+arrowflight_pass = "ClickHouse_ArrowFlight_P@ssw0rd"

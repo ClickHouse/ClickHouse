@@ -14,6 +14,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -214,7 +215,19 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    {
+        /// Check if any of the alter commands is ADD_INDEX and throw immediately
+        const bool alter_adds_index
+            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
+        if (alter_adds_index)
+        {
+            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
+            if (!features.supports_skipping_indices)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
+        }
+    }
+
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
