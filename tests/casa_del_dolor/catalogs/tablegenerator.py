@@ -8,9 +8,9 @@ from .laketables import (
     FileFormat,
     TableStorage,
     SparkColumn,
-    get_timestamp_for_table,
 )
 
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
@@ -610,6 +610,12 @@ class IcebergTableGenerator(LakeTableGenerator):
         ).collect()
         return [x["snapshot_id"] for x in result]
 
+    def get_timestamps(self, spark: SparkSession, table: SparkTable):
+        result = spark.sql(
+            f"SELECT made_current_at FROM {table.get_namespace_path()}.history;"
+        ).collect()
+        return [x["made_current_at"] for x in result]
+
     def generate_extra_statement(
         self,
         spark: SparkSession,
@@ -621,8 +627,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
-            if random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}'"
+            timestamps = self.get_timestamps(spark, table)
+            if len(timestamps) > 0 and random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
             res += ")"
             return res
         if next_option == 2:
@@ -650,8 +657,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
         if next_option == 5:
             res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
-            if random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}'"
+            timestamps = self.get_timestamps(spark, table)
+            if len(timestamps) > 0 and random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
             if random.randint(1, 2) == 1:
                 res += f", stream_results => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
@@ -682,7 +690,10 @@ class IcebergTableGenerator(LakeTableGenerator):
                 "cherrypick_snapshot",
             ]
             return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_table_full_path()}', snapshot_id => {random.choice(snapshots)})"
-        return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}')"
+        timestamps = self.get_timestamps(spark, table)
+        if len(timestamps) > 0 and next_option in (12, 13):
+            return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
+        return ""
 
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
@@ -963,15 +974,26 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 3)
+        next_option = random.randint(1, 4)
 
         if next_option == 1:
             # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
-            # Restore
-            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")}';"
-        if next_option == 3:
             # Optimize
             return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
+        if next_option in (3, 4):
+            # Restore
+            dt = DeltaTable.forName(spark, table.get_table_full_path())
+            history_df = dt.history()
+
+            versions = [row.version for row in history_df.select("version").collect()]
+            if len(versions) > 0 and random.randint(1, 2) == 1:
+                return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(versions)};"
+            timestamps = [
+                row.version for row in history_df.select("timestamps").collect()
+            ]
+            if len(timestamps) > 0:
+                return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
+            return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
         return ""

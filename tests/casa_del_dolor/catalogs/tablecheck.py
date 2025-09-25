@@ -1,5 +1,8 @@
+from datetime import datetime
+
 import logging
 import random
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -15,7 +18,7 @@ from pyspark.sql.types import (
     DoubleType,
 )
 
-from .laketables import SparkTable, LakeFormat, get_timestamp_for_table
+from .laketables import SparkTable, LakeFormat
 from integration.helpers.client import Client
 
 
@@ -64,26 +67,43 @@ class SparkAndClickHouseCheck:
             )
 
             # For Iceberg, use time travel or snapshots sometimes
-            if table.lake_format == LakeFormat.Iceberg and random.randint(1, 2) == 1:
-                result = spark.sql(
-                    f"SELECT snapshot_id FROM {table.get_namespace_path()}.snapshots;"
-                ).collect()
-                snapshots = [x["snapshot_id"] for x in result]
+            if random.randint(1, 2) == 1:
+                snapshots = []
+                timestamps = []
 
-                if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                if table.lake_format == LakeFormat.Iceberg:
+                    result = spark.sql(
+                        f"SELECT snapshot_id FROM {table.get_namespace_path()}.snapshots;"
+                    ).collect()
+                    snapshots = [x["snapshot_id"] for x in result]
+                    result = spark.sql(
+                        f"SELECT made_current_at FROM {table.get_namespace_path()}.history;"
+                    ).collect()
+                    timestamps = [x["made_current_at"] for x in result]
+                else:
+                    dt = DeltaTable.forName(spark, table.get_table_full_path())
+                    history_df = dt.history()
+
+                    snapshots = [
+                        row.version for row in history_df.select("version").collect()
+                    ]
+                    # timestamps = [row.version for row in history_df.select("timestamps").collect()]
+
+                if len(snapshots) > 0 and (
+                    len(timestamps) == 0 or random.randint(1, 2) == 1
+                ):
                     next_snapshot = random.choice(snapshots)
-                    clickhouse_predicate = (
-                        f" SETTINGS iceberg_snapshot_id = {next_snapshot}"
-                    )
+                    clickhouse_predicate = f" SETTINGS {"iceberg_snapshot_id" if table.lake_format == LakeFormat.Iceberg else "delta_lake_snapshot_version"} = {next_snapshot}"
                     spark_predicate = f" VERSION AS OF {next_snapshot}"
                     extra_predicate = f" on snapshot {next_snapshot}"
-                else:
-                    next_time = get_timestamp_for_table()
-                    clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {next_time.timestamp() * 1000}"
-                    spark_predicate = f" TIMESTAMP AS OF '{next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}'"
-                    extra_predicate = (
-                        f" on timestamp {next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}"
+                elif len(timestamps) > 0:
+                    next_time = random.choice(timestamps)
+                    dt = datetime.strptime(next_time, "%Y-%m-%d %H:%M:%S")
+                    clickhouse_predicate = (
+                        f" SETTINGS iceberg_timestamp_ms = {int(dt.timestamp() * 1000)}"
                     )
+                    spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
+                    extra_predicate = f" on timestamp {next_time}"
 
             # Start by checking counts
             spark_query = spark.sql(

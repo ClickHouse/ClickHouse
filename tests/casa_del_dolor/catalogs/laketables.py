@@ -1,6 +1,3 @@
-import random
-import time
-from datetime import datetime, timedelta
 from enum import Enum
 from pyspark.sql.types import DataType
 
@@ -129,8 +126,3 @@ class SparkTable:
 
     def get_clickhouse_path(self) -> str:
         return f"{self.database_name}.{self.table_name}"
-
-
-def get_timestamp_for_table() -> datetime:
-    time.tzset()  # The timezone may change for every run
-    return datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
