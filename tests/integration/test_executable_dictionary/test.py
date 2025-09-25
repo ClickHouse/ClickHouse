@@ -395,6 +395,7 @@ def test_executable_source_argument_python(started_cluster):
 
 def test_executable_source_updated_python(started_cluster):
     skip_test_msan(node)
+    node.restart_clickhouse()
     assert (
         node.query(
             "SELECT * FROM dictionary(executable_source_simple_key_update_python) ORDER BY input"
