@@ -68,7 +68,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement&& element)
+void SystemLogQueue<LogElement>::push(LogElement && element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
