@@ -2,10 +2,11 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -53,7 +54,7 @@ namespace DB::Histogram
         const Labels & getLabels() const;
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         MetricsMap metrics;
         const Buckets buckets;
         const Labels labels;
