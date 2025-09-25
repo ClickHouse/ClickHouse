@@ -255,26 +255,6 @@ def test_executable_implicit_input_slow_python(started_cluster):
     )
 
 
-def test_executable_input_slow_python(started_cluster):
-    skip_test_msan(node)
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_python', 'result', toUInt64(1))"
-    )
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_pool_python', 'result', toUInt64(1))"
-    )
-
-
-def test_executable_implicit_input_slow_python(started_cluster):
-    skip_test_msan(node)
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_python', 'result', toUInt64(1))"
-    )
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_pool_python', 'result', toUInt64(1))"
-    )
-
-
 def test_executable_non_direct_input_bash(started_cluster):
     skip_test_msan(node)
     assert (
