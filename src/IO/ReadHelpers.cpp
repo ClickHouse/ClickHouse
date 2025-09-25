@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -1645,7 +1646,7 @@ ReturnType readTimeTextFallback(
         if constexpr (!throw_exception)
             buf.position() = begin;  // rollback for try-parse
         else
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time");
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse time from String");
         return ReturnType(false);
     };
 
