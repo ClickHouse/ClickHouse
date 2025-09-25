@@ -211,13 +211,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         }
         if (local_context->getSettingsRef()[Setting::enable_split_by_row_groups_distributed_processing])
         {
-            auto another_iter = std::make_shared<ObjectIteratorSplittedByRowGroups>(
-                iter,
+            iter = std::make_shared<ObjectIteratorSplittedByRowGroups>(
+                std::move(iter),
                 configuration,
                 object_storage,
                 local_context
             );
-            iter = another_iter;
         }
         return iter;
     }

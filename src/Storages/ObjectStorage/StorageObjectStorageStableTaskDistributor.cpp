@@ -82,6 +82,8 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         files.pop_back();
 
         auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        if (next_file->row_group_id)
+            file_path += "_" + std::to_string(*next_file->row_group_id);
         auto it = unprocessed_files.find(file_path);
         if (it == unprocessed_files.end())
             continue;
@@ -159,6 +161,8 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
+            if (object_info->row_group_id)
+                file_path += "_" + std::to_string(*object_info->row_group_id);
             unprocessed_files.emplace(file_path, object_info);
             connection_to_files[file_replica_idx].push_back(object_info);
         }

@@ -344,8 +344,8 @@ private:
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
     std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
     bool read_exactly_one_block = false;
-    bool one_block_readed = false;
-    size_t num_blocks_to_skip = 0;
+    size_t row_group_to_read;
+    std::optional<size_t> num_blocks_to_skip = std::nullopt;
 };
 
 class ArrowParquetSchemaReader : public ISchemaReader

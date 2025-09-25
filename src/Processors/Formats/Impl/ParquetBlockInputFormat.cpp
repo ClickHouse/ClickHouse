@@ -1,6 +1,7 @@
 #include <memory>
 #include <mutex>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include "Common/Exception.h"
 
 #if USE_PARQUET
 
@@ -821,7 +822,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         }
 
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
-        if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
+        if (num_blocks_to_skip.has_value() || row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
         {
             row_group_batches.emplace_back();
             row_group_batches_skipped_rows.push_back(0);
@@ -835,6 +836,17 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().total_bytes_compressed += row_group_size;
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
+    }
+
+    if (num_blocks_to_skip.has_value())
+    {
+        if (row_group_batches_completed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Noooo la policia");
+        row_group_batches_completed = *num_blocks_to_skip;
+        row_group_to_read = row_group_batches_completed;
+        row_group_batches_started = *num_blocks_to_skip;
+        for (size_t i = 0; i < *num_blocks_to_skip; ++i)
+            row_group_batches[i].status = RowGroupBatchState::Status::Done;
     }
 }
 
@@ -1139,10 +1151,19 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     if (pool)
     {
         size_t max_decoding_threads = parser_shared_resources->getParsingThreadsPerReader();
-        while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
-               row_group_batches_started < row_group_batches.size())
-            scheduleRowGroup(row_group_batches_started++);
-
+        if (!read_exactly_one_block)
+        {
+            while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
+                   row_group_batches_started < row_group_batches.size())
+                scheduleRowGroup(row_group_batches_started++);
+        }
+        else
+        {
+            if (row_group_batches_started < row_group_to_read)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Nooooo la policia");
+            if (row_group_batches_started == row_group_to_read)
+                scheduleRowGroup(row_group_batches_started++);
+        }
         if (row_group_batch_touched)
         {
             auto & row_group = row_group_batches[*row_group_batch_touched];
@@ -1181,17 +1202,10 @@ Chunk ParquetBlockInputFormat::read()
     if (is_stopped || row_group_batches_completed == row_group_batches.size())
         return {};
 
-    if (read_exactly_one_block && one_block_readed) 
-        return {};
-
-    if (num_blocks_to_skip > 0)
+    if (read_exactly_one_block && row_group_batches_completed > row_group_to_read) 
     {
-        row_group_batches_completed = num_blocks_to_skip;
-        row_group_batches_started = num_blocks_to_skip;
-        for (size_t i = 0; i < num_blocks_to_skip; ++i)
-            row_group_batches[i].status = RowGroupBatchState::Status::Done;
+        return {};
     }
-    num_blocks_to_skip = 0;
 
     while (true)
     {
@@ -1217,7 +1231,8 @@ Chunk ParquetBlockInputFormat::read()
             chassert(chunk.chunk_idx == row_group.next_chunk_idx - row_group.num_pending_chunks);
             --row_group.num_pending_chunks;
 
-            scheduleMoreWorkIfNeeded(chunk.row_group_batch_idx);
+            if (!read_exactly_one_block)
+                scheduleMoreWorkIfNeeded(chunk.row_group_batch_idx);
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
@@ -1237,11 +1252,13 @@ Chunk ParquetBlockInputFormat::read()
 
             chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
 
-            one_block_readed = true;
             return std::move(chunk.chunk);
         }
 
         if (row_group_batches_completed == row_group_batches.size())
+            return {};
+
+        if (read_exactly_one_block && row_group_batches_completed > row_group_to_read) 
             return {};
 
         if (pool)

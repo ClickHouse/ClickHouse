@@ -238,7 +238,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
     select_regular = (
-        instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr} ORDER BY ALL").strip().split()
     )
 
     # Cluster Query with node1 as coordinator
@@ -250,7 +250,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         run_on_cluster=True,
     )
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} SETTINGS enable_split_by_row_groups_distributed_processing=1").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS enable_split_by_row_groups_distributed_processing=1").strip().split()
     )
 
     # Simple size check

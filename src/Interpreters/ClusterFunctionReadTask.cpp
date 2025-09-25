@@ -32,6 +32,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    row_group_id = object->row_group_id;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -68,7 +69,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
     {
-        writeVarUInt(row_group_id.value_or(-1), out);
+        writeVarInt(row_group_id.value_or(-1), out);
     }
 }
 
