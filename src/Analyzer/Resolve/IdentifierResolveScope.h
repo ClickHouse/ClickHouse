@@ -198,14 +198,6 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    struct ResolvedFunctionsCache
-    {
-        FunctionOverloadResolverPtr resolver;
-        FunctionBasePtr function_base;
-    };
-
-    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
-
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 
     IdentifierResolveScope * getNearestQueryScope();
