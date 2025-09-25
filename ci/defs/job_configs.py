@@ -50,6 +50,7 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/functional_tests_results.py",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -95,6 +96,12 @@ class JobConfigs:
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
+    )
+    pr_body = Job.Config(
+        name=JobNames.PR_BODY,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/pr_autogen_description_changelog_job.py",
+        enable_gh_auth=True,
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -786,7 +793,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
-                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
@@ -946,7 +953,7 @@ class JobConfigs:
         ),
     )
     docs_job = Job.Config(
-        name=JobNames.Docs,
+        name=JobNames.DOCS,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
