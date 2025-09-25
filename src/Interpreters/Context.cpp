@@ -4543,10 +4543,10 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     }
     else if (zookeeper->second->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
         auto old_zookeeper = zookeeper->second;
         zookeeper->second = zookeeper->second->startNewSession();
-
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
