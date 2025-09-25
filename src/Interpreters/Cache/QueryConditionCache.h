@@ -2,7 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -44,7 +44,7 @@ private:
     struct Entry
     {
         MatchingMarks matching_marks;
-        std::shared_mutex mutex; /// (*)
+        SharedMutex mutex; /// (*)
 
         explicit Entry(size_t mark_count); /// (**)
 
