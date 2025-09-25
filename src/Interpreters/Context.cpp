@@ -2731,6 +2731,7 @@ Settings Context::getSettingsCopy() const
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
+    assertCanChangeSettings();
     *settings = settings_;
     need_recalculate_access = true;
     contextSanityClampSettings(*this, *settings);
@@ -2743,6 +2744,7 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         setCurrentProfileWithLock(value, true /*check_constraints*/, lock);
         return;
     }
+    assertCanChangeSettings();
     settings->set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
@@ -2756,9 +2758,16 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock);
         return;
     }
+    assertCanChangeSettings();
     settings->set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
+}
+
+void Context::assertCanChangeSettings() const
+{
+    if (isGlobalContext() && getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to modify settings in global context. It's a bug.");
 }
 
 void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock)
