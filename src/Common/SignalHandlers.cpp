@@ -6,7 +6,6 @@
 #include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
-#include <Interpreters/SystemLog.h>
 #include <base/sleep.h>
 #include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -27,8 +26,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int CANNOT_SEND_SIGNAL;
+extern const int CANNOT_SET_SIGNAL_HANDLER;
+extern const int CANNOT_SEND_SIGNAL;
 }
 
 }
