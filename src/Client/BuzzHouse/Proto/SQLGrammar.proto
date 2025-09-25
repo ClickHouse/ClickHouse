@@ -3547,6 +3547,13 @@ message AddStatistics {
     required ColumnStatistics stats = 2;
 }
 
+message MaterializeStatistics {
+    oneof statistics_oneof {
+        ColumnPathList cols = 1;
+        bool all = 2;
+    }
+}
+
 message AddIndex {
     required IndexDef new_idx = 1;
     optional AddWhere add_where = 2;
@@ -3773,7 +3780,7 @@ message AlterItem {
         AddStatistics mod_stats = 14;
         ColumnPathList drop_stats = 15;
         ColumnPathList clear_stats = 16;
-        ColumnPathList mat_stats = 17;
+        MaterializeStatistics mat_stats = 17;
         AddIndex add_index = 18;
         IdxInPartition materialize_index = 19;
         Index drop_index = 20;

@@ -1748,7 +1748,16 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + 1))
             {
-                pickUpNextCols(rg, t, ati->mutable_mat_stats());
+                MaterializeStatistics * ms = ati->mutable_mat_stats();
+
+                if (rg.nextSmallNumber() < 4)
+                {
+                    ms->set_all(true);
+                }
+                else
+                {
+                    pickUpNextCols(rg, t, ms->mutable_cols());
+                }
             }
             else if (
                 add_idx

@@ -4307,7 +4307,14 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kMatStats:
             ret += "MATERIALIZE STATISTICS ";
-            ColumnPathListToString(ret, 0, alter.mat_stats());
+            if (alter.mat_stats().has_cols())
+            {
+                ColumnPathListToString(ret, 0, alter.mat_stats().cols());
+            }
+            else
+            {
+                ret += "ALL";
+            }
             break;
         case AlterType::kMaterializeIndex:
             ret += "MATERIALIZE INDEX ";

@@ -1669,6 +1669,29 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf += "]";
                 idef->add_params()->set_unescaped_sval(std::move(buf));
             }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 512);
+
+                idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
+                idef->add_params()->set_unescaped_sval("dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
+
+                idef->add_params()->set_unescaped_sval(
+                    "max_cardinality_for_embedded_postings = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 9);
+
+                idef->add_params()->set_unescaped_sval("bloom_filter_false_positive_rate = 0." + std::to_string(next_dist(rg.generator)));
+            }
         }
         break;
         case IndexType::IDX_vector_similarity: {
