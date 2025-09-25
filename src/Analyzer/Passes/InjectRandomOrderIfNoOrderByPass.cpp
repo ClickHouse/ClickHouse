@@ -26,7 +26,7 @@ void addRandomOrderBy(ListNode & order_by_list, ContextPtr context)
     auto rand_fn = std::make_shared<FunctionNode>("rand");
     auto & ff = FunctionFactory::instance();
     auto resolver = ff.get("rand", context);
-    rand_fn->resolveAsFunction(std::move(resolver));
+    rand_fn->resolveAsFunction(resolver);
 
     /// Create and add one SortNode
     auto sort = std::make_shared<SortNode>(rand_fn);
