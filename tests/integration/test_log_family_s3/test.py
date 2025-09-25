@@ -121,4 +121,4 @@ def test_stripe_log_truncate(cluster):
     node.query("DETACH TABLE stripe_table")
     node.query("ATTACH TABLE stripe_table")
 
-    assert node.query("DROP TABLE stripe_table") == ""
+    assert node.query("DROP TABLE stripe_table SYNC") == ""
