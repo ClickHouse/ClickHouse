@@ -310,7 +310,6 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     queue->push(std::move(element));
 }
 
