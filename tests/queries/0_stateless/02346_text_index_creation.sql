@@ -418,30 +418,12 @@ ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngram', ngram
 
 DROP TABLE tab;
 
-SELECT 'Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString), Array(String) or Array(FixedString) columns.';
+SELECT 'Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.';
 
 CREATE TABLE tab
 (
     key UInt64,
     str UInt64,
-    INDEX idx str TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    str Array(UInt64),
-    INDEX idx str TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    str Array(Float32),
     INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
@@ -459,8 +441,82 @@ ORDER BY key; -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     key UInt64,
+    arr Array(UInt64),
+    INDEX idx arr TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    arr Array(Float32),
+    INDEX idx arr TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    map Map(UInt64, String),
+    INDEX idx mapKeys(map) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    map Map(Float32, String),
+    INDEX idx mapKeys(map) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    map Map(String, UInt64),
+    INDEX idx mapValues(map) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    map Map(String, Float32),
+    INDEX idx mapValues(map) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
     n_str Nullable(String),
     INDEX idx n_str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+SET allow_suspicious_low_cardinality_types = 1;
+
+CREATE TABLE tab
+(
+    key UInt64,
+    lc LowCardinality(UInt64),
+    INDEX idx lc TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    lc LowCardinality(Float32),
+    INDEX idx lc TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY key; -- { serverError INCORRECT_QUERY }
