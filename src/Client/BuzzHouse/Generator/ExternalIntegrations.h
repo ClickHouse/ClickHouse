@@ -57,6 +57,12 @@ public:
 
     virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
+    virtual bool performExternalCommand(uint64_t, const String &, const String &) { return false; }
+
+    virtual bool reRunCreateDatabase(const String &) { return false; }
+
+    virtual bool reRunCreateTable(const String &) { return false; }
+
     virtual ~ClickHouseIntegration() = default;
 };
 
@@ -354,6 +360,12 @@ public:
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
+    bool performExternalCommand(uint64_t, const String &, const String &) override;
+
+    bool reRunCreateDatabase(const String &) override;
+
+    bool reRunCreateTable(const String &) override;
+
     ~DolorIntegration() override = default;
 };
 
@@ -432,6 +444,12 @@ public:
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
     void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+
+    bool performExternalCommand(uint64_t seed, IntegrationCall ic, const String & cname, const String & tname);
+
+    bool reRunCreateDatabase(IntegrationCall ic, const String & body);
+
+    bool reRunCreateTable(IntegrationCall ic, const String & body);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);

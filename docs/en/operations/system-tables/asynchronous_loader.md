@@ -4,6 +4,7 @@ description: 'System table containing information about and status of recent asy
 keywords: ['system table', 'asynchronous_loader']
 slug: /operations/system-tables/asynchronous_loader
 title: 'system.asynchronous_loader'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

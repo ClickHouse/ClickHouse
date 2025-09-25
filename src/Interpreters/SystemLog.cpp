@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Common/Exception.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -30,6 +31,8 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/DeadLetterQueue.h>
@@ -140,6 +143,7 @@ namespace
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -315,7 +319,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
         }
     }
-
     return std::make_shared<TSystemLog>(context, log_settings);
 
 }
@@ -404,6 +407,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         CrashLog::initialize(crash_log);
     }
+
+    if (aggregated_zookeeper_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
+                                                                DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        aggregated_zookeeper_log->startCollect("AggregatedZooKeeperLog", collect_interval_milliseconds);
+    }
 }
 
 std::vector<ISystemLog *> SystemLogs::getAllLogs() const
@@ -446,7 +456,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
+void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -457,6 +467,8 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
         for (auto * log : getAllLogs())
         {
+            log->flushBufferToLog(std::chrono::system_clock::now());
+
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, log->getLastLogIndex()});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
@@ -489,23 +501,46 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
 
-            if (it->second == text_log.get())
+            auto * log = it->second;
+
+            if (log == text_log.get())
                 BaseDaemon::instance().flushTextLogs();
 
-            auto last_log_index = it->second->getLastLogIndex();
-            logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
-            it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
+            log->flushBufferToLog(std::chrono::system_clock::now());
+
+            const auto last_log_index = log->getLastLogIndex();
+            logs_to_wait.push_back({log, last_log_index});
+            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
 
     /// We must wait for the async flushes to finish
     for (const auto & [log, index] : logs_to_wait)
-        log->flush(index, should_prepare_tables_anyway);
+    {
+        if (!ignore_errors)
+            log->flush(index, should_prepare_tables_anyway);
+        else
+        {
+            try
+            {
+                log->flush(index, should_prepare_tables_anyway);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+}
+
+void SystemLogs::flush(const Strings & names)
+{
+    flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false, {});
+    flushImpl(/*names=*/ {}, /*should_prepare_tables_anyway=*/ false, /*ignore_errors=*/ true);
     shutdown();
 }
 

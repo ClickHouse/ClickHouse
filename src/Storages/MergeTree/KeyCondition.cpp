@@ -2637,8 +2637,8 @@ KeyCondition::Description KeyCondition::getDescription() const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::getDescription");
 
-    std::vector<String> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
+    std::vector<String> key_names(num_key_columns);
+    std::vector<bool> is_key_used(num_key_columns, false);
 
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
@@ -2979,6 +2979,10 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
+            /// TODO: Fix MergeTreeSetIndex::checkInRange handling per-column inclusive/exclusive ranges, then remove this check.
+            if (element.set_index->getIndexesMapping().size() != 1)
+                return false;
+
             for (const auto & mapping : element.set_index->getIndexesMapping())
             {
                 auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);

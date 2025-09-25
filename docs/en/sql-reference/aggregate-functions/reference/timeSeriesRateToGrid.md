@@ -3,15 +3,16 @@ description: 'Aggregate function that calculates PromQL-like rate over time seri
 sidebar_position: 225
 slug: /sql-reference/aggregate-functions/reference/timeSeriesRateToGrid
 title: 'timeSeriesRateToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
 Parameters:
-- `start timestamp` - specifies start of the grid
-- `end timestamp` - specifies end of the grid
-- `grid step` - specifies step of the grid in seconds
-- `staleness` - specified the maximum "staleness" in seconds of the considered samples
+- `start timestamp` - Specifies start of the grid.
+- `end timestamp` - Specifies end of the grid.
+- `grid step` - Specifies step of the grid in seconds.
+- `staleness` - Specifies the maximum "staleness" in seconds of the considered samples. The staleness window is a left-open and right-closed interval.
 
 Arguments:
 - `timestamp` - timestamp of the sample

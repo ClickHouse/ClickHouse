@@ -356,4 +356,13 @@ IMPLEMENT_SETTING_ENUM(
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
 
+IMPLEMENT_SETTING_ENUM(
+    IcebergMetadataLogLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", IcebergMetadataLogLevel::None},
+     {"metadata", IcebergMetadataLogLevel::Metadata},
+     {"manifest_list_metadata", IcebergMetadataLogLevel::ManifestListMetadata},
+     {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
+     {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
+     {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
 }

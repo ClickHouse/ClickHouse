@@ -53,7 +53,32 @@ public:
 
 REGISTER_FUNCTION(CurrentDatabase)
 {
-    factory.registerFunction<FunctionCurrentDatabase>();
+    FunctionDocumentation::Description description = R"(
+Returns the name of the current database.
+Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
+
+Also see the [`SET` statement](/sql-reference/statements/use).
+    )";
+    FunctionDocumentation::Syntax syntax = "currentDatabase()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current database name.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example", R"(
+SELECT currentDatabase()
+        )",
+        R"(
+┌─currentDatabase()─┐
+│ default           │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCurrentDatabase>(documentation);
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);

@@ -247,6 +247,11 @@ inline bool operator> (StringRef lhs, StringRef rhs)
 
 struct StringRefHash64
 {
+    size_t operator() (std::string_view x) const
+    {
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+    }
+
     size_t operator() (StringRef x) const
     {
         return CityHash_v1_0_2::CityHash64(x.data, x.size);
@@ -310,6 +315,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
+    size_t operator()(std::string_view x) const { return (*this)(StringRef{x}); }
     size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
@@ -363,6 +369,7 @@ struct StringRefHash : StringRefHash64 {};
 
 #endif
 
+using StringViewHash = StringRefHash;
 
 namespace std
 {

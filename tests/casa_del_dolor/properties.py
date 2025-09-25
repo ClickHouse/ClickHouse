@@ -8,7 +8,6 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
-from integration.helpers.config_cluster import minio_secret_key
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -129,8 +128,6 @@ possible_properties = {
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
-    "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "cgroup_memory_watcher_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
@@ -204,6 +201,7 @@ possible_properties = {
     # "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
+    "max_named_collection_num_to_throw": threshold_generator(0.2, 0.2, 0, 1000),
     # "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000), not worth to mess around
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_size": threshold_generator(0.2, 0.2, 700, 10000),
@@ -217,6 +215,9 @@ possible_properties = {
     ),
     "mlock_executable": true_false_lambda,
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
+    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_merge_mutate": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(0.2, 0.2, -20, 19),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
@@ -252,10 +253,10 @@ possible_properties = {
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
-    "storage_metadata_write_full_object_key": true_false_lambda,
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
+    "temporary_data_in_distributed_cache": true_false_lambda,
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -607,7 +608,7 @@ def add_single_disk(
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = minio_secret_key
+            secret_access_key_xml.text = cluster.minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
@@ -698,6 +699,7 @@ class DiskPropertiesGroup(PropertiesGroup):
     ):
         disk_element = ET.SubElement(property_element, "disks")
         backups_element = ET.SubElement(top_root, "backups")
+        disks_table_engines = ET.SubElement(top_root, "allowed_disks_for_table_engines")
         lower_bound, upper_bound = args.number_disks
         number_disks = random.randint(lower_bound, upper_bound)
         number_policies = 0
@@ -726,6 +728,10 @@ class DiskPropertiesGroup(PropertiesGroup):
             created_disks_types.append(next_created_disk_pair)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
+        # Allow any disk in any table engine
+        disks_table_engines.text = ",".join(
+            ["default"] + [f"disk{i}" for i in range(0, number_disks)]
+        )
         # Add policies sometimes
         if random.randint(1, 100) <= args.add_policy_settings_prob:
             j = 0
@@ -904,6 +910,61 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         apply_properties_recursively(property_element, shared_settings, 0)
 
 
+class LogTablePropertiesGroup(PropertiesGroup):
+
+    def __init__(self, _log_table: str):
+        super().__init__()
+        self.log_table: str = _log_table
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        database_xml = ET.SubElement(property_element, "database")
+        database_xml.text = "system"
+        table_xml = ET.SubElement(property_element, "table")
+        table_xml.text = self.log_table
+
+        log_table_properties = {
+            "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
+            "flush_on_crash": true_false_lambda,
+            "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+        }
+        # Can't use this without the engine parameter?
+        # number_policies = 0
+        # storage_configuration_xml = top_root.find("storage_configuration")
+        # if storage_configuration_xml is not None:
+        #    policies_xml = storage_configuration_xml.find("policies")
+        #    if policies_xml is not None:
+        #        number_policies = len([c for c in policies_xml])
+        # if number_policies > 0 and random.randint(1, 100) <= 75:
+        #    policy_choices = [f"policy{i}" for i in range(0, number_policies)]
+        #    log_table_properties["storage_policy"] = lambda: random.choice(
+        #        policy_choices
+        #    )
+        apply_properties_recursively(property_element, log_table_properties, 0)
+        # max_size_rows cannot be smaller than reserved_size_rows
+        max_size_rows_xml = property_element.find("max_size_rows")
+        reserved_size_rows_xml = property_element.find("reserved_size_rows")
+        if max_size_rows_xml is not None and max_size_rows_xml.text:
+            max_size_rows_xml.text = str(
+                max(
+                    int(max_size_rows_xml.text),
+                    (
+                        8192
+                        if reserved_size_rows_xml is None
+                        or not reserved_size_rows_xml.text
+                        else int(reserved_size_rows_xml.text)
+                    ),
+                )
+            )
+
+
 def add_ssl_settings(next_ssl: ET.Element):
     certificate_xml = ET.SubElement(next_ssl, "certificateFile")
     private_key_xml = ET.SubElement(next_ssl, "privateKeyFile")
@@ -966,7 +1027,7 @@ def modify_server_settings(
         modified = True
         https_port_xml = ET.SubElement(root, "https_port")
         https_port_xml.text = "8443"
-    if root.find("arrowflight_port") is None:
+    if args.with_arrowflight and root.find("arrowflight_port") is None:
         modified = True
         arrowflight_port_xml = ET.SubElement(root, "arrowflight_port")
         arrowflight_port_xml.text = "8888"
@@ -995,7 +1056,7 @@ def modify_server_settings(
             access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
-            secret_access_key_xml.text = minio_secret_key
+            secret_access_key_xml.text = cluster.minio_secret_key
         if args.with_azurite:
             azure_xml = ET.SubElement(named_collections_xml, "azure")
             account_name_xml = ET.SubElement(azure_xml, "account_name")
@@ -1038,6 +1099,7 @@ def modify_server_settings(
     if (
         root.find("storage_configuration") is None
         and root.find("backups") is None
+        and root.find("allowed_disks_for_table_engines") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         selected_properties["storage_configuration"] = DiskPropertiesGroup()
@@ -1062,6 +1124,41 @@ def modify_server_settings(
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         selected_properties["distributed_ddl"] = DistributedDDLPropertiesGroup()
+
+    # Add log tables
+    if args.add_log_tables:
+        all_log_entries = [
+            "asynchronous_insert_log",
+            "asynchronous_metric_log",
+            "backup_log",
+            "blob_storage_log",
+            "crash_log",
+            "dead_letter_queue",
+            "error_log",
+            "iceberg_metadata_log",
+            "metric_log",
+            "opentelemetry_span_log",
+            "part_log",
+            "processors_profile_log",
+            "query_log",
+            "query_metric_log",
+            "query_thread_log",
+            "query_views_log",
+            "session_log",
+            "s3queue_log",
+            "text_log",
+            "trace_log",
+            "zookeeper_connection_log",
+            "zookeeper_log",
+        ]
+        if random.randint(1, 100) <= 70:
+            all_log_entries = random.sample(
+                all_log_entries, random.randint(1, len(all_log_entries))
+            )
+        random.shuffle(all_log_entries)
+        for entry in all_log_entries:
+            if root.find(entry) is None:
+                selected_properties[entry] = LogTablePropertiesGroup(entry)
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (

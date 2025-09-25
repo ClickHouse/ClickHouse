@@ -27,6 +27,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String server_hostname = "localhost";
     String path;
     String region = default_region;
+    String warehouse = "data";
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
@@ -34,6 +35,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
+           {"warehouse", [&](const JSONObjectType & value) { warehouse = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
     for (const auto [key, value] : jobj.getObject())
@@ -47,7 +49,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, warehouse, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -305,7 +307,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"replicated", allow_replicated},
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
-           {"arrowflight", allow_arrowflight}};
+           {"arrowflight", allow_arrowflight},
+           {"alias", allow_alias}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -320,6 +323,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
              server_file_path = std::filesystem::path(String(value.getString()));
              fuzz_server_out = client_file_path / "fuzz.data";
          }},
+        {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
