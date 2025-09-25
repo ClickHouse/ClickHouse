@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Common/DateLUT.h>
+#include <Common/StringUtils.h> 
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -191,8 +192,8 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 
     time_t x = 0;
     ReadBufferFromString buf(time_str);
-    readTimeText(x, buf);          // will accept integer seconds or colon form
-    if (!buf.eof())
+    // Parse inside an isolated buffer, and fail gracefully if it doesn't fit
+    if (!tryReadTimeText(x, buf) || !buf.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
