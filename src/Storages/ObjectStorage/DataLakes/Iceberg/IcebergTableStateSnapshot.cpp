@@ -4,6 +4,11 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB
 {
 
