@@ -3,11 +3,10 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Compression/CompressionFactory.h>
+#include <Columns/IColumn.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
-#include <Compression/CompressionFactory.h>
-#include <Columns/IColumn.h>
 #include <base/defines.h>
 
 namespace ProfileEvents
