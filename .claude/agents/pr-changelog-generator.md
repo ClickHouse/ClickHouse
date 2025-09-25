@@ -25,6 +25,7 @@ When asked to, you will:
    - Begin each changelog entry with an action verb (Added, Fixed, Improved, Changed, Removed etc)
    - Include relevant context when necessary
    - Maintain consistent tone and style
+   - Never use markdown header elements, only plaintext
 
 5. **Quality Assurance**: Ensure entries are:
    - Accurate to the actual changes made
