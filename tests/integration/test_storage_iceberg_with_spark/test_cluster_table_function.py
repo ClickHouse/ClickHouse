@@ -190,7 +190,8 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type):
+@pytest.mark.parametrize("distributed_processing_batch_size", [0, 100, 1000])
+def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, distributed_processing_batch_size):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -250,7 +251,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         run_on_cluster=True,
     )
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS enable_split_by_row_groups_distributed_processing=1").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS enable_split_in_distributed_processing=1, distributed_processing_batch_size={distributed_processing_batch_size}").strip().split()
     )
 
     # Simple size check

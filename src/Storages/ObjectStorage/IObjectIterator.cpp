@@ -6,9 +6,15 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 distributed_processing_batch_size;
+}
 
 static ExpressionActionsPtr getExpressionActions(
     const DB::ActionsDAG & filter_,
@@ -96,13 +102,32 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
     auto input_format = FormatFactory::instance().getInput(
         configuration->format, *buffer, {}, getContext(), {});
 
-    auto chunks_count = input_format->getChunksCount();
-    if (chunks_count)
+    auto bucket_sizes = input_format->getChunksByteSizes();
+    if (bucket_sizes)
     {
-        for (size_t i = 0; i < *chunks_count; ++i)
+        size_t bucket_size = getContext()->getSettingsRef()[Setting::distributed_processing_batch_size];
+        std::vector<std::vector<size_t>> buckets;
+        size_t current_weight = 0;
+        buckets.push_back({});
+        for (size_t i = 0; i < bucket_sizes->size(); ++i)
+        {
+            if (current_weight + bucket_sizes->at(i) <= bucket_size)
+            {
+                buckets.back().push_back(i);
+                current_weight += bucket_sizes->at(i);
+            }
+            else
+            {
+                current_weight = 0;
+                buckets.push_back({});
+                buckets.back().push_back(i);
+                current_weight += bucket_sizes->at(i);
+            }
+        }
+        for (const auto & bucket : buckets)
         {
             auto copy_object_info = *last_object_info;
-            copy_object_info.row_group_id = i;
+            copy_object_info.chunks_to_read = bucket;
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));   
         }
     }

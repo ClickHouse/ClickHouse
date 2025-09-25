@@ -618,17 +618,25 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
 {
 }
 
-std::optional<size_t> ParquetBlockInputFormat::getChunksCount()
+std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
 {
     initializeIfNeeded();
-    return metadata->num_row_groups();
+    std::vector<size_t> sizes;
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+        sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+    return sizes;
 }
 
-void ParquetBlockInputFormat::setChunksToSkip(size_t num_chunks)
+void ParquetBlockInputFormat::setChunksToRead(const std::vector<size_t> & chunks_to_read)
 {
-    std::lock_guard lock(mutex);
-    num_blocks_to_skip = num_chunks;
-    read_exactly_one_block = true;
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
+    metadata = parquet::ReadMetaData(arrow_file);
+    std::unordered_set<size_t> set_to_read(chunks_to_read.begin(), chunks_to_read.end());
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+    {
+        if (!set_to_read.contains(i))
+            skip_row_groups.insert(i);
+    }
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()

@@ -32,7 +32,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
-    row_group_id = object->row_group_id;
+    chunks_to_read = object->chunks_to_read;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -47,8 +47,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
-    if (row_group_id.has_value())
-        object->row_group_id = row_group_id;
+    if (chunks_to_read.has_value())
+        object->chunks_to_read = chunks_to_read;
 
     return object;
 }
@@ -69,7 +69,14 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
     {
-        writeVarInt(row_group_id.value_or(-1), out);
+        if (chunks_to_read)
+        {
+            writeVarInt(chunks_to_read->size(), out);
+            for (auto chunk : *chunks_to_read)
+                writeVarInt(chunk, out);
+        }
+        else
+            writeVarInt(-1, out);
     }
 }
 
@@ -100,12 +107,20 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
     {
-        Int32 raw_row_groud_id;
-        readVarInt(raw_row_groud_id, in);
-        if (raw_row_groud_id != -1)
-            row_group_id = raw_row_groud_id;
+        Int32 size_chunks;
+        readVarInt(size_chunks, in);
+        if (size_chunks != -1)
+        {
+            chunks_to_read = std::vector<size_t>{};
+            for (Int32 i = 0; i < size_chunks; ++i)
+            {
+                Int32 chunk;
+                readVarInt(chunk, in);
+                chunks_to_read->push_back(chunk);
+            }
+        }
         else
-            row_group_id = std::nullopt;
+            chunks_to_read = std::nullopt;
     }
 }
 

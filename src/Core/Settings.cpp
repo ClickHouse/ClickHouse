@@ -6811,8 +6811,11 @@ Both database and table names have to be unquoted - only simple identifiers are 
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
-    DECLARE(Bool, enable_split_by_row_groups_distributed_processing, true, R"(
+    DECLARE(Bool, enable_split_in_distributed_processing, true, R"(
 Enables split tasks by parquet row groups, not by files.
+)", 0) \
+    DECLARE(UInt64, distributed_processing_batch_size, 0, R"(
+Approximate size of batch in distributed processing.
 )", 0) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
