@@ -81,7 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
-            {"os_thread_priority", 0, 0, "Obsolete setting."},
+            {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
