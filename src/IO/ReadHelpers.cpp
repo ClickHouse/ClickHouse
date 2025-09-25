@@ -1627,25 +1627,33 @@ template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, cons
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 template <typename ReturnType, bool t64_mode>
-ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * /*allowed_date_delimiters*/, const char * allowed_time_delimiters)
+ReturnType readTimeTextFallback(
+    time_t & time,
+    ReadBuffer & buf,
+    const DateLUTImpl & date_lut,
+    const char * /*allowed_date_delimiters*/,
+    const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     if (!allowed_time_delimiters)
         allowed_time_delimiters = ":";
 
-    const char * begin = buf.position();
+    char * begin = buf.position();
 
-    auto fail = [&]()->ReturnType
+    auto fail = [&]() -> ReturnType
     {
         if constexpr (!throw_exception)
-            buf.position() = const_cast<char *>(begin); // rollback for try-parse
+            buf.position() = begin;  // rollback for try-parse
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time");
         return ReturnType(false);
     };
 
+    if (buf.eof())
+        return fail();
+
     int negative_multiplier = 1;
-    if (!buf.eof() && *buf.position() == '-')
+    if (*buf.position() == '-')
     {
         negative_multiplier = -1;
         ++buf.position();
@@ -1653,43 +1661,86 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
             return fail();
     }
 
-    Int64 a = 0;
-    if constexpr (throw_exception)
-        readIntText(a, buf);
-    else if (!tryReadIntText(a, buf))
-        return ReturnType(false);  // nothing consumed; no rollback needed
+    auto is_delim = [&](char ch) { return isSymbolIn(ch, allowed_time_delimiters); };
 
-    auto is_allowed_delim = [&](char ch){ return isSymbolIn(ch, allowed_time_delimiters); };
-    if (!buf.eof() && is_allowed_delim(*buf.position()))
+    /// Parse A (hours OR minutes)
+    Int64 A = 0;
+    size_t a_digits = 0;
+    while (!buf.eof() && isNumericASCII(*buf.position()))
     {
-        ++buf.position(); // consume first delimiter
+        A = A * 10 + (*buf.position() - '0');
+        ++buf.position();
+        ++a_digits;
+    }
+    if (a_digits == 0)
+        return fail();
 
-        Int64 b = 0;
-        if constexpr (throw_exception)
-            readIntText(b, buf);
-        else if (!tryReadIntText(b, buf))
-            return fail();
-
-        if (!buf.eof() && is_allowed_delim(*buf.position()))
-        {
-            ++buf.position();
-            Int64 c = 0;
-            if constexpr (throw_exception)
-                readIntText(c, buf);
-            else if (!tryReadIntText(c, buf))
-                return fail();
-
-            time = date_lut.makeTime(static_cast<UInt64>(a), static_cast<UInt8>(b), static_cast<UInt8>(c)) * negative_multiplier;
-            return ReturnType(true);
-        }
-
-        time = date_lut.makeTime(0, static_cast<UInt8>(a), static_cast<UInt8>(b)) * negative_multiplier;
+    /// if no delimiter: plain integer seconds
+    if (buf.eof() || !is_delim(*buf.position()))
+    {
+        time = static_cast<time_t>(A) * negative_multiplier;
         return ReturnType(true);
     }
 
-    time = static_cast<time_t>(a) * negative_multiplier;
-    return ReturnType(true);
+    /// consume first delimiter
+    ++buf.position();
+
+    /// parse B (minutes OR seconds) – count digits so we can enforce width rules
+    if (buf.eof() || !isNumericASCII(*buf.position()))
+        return fail();
+
+    Int64 B = 0;
+    size_t b_digits = 0;
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        B = B * 10 + (*buf.position() - '0');
+        ++buf.position();
+        ++b_digits;
+    }
+
+    bool have_second_delim = (!buf.eof() && is_delim(*buf.position()));
+
+    if (have_second_delim)
+    {
+        // H*:MM:SS – minutes and seconds must be exactly two digits
+        if (b_digits != 2)
+            return fail();
+        ++buf.position(); // consume second ':'
+
+        /// parse C with EXACTLY 2 digits
+        if (buf.eof() || !isNumericASCII(*buf.position()))
+            return fail();
+        Int64 C = 0;
+        for (int i = 0; i < 2; ++i)
+        {
+            if (buf.eof() || !isNumericASCII(*buf.position()))
+                return fail();
+            C = C * 10 + (*buf.position() - '0');
+            ++buf.position();
+        }
+        /// no extra digits allowed for seconds
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+            return fail();
+
+        if (B >= 60 || C >= 60)
+            return fail();
+
+        time = date_lut.makeTime(static_cast<UInt64>(A), static_cast<UInt8>(B), static_cast<UInt8>(C)) * negative_multiplier;
+        return ReturnType(true);
+    }
+    else
+    {
+        /// MM:SS – minutes can be 1..2 digits, seconds must be exactly 2 digits
+        if (b_digits != 2)
+            return fail();
+        if (A >= 60 || B >= 60)
+            return fail();
+
+        time = date_lut.makeTime(0, static_cast<UInt8>(A), static_cast<UInt8>(B)) * negative_multiplier;
+        return ReturnType(true);
+    }
 }
+
 
 template void readTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 template void readTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);

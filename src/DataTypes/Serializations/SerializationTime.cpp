@@ -183,17 +183,15 @@ void SerializationTime::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x = 0;
     if (istr.eof())
         throwReadAfterEOF();
 
-    /// Always read the whole CSV field first (handles quotes and escapes),
-    /// then parse from a bounded buffer to avoid mis-alignment on failures
     String time_str;
     readCSVString(time_str, istr, settings.csv);
 
+    time_t x = 0;
     ReadBufferFromString buf(time_str);
-    readTimeText(x, buf);
+    readTimeText(x, buf);          // will accept integer seconds or colon form
     if (!buf.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
 
@@ -202,13 +200,13 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 
 bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x = 0;
-
     if (istr.eof())
         return false;
 
     String time_str;
     readCSVString(time_str, istr, settings.csv);
+
+    time_t x = 0;
     ReadBufferFromString buf(time_str);
     if (!tryReadTimeText(x, buf) || !buf.eof())
         return false;
