@@ -1513,36 +1513,37 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored during merges or by explicit MATERIALIZE INDEX.
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
 
 See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
 )", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
-Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored during merges (see [materialize_skip_indexes_on_merge](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit MATERIALIZE INDEX query.
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
+[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
 
 Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
 
 Example:
 
 ```sql
-CREATE TABLE t_skip_index_insert
+CREATE TABLE tab
 (
     a UInt64,
     b UInt64,
     INDEX idx_a a TYPE minmax,
     INDEX idx_b b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+ENGINE = MergeTree ORDER BY tuple();
 
 SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
 --SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
 
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
 
 -- since it is a session setting it can be set on a per-query level
-INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
 
-ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
+ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
 
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
