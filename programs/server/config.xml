@@ -1305,6 +1305,15 @@
         <flush_on_crash>false</flush_on_crash>
     </iceberg_metadata_log>
 
+    <delta_lake_metadata_log>
+        <database>system</database>
+        <table>delta_lake_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </delta_lake_metadata_log>
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
 
@@ -1420,6 +1429,16 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
+
+    <!-- Aggregated ZooKeeper log.
+    -->
+    <aggregated_zookeeper_log>
+        <database>system</database>
+        <table>aggregated_zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </aggregated_zookeeper_log>
 
     <!-- Configure system.dashboards for dashboard.html.
 

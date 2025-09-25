@@ -75,12 +75,6 @@ public:
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
-    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                           const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           ContextPtr query_context) override;
-    void commitAlterTable(const StorageID & table_id,
-                          const String & table_metadata_tmp_path, const String & table_metadata_path,
-                          const String & statement, ContextPtr query_context) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
@@ -132,8 +126,20 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
+    static ASTPtr parseQueryFromMetadataInZooKeeper(
+        ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query);
+
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
+
+protected:
+    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                           const String & table_metadata_tmp_path, const String & table_metadata_path,
+                           ContextPtr query_context) override;
+    void commitAlterTable(const StorageID & table_id,
+                          const String & table_metadata_tmp_path, const String & table_metadata_path,
+                          const String & statement, ContextPtr query_context) override;
+
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
@@ -163,8 +169,8 @@ private:
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
-    ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
-    ASTPtr parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const;
+    static ASTPtr parseQueryFromMetadata(
+        ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 

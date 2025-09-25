@@ -75,11 +75,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString datalake_disk_name;
-}
-
 static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",

@@ -57,6 +57,8 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool use_join_disjunctions_push_down;
+    bool convert_any_join_to_semi_or_anti_join;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -113,6 +115,9 @@ struct QueryPlanOptimizationSettings
     bool vector_search_with_rescoring;
     VectorSearchFilterStrategy vector_search_filter_strategy;
 
+    /// If full text search using index in payload is enabled.
+    bool direct_read_from_text_index;
+
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
@@ -127,6 +132,11 @@ struct QueryPlanOptimizationSettings
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
     ExpressionActionsSettings actions_settings;
+
+    /// JOIN runtime filter settings
+    bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
+    UInt64 join_runtime_bloom_filter_bytes = 0;
+    UInt64 join_runtime_bloom_filter_hash_functions = 0;
 
     /// Please, avoid using this
     ///
