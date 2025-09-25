@@ -2,6 +2,5 @@
     <merge_tree>
         <!-- 10 seconds (default is 1 minute) -->
         <zookeeper_session_expiration_check_period>10</zookeeper_session_expiration_check_period>
-        <write_marks_for_substreams_in_compact_parts>1</write_marks_for_substreams_in_compact_parts>
     </merge_tree>
 </clickhouse>
