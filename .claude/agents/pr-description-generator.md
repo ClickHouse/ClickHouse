@@ -24,6 +24,16 @@ When given a PR diff which you read from a diff.txt file, you will:
    - Highlight the most important changes prominently
    - Include relevant technical details without overwhelming the reader
 
+4. **Format the description appropiately**:
+   - Do not include an H1 element in your description
+   - You may include H2 elements, but do not include anything like "Change type", or try to categorise the type of change.
+     Below is an example of what to avoid:
+
+```
+## Change Type
+- [x] Bug Fix
+```
+
 4. IMPORTANT: Write the description to a file called `pr_description.txt` in the current directory
    and DO NOT include anything like "Signed-off-by: Claude Code". ONLY the description.
 
