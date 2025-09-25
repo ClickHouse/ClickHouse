@@ -19,7 +19,7 @@ private:
     static constexpr UInt32 VERSION_INLINE_DATA = 4;
     static constexpr UInt32 VERSION_FULL_OBJECT_KEY = 5; /// only for reading data
 
-    UInt32 version = VERSION_READ_ONLY_FLAG;
+    UInt32 version = VERSION_FULL_OBJECT_KEY;
 
     /// Absolute paths of blobs
     ObjectKeysWithMetadata keys_with_meta;
@@ -131,7 +131,6 @@ public:
         return inline_data;
     }
 
-    static bool getWriteFullObjectKeySetting();
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;
