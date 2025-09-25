@@ -1338,6 +1338,7 @@ protected:
     friend class IMergedBlockOutputStream; // for access to log
     friend class VersionMetadata; // for access to log
     friend class VersionMetadataOnDisk; // for access to log
+    friend class VersionMetadataOnKeeper; // for access to log
 
     bool require_part_metadata;
 
