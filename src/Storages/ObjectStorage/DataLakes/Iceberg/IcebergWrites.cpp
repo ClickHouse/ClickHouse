@@ -80,8 +80,8 @@ namespace Setting
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsUInt64 max_iceberg_data_file_rows;
-extern const SettingsUInt64 max_iceberg_data_file_bytes;
+extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 }
 
 namespace DataLakeStorageSetting
@@ -1387,8 +1387,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
         if (!writer_per_partition_key.contains(partition_key))
         {
             auto writer = MultipleFileWriter(
-                context->getSettingsRef()[Setting::max_iceberg_data_file_rows],
-                context->getSettingsRef()[Setting::max_iceberg_data_file_bytes],
+                context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file],
+                context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 current_schema->getArray(Iceberg::f_fields),
                 filename_generator,
                 object_storage,

@@ -80,24 +80,8 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
         configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
         configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
-        BlockPtr table_sample_block = std::make_shared<Block>();
-        if (dict_struct.id)
-        {
-            table_sample_block->insert(ColumnWithTypeAndName(dict_struct.id->type, dict_struct.id->name));
-        }
-        if (dict_struct.key)
-        {
-            for (const auto & attr : dict_struct.key.value())
-            {
-                table_sample_block->insert(ColumnWithTypeAndName(attr.type, attr.name));
-            }
-        }
-        for (const auto & attr : dict_struct.attributes)
-        {
-            table_sample_block->insert(ColumnWithTypeAndName(attr.type, attr.name));
-        }
 
-        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), std::move(sample_block), std::move(table_sample_block));
+        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };
 
     #else
@@ -127,13 +111,11 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-    Block sample_block_,
-    SharedHeader table_sample_block_)
+    const Block & sample_block_)
     : context(context_)
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , sample_block{sample_block_}
-    , table_sample_block{table_sample_block_}
+    , sample_block{std::make_shared<Block>(sample_block_)}
     , client(new YTsaurusClient(context,
         {
             .http_proxy_urls = configuration->http_proxy_urls,
@@ -145,7 +127,7 @@ YTsarususDictionarySource::YTsarususDictionarySource(
 }
 
 YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, other.sample_block, other.table_sample_block}
+    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
 {
 }
 
@@ -153,7 +135,7 @@ YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 
 QueryPipeline YTsarususDictionarySource::loadAll()
 {
-    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings}, table_sample_block, max_block_size));
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings}, sample_block, max_block_size));
 }
 
 QueryPipeline YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -165,7 +147,7 @@ QueryPipeline YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
     auto block = blockForIds(dict_struct, ids);
-    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, table_sample_block, max_block_size));
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
 }
 
 QueryPipeline YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -180,7 +162,7 @@ QueryPipeline YTsarususDictionarySource::loadKeys(const Columns & key_columns, c
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, table_sample_block, max_block_size));
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
 }
 
 bool YTsarususDictionarySource::supportsSelectiveLoad() const
