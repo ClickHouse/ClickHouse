@@ -190,7 +190,7 @@ void MergeSortingTransform::consume(Chunk chunk)
 
             /// If there's less free disk space than reserve_size, an exception will be thrown
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
-            TemporaryBlockStreamHolder tmp_stream(header_without_constants, tmp_data.get(), reserve_size);
+            TemporaryBlockStreamHolder tmp_stream(header_without_constants, tmp_data, reserve_size);
             size_t max_merged_block_size = this->max_merged_block_size;
             if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
             {
