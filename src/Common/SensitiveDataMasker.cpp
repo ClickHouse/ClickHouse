@@ -97,7 +97,7 @@ public:
         /// FIXME(nikitamikhylov): There is a misuse of the SensitiveDataMasker class.
         /// It is used in some places where we serialize a query to the storage (Keeper for example).
         /// Effectively breaking it by wiping the crucial information (credentials, etc).
-        /// So, rules that may touch a query (those that mask passwords) should be checked in `applyThrow` method only. 
+        /// So, rules that may touch a query (those that mask passwords) should be checked in `applyThrow` method only.
         if (throw_on_match)
             return 0;
 
