@@ -15,6 +15,12 @@ struct TableStateSnapshot
     Int32 metadata_version;
     Int32 schema_id;
     std::optional<Int64> snapshot_id;
+
+    void serialize(WriteBuffer & out) const;
+
+    static TableStateSnapshot deserialize(ReadBuffer & in);
+
+    bool operator==(const TableStateSnapshot & other) const;
 };
 
 using TableStateSnapshotPtr = std::shared_ptr<TableStateSnapshot>;
