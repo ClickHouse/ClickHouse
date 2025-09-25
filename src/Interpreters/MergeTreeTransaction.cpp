@@ -131,13 +131,16 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
+            bool was_involved_in_transaction = covered->wasInvolvedInTransaction();
+
             covered->version->lockRemovalTID(tid, transaction_context);
-            covered->version->setRemovalCSN(Tx::PrehistoricCSN);
-            if (covered->wasInvolvedInTransaction())
-            {
+            if (was_involved_in_transaction)
                 covered->version->appendRemovalTIDToStoredMetadata(tid);
+
+            covered->version->setRemovalCSN(Tx::PrehistoricCSN);
+            if (was_involved_in_transaction)
                 covered->version->appendRemovalCSNToStoredMetadata();
-            }
+
             covered->version->unlockRemovalTID(tid, transaction_context);
         }
     }
