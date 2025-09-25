@@ -107,6 +107,7 @@ bool ReadBufferFromS3::nextImpl()
                 LOG_TRACE(
                     log, "Impl was released, but expected read range is not finished. "
                     "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
+                chassert(false);
             }
             return false;
         }
