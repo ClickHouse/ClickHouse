@@ -115,9 +115,7 @@ if __name__ == "__main__":
             )
         )
 
-    _, category = check_category(info.pr_body)
-    skip = category == "Not for changelog (changelog entry is not required)"
-    if should_process_changelog and not skip:
+    if should_process_changelog:
         should_format, content = changelog_params
         updated_changelog_entry = ""
         try:
