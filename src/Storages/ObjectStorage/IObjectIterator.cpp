@@ -7,9 +7,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/Settings.h>
-#include "Common/Exception.h"
-#include "Core/Defines.h"
-#include "Interpreters/Context_fwd.h"
+#include <Core/Defines.h>
 
 namespace DB
 {
