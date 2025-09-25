@@ -18,7 +18,7 @@ struct TableStateSnapshot
 
     void serialize(WriteBuffer & out) const;
 
-    static TableStateSnapshot deserialize(ReadBuffer & in);
+    static TableStateSnapshot deserialize(ReadBuffer & in, int datalake_state_protocol_version);
 
     bool operator==(const TableStateSnapshot & other) const;
 };
