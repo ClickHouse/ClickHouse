@@ -195,7 +195,6 @@ IStorageURLBase::IStorageURLBase(
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         getSampleURI(uri, context_),
-        columns_.empty(),
         format_settings,
         context_);
 

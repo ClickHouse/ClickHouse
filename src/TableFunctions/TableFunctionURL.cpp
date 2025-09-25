@@ -166,7 +166,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
             columns,
             filename,
-            /* inferred_schema */ true,
             /* format_settings */ std::nullopt,
             context);
 

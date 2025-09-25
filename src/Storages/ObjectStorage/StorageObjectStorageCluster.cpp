@@ -92,7 +92,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         columns,
         configuration,
         sample_path,
-        columns_in_table_or_function_definition.empty(),
         std::nullopt,
         context_);
 
