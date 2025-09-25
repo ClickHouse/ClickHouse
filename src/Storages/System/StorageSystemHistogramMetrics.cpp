@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 
 
 namespace DB
@@ -29,13 +29,13 @@ ColumnsDescription StorageSystemHistogramMetrics::getColumnsDescription()
 
 void StorageSystemHistogramMetrics::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & factory = Histogram::Factory::instance();
-    factory.forEachFamily([&res_columns](const Histogram::MetricFamily & family)
+    const auto & factory = HistogramMetrics::Factory::instance();
+    factory.forEachFamily([&res_columns](const HistogramMetrics::MetricFamily & family)
     {
         const auto & buckets = family.getBuckets();
         const auto & labels = family.getLabels();
 
-        family.forEachMetric([&res_columns, &family, &buckets, &labels](const Histogram::LabelValues & label_values, const Histogram::Metric & metric)
+        family.forEachMetric([&res_columns, &family, &buckets, &labels](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
         {
             Map labels_map;
             for (size_t i = 0; i < label_values.size(); ++i)

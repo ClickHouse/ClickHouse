@@ -1,5 +1,5 @@
 #include <Common/DimensionalMetrics.h>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -395,7 +395,7 @@ extern const std::vector<Metric> keeper_metrics
 #undef M
 }
 
-namespace Histogram
+namespace HistogramMetrics
 {
     std::vector<MetricFamily *> keeper_histograms;
 }

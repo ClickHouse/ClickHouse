@@ -66,7 +66,7 @@ namespace CurrentMetrics
     extern const Metric AzureRequests;
 }
 
-namespace Histogram
+namespace HistogramMetrics
 {
     extern MetricFamily & AzureBlobConnect;
     extern MetricFamily & DiskAzureConnect;
@@ -186,16 +186,16 @@ PocoAzureHTTPClient::AzureMetricKind PocoAzureHTTPClient::getMetricKind(const st
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported request method: {}", method);
 }
 
-void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, Histogram::Value latency) const
+void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const
 {
     if (type == AzureLatencyType::Connect)
     {
-        static Histogram::Metric & azure_connect_metric = Histogram::AzureBlobConnect.withLabels({});
+        static HistogramMetrics::Metric & azure_connect_metric = HistogramMetrics::AzureBlobConnect.withLabels({});
         azure_connect_metric.observe(latency);
 
         if (for_disk_azure)
         {
-            static Histogram::Metric & disk_azure_connect_metric = Histogram::DiskAzureConnect.withLabels({});
+            static HistogramMetrics::Metric & disk_azure_connect_metric = HistogramMetrics::DiskAzureConnect.withLabels({});
             disk_azure_connect_metric.observe(latency);
         }
         return;
@@ -212,15 +212,15 @@ void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatenc
         }
     }(type);
 
-    const Histogram::LabelValues first_byte_label_values = {method, attempt_label};
+    const HistogramMetrics::LabelValues first_byte_label_values = {method, attempt_label};
 
-    Histogram::observe(
-        Histogram::AzureFirstByte, first_byte_label_values, latency);
+    HistogramMetrics::observe(
+        HistogramMetrics::AzureFirstByte, first_byte_label_values, latency);
 
     if (for_disk_azure)
     {
-        Histogram::observe(
-            Histogram::DiskAzureFirstByte, first_byte_label_values, latency);
+        HistogramMetrics::observe(
+            HistogramMetrics::DiskAzureFirstByte, first_byte_label_values, latency);
     }
 }
 

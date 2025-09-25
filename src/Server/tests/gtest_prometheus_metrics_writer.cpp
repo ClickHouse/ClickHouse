@@ -1,7 +1,7 @@
 #include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -9,7 +9,7 @@ using namespace DB;
 
 TEST(PrometheusMetricsWriter, HistogramBasic)
 {
-    Histogram::MetricFamily family("test_histogram_gtest", "Test histogram", {1, 5, 10}, {"database", "table"});
+    HistogramMetrics::MetricFamily family("test_histogram_gtest", "Test histogram", {1, 5, 10}, {"database", "table"});
 
     auto & metric = family.withLabels({"db1", "users"});
     metric.observe(0);

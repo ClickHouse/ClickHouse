@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Histogram
+namespace HistogramMetrics
 {
     using Value = Int64;
     using Buckets = std::vector<Value>;

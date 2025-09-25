@@ -1,11 +1,11 @@
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
 #include <mutex>
 #include <shared_mutex>
 
-namespace Histogram
+namespace HistogramMetrics
 {
     MetricFamily & AzureBlobConnect = Factory::instance().registerMetric(
         "azure_connect_microseconds",

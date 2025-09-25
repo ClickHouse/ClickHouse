@@ -91,7 +91,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Histogram
+namespace HistogramMetrics
 {
     extern MetricFamily & S3Connect;
     extern MetricFamily & DiskS3Connect;
@@ -313,19 +313,19 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency) const
+void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
 {
     if (latency == 0)
         return;
 
     if (type == S3LatencyType::Connect)
     {
-        static Histogram::Metric & s3_connect_metric = Histogram::S3Connect.withLabels({});
+        static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
         s3_connect_metric.observe(latency);
 
         if (for_disk_s3)
         {
-            static Histogram::Metric & disk_s3_connect_metric = Histogram::DiskS3Connect.withLabels({});
+            static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
             disk_s3_connect_metric.observe(latency);
         }
         return;
@@ -355,15 +355,15 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         }
     }(request.GetMethod());
 
-    const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
+    const HistogramMetrics::LabelValues first_byte_label_values = {http_method_label, attempt_label};
 
-    Histogram::observe(
-        Histogram::S3FirstByte, first_byte_label_values, latency);
+    HistogramMetrics::observe(
+        HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
 
     if (for_disk_s3)
     {
-        Histogram::observe(
-            Histogram::DiskS3FirstByte, first_byte_label_values, latency);
+        HistogramMetrics::observe(
+            HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
     }
 }
 

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 
-using namespace Histogram;
+using namespace HistogramMetrics;
 
 const Buckets test_buckets = {1, 5, 10};
 

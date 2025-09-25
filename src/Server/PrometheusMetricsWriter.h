@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 
 
@@ -23,7 +23,7 @@ public:
     virtual void writeHistogramMetrics(WriteBuffer & wb) const;
     virtual void writeDimensionalMetrics(WriteBuffer & wb) const;
 
-    static void writeHistogramMetric(WriteBuffer & wb, const Histogram::MetricFamily & family);
+    static void writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family);
     static void writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family);
 };
 

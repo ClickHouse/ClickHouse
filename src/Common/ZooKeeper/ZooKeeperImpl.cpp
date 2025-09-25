@@ -16,7 +16,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -79,7 +79,7 @@ namespace DB::ServerSetting
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
-namespace Histogram
+namespace HistogramMetrics
 {
     extern MetricFamily & KeeperResponseTime;
 }
@@ -89,7 +89,7 @@ namespace Metrics::ResponseTime
     using namespace DB;
 
     template <typename Response>
-    void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
+    void instrument(std::function<void(const Response &)> & callback, HistogramMetrics::Metric & histogram)
     {
         callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
         {
@@ -1495,7 +1495,7 @@ void ZooKeeper::create(
 
     request.acls = std::move(final_acls);
 
-    static Histogram::Metric & create_metric = Histogram::KeeperResponseTime.withLabels({"create"});
+    static HistogramMetrics::Metric & create_metric = HistogramMetrics::KeeperResponseTime.withLabels({"create"});
     Metrics::ResponseTime::instrument(callback, create_metric);
 
     RequestInfo request_info;
@@ -1515,7 +1515,7 @@ void ZooKeeper::remove(
     request.path = path;
     request.version = version;
 
-    static Histogram::Metric & remove_metric = Histogram::KeeperResponseTime.withLabels({"remove"});
+    static HistogramMetrics::Metric & remove_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove"});
     Metrics::ResponseTime::instrument(callback, remove_metric);
 
     RequestInfo request_info;
@@ -1538,7 +1538,7 @@ void ZooKeeper::removeRecursive(
     request.path = path;
     request.remove_nodes_limit = remove_nodes_limit;
 
-    static Histogram::Metric & remove_recursive_metric = Histogram::KeeperResponseTime.withLabels({"remove_recursive"});
+    static HistogramMetrics::Metric & remove_recursive_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove_recursive"});
     Metrics::ResponseTime::instrument(callback, remove_recursive_metric);
 
     RequestInfo request_info;
@@ -1557,7 +1557,7 @@ void ZooKeeper::exists(
     ZooKeeperExistsRequest request;
     request.path = path;
 
-    static Histogram::Metric & exists_metric = Histogram::KeeperResponseTime.withLabels({"exists"});
+    static HistogramMetrics::Metric & exists_metric = HistogramMetrics::KeeperResponseTime.withLabels({"exists"});
     Metrics::ResponseTime::instrument(callback, exists_metric);
 
     RequestInfo request_info;
@@ -1578,7 +1578,7 @@ void ZooKeeper::get(
     ZooKeeperGetRequest request;
     request.path = path;
 
-    static Histogram::Metric & get_metric = Histogram::KeeperResponseTime.withLabels({"get"});
+    static HistogramMetrics::Metric & get_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get"});
     Metrics::ResponseTime::instrument(callback, get_metric);
 
     RequestInfo request_info;
@@ -1602,7 +1602,7 @@ void ZooKeeper::set(
     request.data = data;
     request.version = version;
 
-    static Histogram::Metric & set_metric = Histogram::KeeperResponseTime.withLabels({"set"});
+    static HistogramMetrics::Metric & set_metric = HistogramMetrics::KeeperResponseTime.withLabels({"set"});
     Metrics::ResponseTime::instrument(callback, set_metric);
 
     RequestInfo request_info;
@@ -1637,7 +1637,7 @@ void ZooKeeper::list(
 
     request->path = path;
 
-    static Histogram::Metric & list_metric = Histogram::KeeperResponseTime.withLabels({"list"});
+    static HistogramMetrics::Metric & list_metric = HistogramMetrics::KeeperResponseTime.withLabels({"list"});
     Metrics::ResponseTime::instrument(callback, list_metric);
 
     RequestInfo request_info;
@@ -1660,7 +1660,7 @@ void ZooKeeper::check(
     request.path = path;
     request.version = version;
 
-    static Histogram::Metric & check_metric = Histogram::KeeperResponseTime.withLabels({"check"});
+    static HistogramMetrics::Metric & check_metric = HistogramMetrics::KeeperResponseTime.withLabels({"check"});
     Metrics::ResponseTime::instrument(callback, check_metric);
 
     RequestInfo request_info;
@@ -1678,7 +1678,7 @@ void ZooKeeper::sync(
     ZooKeeperSyncRequest request;
     request.path = path;
 
-    static Histogram::Metric & sync_metric = Histogram::KeeperResponseTime.withLabels({"sync"});
+    static HistogramMetrics::Metric & sync_metric = HistogramMetrics::KeeperResponseTime.withLabels({"sync"});
     Metrics::ResponseTime::instrument(callback, sync_metric);
 
     RequestInfo request_info;
@@ -1702,7 +1702,7 @@ void ZooKeeper::reconfig(
     request.new_members = new_members;
     request.version = version;
 
-    static Histogram::Metric & reconfig_metric = Histogram::KeeperResponseTime.withLabels({"reconfig"});
+    static HistogramMetrics::Metric & reconfig_metric = HistogramMetrics::KeeperResponseTime.withLabels({"reconfig"});
     Metrics::ResponseTime::instrument(callback, reconfig_metric);
 
     RequestInfo request_info;
@@ -1725,7 +1725,7 @@ void ZooKeeper::getACL(const String & path, GetACLCallback callback)
     ZooKeeperGetACLRequest request;
     request.path = path;
 
-    static Histogram::Metric & get_acl_metric = Histogram::KeeperResponseTime.withLabels({"get_acl"});
+    static HistogramMetrics::Metric & get_acl_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get_acl"});
     Metrics::ResponseTime::instrument(callback, get_acl_metric);
 
     RequestInfo request_info;
@@ -1779,7 +1779,7 @@ void ZooKeeper::multi(
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
     }
 
-    static Histogram::Metric & multi_metric = Histogram::KeeperResponseTime.withLabels({"multi"});
+    static HistogramMetrics::Metric & multi_metric = HistogramMetrics::KeeperResponseTime.withLabels({"multi"});
     Metrics::ResponseTime::instrument(callback, multi_metric);
 
     RequestInfo request_info;

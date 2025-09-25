@@ -1,6 +1,6 @@
 #include <Server/PrometheusMetricsWriter.h>
 
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
@@ -23,7 +23,7 @@ namespace CurrentMetrics
     extern const std::vector<Metric> keeper_metrics;
 }
 
-namespace Histogram
+namespace HistogramMetrics
 {
     extern std::vector<MetricFamily *> keeper_histograms;
 }
@@ -186,7 +186,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
     writeOutLine(wb, key, total_count);
 }
 
-void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histogram::MetricFamily & family)
+void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family)
 {
     std::string base_name = clickhouse_prefix + family.getName();
     if (!replaceInvalidChars(base_name))
@@ -198,11 +198,11 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
     writeOutLine(wb, "# HELP", base_name, help_text);
     writeOutLine(wb, "# TYPE", base_name, "histogram");
 
-    family.forEachMetric([&wb, &family, &base_name](const Histogram::LabelValues & label_values, const Histogram::Metric & metric)
+    family.forEachMetric([&wb, &family, &base_name](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
     {
         const auto & buckets = family.getBuckets();
         const auto & labels = family.getLabels();
-        Histogram::Metric::Counter cumulative_count = 0;
+        HistogramMetrics::Metric::Counter cumulative_count = 0;
 
         for (size_t i = 0; i < buckets.size() + 1; ++i)
         {
@@ -264,7 +264,7 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
 
 void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
 {
-    Histogram::Factory::instance().forEachFamily([&wb](const Histogram::MetricFamily & family)
+    HistogramMetrics::Factory::instance().forEachFamily([&wb](const HistogramMetrics::MetricFamily & family)
     {
         writeHistogramMetric(wb, family);
     });
@@ -339,7 +339,7 @@ void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] Wr
 void KeeperPrometheusMetricsWriter::writeHistogramMetrics([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
-    for (const auto * histogram : Histogram::keeper_histograms)
+    for (const auto * histogram : HistogramMetrics::keeper_histograms)
     {
         writeHistogramMetric(wb, *histogram);
     }
