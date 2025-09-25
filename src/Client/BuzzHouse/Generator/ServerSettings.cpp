@@ -55,6 +55,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
     {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
     {"enable_analyzer", trueOrFalseSetting},
+    {"enable_join_runtime_filters", trueOrFalseSetting},
     {"enable_optimize_predicate_expression", trueOrFalseSetting},
     {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
     {"enable_parallel_replicas", trueOrFalseSetting},
@@ -158,12 +159,6 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"optimize_use_projections", trueOrFalseSetting},
     {"optimize_use_projection_filtering", trueOrFalseSetting},
     /// {"optimize_using_constraints", trueOrFalseSetting},
-    {"os_threads_nice_value_merge_mutate",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
-    {"os_threads_nice_value_zookeeper_client_send_receive",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
     {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
     {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
     {"parallel_view_processing", trueOrFalseSetting},
@@ -174,6 +169,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"query_plan_aggregation_in_order", trueOrFalseSetting},
     {"query_plan_convert_join_to_in", trueOrFalseSetting},
     {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
+    {"query_plan_direct_read_from_text_index", trueOrFalseSetting},
     {"query_plan_enable_multithreading_after_window_functions", trueOrFalseSetting},
     {"query_plan_enable_optimizations", trueOrFalseSetting},
     {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
@@ -235,6 +231,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
          },
          {},
          false)},
+    {"text_index_use_bloom_filter", trueOrFalseSetting},
     {"transform_null_in", trueOrFalseSetting},
     {"use_concurrency_control", trueOrFalseSetting},
     {"use_iceberg_partition_pruning", trueOrFalseSetting},
@@ -502,6 +499,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_wait_end_of_query", trueOrFalseSettingNoOracle},
     {"http_write_exception_in_output_format", trueOrFalseSettingNoOracle},
     {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
+    {"iceberg_metadata_compression_method",
+     CHSetting([](RandomGenerator & rg) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
     {"iceberg_metadata_log_level",
      CHSetting(
          [](RandomGenerator & rg)
@@ -514,6 +513,20 @@ std::unordered_map<String, CHSetting> serverSettings = {
                     "'manifest_file_metadata'",
                     "'manifest_file_entry'"};
              return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"iceberg_timestamp_ms",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
+             const auto now = std::chrono::system_clock::now();
+
+             // Convert to milliseconds since epoch
+             auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+             ms -= (rg.pickRandomly(values) * 1000);
+             return std::to_string(ms);
          },
          {},
          false)},
@@ -595,6 +608,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_page_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_use_offset_index", trueOrFalseSetting},
     {"input_format_protobuf_flatten_google_wrappers", trueOrFalseSettingNoOracle},
+    {"input_format_protobuf_oneof_presence", trueOrFalseSettingNoOracle},
     {"input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
     {"input_format_skip_unknown_fields", trueOrFalseSettingNoOracle},
     {"input_format_try_infer_dates", trueOrFalseSettingNoOracle},
@@ -632,6 +646,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"join_on_disk_max_files_to_merge",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 32)); }, {}, false)},
+    {"join_runtime_bloom_filter_hash_functions",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 20)); },
+         {"0", "1", "2", "3", "4", "10"},
+         false)},
     {"join_use_nulls", trueOrFalseSettingNoOracle},
     {"keeper_map_strict_mode", trueOrFalseSettingNoOracle},
     {"least_greatest_legacy_null_behavior", trueOrFalseSettingNoOracle},
@@ -911,9 +930,14 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_cache_share_between_users", trueOrFalseSettingNoOracle},
     {"query_cache_squash_partial_results", trueOrFalseSetting},
     {"query_condition_cache_selectivity_threshold",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); }, {}, false)},
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
+         {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
+         false)},
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
+    {"query_plan_max_step_description_length",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"query_plan_use_new_logical_join_step", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
@@ -1179,6 +1203,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "input_format_parquet_prefer_block_bytes",
           "input_format_parquet_memory_low_watermark",
           "input_format_parquet_memory_high_watermark",
+          "join_runtime_bloom_filter_bytes",
           "max_bytes_before_external_group_by",
           "max_bytes_before_external_sort",
           "max_bytes_before_remerge_sort",
