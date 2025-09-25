@@ -61,8 +61,8 @@ namespace
     }
 }
 
-WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
-    : WorkloadEntityStorageBase(global_context_)
+WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_)
+    : WorkloadEntityStorageBase(global_context_, std::move(next_storage_))
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
 {
     log = getLogger("WorkloadEntityDiskStorage");
@@ -178,7 +178,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
         }
     }
 
-    setAllEntities(entities_name_and_queries);
+    setLocalEntities(entities_name_and_queries);
     entities_loaded = true;
 
     LOG_DEBUG(log, "Workload entities loaded");

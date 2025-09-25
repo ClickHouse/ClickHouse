@@ -16,7 +16,7 @@ namespace DB
 class WorkloadEntityStorageBase : public IWorkloadEntityStorage
 {
 public:
-    explicit WorkloadEntityStorageBase(ContextPtr global_context_);
+    explicit WorkloadEntityStorageBase(ContextPtr global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ASTPtr get(const String & entity_name) const override;
 
     ASTPtr tryGet(const String & entity_name) const override;
@@ -45,6 +45,8 @@ public:
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
+    void setNextStorage(std::unique_ptr<WorkloadEntityStorageBase> next_storage_);
+
     String getMasterThreadResourceName() override;
     String getWorkerThreadResourceName() override;
     String getQueryResourceName() override;
@@ -55,7 +57,6 @@ protected:
         Ok,
         Failed,
         Retry,
-        Delegated // Operation was delegated to another storage, no need to update in-memory state or notify subscribers, update will come through subscription for delegated storage
     };
 
     virtual OperationResult storeEntityImpl(
@@ -75,20 +76,15 @@ protected:
 
     std::unique_lock<std::recursive_mutex> getLock() const;
 
-    /// Replace current `entities` with `new_entities` and notifies subscribers.
+    /// Replace current `local_entities` with `new_entities`, merge them with entities in the next storage and notifies subscribers.
     /// Note that subscribers will be notified with a sequence of events.
     /// It is guaranteed that all itermediate states (between every pair of consecutive events)
     /// will be consistent (all references between entities will be valid)
     /// Returns true if entities were changed, false if new_entities are the same as current entities
-    bool setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    bool setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
 
-    /// Create, replace or drop one entity and notifies subscribers.
-    /// If entity is nullptr, it will be dropped.
-    /// Returns true if entities were changed, false if the entity is the same as current entity
-    bool setOneEntity(const String & entity_name, const ASTPtr & create_entity_query);
-
-    /// Serialize `entities` stored in memory plus one optional `change` into multiline string
-    String serializeAllEntities(std::optional<Event> change);
+    /// Serialize `local_entities` stored in memory plus one optional `change` into multiline string
+    String serializeLocalEntities(std::optional<Event> change);
 
     /// Shared parsing function for both keeper and config storage
     static std::vector<std::pair<String, ASTPtr>> parseEntitiesFromString(const String & data, LoggerPtr log);
@@ -123,7 +119,9 @@ private:
     std::shared_ptr<Handlers> handlers;
 
     mutable std::recursive_mutex mutex;
-    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query
+    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query (including entities from the next storage)
+    std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
+    std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
 
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
@@ -131,6 +129,10 @@ private:
     String master_thread_resource; /// current resource name for worker threads
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries
+
+    // Chain of storages
+    std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)
+    scope_guard subscription; /// Subscription to changes in the next storage in the chain, if any
 
 protected:
     ContextPtr global_context;

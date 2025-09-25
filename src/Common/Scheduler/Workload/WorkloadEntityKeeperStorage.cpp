@@ -30,8 +30,8 @@ namespace ErrorCodes
 }
 
 WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
-    const ContextPtr & global_context_, const String & zookeeper_path_)
-    : WorkloadEntityStorageBase(global_context_)
+    const ContextPtr & global_context_, const String & zookeeper_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_)
+    : WorkloadEntityStorageBase(global_context_, std::move(next_storage_))
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch{std::make_shared<WatchEvent>()}
@@ -176,7 +176,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
 {
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeAllEntities(Event{entity_type, entity_name, create_entity_query});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -203,7 +203,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
 {
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeAllEntities(Event{entity_type, entity_name, {}});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -266,7 +266,7 @@ bool WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
     }
 
-    bool changed = setAllEntities(new_entities);
+    bool changed = setLocalEntities(new_entities);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");

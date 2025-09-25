@@ -29,7 +29,7 @@ bool WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfigu
     }
 
     // Update entities in memory and notify subscribers
-    bool changed = setAllEntities(new_entities);
+    bool changed = setLocalEntities(new_entities);
 
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
 

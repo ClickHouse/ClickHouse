@@ -284,11 +284,64 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
 
 }
 
-WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
+WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_)
     : handlers(std::make_shared<Handlers>())
+    , next_storage(std::move(next_storage_))
     , global_context(std::move(global_context_))
     , log{getLogger("WorkloadEntityStorage")} // could be overridden in derived class
-{}
+{
+    if (next_storage)
+    {
+        subscription = next_storage->getAllEntitiesAndSubscribe(
+            [this] (const std::vector<Event> & other_tx)
+            {
+                std::unique_lock lock(mutex);
+
+                // Transaction over the next storage (other_tx) will be transformed into a transaction over this storage (local_tx)
+                std::vector<Event> local_tx;
+
+                for (const auto & other_event : other_tx)
+                {
+                    EntityChange change;
+
+                    // Entity to be changed
+                    change.name = other_event.name;
+                    if (auto it = entities.find(change.name); it != entities.end())
+                        change.before = it->second; // it may be either local entity or overridden entity from the next storage
+
+                    // Entity to change to
+                    if (other_event.entity)
+                        change.after = other_event.entity;
+                    else
+                    {
+                        // If entity is removed in the next storage, we need to check if it was an overridden entity
+                        if (auto it = local_entities.find(change.name); it != local_entities.end())
+                            change.after = it->second;
+                    }
+
+                    // Sync `other_entities` with the next storage
+                    if (other_event.entity)
+                        other_entities[other_event.name] = other_event.entity;
+                    else
+                        other_entities.erase(other_event.name);
+
+                    // Apply changes to the merged state in memory and prepare local_tx
+                    if (!(change.before && change.after && entityEquals(change.before, change.after)))
+                    {
+                        for (const auto & local_event : change.toEvents())
+                        {
+                            // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
+                            applyEvent(lock, local_event);
+                            local_tx.push_back(local_event);
+                        }
+                    }
+                }
+
+                // Notify subscribers
+                unlockAndNotify(lock, local_tx);
+            });
+    }
+}
 
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
 {
@@ -363,6 +416,8 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
             if (workload && !old_workload->hasParent() && workload->hasParent())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
+            if (other_entities.contains(entity_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in config", entity_name);
         }
 
         // Validate workload
@@ -453,11 +508,12 @@ bool WorkloadEntityStorageBase::storeEntity(
         if (result == OperationResult::Ok)
         {
             Event event{entity_type, entity_name, create_entity_query};
+            local_entities[entity_name] = create_entity_query;
             applyEvent(lock, event);
             unlockAndNotify(lock, {std::move(event)});
         }
 
-        return result == OperationResult::Ok || result == OperationResult::Delegated;
+        return result == OperationResult::Ok;
     }
 }
 
@@ -487,6 +543,9 @@ bool WorkloadEntityStorageBase::removeEntity(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
         }
 
+        if (other_entities.contains(entity_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in config", entity_name);
+
         auto result = removeEntityImpl(
             current_context,
             entity_type,
@@ -503,7 +562,7 @@ bool WorkloadEntityStorageBase::removeEntity(
             unlockAndNotify(lock, {std::move(event)});
         }
 
-        return result == OperationResult::Ok || result == OperationResult::Delegated;
+        return result == OperationResult::Ok;
     }
 }
 
@@ -583,23 +642,30 @@ std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() cons
     return std::unique_lock{mutex};
 }
 
-bool WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
+bool WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
 {
-    std::unordered_map<String, ASTPtr> new_entities;
+    std::unordered_map<String, ASTPtr> local_new_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
-        new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
+        local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
 
     std::unique_lock lock(mutex);
 
-    // Fill vector of `changes` based on difference between current `entities` and `new_entities`
+    // Merge `local_new_entities` merged with existing `other_entities`
+    std::unordered_map<String, ASTPtr> merged_new_entities;
+    for (const auto & [entity_name, entity] : local_new_entities)
+        merged_new_entities[entity_name] = entity;
+    for (const auto & [entity_name, entity] : other_entities)
+        merged_new_entities[entity_name] = entity; // override local entity if exists
+
+    // Fill vector of `changes` based on difference between current `entities` and `merged_new_entities`
     std::vector<EntityChange> changes;
     for (const auto & [entity_name, entity] : entities)
     {
-        if (auto it = new_entities.find(entity_name); it != new_entities.end())
+        if (auto it = merged_new_entities.find(entity_name); it != merged_new_entities.end())
         {
             if (!entityEquals(entity, it->second))
             {
-                changes.emplace_back(entity_name, entity, it->second); // Update entities that are present in both `new_entities` and `entities`
+                changes.emplace_back(entity_name, entity, it->second); // Update entities that are present in both `merged_new_entities` and `entities`
                 LOG_TRACE(log, "Workload entity {} was updated", entity_name);
             }
             else
@@ -607,18 +673,21 @@ bool WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
         }
         else
         {
-            changes.emplace_back(entity_name, entity, ASTPtr{}); // Remove entities that are not present in `new_entities`
+            changes.emplace_back(entity_name, entity, ASTPtr{}); // Remove entities that are not present in `merged_new_entities`
             LOG_TRACE(log, "Workload entity {} was dropped", entity_name);
         }
     }
-    for (const auto & [entity_name, entity] : new_entities)
+    for (const auto & [entity_name, entity] : merged_new_entities)
     {
         if (!entities.contains(entity_name))
         {
-            changes.emplace_back(entity_name, ASTPtr{}, entity); // Create entities that are only present in `new_entities`
+            changes.emplace_back(entity_name, ASTPtr{}, entity); // Create entities that are only present in `merged_new_entities`
             LOG_TRACE(log, "Workload entity {} was created", entity_name);
         }
     }
+
+    // Update local entities
+    local_entities = std::move(local_new_entities);
 
     // Sort `changes` to respect consistency of references and apply them one by one.
     std::vector<Event> tx;
@@ -635,31 +704,6 @@ bool WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     // Notify subscribers
     unlockAndNotify(lock, tx);
 
-    return !tx.empty();
-}
-
-bool WorkloadEntityStorageBase::setOneEntity(const String & entity_name, const ASTPtr & create_entity_query)
-{
-    std::unique_lock lock(mutex);
-    EntityChange change;
-    change.name = entity_name;
-    if (auto it = entities.find(entity_name); it != entities.end())
-        change.before = it->second;
-    if (create_entity_query)
-        change.after = normalizeCreateWorkloadEntityQuery(*create_entity_query);
-    if (change.before && change.after && entityEquals(change.before, change.after))
-        return false; // No change
-
-    std::vector<Event> tx;
-    for (const auto & event : change.toEvents())
-    {
-        // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
-        applyEvent(lock, event);
-        tx.push_back(event);
-    }
-
-    // Notify subscribers
-    unlockAndNotify(lock, tx);
     return !tx.empty();
 }
 
@@ -830,10 +874,10 @@ std::vector<WorkloadEntityStorageBase::Event> WorkloadEntityStorageBase::orderEn
     return result;
 }
 
-String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> change)
+String WorkloadEntityStorageBase::serializeLocalEntities(std::optional<Event> change)
 {
     std::unique_lock<std::recursive_mutex> lock;
-    auto ordered_entities = orderEntities(entities, change);
+    auto ordered_entities = orderEntities(local_entities, change);
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(/*one_line=*/true);
     for (const auto & event : ordered_entities)

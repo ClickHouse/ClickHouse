@@ -16,7 +16,7 @@ namespace DB
 class WorkloadEntityKeeperStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_);
+    WorkloadEntityKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ~WorkloadEntityKeeperStorage() override;
 
     bool isReplicated() const override { return true; }
