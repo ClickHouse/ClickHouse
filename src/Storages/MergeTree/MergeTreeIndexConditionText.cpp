@@ -334,7 +334,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-static std::vector<String> stringToTokens(const Field & field, const ITokenExtractor & token_extractor)
+namespace
+{
+std::vector<String> stringToTokens(const Field & field, const ITokenExtractor & token_extractor)
 {
     std::vector<String> tokens;
     const auto & value = field.safeGet<String>();
@@ -342,12 +344,39 @@ static std::vector<String> stringToTokens(const Field & field, const ITokenExtra
     return tokens;
 }
 
-static std::vector<String> substringToTokens(const Field & field, const ITokenExtractor & token_extractor, bool is_prefix, bool is_suffix)
+std::vector<String> substringToTokens(const Field & field, const ITokenExtractor & token_extractor, bool is_prefix, bool is_suffix)
 {
     std::vector<String> tokens;
     const auto & value = field.safeGet<String>();
     token_extractor.substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     return tokens;
+}
+
+bool traverArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
+{
+    const auto function = index_column_node.toFunctionNode();
+    if (function.getFunctionName() == "arrayElement")
+    {
+        const auto map_column_name = function.getArgumentAt(0).getColumnName();
+        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", map_column_name));
+        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", map_column_name));
+        if (has_maps_keys_index_column_name)
+        {
+            const auto & argument_const_key = function.getArgumentAt(1);
+            DataTypePtr key_const_type;
+            if (argument_const_key.tryGetConstant(const_value, key_const_type))
+            {
+                auto const_data_type = WhichDataType(key_const_type);
+                if (!const_data_type.isStringOrFixedString())
+                    return false;
+                return true;
+            }
+            return false;
+        }
+        return has_map_values_index_column_name;
+    }
+    return false;
+}
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -362,31 +391,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     Field const_value = value_field;
     if (index_column_node.isFunction())
-    {
-        const auto function = index_column_node.toFunctionNode();
-        if (function.getFunctionName() == "arrayElement")
-        {
-            const auto map_column_name = function.getArgumentAt(0).getColumnName();
-            bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", map_column_name));
-            bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", map_column_name));
-            index_column_exists = has_maps_keys_index_column_name || has_map_values_index_column_name;
-            if (has_maps_keys_index_column_name)
-            {
-                const auto & argument_const_key = function.getArgumentAt(1);
-                DataTypePtr key_const_type;
-                if (argument_const_key.tryGetConstant(const_value, key_const_type))
-                {
-                    auto const_data_type = WhichDataType(key_const_type);
-                    if (!const_data_type.isStringOrFixedString())
-                        return false;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-        }
-    }
+        index_column_exists = index_column_exists || traverArrayFunctionNode(index_column_node, header, const_value);
 
     if (!index_column_exists && !index_column_map_keys_exists)
         return false;

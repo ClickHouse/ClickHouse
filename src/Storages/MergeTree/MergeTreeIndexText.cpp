@@ -776,6 +776,27 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
     return granule;
 }
 
+namespace
+{
+void addArrayValuesIntoGranuleBuilder(
+    MergeTreeIndexTextGranuleBuilder & granule_builder, const ColumnPtr & column, size_t rows, size_t current_position)
+{
+    const auto & column_array = assert_cast<const ColumnArray &>(*column);
+    const auto & column_data = column_array.getData();
+    const auto & column_offsets = column_array.getOffsets();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        size_t element_start_row = column_offsets[current_position + i - 1];
+        size_t elements_size = column_offsets[current_position + i] - element_start_row;
+        for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
+        {
+            auto ref = column_data.getDataAt(element_start_row + element_idx);
+            granule_builder.addDocument(ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
+        }
+    }
+}
+}
+
 void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
@@ -794,19 +815,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (isArray(index_column->getDataType()))
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column);
-        const auto & column_data = column_array.getData();
-        const auto & column_offsets = column_array.getOffsets();
-        for (size_t i = 0; i < rows_read; ++i)
-        {
-            size_t element_start_row = column_offsets[current_position + i - 1];
-            size_t elements_size = column_offsets[current_position + i] - element_start_row;
-            for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
-            {
-                auto ref = column_data.getDataAt(element_start_row + element_idx);
-                granule_builder.addDocument(ref, (element_idx == (elements_size - 1)) /* update current row number on the last element */);
-            }
-        }
+        addArrayValuesIntoGranuleBuilder(granule_builder, index_column, rows_read, current_position);
     }
     else
     {
