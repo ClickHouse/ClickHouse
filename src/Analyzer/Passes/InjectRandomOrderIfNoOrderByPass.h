@@ -15,4 +15,4 @@ public:
     String getDescription() override { return "Inject ORDER BY rand() at top-level SELECT when missing (tests only)"; }
     void run(QueryTreeNodePtr & root, ContextPtr context) override;
 };
-} // namespace DB
+}

@@ -52,8 +52,8 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
     /// Case 2: top-level UNION - inject into each branch
     if (auto * u = root->as<UnionNode>())
     {
-        auto & branchs = u->getQueries();
-        for (auto & branch_ptr : branchs.getNodes())
+        auto & branches = u->getQueries();
+        for (auto & branch_ptr : branches.getNodes())
         {
             if (auto * branch_q = branch_ptr->as<QueryNode>())
                 if (!branch_q->hasOrderBy())
@@ -64,4 +64,4 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
 
 }
 
-} // namespace DB
+}
