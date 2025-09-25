@@ -13,7 +13,6 @@ using Cost = Float64;
 struct ExpressionCost
 {
     Cost subtree_cost = 0;
-//    Float64 number_of_rows = 0;
 };
 
 

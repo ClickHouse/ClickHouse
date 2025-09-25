@@ -8,11 +8,19 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <base/types.h>
 #include <limits>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_statistics_optimize;
+}
 
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
@@ -42,7 +50,6 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else
     {
-//        total_cost.number_of_rows = 100500;
         if (expression->inputs.empty())
         {
             /// Some default non-zero cost
@@ -67,7 +74,6 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         const ExpressionStatistics & right_statistics)
 {
     ExpressionCost join_cost;
-//    join_cost.number_of_rows = this_step_statistics.estimated_row_count;
     join_cost.subtree_cost =
         left_statistics.estimated_row_count +           /// Scan of left table
         2.0 * right_statistics.estimated_row_count +    /// Right table contributes more because we build hash table from it
@@ -80,7 +86,6 @@ ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & /*read_
 {
     return ExpressionCost{
         .subtree_cost = Cost(this_step_statistics.estimated_row_count),
-//        .number_of_rows = Float64(this_step_statistics.estimated_row_count)
     };
 }
 
@@ -197,12 +202,6 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
 {
     ExpressionStatistics statistics;
     const auto & table_name = read_step.getStorageID().getTableName();
-    for (const auto & column_name : read_step.getAllColumnNames())
-    {
-        auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
-        if (column_ndv)
-            statistics.column_statistics[column_name].number_of_distinct_values = column_ndv.value();
-    }
 
     statistics.min_row_count = 0;
     statistics.max_row_count = read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max());
@@ -210,9 +209,40 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
     analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();
     if (analyzed_result)
+    {
         statistics.estimated_row_count = analyzed_result->selected_rows;
+        statistics.max_row_count = analyzed_result->selected_rows;
+    }
     else
         statistics.estimated_row_count = 1000000;
+
+    if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+    {
+        /// TODO: Move this to IOptimizerStatistics implementation
+        if (auto estimator = read_step.getConditionSelectivityEstimator())
+        {
+            auto prewhere_info = read_step.getPrewhereInfo();
+            const ActionsDAG::Node * prewhere_node = prewhere_info
+                ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                : nullptr;
+            auto relation_profile = estimator->estimateRelationProfile(nullptr, prewhere_node);
+
+            statistics.estimated_row_count = relation_profile.rows;
+            statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
+            for (const auto & [column_name, column_stats] : relation_profile.column_stats)
+                statistics.column_statistics[column_name].number_of_distinct_values = column_stats.num_distinct_values;
+
+            LOG_TRACE(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
+            return statistics;
+        }
+    }
+
+    for (const auto & column_name : read_step.getAllColumnNames())
+    {
+        auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
+        if (column_ndv)
+            statistics.column_statistics[column_name].number_of_distinct_values = column_ndv.value();
+    }
 
     auto cardinality_hint = statistics_lookup.getCardinaity(table_name);
     if (cardinality_hint)
