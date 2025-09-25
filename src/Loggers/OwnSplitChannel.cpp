@@ -7,7 +7,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/IO.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
@@ -140,9 +139,6 @@ void logToSystemTextLogQueue(
 void OwnSplitChannel::logSplit(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
 {
-    /// The memory that will be allocated in this scope will be freed from another context (during system table flush),
-    /// so it should not be take into account in this scope
-    MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);
     const Poco::Message & msg = *msg_ext.base;
 
     try
@@ -397,10 +393,6 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 
 void OwnAsyncSplitChannel::log(Poco::Message && msg)
 {
-    /// The memory that will be allocated in this scope will be freed from another context (in OwnAsyncSplitChannel::runChannel()),
-    /// so it should not be take into account in this scope.
-    MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);
-
     try
     {
         /// Based on logger_useful.h this won't be called if the message is not needed
