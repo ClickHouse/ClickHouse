@@ -47,8 +47,6 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/common/logging.c"
 
     "${POSTGRES_SOURCE_DIR}/src/port/snprintf.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
     "${POSTGRES_SOURCE_DIR}/src/port/strerror.c"
     "${POSTGRES_SOURCE_DIR}/src/port/inet_net_ntop.c"
     "${POSTGRES_SOURCE_DIR}/src/port/getpeereid.c"
@@ -59,6 +57,13 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
 )
+
+if(NOT OS_DARWIN)
+    set(SRCS ${SRCS}
+        "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
+        "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
+    )
+endif()
 
 add_library(_libpq ${SRCS})
 
