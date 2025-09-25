@@ -197,7 +197,6 @@ struct AggregateFunctionTopKGenericData
     using Set = SpaceSaving<StringRef, StringRefHash>;
 
     Set value;
-    bool loaded_from_state = false;
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
@@ -284,8 +283,8 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);
-            UInt64 count = 0;
-            UInt64 error = 0;
+            UInt64 count;
+            UInt64 error;
             readVarUInt(count, buf);
             readVarUInt(error, buf);
             set.insert(ref, count, error);
