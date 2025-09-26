@@ -1,11 +1,5 @@
-#pragma once
-
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context_fwd.h>
-#include <Functions/FunctionsComparison.h>
-
+#include <Core/AccurateComparison.h>
+#include <Functions/FunctionsNullSafeCmp.h>
 namespace DB
 {
 
@@ -16,37 +10,12 @@ namespace ErrorCodes
 
 struct NameFunctionIsNotDistinctFrom { static constexpr auto name = "isNotDistinctFrom"; };
 
-/**
-  * Performs null-safe comparison.
-  * equals(NULL, NULL) is NULL, while isNotDistinctFrom(NULL, NULL) is true.
-  */
-class FunctionIsNotDistinctFrom : public IFunction
-{
-private:
-    const ComparisonParams params;
-public:
-    static constexpr auto name = NameFunctionIsNotDistinctFrom::name;
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotDistinctFrom>(context ? ComparisonParams(context) : ComparisonParams()); }
-
-    explicit FunctionIsNotDistinctFrom(ComparisonParams params_) : params(std::move(params_)) {}
-    String getName() const override { return name; }
-
-    bool isVariadic() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
-};
+using NullSafeEqualImpl = FunctionsNullSafeCmp<NameFunctionIsNotDistinctFrom,
+                                               NullSafeCmpMode::NullSafeEqual,
+                                               EqualsOp,
+                                               NameEquals>;
+using FunctionIsNotDistinctFrom = NullSafeEqualImpl;
 
 }
+
+

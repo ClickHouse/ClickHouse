@@ -1,124 +1,52 @@
-#include <cstddef>
-#include <Columns/IColumn.h>
-#include <Columns/IColumn_fwd.h>
-#include <Core/NamesAndTypes.h>
-#include <Common/Exception.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Interpreters/castColumn.h>
-#include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsComparison.h>
-#include <Core/AccurateComparison.h>
-#include <Columns/ColumnNullable.h>
 #include <Functions/isNotDistinctFrom.h>
+#include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
-
-ColumnPtr FunctionIsNotDistinctFrom::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
-{
-    if (arguments.size() != 2)
-    {
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Function {} expects exactly 2 arguments, got {}",
-            backQuote(name),
-            arguments.size());
-    }
-    ColumnPtr left_col = arguments[0].column;
-    ColumnPtr right_col = arguments[1].column;
-    if (!left_col || !right_col)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error.get null Column.");
-    }
-
-    if (!arguments[0].type || !arguments[1].type)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error.get null DataType");
-    }
-
-    // get common type for null-safe compare
-    DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
-
-    ColumnPtr c0_converted = castColumn(arguments[0], common_type);
-    ColumnPtr c1_converted = castColumn(arguments[1], common_type);
-
-    // for null
-    if (c0_converted->isNullable() && c1_converted->isNullable())
-    {
-        auto c_res = ColumnUInt8::create();
-        ColumnUInt8::Container & vec_res = c_res->getData();
-        vec_res.resize(arguments[0].column->size());
-        c0_converted = c0_converted->convertToFullColumnIfConst();
-        c1_converted = c1_converted->convertToFullColumnIfConst();
-
-        for (size_t i = 0; i < input_rows_count ; i++)
-        {
-            bool is_null_l = c0_converted->isNullAt(i);
-            bool is_null_r = c1_converted->isNullAt(i);
-            if (is_null_l && is_null_r)
-            {
-                vec_res[i] = 1;
-            }
-            else if ((!is_null_l && is_null_r) || (is_null_l && !is_null_r))
-            {
-                vec_res[i] = 0;
-            }
-            else
-            {
-                vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? 1 : 0;
-            }
-        }
-        return c_res;
-    }
-
-    // for normal
-    ColumnPtr res;
-
-    FunctionOverloadResolverPtr equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params));
-
-    auto executable_func = equals->build(arguments);
-    auto data_type = executable_func->getResultType();
-    res = executable_func->execute(arguments, data_type, input_rows_count, /* dry_run = */ false);
-
-    return res;
-}
-
-
 REGISTER_FUNCTION(IsNotDistinctFrom)
 {
     FunctionDocumentation::Description description = R"(
-Performs a null-safe comparison between two `JOIN` keys. This function will consider
-two `NULL` values as identical and will return `true`, which is distinct from the usual
-equals behavior where comparing two `NULL` values would return `NULL`.
-
-:::info
-This function was originally implemented for null-safe comparisons in `JOIN ON` clauses, but can now be used in any SQL clause.
-:::
-For a complete example see: [`NULL` values in `JOIN` keys](/sql-reference/statements/select/join#null-values-in-join-keys).
+        Performs a null-safe "equals" comparison between two values.
+        Returns `true` if the values are equal, including when both are NULL.
+        Returns `false` if the values are different, or if exactly one of them is NULL.
     )";
+
     FunctionDocumentation::Syntax syntax = "isNotDistinctFrom(x, y)";
+
     FunctionDocumentation::Arguments arguments = {
-        {"x", "First key to compare.", {"Any"}},
-        {"y", "Second key to compare.", {"Any"}}
+        {"x", "First value to compare. Can be any ClickHouse data type.", {"Any"}},
+        {"y", "Second value to compare. Can be any ClickHouse data type.", {"Any"}}
     };
+
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns `true` when `x` and `y` are both `NULL`, otherwise `false`.",
-        {"Bool"}};
-    FunctionDocumentation::Examples examples = {};
+        "Returns `true` if the two values are equal, treating NULLs as comparable:\n"
+        "  - Returns `true` if x = y.\n"
+        "  - Returns `true` if both x and y are NULL.\n"
+        "  - Returns `false` if x != y, or exactly one of x or y is NULL.",
+        {"Bool"}
+    };
+
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage with numbers and NULLs", R"(
+SELECT
+    isNotDistinctFrom(1, 1) AS result_1,
+    isNotDistinctFrom(1, 2) AS result_2,
+    isNotDistinctFrom(NULL, NULL) AS result_3,
+    isNotDistinctFrom(NULL, 1) AS result_4
+        )",
+    R"(
+┌─result_1─┬─result_2─┬─result_3─┬─result_4─┐
+│        1 │        0 │        1 │        0 │
+└──────────┴──────────┴──────────┴──────────┘
+        )"}
+    };
+
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
