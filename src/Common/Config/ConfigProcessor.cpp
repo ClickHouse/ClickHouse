@@ -307,8 +307,13 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
             if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(element.getAttribute("hide_in_preprocessed")))
             {
                 config_root->removeChild(node);
-            } else
+            }
+            else
+            {
+                if (element.hasAttribute("vault_key"))
+                    element.removeAttribute("vault_key");
                 hideRecursive(node);
+            }
         }
         node = next_node;
     }
@@ -627,7 +632,7 @@ void ConfigProcessor::doIncludesRecursive(
         const auto * vault_key_node = node->attributes()->getNamedItem("vault_key");
 
         if (!vault_key_node || vault_key_node->getNodeValue().empty())
-            throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_vault' attribute but does not valid 'vault_key' attribute");
+            throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_vault' attribute and does not have valid 'vault_key' attribute");
 
         // LOG_DEBUG(log, "Vault vault_key '{}'.", vault_key_node->getNodeValue());
 
