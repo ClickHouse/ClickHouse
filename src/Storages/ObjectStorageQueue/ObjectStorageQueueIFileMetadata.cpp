@@ -478,8 +478,8 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
             fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
 
         chassert(
-            zk_client->exists(failed_node_path),
-            fmt::format("Expected path {} not to exist while finalizing {}", failed_node_path, path));
+            zk_client->exists(failed_node_path) || zk_client->exists(failed_node_path + ".retriable"),
+            fmt::format("Expected path {} to exist while finalizing {}", failed_node_path, path));
 
     });
 #endif
