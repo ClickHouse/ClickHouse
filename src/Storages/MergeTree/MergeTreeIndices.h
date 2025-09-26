@@ -5,6 +5,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 #include <memory>
 #include <string>
@@ -162,7 +163,8 @@ public:
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+    using PartialEvalResultsFunction = KeyCondition::PartialEvalResultsFunction;
+    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const PartialEvalResultsFunction & partial_eval_results_function = nullptr) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const

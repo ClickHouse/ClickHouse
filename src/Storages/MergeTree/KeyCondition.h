@@ -78,10 +78,12 @@ public:
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
+    using PartialEvalResultsFunction = std::function<void (size_t position, bool result, bool is_unknown)>;
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
+	const PartialEvalResultsFunction & partial_eval_results_function = nullptr) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.

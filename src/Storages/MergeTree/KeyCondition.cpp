@@ -46,6 +46,8 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -3223,9 +3225,15 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
+    const ColumnIndexToBloomFilter & column_index_to_column_bf,
+    const PartialEvalResultsFunction & partial_eval_results_function) const
 {
     std::vector<BoolMask> rpn_stack;
+
+    std::stringstream ss;
+    for (const auto & element : rpn)
+	    ss << "-" << element.function << "(" << element.key_column << ")";
+    LOG_TRACE(getLogger(""), "KeyCondition is {}, rpn is {}", toString(), ss.str());
 
     auto curve_type = [&](size_t key_column_pos)
     {
@@ -3235,6 +3243,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
+    size_t position = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3504,6 +3513,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+        if (partial_eval_results_function)
+            partial_eval_results_function(position, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+        position++;
     }
 
     if (rpn_stack.size() != 1)

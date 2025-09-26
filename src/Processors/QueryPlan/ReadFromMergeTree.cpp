@@ -1776,6 +1776,10 @@ static void buildIndexes(
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
+    /// Just the skeleton of the predicate - no columns resolved.
+    NamesAndTypesList dummy;
+    indexes->key_condition_rpn_template = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy))};
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -2078,6 +2082,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->key_condition_rpn_template.value(),
             indexes->skip_indexes,
             reader_settings,
             log,
