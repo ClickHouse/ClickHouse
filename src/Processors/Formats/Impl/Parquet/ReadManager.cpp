@@ -58,7 +58,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
     /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
     stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
-    if (reader.format_filter_info->prewhere_info)
+    if (reader.format_filter_info->prewhere_info || reader.format_filter_info->row_level_filter)
         stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
     else
     {
