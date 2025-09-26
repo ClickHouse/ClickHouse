@@ -293,6 +293,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--random-seed",
+        action="store",
+        type=int,
+        dest="random_seed",
+        help="Set random seed for pytest-random-order",
+    )
+
+
+    parser.add_argument(
         "--pre-pull",
         action="store_true",
         default=False,
@@ -474,6 +483,21 @@ if __name__ == "__main__":
         map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
     )
 
+    seed_adding = ""
+    if args.random_seed is not None:
+        seed_adding += f" --random-order-seed={args.random_seed}"
+
+    logging.info(f"Number of tests: {len(tests_list)}")
+
+    for test in args.tests_list:
+        logging.info(f"Will run test: {test}")
+
+    logging.info(f"pytest options: {pytest_opts}")
+    logging.info(f"parallel args: {parallel_args}")
+    logging.info(f"repeat args: {repeat_args}")
+    logging.info(f"rand args: {rand_args}")
+
+
     # Mount debug root into container if debug flag is set
     debug_mount = f"--volume={CLICKHOUSE_ROOT}:/debug:ro" if args.debug else ""
 
@@ -491,7 +515,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} {use_distributed_plan} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv "'
+        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} {seed_adding} -vvv "'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
