@@ -210,6 +210,29 @@ def test_yt_dictionary_multiple_enpoints(started_cluster):
     yt.remove_table(path)
 
 
+def test_yt_dictionary_cyrillic_strings(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1, "value":"привет"}{"id":2,"value":"привет"}{"id":3,"value":"привет!!!"}',
+    )
+    instance.query(
+        f"CREATE DICTIONARY yt_dict(id UInt64, value String) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0)) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
+    )
+
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "привет\nпривет\nпривет!!!\n"
+    )
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
 @pytest.mark.parametrize(
     "primary_key_value, layout, dict_key",
     [("id", "RANGE_HASHED", "1"), ("id, id2", "COMPLEX_KEY_RANGE_HASHED", "(1,1)")],
