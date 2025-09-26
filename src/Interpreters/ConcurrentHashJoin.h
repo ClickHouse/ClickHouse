@@ -64,19 +64,6 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    bool hasNonJoinedRows() const;
-
-    static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
-    {
-        return isRight(table_join_.kind());
-    }
-
-    static bool needUsedFlagsForPerLeftTableRow(const std::shared_ptr<TableJoin> & table_join)
-    {
-        // For RIGHT JOIN, if the strictness is not Semi or Asof, we must track which left rows were matched.
-        return table_join->strictness() != JoinStrictness::Semi && table_join->strictness() != JoinStrictness::Asof;
-    }
-
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -115,47 +102,18 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     mutable std::atomic<bool> build_phase_finished{false};
-    /// Shared flags map for all HashJoin instances.
-    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags;
 
     StatsCollectingParams stats_collecting_params;
 
     std::mutex totals_mutex;
     Block totals;
 
-    // Atomically set if non-joined rows are detected in any slot
-    mutable std::atomic<bool> has_non_joined_rows{false};
-    mutable std::atomic<bool> has_non_joined_rows_checked{false};
-
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    ScatteredBlocks dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block);
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
-
-    class ConcatNotJoinedStreams final : public IBlocksStream
-    {
-    public:
-        explicit ConcatNotJoinedStreams(std::vector<IBlocksStreamPtr> children_)
-            : children(std::move(children_)) {}
-
-        Block nextImpl() override
-        {
-            while (idx < children.size())
-            {
-                auto & child = children[idx];
-                if (!child) { ++idx; continue; }
-                Block b = child->next();
-                if (!b.empty()) return b;
-                ++idx;
-            }
-            return {};
-        }
-
-    private:
-        std::vector<IBlocksStreamPtr> children;
-        size_t idx = 0;
-    };
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.
