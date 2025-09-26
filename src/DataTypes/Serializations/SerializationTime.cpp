@@ -9,11 +9,15 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Common/DateLUT.h>
-#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+}
 
 inline void readTimeText(
     time_t & x,
@@ -114,14 +118,10 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
-    const char * begin = istr.position();
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '123808'
     {
         if (!tryReadTimeText(x, istr) || !checkChar('\'', istr))
-        {
-            istr.position() = const_cast<char *>(begin); // rollback on failure
             return false;
-        }
     }
     else
     {
@@ -184,33 +184,59 @@ void SerializationTime::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    time_t x = 0;
+
     if (istr.eof())
         throwReadAfterEOF();
 
-    String time_str;
-    readCSVString(time_str, istr, settings.csv);
+    char maybe_quote = *istr.position();
 
-    time_t x = 0;
-    ReadBufferFromString buf(time_str);
-    // Parse inside an isolated buffer, and fail gracefully if it doesn't fit
-    if (!tryReadTimeText(x, buf) || !buf.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
+    if (maybe_quote == '\'' || maybe_quote == '"')
+    {
+        ++istr.position();
+        readTimeText(x, istr);
+        assertChar(maybe_quote, istr);
+    }
+    else
+    {
+        String time_str;
+        readCSVString(time_str, istr, settings.csv);
+        ReadBufferFromString buf(time_str);
+        readTimeText(x, buf);
+        if (!buf.eof())
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Time value '{}'",
+                    String(buf.position(), buf.buffer().end()),
+                    String(buf.buffer().begin(), buf.position()));
+    }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
 bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    time_t x = 0;
+
     if (istr.eof())
         return false;
 
-    String time_str;
-    readCSVString(time_str, istr, settings.csv);
+    char maybe_quote = *istr.position();
 
-    time_t x = 0;
-    ReadBufferFromString buf(time_str);
-    if (!tryReadTimeText(x, buf) || !buf.eof())
-        return false;
+    if (maybe_quote == '\'' || maybe_quote == '"')
+    {
+        ++istr.position();
+        if (!tryReadTimeText(x, istr) || !checkChar(maybe_quote, istr))
+            return false;
+    }
+    else
+    {
+        String time_str;
+        readCSVString(time_str, istr, settings.csv);
+        ReadBufferFromString buf(time_str);
+        if (!tryReadTimeText(x, buf) || !buf.eof())
+            return false;
+    }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
