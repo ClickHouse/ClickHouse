@@ -1,182 +1,182 @@
 text index with mapKeys
 -- mapContainsKey support
----- query with String
+-- -- query with String
 1
 2
 1
 0
----- query with FixedString
+-- -- query with FixedString
 1
 2
 1
 0
----- index analyzer with String
-key exists only in the first granule
+-- -- Check that the text index actually gets used (String)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
----- index analyzer with FixedString
-key exists only in the first granule
+-- -- Check that the text index actually gets used (FixedString)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
 -- arrayElement(map, key) support
----- query with String
+-- -- query with String
 1
 2
 1
 0
----- query with FixedString
+-- -- query with FixedString
 1
 2
 1
 0
----- index analyzer with String
-key exists only in the first granule
+-- -- Check that the text index actually gets used (String)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
----- index analyzer with FixedString
-key exists only in the first granule
+-- -- Check that the text index actually gets used (FixedString)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
 -- has support
----- query with String
+-- -- query with String
 1
 2
 1
 0
----- query with FixedString
+-- -- query with FixedString
 1
 2
 1
 0
----- index analyzer with String
-key exists only in the first granule
+-- -- Check that the text index actually gets used (String)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
----- index analyzer with FixedString
-key exists only in the first granule
+-- -- Check that the text index actually gets used (FixedString)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
 text index with mapValues
 -- arrayElement(map, key) support
----- query with String
+-- -- query with String
 1
 2
 1
 0
----- query with FixedString
+-- -- query with FixedString
 1
 2
 1
 0
----- index analyzer with String
-key exists only in the first granule
+-- -- Check that the text index actually gets used (String)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
----- index analyzer with FixedString
-key exists only in the first granule
+-- -- Check that the text index actually gets used (FixedString)
+-- -- -- key exists only in the first granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in the second granule
+-- -- -- key exists only in the second granule
 Description: text GRANULARITY 64
 Parts: 1/2
 Granules: 1/2
-key exists only in both granules
+-- -- -- key exists only in both granules
 Description: text GRANULARITY 64
 Parts: 2/2
 Granules: 2/2
-key does not exist in granules
+-- -- -- key does not exist in granules
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2

@@ -695,7 +695,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 {
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool update_current_row)
+void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool increment_current_row)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -721,7 +721,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool upda
         posting_list->addBulk(bulk_context, current_row);
     }
 
-    if (update_current_row)
+    if (increment_current_row)
         ++current_row;
 }
 
@@ -776,27 +776,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
     return granule;
 }
 
-namespace
-{
-void addArrayValuesIntoGranuleBuilder(
-    MergeTreeIndexTextGranuleBuilder & granule_builder, const ColumnPtr & column, size_t rows, size_t current_position)
-{
-    const auto & column_array = assert_cast<const ColumnArray &>(*column);
-    const auto & column_data = column_array.getData();
-    const auto & column_offsets = column_array.getOffsets();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        size_t element_start_row = column_offsets[current_position + i - 1];
-        size_t elements_size = column_offsets[current_position + i] - element_start_row;
-        for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
-        {
-            auto ref = column_data.getDataAt(element_start_row + element_idx);
-            granule_builder.addDocument(ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
-        }
-    }
-}
-}
-
 void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
@@ -815,7 +794,20 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (isArray(index_column->getDataType()))
     {
-        addArrayValuesIntoGranuleBuilder(granule_builder, index_column, rows_read, current_position);
+        const auto & column_array = assert_cast<const ColumnArray &>(*index_column);
+        const auto & column_data = column_array.getData();
+        const auto & column_offsets = column_array.getOffsets();
+        for (size_t i = 0; i < rows_read; ++i)
+        {
+            size_t element_start_row = column_offsets[current_position + i - 1];
+            size_t elements_size = column_offsets[current_position + i] - element_start_row;
+            for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
+            {
+                auto ref = column_data.getDataAt(element_start_row + element_idx);
+                granule_builder.addDocument(
+                    ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
+            }
+        }
     }
     else
     {
@@ -1071,7 +1063,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
     else if (data_type.isLowCardinality())
     {
-        /// TODO Consider removing support for LowCardinality. The index exists for high-cardinality cases.
         const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
         data_type = WhichDataType(low_cardinality.getDictionaryType());
     }

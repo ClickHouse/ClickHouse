@@ -423,8 +423,8 @@ SELECT 'Must be created on String, FixedString, LowCardinality(String), LowCardi
 CREATE TABLE tab
 (
     key UInt64,
-    str UInt64,
-    INDEX idx str TYPE text(tokenizer = 'default')
+    u64 UInt64,
+    INDEX idx u64 TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY key; -- { serverError INCORRECT_QUERY }

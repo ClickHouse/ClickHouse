@@ -352,7 +352,7 @@ std::vector<String> substringToTokens(const Field & field, const ITokenExtractor
     return tokens;
 }
 
-bool traverArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
+bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
 {
     const auto function = index_column_node.toFunctionNode();
     if (function.getFunctionName() == "arrayElement")
@@ -391,7 +391,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     Field const_value = value_field;
     if (index_column_node.isFunction())
-        index_column_exists = index_column_exists || traverArrayFunctionNode(index_column_node, header, const_value);
+        index_column_exists = index_column_exists || traverseArrayFunctionNode(index_column_node, header, const_value);
 
     if (!index_column_exists && !index_column_map_keys_exists)
         return false;
