@@ -158,3 +158,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ENV PYTHONUNBUFFERED=1
+
+# x86_64 wild linker
+RUN curl -L https://github.com/davidlattimore/wild/releases/download/0.6.0/wild-linker-0.6.0-x86_64-unknown-linux-gnu.tar.gz \
+    | tar xvz --strip-components=1 wild-linker-0.6.0-x86_64-unknown-linux-gnu/wild && mv wild /usr/bin/wild
