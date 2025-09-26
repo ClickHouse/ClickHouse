@@ -167,12 +167,28 @@ JoinGraph::PredicatesSet listEdges(
     const RelationsSet & to_relations)
 {
     JoinGraph::PredicatesSet result;
+
+    // FIXME: Use equivalence classes for join graph to include only 1 predicate with left an right columns from the same class
+    std::unordered_set<String> already_added_left_columns;
+    std::unordered_set<String> already_added_right_columns;
+
     for (const auto & from : from_relations)
     {
         for (const auto & to : to_relations)
         {
             auto predicates = join_graph.getPredicates(from, to);
-            result.insert(predicates.begin(), predicates.end());
+
+            for (const auto & predicate : predicates)
+            {
+                /// Skip adding transitive predicate multiple times:
+                /// e.g. (ps_suppkey = l_suppkey) AND (ps_suppkey = s_suppkey)
+                /// when doing 'ps JOIN (l JOIN s ON l_suppkey = s_suppkey) ON ps_suppkey = l_suppkey'
+                if (already_added_left_columns.contains(predicate.first) || already_added_right_columns.contains(predicate.second))
+                    continue;
+                result.insert(predicate);
+                already_added_left_columns.insert(predicate.first);
+                already_added_right_columns.insert(predicate.second);
+            }
         }
     }
 
