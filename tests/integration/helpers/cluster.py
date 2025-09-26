@@ -4794,7 +4794,7 @@ class ClickHouseInstance:
         filename="/var/log/clickhouse-server/clickhouse-server.log",
         timeout=30,
         repetitions=1,
-        look_behind_lines=100,
+        look_behind_lines=10000,
     ):
         start_time = time.time()
         result = self.exec_in_container(

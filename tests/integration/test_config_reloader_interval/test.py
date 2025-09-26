@@ -25,9 +25,7 @@ def start_cluster():
 
 
 def test_reload_config(start_cluster):
-    assert node.wait_for_log_line(
-        f"Config reload interval set to 1000ms", look_behind_lines=2000
-    )
+    assert node.wait_for_log_line(f"Config reload interval set to 1000ms")
 
     assert (
         node.query(
@@ -41,9 +39,7 @@ def test_reload_config(start_cluster):
         "7777",
     )
 
-    assert node.wait_for_log_line(
-        f"Config reload interval changed to 7777ms", look_behind_lines=2000
-    )
+    assert node.wait_for_log_line(f"Config reload interval changed to 7777ms")
 
     assert (
         node.query(
