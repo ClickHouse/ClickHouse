@@ -479,8 +479,6 @@
 01480_binary_operator_monotonicity
     max rows: 10.00, current rows: 100.00
 01801_approx_total_rows_mergetree_reverse
-    max rows: 1.00, current rows: 2.00
-03628_named_tuple_element_in_order_by_key
 
 00955_test_final_mark_use
 01624_soft_constraints
