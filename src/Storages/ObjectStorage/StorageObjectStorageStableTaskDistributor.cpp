@@ -81,7 +81,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getIdentifier();
         auto it = unprocessed_files.find(file_path);
         if (it == unprocessed_files.end())
             continue;
@@ -135,7 +135,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
         else
         {
-            file_path = object_info->getPath();
+            file_path = object_info->getIdentifier();
         }
 
         size_t file_replica_idx = getReplicaForFile(file_path);

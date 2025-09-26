@@ -1,5 +1,7 @@
 #include <memory>
+#include <mutex>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Common/Exception.h>
 
 #if USE_PARQUET
 
@@ -631,6 +633,28 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
             parser_shared_resources->getIOThreadsPerReader());
 }
 
+std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
+{
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
+    metadata = parquet::ReadMetaData(arrow_file);
+    std::vector<size_t> sizes;
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+        sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+    return sizes;
+}
+
+void ParquetBlockInputFormat::setChunksToRead(const std::vector<size_t> & chunks_to_read)
+{
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
+    metadata = parquet::ReadMetaData(arrow_file);
+    std::unordered_set<size_t> set_to_read(chunks_to_read.begin(), chunks_to_read.end());
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+    {
+        if (!set_to_read.contains(i))
+            skip_row_groups.insert(i);
+    }
+}
+
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
 {
     is_stopped = true;
@@ -1125,9 +1149,8 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     {
         size_t max_decoding_threads = parser_shared_resources->getParsingThreadsPerReader();
         while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
-               row_group_batches_started < row_group_batches.size())
+                row_group_batches_started < row_group_batches.size())
             scheduleRowGroup(row_group_batches_started++);
-
         if (row_group_batch_touched)
         {
             auto & row_group = row_group_batches[*row_group_batch_touched];

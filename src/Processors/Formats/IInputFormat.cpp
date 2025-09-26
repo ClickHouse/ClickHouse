@@ -1,3 +1,4 @@
+#include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
@@ -5,6 +6,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)
 {
@@ -59,4 +65,15 @@ void IInputFormat::onFinish()
 {
     resetReadBuffer();
 }
+
+void IInputFormat::setChunksToRead(const std::vector<size_t> & /*chunks_to_read*/)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
+}
+
+std::optional<std::vector<size_t>> IInputFormat::getChunksByteSizes()
+{
+    return std::nullopt;
+}
+
 }

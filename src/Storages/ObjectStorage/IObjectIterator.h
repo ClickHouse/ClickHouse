@@ -1,6 +1,7 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 namespace DB
 {
@@ -41,4 +42,27 @@ private:
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
+
+class ObjectIteratorSplittedByRowGroups : public IObjectIterator, private WithContext
+{
+public:
+    ObjectIteratorSplittedByRowGroups(
+        ObjectIterator iterator_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStoragePtr object_storage_,
+        const ContextPtr & context_);
+
+    ObjectInfoPtr next(size_t) override;
+    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+private:
+    const ObjectIterator iterator;
+    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStoragePtr object_storage;
+
+    std::queue<ObjectInfoPtr> pending_objects_info;
+};
+
+
 }
