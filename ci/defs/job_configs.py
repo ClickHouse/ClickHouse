@@ -782,14 +782,13 @@ class JobConfigs:
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
-                "./ci/docker/fuzzer",
             ],
         ),
         allow_merge_on_failure=True,
@@ -822,13 +821,15 @@ class JobConfigs:
     )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
-        runs_on=[],  # from parametrize()
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=["#from param"],
+        command="python3 ./ci/jobs/buzzhouse_job.py",
+        run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
-                "./ci/docker/fuzzer",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
             ],
         ),
         allow_merge_on_failure=True,
