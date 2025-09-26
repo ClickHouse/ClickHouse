@@ -87,7 +87,34 @@ public:
 
 REGISTER_FUNCTION(H3IsPentagon)
 {
-    factory.registerFunction<FunctionH3IsPentagon>();
+    FunctionDocumentation::Description description = R"(
+Returns whether an [H3](#h3-index) index represents a pentagonal cell.
+
+In the H3 grid system, most cells are hexagonal, but there are exactly 12 pentagonal cells at each resolution to account for the topological constraints of mapping a sphere to a grid.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3IsPentagon(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the index represents a pentagonal cell, `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check if H3 index is a pentagon",
+            "SELECT h3IsPentagon(644721767722457330) AS pentagon",
+            R"(
+┌─pentagon─┐
+│        0 │
+└──────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3IsPentagon>(documentation);
 }
 
 }

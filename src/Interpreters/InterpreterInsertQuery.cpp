@@ -439,15 +439,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert;
     if (should_squash)
     {
-        /// Squashing cannot work with const and non-const blocks
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
-        {
-            /// Sparse columns will be converted to full in the InsertDependenciesBuilder,
-            /// and for squashing we don't need to convert column to full since it will do it by itself
-            bool remove_sparse = false;
-            return std::make_shared<MaterializingTransform>(in_header, remove_sparse);
-        });
-
         pipeline.addSimpleTransform(
             [&](const SharedHeader & in_header) -> ProcessorPtr
             {
@@ -753,14 +744,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 }
 
 
-std::optional<QueryPipeline>
-InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
+    const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
+    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
@@ -811,7 +802,9 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorag
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
 
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, src_cluster);
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(
+        nullptr, nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr());
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -898,7 +891,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
