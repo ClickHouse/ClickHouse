@@ -222,6 +222,7 @@ def main():
             )
         )
         run_shell("sccache stats", "sccache --show-stats")
+        run_shell("chcache stats", f"{build_dir}/rust/chcache/chcache stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
