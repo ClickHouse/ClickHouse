@@ -3879,8 +3879,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
                                     || collectionCount<SQLDictionary>(attached_dictionaries) > 1));
-    const uint32_t alter = 8 * static_cast<uint32_t>(has_tables || has_views || has_databases);
-    const uint32_t set_values = 15;
+    const uint32_t alter = 10 * static_cast<uint32_t>(has_tables || has_views || has_databases);
+    const uint32_t set_values = 10;
     const uint32_t attach = 2
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
