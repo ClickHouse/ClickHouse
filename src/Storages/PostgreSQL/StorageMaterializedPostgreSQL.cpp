@@ -331,42 +331,11 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     if (which.isArray())
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
-    /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
-    if (which.isDecimal())
-    {
-        auto make_decimal_expression = [&](std::string type_name)
-        {
-            auto ast_expression = std::make_shared<ASTDataType>();
-
-            ast_expression->name = type_name;
-            ast_expression->arguments = std::make_shared<ASTExpressionList>();
-            ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-            return ast_expression;
-        };
-
-        if (which.isDecimal32())
-            return make_decimal_expression("Decimal32");
-
-        if (which.isDecimal64())
-            return make_decimal_expression("Decimal64");
-
-        if (which.isDecimal128())
-            return make_decimal_expression("Decimal128");
-
-        if (which.isDecimal256())
-            return make_decimal_expression("Decimal256");
-    }
-
     if (which.isDateTime64())
-    {
-        auto ast_expression = std::make_shared<ASTDataType>();
+        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
 
-        ast_expression->name = "DateTime64";
-        ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-        return ast_expression;
-    }
+    if (which.isDecimal())
+        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
     return makeASTDataType(data_type->getName());
 }
