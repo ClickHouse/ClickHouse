@@ -1,5 +1,6 @@
 import pytest
 import os
+from time import sleep
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -33,3 +34,5 @@ def test_time_travel_bug_fix_validation(started_cluster_iceberg_no_spark):
 
 
     assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
+
+    sleep(1500)
