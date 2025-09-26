@@ -1,6 +1,5 @@
 #include <IO/S3/URI.h>
 #include <Poco/String.h>
-#include <utility>
 
 #if USE_AWS_S3
 #include <Interpreters/Context.h>
@@ -132,7 +131,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     if (!mapper.empty())
         URIConverter::modifyURI(working_uri, mapper);
 
-    uri = std::move(working_uri);
+    uri = working_uri;
 
     if (uri.getHost().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
@@ -166,7 +165,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
                     if (name == "versionId")
                     {
                         version_id.clear(); // treat as present with empty value
-                        has_version_id = true;
                         break;
                     }
                 }
