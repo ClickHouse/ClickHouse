@@ -1,4 +1,4 @@
-// Copyright 2021-2023 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -22,8 +22,8 @@ ossl_hwsm3_block_data_order:
 	rev64	v6.4s, v6.4s
 	ext	v5.16b, v5.16b, v5.16b, #8
 	ext	v6.16b, v6.16b, v6.16b, #8
-
-	adr	x8, .Tj
+	adrp	x8, .Tj
+	add	x8, x8, #:lo12:.Tj
 	ldp	s16, s17, [x8]
 
 .Loop:
@@ -497,7 +497,12 @@ ossl_hwsm3_block_data_order:
 	st1	{v5.4s,v6.4s}, [x0]
 	ret
 .size	ossl_hwsm3_block_data_order,.-ossl_hwsm3_block_data_order
+.section	.rodata
 
+.type	_sm3_consts,%object
 .align	3
+_sm3_consts:
 .Tj:
 .word	0x79cc4519, 0x9d8a7a87
+.size	_sm3_consts,.-_sm3_consts
+.previous
