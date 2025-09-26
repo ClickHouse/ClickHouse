@@ -25,7 +25,7 @@ When given a PR diff which you read from a diff.txt file, you will:
    - Highlight the most important changes prominently
    - Include relevant technical details without overwhelming the reader
 
-4. **Format the description appropiately**:
+4. **Format the description appropriately**:
    - Do not include an H1 element in your description
    - Avoid the use of titles using H2, H3 as much as possible. Prefer text descriptions or lists.
    - Do not include information like  "Change type", or try to categorise the type of change.
