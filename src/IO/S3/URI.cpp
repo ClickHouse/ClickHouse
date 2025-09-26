@@ -1,5 +1,6 @@
 #include <IO/S3/URI.h>
 #include <Poco/String.h>
+#include <utility>
 
 #if USE_AWS_S3
 #include <Interpreters/Context.h>
@@ -55,8 +56,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    uri = Poco::URI(uri_str);
-
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
     if (context)
@@ -75,15 +74,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             mapper["gs"] = "https://storage.googleapis.com/{bucket}";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
-
-        if (!mapper.empty())
-            URIConverter::modifyURI(uri, mapper);
     }
 
     storage_name = "S3";
-
-    if (uri.getHost().empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Keep the original string/scheme for decisions that must happen before Poco parses the URI
     const String & original = uri_str; // after getURIAndArchivePattern, but before Poco::URI
@@ -96,23 +89,53 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         original_scheme == "minio"; // probably we can expand this list
 
     const bool contains_qmark = original.find('?') != String::npos;
-    const bool has_version_id_hint = original.find("versionId=") != String::npos;
+    /// detect presence of 'versionId' key in the query, with or without '='
+    auto has_version_id_key = [](const String &url) -> bool
+    {
+        auto qpos = url.find('?');
+        if (qpos == String::npos)
+            return false;
+        String q = url.substr(qpos + 1);
+        size_t start = 0;
+        while (start <= q.size())
+        {
+            size_t amp = q.find('&', start);
+            String token = q.substr(start, amp == String::npos ? q.size() - start : amp - start);
+            if (!token.empty())
+            {
+                size_t eq = token.find('=');
+                String name = token.substr(0, eq);
+                if (name == "versionId")
+                    return true;
+            }
+            if (amp == String::npos) break;
+            start = amp + 1;
+        }
+        return false;
+    };
+    const bool has_version_id_hint = has_version_id_key(original);
 
     /// only for non-S3 schemes: if there is a '?' but no versionId, treat '?' as a path wildcard and encode it
+    Poco::URI working_uri;
     if (!is_s3_style && contains_qmark && !has_version_id_hint)
     {
         String encoded;
         Poco::URI::encode(original, "?", encoded); // encode only '?' characters
-        uri = Poco::URI(encoded);
+        working_uri = Poco::URI(encoded);
     }
     else
     {
-        uri = Poco::URI(original);
+        working_uri = Poco::URI(original);
     }
 
     // then apply mapping if present
     if (!mapper.empty())
-        URIConverter::modifyURI(uri, mapper);
+        URIConverter::modifyURI(working_uri, mapper);
+
+    uri = std::move(working_uri);
+
+    if (uri.getHost().empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
     bool has_version_id = false;
@@ -120,20 +143,37 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     {
         if (query_key == "versionId")
         {
-            version_id = query_value;
+            version_id = query_value; // may be empty
             has_version_id = true;
+            break;
         }
     }
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
+    if (!has_version_id)
     {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
+        /// fallback for bare 'versionId' token (no '=')
+        String q = uri.getQuery();
+        if (!q.empty())
+        {
+            size_t start = 0;
+            while (start <= q.size())
+            {
+                size_t amp = q.find('&', start);
+                String token = q.substr(start, amp == String::npos ? q.size() - start : amp - start);
+                if (!token.empty())
+                {
+                    size_t eq = token.find('=');
+                    String name = token.substr(0, eq);
+                    if (name == "versionId")
+                    {
+                        version_id.clear(); // treat as present with empty value
+                        has_version_id = true;
+                        break;
+                    }
+                }
+                if (amp == String::npos) break;
+                start = amp + 1;
+            }
+        }
     }
 
     String name;
