@@ -109,16 +109,9 @@ private:
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet TSA_GUARDED_BY(state_mutex) future_parts;
 
-    bool emplaceFuturePart(const String & actual_part_name, LogEntryPtr entry)
-    {
-        std::lock_guard lock(state_mutex);
-        return future_parts.emplace(actual_part_name, entry).second;
-    }
-    bool eraseFuturePart(const String & part_name)
-    {
-        std::lock_guard lock(state_mutex);
-        return future_parts.erase(part_name);
-    }
+    bool emplaceFuturePart(const String & actual_part_name, LogEntryPtr entry);
+
+    bool eraseFuturePart(const String & part_name);
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
@@ -328,6 +321,7 @@ public:
     ~ReplicatedMergeTreeQueue() = default;
 
     /// Clears queue state
+    // The reason for no analysis is TSA doesn't work with QueueLocks.
     void clear() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Get set of parts from zookeeper

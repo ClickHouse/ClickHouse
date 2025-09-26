@@ -1,7 +1,5 @@
 #pragma once
 
-#include <deque>
-#include <mutex>
 #include <map>
 
 namespace DB
