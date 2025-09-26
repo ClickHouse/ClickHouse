@@ -8,7 +8,7 @@ builds_for_release_branch = [
     job.unset_provides("unittest")
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
-]
+] + JobConfigs.release_build_jobs
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",

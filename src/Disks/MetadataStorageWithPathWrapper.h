@@ -137,9 +137,9 @@ public:
         return delegate->unlinkMetadata(wrappedPath(path));
     }
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override
     {
-        return delegate->truncateFile(wrappedPath(src_path), target_size);
+        return delegate->truncateFile(wrappedPath(src_path), size);
     }
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override

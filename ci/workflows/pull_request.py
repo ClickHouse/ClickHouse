@@ -40,7 +40,11 @@ workflow = Workflow.Config(
             for job in JobConfigs.build_jobs
         ],
         *[
-            job.set_dependency(REGULAR_BUILD_NAMES)
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.release_build_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,

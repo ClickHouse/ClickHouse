@@ -169,7 +169,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             ReadBufferFromFileBase::ProfileCallback{});
 
         size_t idx = 0;
-        auto mark_range_iter = mark_ranges.begin();
+        auto * mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
         size_t next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;

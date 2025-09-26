@@ -30,6 +30,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_table_engine;
 }
 
+namespace YTsaurusSetting
+{
+    extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
+}
+
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -40,7 +45,11 @@ StorageYTsaurus::StorageYTsaurus(
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
-    , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
+    , client_connection_info{
+        .http_proxy_urls = std::move(configuration_.http_proxy_urls),
+        .oauth_token = std::move(configuration_.oauth_token),
+        .enable_heavy_proxy_redirection = settings[YTsaurusSetting::enable_heavy_proxy_redirection],
+    }
     , log(getLogger("StorageYTsaurus(" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;

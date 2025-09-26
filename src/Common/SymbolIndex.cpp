@@ -550,8 +550,8 @@ const SymbolIndex & SymbolIndex::instance()
     /// To avoid recursive initialization of SymbolIndex we need to block debug
     /// checks in MemoryTracker.
     ///
-    /// Those debug checks capture the stacktrace for the log if big enough
-    /// allocation is done (big enough > 16MiB), while SymbolIndex will do
+    /// Those debug checks capture the stacktrace for collecting big
+    /// allocation (> 16MiB), while SymbolIndex will do
     /// ~25MiB, and so if exception will be thrown before SymbolIndex
     /// initialized (this is the case for client/local, and no, we do not want
     /// to initialize it explicitly, since this will increase startup time for

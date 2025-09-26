@@ -165,7 +165,9 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ArrowCompression
+ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -256,6 +258,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked
@@ -811,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -2346,6 +2350,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator
@@ -2368,6 +2374,7 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive
@@ -2837,6 +2844,8 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
+studentTTestOneSample
+studentttestonesample
 subarray
 subarrays
 subBitmap
@@ -3080,8 +3089,10 @@ toJSONString
 tokenbf
 tokenization
 tokenize
+tokenizes
 tokenized
 tokenizer
+tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

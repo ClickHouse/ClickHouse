@@ -53,7 +53,12 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
+    explicit FileNamesGenerator(
+        const String & table_dir_,
+        const String & storage_dir_,
+        bool use_uuid_in_metadata_,
+        CompressionMethod compression_method_,
+        const String & format_name_);
 
     FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
@@ -81,6 +86,7 @@ private:
     String storage_metadata_dir;
     bool use_uuid_in_metadata;
     CompressionMethod compression_method;
+    String format_name;
 
     Int32 initial_version = 0;
 };

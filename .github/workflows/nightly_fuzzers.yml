@@ -129,7 +129,7 @@ jobs:
           fi
 
   build_fuzzers:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
     name: "Build (fuzzers)"

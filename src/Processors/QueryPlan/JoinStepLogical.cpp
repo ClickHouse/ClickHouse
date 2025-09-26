@@ -1207,7 +1207,7 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
             if (left_node->type != ActionsDAG::ActionType::INPUT)
                 lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
             if (right_node->type != ActionsDAG::ActionType::INPUT)
-                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 0 : 1);
+                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 1 : 0);
             expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
         }
     }

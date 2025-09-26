@@ -122,6 +122,8 @@ namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
     extern const Event PageCacheOvercommitResize;
+    extern const Event MemoryAllocatedWithoutCheck;
+    extern const Event MemoryAllocatedWithoutCheckBytes;
 }
 
 using namespace std::chrono_literals;
@@ -206,33 +208,34 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
-/// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
-/// Let's find them.
-void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+void incrementAllocationWithoutCheck(Int64 size)
 {
-    if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
+    /// Note, it is always blocked for release build, so we do not write MemoryAllocatedWithoutCheck there
+    if (MemoryTrackerDebugBlockerInThread::isBlocked())
+        return;
+
+    /// The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 threshold = 16 * 1024 * 1024;
+
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
+    if (size < 0)
+        return;
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
+
+    if (size > threshold)
     {
-        if (size < 0)
-            return;
-
-        /// The choice is arbitrary (maybe we should decrease it)
-        constexpr Int64 threshold = 16 * 1024 * 1024;
-        if (size < threshold)
-            return;
-
-        if (MemoryTrackerDebugBlockerInThread::isBlocked())
-            return;
-
         MemoryTrackerBlockerInThread tracker_blocker(VariableContext::Global);
-        /// Forbid recursive calls, since the first time debugLogBigAllocationWithoutCheck() can be called from logging,
-        /// and then it may be called again for the line below
+        /// Forbid recursive calls
         [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
-        LOG_TEST(
-            getLogger("MemoryTracker"),
-            "Too big allocation ({} bytes) without checking memory limits, "
-            "it may lead to OOM. Stack trace: {}",
-            size,
-            StackTrace().toString());
+
+        try
+        {
+            DB::TraceSender::send(DB::TraceType::MemoryAllocatedWithoutCheck, StackTrace(), DB::TraceSender::Extras{.size = size});
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ignore failures, we have ProfileEvents anyway
+        }
     }
 }
 
@@ -318,7 +321,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         }
 
         memory_limit_exceeded_ignored = true;
-        debugLogBigAllocationWithoutCheck(size);
+        incrementAllocationWithoutCheck(size);
     }
 
     if (unlikely(
@@ -386,7 +389,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes){}{}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
@@ -407,7 +410,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         else
         {
             memory_limit_exceeded_ignored = true;
-            debugLogBigAllocationWithoutCheck(size);
+            incrementAllocationWithoutCheck(size);
         }
     }
 
@@ -428,7 +431,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         {
             bool log_memory_usage = false;
             peak_updated = updatePeak(will_be, log_memory_usage);
-            debugLogBigAllocationWithoutCheck(size);
+            incrementAllocationWithoutCheck(size);
         }
     }
 

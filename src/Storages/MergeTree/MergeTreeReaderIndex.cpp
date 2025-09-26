@@ -62,7 +62,7 @@ size_t MergeTreeReaderIndex::readRows(
     return max_rows_to_read;
 }
 
-bool MergeTreeReaderIndex::canSkipMark(size_t mark) const
+bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
 {
     chassert(mark < index_read_result->skip_index_read_result->size());
     if (!index_read_result->skip_index_read_result->at(mark))

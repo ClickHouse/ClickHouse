@@ -463,7 +463,7 @@ void KeeperClient::connectToKeeper()
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
     zk_args = new_zk_args;
-    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
 
 int KeeperClient::main(const std::vector<String> & /* args */)

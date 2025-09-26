@@ -535,6 +535,10 @@ bool Client::buzzHouse()
     String full_query;
     bool server_up = true;
     static const String & restart_cmd = "--Reconnecting client";
+    static const String & rerun_database = "--External database ";
+    static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
+    static const String & rerun_table = "--External table ";
+    static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
     static const String & external_cmd = "--External command with seed ";
     static const RE2 extern_re(R"((?i)^--External\s+command\s+with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
@@ -553,14 +557,26 @@ bool Client::buzzHouse()
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
             String seed_str;
-            String schema;
+            String database;
             String table;
 
             if (full_query == restart_cmd)
             {
                 server_up &= fuzzLoopReconnect();
             }
-            else if (startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &seed_str, &schema, &table))
+            else if (startsWith(full_query, rerun_database) && RE2::FullMatch(full_query, rerun_database_re, &database))
+            {
+                const auto x = external_integrations->reRunCreateDatabase(BuzzHouse::IntegrationCall::Dolor, database);
+
+                UNUSED(x);
+            }
+            else if (startsWith(full_query, rerun_table) && RE2::FullMatch(full_query, rerun_table_re, &table))
+            {
+                const auto x = external_integrations->reRunCreateTable(BuzzHouse::IntegrationCall::Dolor, table);
+
+                UNUSED(x);
+            }
+            else if (startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &seed_str, &database, &table))
             {
                 uint64_t seed = 0;
                 const auto * const first = seed_str.data();
@@ -568,7 +584,7 @@ bool Client::buzzHouse()
                 const auto x = std::from_chars(first, last, seed, 10);
 
                 UNUSED(x);
-                runExternalCommand(external_integrations, seed, schema, table);
+                runExternalCommand(external_integrations, seed, database, table);
             }
             else
             {

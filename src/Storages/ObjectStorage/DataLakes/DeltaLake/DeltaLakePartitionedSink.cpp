@@ -212,7 +212,9 @@ void DeltaLakePartitionedSink::onFinish()
             sink->onFinish();
             files.emplace_back(
                 sink->getPath().substr(data_prefix.size()),
+                /// We use file size from sink to count all file, not just actual data.
                 sink->getFileSize(),
+                written_rows,
                 partition_values);
         }
     }

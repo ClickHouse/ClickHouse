@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -248,7 +249,7 @@ void SerializationArray::enumerateStreams(
 
     auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
     auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationNumber<UInt64>>(),
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -537,6 +538,16 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
+    }
+    else
+    {
+        skipWhitespaceIfAny(istr);
+        if (istr.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
+            return ReturnType(false);
+        }
     }
 
     auto on_error_no_throw = [&]()

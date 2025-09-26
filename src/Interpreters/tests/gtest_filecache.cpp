@@ -1018,13 +1018,13 @@ try
 
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
         ASSERT_TRUE(stream);
         /// Do nothing with stream, just create it and destroy.
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
@@ -1044,7 +1044,7 @@ try
 
     {
         size_t before_used_size = file_cache.getUsedCacheSize();
-        auto write_buf_stream = std::make_unique<TemporaryDataBuffer>(tmp_data_scope.get());
+        auto write_buf_stream = std::make_unique<TemporaryDataBuffer>(tmp_data_scope);
 
         write_buf_stream->write("1234567890", 10);
         write_buf_stream->write("abcde", 5);
@@ -1061,7 +1061,7 @@ try
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
@@ -1196,19 +1196,19 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, &file_cache);
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope);
 
         stream->write(block);
         auto stat = stream.finishWriting();
 
         /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stat.compressed_size, 62);
+        ASSERT_EQ(stat.compressed_size, 64);
 
         auto reader = stream.getReadStream();
         auto * read_buf = reader.getHolder();
         const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
-        ASSERT_EQ(internal_buffer.size(), 62);
+        ASSERT_EQ(internal_buffer.size(), 64);
     }
 
     /// Temporary data stored on disk
@@ -1222,11 +1222,11 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, volume);
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope);
         stream->write(block);
         auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stat.compressed_size, 62);
+        ASSERT_EQ(stat.compressed_size, 64);
     }
 }
 

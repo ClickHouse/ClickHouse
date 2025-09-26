@@ -24,7 +24,9 @@
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <algorithm>
 #include <stack>
+#include <string>
 #include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
@@ -957,7 +959,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
     size_t input_rows_count,
-    bool throw_on_error)
+    bool throw_on_error,
+    bool skip_materialize)
 {
     chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
 
@@ -1027,7 +1030,14 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                                         node->result_name);
 
                     if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
+                    {
+                        if (node->type == ActionType::FUNCTION && skip_materialize && node->function_base->getName() == "materialize")
+                        {
+                            node_to_column[node] = arguments.at(0);
+                        }
+
                         node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
+                    }
                 }
             }
 
@@ -1409,6 +1419,23 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     if (it != inputs.end())
         inputs.erase(it);
     return true;
+}
+
+void ActionsDAG::removeFromOutputs(const std::string & node_name)
+{
+    auto it = std::find_if(
+        outputs.begin(),
+        outputs.end(),
+        [&node_name](const Node * node)
+        {
+            return node->result_name == node_name;
+        });
+
+    if (it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found node with {} in the outputs of ActionsDAG\n{}", node_name, dumpDAG());
+    outputs.erase(it);
+
+    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::clone() const
@@ -3612,22 +3639,53 @@ std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
     return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
 }
 
+/// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
+static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
+{
+    if (already_added_nodes.contains(node))
+        return;
+
+    for (const auto * child : node->children)
+        addChildrenBeforeNode(reordered_nodes, already_added_nodes, child);
+
+    reordered_nodes.push_back(node);
+    already_added_nodes.insert(node);
+};
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
-    auto node_to_id = getNodeToIdMap();
-    size_t nodes_size = node_to_id.size();
-
+    size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
 
-    for (const auto & node : nodes)
+    /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
+    std::vector<const Node *> reordered_nodes;
     {
+        std::unordered_set<const Node *> already_added_nodes;
+        for (const auto & node : nodes)
+            addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
+    }
+
+    std::unordered_map<const Node *, size_t> node_to_id;
+    for (const auto * node : reordered_nodes)
+        node_to_id.emplace(node, node_to_id.size());
+
+    if (nodes.size() != node_to_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
+    {
+        const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
         writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
-            writeVarUInt(node_to_id.at(child), out);
+        {
+            auto child_id = node_to_id.at(child);
+            chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
+            writeVarUInt(child_id, out);
+        }
 
         /// Serialize column if it is present
         const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);

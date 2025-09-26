@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/MemoryAccessStorage.h>
+#include <Access/UsersConfigParser.h>
 #include <Common/ZooKeeper/Common.h>
 
 
@@ -19,7 +20,6 @@ class ConfigReloader;
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
-
     static constexpr char STORAGE_TYPE[] = "users_xml";
 
     UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);

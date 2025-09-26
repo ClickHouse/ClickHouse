@@ -137,7 +137,7 @@ Block NativeReader::read()
 
     /// Additional information about the block.
     if (server_revision > 0)
-        res.info.read(istr);
+        res.info.read(istr, server_revision);
 
     /// Dimensions
     size_t columns = 0;

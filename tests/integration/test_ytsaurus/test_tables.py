@@ -34,7 +34,7 @@ def started_cluster():
 def test_yt_simple_table_engine(started_cluster):
     yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
-
+    instance.rotate_logs()
     instance.query(
         f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
     )
@@ -44,6 +44,7 @@ def test_yt_simple_table_engine(started_cluster):
     assert instance.query("SELECT a FROM yt_test") == "10\n20\n"
 
     assert instance.query("SELECT * FROM yt_test WHERE a > 15") == "20\t40\n"
+    instance.wait_for_log_line("Get list of heavy proxies from path", look_behind_lines=3000)
 
     instance.query("DROP TABLE yt_test SYNC")
 
@@ -459,6 +460,7 @@ def test_ytsaurus_multiple_tables(started_cluster):
 
 def test_ytsaurus_dynamic_table(started_cluster):
     table_path = "//tmp/dynamic_table"
+    instance.rotate_logs()
     yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table(
         table_path,
@@ -472,6 +474,7 @@ def test_ytsaurus_dynamic_table(started_cluster):
         f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/dynamic_table', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
     )
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
+    instance.wait_for_log_line("Get list of heavy proxies from path", look_behind_lines=3000)
     instance.query("DROP TABLE yt_test SYNC")
     yt.remove_table("//tmp/dynamic_table")
 
@@ -504,7 +507,7 @@ def test_hiding_credentials(started_cluster):
     instance.query(f"DROP TABLE {table_name};")
 
 
-def test_yt_simple_table_engine(started_cluster):
+def test_yt_multiple_endpoints(started_cluster):
     yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
 

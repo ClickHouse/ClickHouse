@@ -3,7 +3,6 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -289,10 +288,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projections_on_disk.insert(file_name);
             continue;
         }
-
-        /// Exclude files written by text index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
-            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.

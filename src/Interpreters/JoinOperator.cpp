@@ -57,6 +57,8 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 
     extern const SettingsUInt64 default_max_bytes_in_join;
+
+    extern const SettingsBool use_join_disjunctions_push_down;
 }
 
 namespace QueryPlanSerializationSetting
@@ -93,6 +95,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_bytes;
 
     extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
+
+    extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -134,6 +138,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
+
+    use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -174,6 +180,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     min_joined_block_size_bytes = settings[QueryPlanSerializationSetting::min_joined_block_size_bytes];
 
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
+
+    use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -214,6 +222,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::min_joined_block_size_bytes] = min_joined_block_size_bytes;
 
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
+
+    settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
 }
 
 String toString(const JoinActionRef & node)
