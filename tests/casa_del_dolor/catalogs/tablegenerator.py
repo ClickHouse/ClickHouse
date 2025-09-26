@@ -30,8 +30,7 @@ class LakeTableGenerator:
     @abstractmethod
     def generate_table_properties(
         self,
-        columns_spark: dict[str, SparkColumn],
-        deterministic: bool,
+        table: SparkTable,
         include_all: bool = False,
     ) -> dict[str, str]:
         pass
@@ -48,29 +47,13 @@ class LakeTableGenerator:
     def set_basic_properties(self) -> dict[str, str]:
         return {}
 
-    def _flat_columns(
-        self, res: dict[str, DataType], next_path: str, next_type: DataType
-    ):
-        res[next_path] = next_type
-        if isinstance(next_type, StructType):
-            for f in next_type.fields:
-                self._flat_columns(res, f"{next_path}.{f.name}", f.dataType)
-
-    def flat_columns(
-        self, columns_spark: dict[str, SparkColumn]
-    ) -> dict[str, DataType]:
-        res = {}
-        for k, val in columns_spark.items():
-            self._flat_columns(res, k, val.spark_type)
-        return res
-
     @abstractmethod
-    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+    def add_partition_clauses(self, table: SparkTable) -> list[str]:
         return []
 
-    def random_ordered_columns(self, columns_spark, with_asc_desc: bool):
+    def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
-        flattened_columns = self.flat_columns(columns_spark)
+        flattened_columns = table.flat_columns()
         for k in flattened_columns.keys():
             if with_asc_desc:
                 columns_list.append(f"{k} ASC NULLS FIRST")
@@ -122,9 +105,21 @@ class LakeTableGenerator:
         # Add USING clause
         ddl += f" USING {self.get_format()}"
 
+        res = SparkTable(
+            catalog_name,
+            database_name,
+            table_name,
+            columns_spark,
+            deterministic,
+            next_location,
+            LakeFormat.lakeformat_from_str(self.get_format()),
+            self.write_format,
+            next_storage,
+        )
+
         # Add Partition by, can't partition by all columns
         if random.randint(1, 5) == 1:
-            partition_clauses = self.add_partition_clauses(columns_spark)
+            partition_clauses = self.add_partition_clauses(res)
             random.shuffle(partition_clauses)
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
@@ -136,9 +131,7 @@ class LakeTableGenerator:
         properties = self.set_basic_properties()
         # Add table properties
         if random.randint(1, 2) == 1:
-            properties.update(
-                self.generate_table_properties(columns_spark, deterministic)
-            )
+            properties.update(self.generate_table_properties(res))
         if len(properties) > 0:
             ddl += " TBLPROPERTIES ("
             prop_lines = []
@@ -146,20 +139,7 @@ class LakeTableGenerator:
                 prop_lines.append(f"'{key}' = '{value}'")
             ddl += ",".join(prop_lines)
             ddl += ")"
-        return (
-            ddl + ";",
-            SparkTable(
-                catalog_name,
-                database_name,
-                table_name,
-                columns_spark,
-                deterministic,
-                next_location,
-                LakeFormat.lakeformat_from_str(self.get_format()),
-                self.write_format,
-                next_storage,
-            ),
-        )
+        return (ddl + ";", res)
 
     def generate_alter_table_statements(
         self,
@@ -172,23 +152,19 @@ class LakeTableGenerator:
 
         if next_operation <= 250:
             # Set random properties
-            properties = self.generate_table_properties(
-                table.columns, table.deterministic
-            )
+            properties = self.generate_table_properties(table)
             if properties:
                 key = random.choice(list(properties.keys()))
                 return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
         elif next_operation <= 500:
             # Unset a property
-            properties = self.generate_table_properties(
-                table.columns, table.deterministic
-            )
+            properties = self.generate_table_properties(table)
             if properties:
                 key = random.choice(list(properties.keys()))
                 return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
         elif next_operation <= 600:
             # Add or drop partition field
-            partition_clauses = self.add_partition_clauses(table.columns)
+            partition_clauses = self.add_partition_clauses(table)
             random.shuffle(partition_clauses)
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
@@ -196,7 +172,7 @@ class LakeTableGenerator:
             return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
         elif next_operation <= 700:
             # Replace partition field
-            partition_clauses = self.add_partition_clauses(table.columns)
+            partition_clauses = self.add_partition_clauses(table)
             random.shuffle(partition_clauses)
             random_subset1 = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
@@ -210,15 +186,15 @@ class LakeTableGenerator:
             # Set ORDER BY
             if random.randint(1, 2) == 1:
                 return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
-            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table, True)}"
         elif next_operation <= 900:
             # Set distribution
             if random.randint(1, 2) == 1:
                 return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION"
-            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
         elif next_operation <= 1000:
             # Set identifier fields
-            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
         return ""
 
     @abstractmethod
@@ -250,9 +226,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.format.default"] = out_format
         return properties
 
-    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+    def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
-        flattened_columns = self.flat_columns(columns_spark)
+        flattened_columns = table.flat_columns()
         for k, val in flattened_columns.items():
             res.append(k)
             if (
@@ -270,8 +246,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def generate_table_properties(
         self,
-        columns_spark: dict[str, SparkColumn],
-        deterministic: bool,
+        table: SparkTable,
         include_all: bool = False,
     ) -> dict[str, str]:
         """
@@ -305,11 +280,11 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         # Metadata properties
         if include_all or random.random() > 0.6:
-            properties.update(self._generate_metadata_properties(columns_spark))
+            properties.update(self._generate_metadata_properties(table))
 
         # Write properties
         if include_all or random.random() > 0.3:
-            properties.update(self._generate_write_properties(columns_spark))
+            properties.update(self._generate_write_properties(table))
 
         # Read properties
         if include_all or random.random() > 0.5:
@@ -484,9 +459,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_metadata_properties(
-        self, columns_spark: dict[str, SparkColumn]
-    ) -> dict[str, str]:
+    def _generate_metadata_properties(self, table: SparkTable) -> dict[str, str]:
         """Generate metadata related properties"""
         properties = {}
 
@@ -505,14 +478,12 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         # Column statistics
         properties[
-            f"write.metadata.metrics.column.{random.choice(list(columns_spark.keys()))}"
+            f"write.metadata.metrics.column.{random.choice(list(table.columns.keys()))}"
         ] = random.choice(["none", "counts", "truncate(8)", "truncate(16)", "full"])
 
         return properties
 
-    def _generate_write_properties(
-        self, columns_spark: dict[str, SparkColumn]
-    ) -> dict[str, str]:
+    def _generate_write_properties(self, table: SparkTable) -> dict[str, str]:
         """Generate write operation properties"""
         properties = {}
 
@@ -529,9 +500,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.sort.enabled"] = random.choice(["true", "false"])
 
         if properties["write.sort.enabled"] == "true":
-            properties["write.sort.order"] = self.random_ordered_columns(
-                columns_spark, True
-            )
+            properties["write.sort.order"] = self.random_ordered_columns(table, True)
 
         # Write modes
         properties["write.update.mode"] = random.choice(
@@ -640,7 +609,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 res += ", sort_order => '"
                 if zorder:
                     res += "zorder("
-                res += self.random_ordered_columns(table.columns, not zorder)
+                res += self.random_ordered_columns(table, not zorder)
                 if zorder:
                     res += ")"
                 res += "'"
@@ -709,17 +678,16 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
     def set_basic_properties(self) -> dict[str, str]:
         return {}
 
-    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+    def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
         # No partition by subcolumns in delta
-        for k in columns_spark.keys():
+        for k in table.columns.keys():
             res.append(k)
         return res
 
     def generate_table_properties(
         self,
-        columns_spark: dict[str, SparkColumn],
-        deterministic: bool,
+        table: SparkTable,
         include_all: bool = False,
     ) -> dict[str, str]:
         """
@@ -980,7 +948,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Optimize
-            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
+            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table, False)})" if random.randint(1, 2) == 1 else ""};"
         if next_option in (3, 4):
             # Restore
             result = spark.sql(

@@ -400,7 +400,7 @@ class LakeDataGenerator:
         df = self._create_random_df(spark, table, nrows)
         df.createOrReplaceTempView("updates")
 
-        to_update = list(table.columns.keys())
+        to_update = list(table.flat_columns().keys())
         random.shuffle(to_update)
         next_pick = random.choice(to_update)
         if random.randint(1, 100) <= 70:
@@ -421,7 +421,7 @@ class LakeDataGenerator:
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
-        delete_key = random.choice(list(table.columns.keys()))
+        delete_key = random.choice(list(table.flat_columns().keys()))
         predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
