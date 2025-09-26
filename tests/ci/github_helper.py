@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import Any, List, Optional, Protocol, Tuple, TypeVar, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import github
 import requests
@@ -18,7 +18,6 @@ from github.GithubException import (
     RateLimitExceededException as RateLimitExceededException,
 )
 from github.Issue import Issue as Issue
-from github.Issue import IssueSearchResult as IssueSearchResult
 from github.NamedUser import NamedUser as NamedUser
 from github.PullRequest import PullRequest as PullRequest
 from github.Repository import Repository as Repository
@@ -31,12 +30,6 @@ logger = logging.getLogger(__name__)
 
 PullRequests = List[PullRequest]
 Issues = List[Issue]
-IssuesSearchResult = List[IssueSearchResult]
-Iter = TypeVar("Iter")  # returns the same type as passed
-
-
-class ProgressFunc(Protocol[Iter]):
-    def __call__(self, __arg: Iter) -> Iter: ...
 
 
 class GitHub(github.Github):
@@ -52,7 +45,7 @@ class GitHub(github.Github):
         self._retries = 0
 
     # pylint: disable=signature-differs
-    def search_issues(self, *args, **kwargs) -> IssuesSearchResult:  # type: ignore[override]
+    def search_issues(self, *args, **kwargs) -> Issues:  # type: ignore
         """Wrapper around search method with throttling and splitting by date.
 
         We split only by the first"""
@@ -76,7 +69,7 @@ class GitHub(github.Github):
                     continue
                 assert isinstance(value, (date, datetime, str))
 
-        inter_result = []
+        inter_result = []  # type: Issues
         exception = RateLimitExceededException(0)
         for i in range(self.retries):
             try:
@@ -116,11 +109,12 @@ class GitHub(github.Github):
 
         raise exception
 
+    # pylint: enable=signature-differs
     def get_pulls_from_search(self, *args: Any, **kwargs: Any) -> PullRequests:
         """The search api returns actually issues, so we need to fetch PullRequests"""
         progress_func = kwargs.pop(
             "progress_func", lambda x: x
-        )  # type: ProgressFunc[IssuesSearchResult]
+        )  # type: Callable[[Issues], Issues]
         issues = self.search_issues(*args, **kwargs)
         repos = {}
         prs = []  # type: PullRequests
