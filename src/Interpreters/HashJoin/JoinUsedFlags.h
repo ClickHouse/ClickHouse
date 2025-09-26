@@ -1,8 +1,7 @@
 #pragma once
+#include <vector>
 #include <atomic>
 #include <unordered_map>
-#include <vector>
-#include <c.h>
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
 
