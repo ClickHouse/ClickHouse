@@ -89,13 +89,30 @@ void NativeReader::readData(
     ColumnPtr & column,
     ReadBuffer & istr,
     const FormatSettings * format_settings,
-    size_t rows)
+    size_t rows,
+    const NameAndTypePair * name_and_type,
+    ValueSizeMap * avg_value_size_hints_)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
     settings.native_format = true;
     settings.format_settings = format_settings;
+
+    if (name_and_type != nullptr && avg_value_size_hints_ != nullptr)
+    {
+        settings.get_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path) -> double
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+            return (*avg_value_size_hints_)[stream_name];
+        };
+
+        settings.update_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+            IDataType::updateAvgValueSizeHint(column_, (*avg_value_size_hints_)[stream_name]);
+        };
+    }
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -247,7 +264,8 @@ Block NativeReader::read()
         if (!skip_reading && rows)
         {
             const auto * format = format_settings ? &*format_settings : nullptr;
-            readData(*serialization, read_column, istr, format, rows);
+            NameAndTypePair name_and_type = {column.name, column.type};
+            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);

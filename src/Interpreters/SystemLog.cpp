@@ -769,11 +769,6 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
-
-        /// Ensure system tables keep a stable schema.
-        /// Disable user-configurable type-related settings to avoid implicit data type changes.
-        query_context->setSetting("flatten_nested", false);
-        query_context->setSetting("data_type_default_nullable", false);
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();

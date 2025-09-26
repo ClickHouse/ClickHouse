@@ -382,19 +382,12 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
-void ISerialization::addElementToSubstreamsCache(
-    ISerialization::SubstreamsCache * cache,
-    const ISerialization::SubstreamPath & path,
-    std::unique_ptr<ISubstreamsCacheElement> && element,
-    bool upsert)
+void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
 {
     if (!cache || path.empty())
         return;
 
-    if (upsert)
-        cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
-    else
-        cache->emplace(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
