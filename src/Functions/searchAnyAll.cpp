@@ -34,7 +34,6 @@ FunctionPtr FunctionSearchImpl<SearchTraits>::create(ContextPtr context)
 template <class SearchTraits>
 FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
     : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
-    , token_default_extractor(std::make_unique<DefaultTokenExtractor>())
 {
 }
 
