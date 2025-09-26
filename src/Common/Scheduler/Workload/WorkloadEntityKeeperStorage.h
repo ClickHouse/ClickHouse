@@ -66,6 +66,7 @@ private:
         UInt64 triggered = 0;
     };
     std::shared_ptr<WatchEvent> watch;
+    Coordination::WatchCallbackPtr zookeeper_watch;
 };
 
 }

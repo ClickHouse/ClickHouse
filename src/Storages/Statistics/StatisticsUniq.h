@@ -21,6 +21,7 @@ public:
 
     UInt64 estimateCardinality() const override;
 
+    String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;

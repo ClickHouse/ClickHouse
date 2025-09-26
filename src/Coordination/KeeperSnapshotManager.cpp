@@ -256,7 +256,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         const auto & path = it->key;
 
         // write only the root system path because of digest
-        if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
+        if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
             if (counter == snapshot.snapshot_container_size - 1)
                 break;
@@ -511,7 +511,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key.toView());
+                        itr.key);
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -519,7 +519,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key.toView());
+                        itr.key);
 #endif
                 }
             }
