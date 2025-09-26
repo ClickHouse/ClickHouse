@@ -857,7 +857,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     ColumnsStatistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
+        String file_name = escapeForFileName(stat->getStatisticName()) + STATS_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (auto stat_file = readFileIfExists(file_name))
@@ -870,6 +870,22 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
             LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
     }
     return result;
+}
+
+Estimates IMergeTreeDataPart::getEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+
+    if (estimates.has_value())
+        return *estimates;
+
+    estimates = Estimates();
+    auto statistics = loadStatistics();
+
+    for (const auto & stat : statistics)
+        estimates->emplace(stat->getColumnName(), stat->getEstimate());
+
+    return *estimates;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

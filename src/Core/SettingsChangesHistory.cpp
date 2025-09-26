@@ -894,7 +894,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-
+            {"auto_statistics_types", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

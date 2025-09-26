@@ -17,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -55,6 +56,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace ServerSetting
@@ -760,13 +762,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
+        String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
+
+        if (!statistics_types_str.empty())
+        {
+            addImplicitStatistics(metadata.columns, statistics_types_str);
+        }
+
         if (args.query.columns_list && args.query.columns_list->projections)
+        {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
                 metadata.projections.add(std::move(projection));
             }
-
+        }
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
