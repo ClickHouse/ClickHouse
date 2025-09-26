@@ -2374,6 +2374,7 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive

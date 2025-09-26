@@ -102,15 +102,15 @@ def test_zookeeper_connection_log(started_cluster):
 
             logging.debug(node.query("""SELECT event_time_microseconds, hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
                                FROM system.zookeeper_connection_log  ORDER BY event_time_microseconds"""))
-            expected = TSV("""node	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
-node	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
-node	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
-node	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
-node	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
-node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
-node	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
-node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Removed from config
-node	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization""")
+            expected = TSV("""node	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Initialization
+node	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Initialization
+node	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Initialization
+node	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Config changed
+node	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Config changed
+node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Config changed
+node	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Config changed
+node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Removed from config
+node	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','CHECK_STAT']	Initialization""")
 
             assert TSV(
                 node.query(f"""SELECT hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason

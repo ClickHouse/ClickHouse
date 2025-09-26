@@ -19,6 +19,7 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+REMOTE_DATABASE_DISK=1
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -39,6 +40,7 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
+        --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
@@ -393,11 +395,13 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
-# Enable remote_database_disk in DEBUG and ASAN build
-build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-    echo "Installed remote_database_disk.xml config"
+if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then
+    # Enable remote_database_disk in ASAN build
+    build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    if [[ "$build_opts" == *-fsanitize=address* ]]; then
+        ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+        echo "Installed remote_database_disk.xml config"
+    fi
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml
