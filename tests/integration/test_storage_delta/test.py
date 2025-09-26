@@ -1321,7 +1321,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
             "source_port": started_cluster.minio_port,
             "action": "DROP",
         }
-        pm._add_rule(pm_rule_reject)
+        pm.add_rule(pm_rule_reject)
 
         node1.query(
             f"""
