@@ -179,9 +179,15 @@ file(GLOB AWS_CAL_SRC
 )
 
 if (ENABLE_OPENSSL_ENCRYPTION)
-    file(GLOB AWS_CAL_OS_SRC
-        "${AWS_CAL_DIR}/source/unix/*.c"
-    )
+    if (OS_LINUX)
+        file(GLOB AWS_CAL_OS_SRC
+            "${AWS_CAL_DIR}/source/unix/*.c"
+        )
+    else (OS_DARWIN)
+        file(GLOB AWS_CAL_OS_SRC
+            "${AWS_CAL_DIR}/source/darwin/*.c"
+        )
+    endif()
     list(APPEND AWS_PRIVATE_LIBS OpenSSL::Crypto)
 endif()
 
@@ -206,6 +212,7 @@ file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/linux/*.c"
     "${AWS_COMMON_DIR}/source/external/libcbor/*.c"
     "${AWS_COMMON_DIR}/source/external/libcbor/cbor/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/internal/*.c"
 )
 
 file(GLOB AWS_COMMON_ARCH_SRC
@@ -218,16 +225,14 @@ if (AWS_ARCH_INTEL)
         "${AWS_COMMON_DIR}/source/arch/intel/asm/*.c"
     )
 elseif (AWS_ARCH_ARM64 OR AWS_ARCH_ARM32)
-    if (AWS_HAVE_AUXV)
-        if (OS_LINUX)
-            file(GLOB AWS_COMMON_ARCH_SRC
-                "${AWS_COMMON_DIR}/source/arch/arm/auxv/cpuid.c"
-            )
-        elseif (OS_DARWIN)
-            file(GLOB AWS_COMMON_ARCH_SRC
-                "${AWS_COMMON_DIR}/source/arch/arm/darwnin/cpuid.c"
-            )
-        endif()
+    if (OS_LINUX)
+        file(GLOB AWS_COMMON_ARCH_SRC
+            "${AWS_COMMON_DIR}/source/arch/arm/auxv/cpuid.c"
+        )
+    elseif(OS_DARWIN)
+        file(GLOB AWS_COMMON_ARCH_SRC
+            "${AWS_COMMON_DIR}/source/arch/arm/darwin/cpuid.c"
+        )
     endif()
 endif()
 
