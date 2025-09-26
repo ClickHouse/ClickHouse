@@ -20,7 +20,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id);
 
-INSERT INTO tab VALUES (1, 'b', 'b', ['c']);
+INSERT INTO tab VALUES (1, 'b', 'b', ['c']), (2, 'c', 'c', ['c']);
 
 -- Must accept two arguments
 SELECT id FROM tab WHERE searchAny(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -37,13 +37,20 @@ SELECT id FROM tab WHERE searchAny(message, materialize(['b'])); -- { serverErro
 SELECT id FROM tab WHERE searchAll(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
--- search functions must be called on a column with text index
-SELECT id FROM tab WHERE searchAny('a', ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAny(col_str, ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll('a', ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll(col_str, ['b']); -- { serverError BAD_ARGUMENTS }
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Positive tests without index';
+-- search over columns without text index
+SELECT id FROM tab WHERE searchAny('a b', ['b']);
+SELECT id FROM tab WHERE searchAny('a b', ['c']);
+SELECT id FROM tab WHERE searchAny(col_str, ['b']);
+SELECT id FROM tab WHERE searchAny(col_str, ['c']);
+SELECT id FROM tab WHERE searchAll('a b', ['b']);
+SELECT id FROM tab WHERE searchAll('a b', ['c']);
+SELECT id FROM tab WHERE searchAll(col_str, ['b']);
+SELECT id FROM tab WHERE searchAll(col_str, ['c']);
+
 
 DROP TABLE tab;
 
