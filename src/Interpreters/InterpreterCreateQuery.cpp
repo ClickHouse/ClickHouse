@@ -1765,7 +1765,7 @@ namespace
 
 void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
 {
-    if (!storage.supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumnsDeprecated())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1773,7 +1773,7 @@ void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel
             storage.getName());
     }
 
-    if (!storage.supportsDynamicSubcolumns() && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "

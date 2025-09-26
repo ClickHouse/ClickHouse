@@ -6,6 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -509,7 +510,10 @@ def test_table_functions():
     test_cases = [make_test_case(i) for i in range(len(table_functions))]
 
     for table_name, query, error in test_cases:
-        node.query(query)
+        if error:
+            assert error in node.query_and_get_error(query)
+        else:
+            node.query(query)
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
