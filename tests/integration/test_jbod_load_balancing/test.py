@@ -12,9 +12,9 @@ node = cluster.add_instance(
         "configs/config.d/storage_configuration.xml",
     ],
     tmpfs=[
-        "/jbod1:size=100M",
-        "/jbod2:size=200M",
-        "/jbod3:size=300M",
+        "/test_jbod_load_balancing_jbod1:size=100M",
+        "/test_jbod_load_balancing_jbod2:size=200M",
+        "/test_jbod_load_balancing_jbod3:size=300M",
     ],
 )
 

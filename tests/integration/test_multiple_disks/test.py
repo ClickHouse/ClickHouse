@@ -22,7 +22,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_multiple_disks_jbod1:size=40M", "/test_multiple_disks_jbod2:size=40M", "/test_multiple_disks_external:size=200M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -35,7 +35,7 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_multiple_disks_jbod1:size=40M", "/test_multiple_disks_jbod2:size=40M", "/test_multiple_disks_external:size=200M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -71,17 +71,17 @@ def test_system_tables(start_cluster):
         },
         {
             "name": "jbod1",
-            "path": "/jbod1/",
+            "path": "/test_multiple_disks_jbod1/",
             "keep_free_space": 0,
         },
         {
             "name": "jbod2",
-            "path": "/jbod2/",
+            "path": "/test_multiple_disks_jbod2/",
             "keep_free_space": 10485760,
         },
         {
             "name": "external",
-            "path": "/external/",
+            "path": "/test_multiple_disks_external/",
             "keep_free_space": 0,
         },
     ]
@@ -764,7 +764,7 @@ def test_background_move(start_cluster, name, engine):
         )
 
         # first (oldest) part was moved to external
-        assert path.startswith("/external")
+        assert path.startswith("/test_multiple_disks_external")
 
         node1.query(f"SYSTEM START MERGES {name}")
 
@@ -955,7 +955,7 @@ def test_alter_move(start_cluster, name, engine):
         ).strip()
         assert disk == "external"
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith(
-            "/external"
+            "/test_multiple_disks_external"
         )
 
         time.sleep(1)
@@ -970,7 +970,7 @@ def test_alter_move(start_cluster, name, engine):
         ).strip()
         assert disk == "jbod1"
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith(
-            "/jbod1"
+            "/test_multiple_disks_jbod1"
         )
 
         time.sleep(1)
@@ -990,7 +990,7 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "external" for d in disks)
         assert all(
-            path.startswith("/external")
+            path.startswith("/test_multiple_disks_external")
             for path in get_paths_for_partition_from_part_log(node1, name, "201904")[:2]
         )
 
@@ -1009,7 +1009,7 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "jbod2" for d in disks)
         assert all(
-            path.startswith("/jbod2")
+            path.startswith("/test_multiple_disks_jbod2")
             for path in get_paths_for_partition_from_part_log(node1, name, "201904")[:2]
         )
 
@@ -1606,15 +1606,15 @@ def test_freeze(start_cluster):
         node1.query("ALTER TABLE freezing_table FREEZE PARTITION 201903")
         # check shadow files (backups) exists
         node1.exec_in_container(
-            ["bash", "-c", "find /jbod1/shadow -name '*.mrk2' | grep '.*'"]
+            ["bash", "-c", "find /test_multiple_disks_jbod1/shadow -name '*.mrk2' | grep '.*'"]
         )
         node1.exec_in_container(
-            ["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"]
+            ["bash", "-c", "find /test_multiple_disks_external/shadow -name '*.mrk2' | grep '.*'"]
         )
 
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table SYNC")
-        node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
+        node1.exec_in_container(["rm", "-rf", "/test_multiple_disks_jbod1/shadow", "/test_multiple_disks_external/shadow"])
 
 
 def test_kill_while_insert(start_cluster):

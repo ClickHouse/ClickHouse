@@ -64,6 +64,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             self.pm_random_drops = PartitionManager()
             self.pm_random_drops.add_rule(
                 {
+                    "instance": sacrifice,
                     "probability": 0.01,
                     "destination": sacrifice.ip_address,
                     "source_port": 2181,
@@ -72,6 +73,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             )
             self.pm_random_drops.add_rule(
                 {
+                    "instance": sacrifice,
                     "probability": 0.01,
                     "source": sacrifice.ip_address,
                     "destination_port": 2181,
