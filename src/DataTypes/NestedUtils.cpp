@@ -64,6 +64,21 @@ std::pair<std::string_view, std::string_view> splitName(std::string_view name, b
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
+std::vector<std::pair<std::string_view, std::string_view>> getAllColumnAndSubcolumnPairs(std::string_view name)
+{
+    std::vector<std::pair<std::string_view, std::string_view>> pairs;
+    auto idx = name.find_first_of('.');
+    while (idx != std::string::npos)
+    {
+        std::string_view column_name = name.substr(0, idx);
+        std::string_view subcolumn_name = name.substr(idx + 1);
+        if (!column_name.empty() && !subcolumn_name.empty())
+            pairs.emplace_back(column_name, subcolumn_name);
+        idx = name.find_first_of('.', idx + 1);
+    }
+
+    return pairs;
+}
 
 std::string extractTableName(const std::string & nested_name)
 {

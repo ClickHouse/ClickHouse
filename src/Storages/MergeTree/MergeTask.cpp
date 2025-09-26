@@ -272,10 +272,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     for (const auto & name : sort_key_columns_vec)
     {
         if (storage_columns.contains(name))
+        {
             key_columns.insert(name);
+        }
         /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
         else
-            key_columns.insert(Nested::splitName(name).first);
+        {
+            for (auto [storage_column_name, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+            {
+                if (storage_columns.contains(String(storage_column_name)))
+                {
+                    key_columns.insert(String(storage_column_name));
+                    break;
+                }
+            }
+        }
     }
 
     /// Force sign column for Collapsing mode
@@ -316,19 +327,42 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         {
             const auto & column_name = index_columns.front();
             if (storage_columns.contains(column_name))
+            {
                 global_ctx->skip_indexes_by_column[column_name].push_back(index);
+            }
+            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
             else
-                global_ctx->skip_indexes_by_column[Nested::splitName(column_name).first].push_back(index);
+            {
+                for (auto [storage_column_name, _] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+                {
+                    if (storage_columns.contains(String(storage_column_name)))
+                    {
+                        global_ctx->skip_indexes_by_column[String(storage_column_name)].push_back(index);
+                        break;
+                    }
+                }
+            }
         }
         else
         {
             for (const auto & index_column : index_columns)
             {
                 if (storage_columns.contains(index_column))
+                {
                     key_columns.insert(index_column);
+                }
                 /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
                 else
-                    key_columns.insert(Nested::splitName(index_column).first);
+                {
+                    for (auto [storage_column_name, _] : Nested::getAllColumnAndSubcolumnPairs(index_column))
+                    {
+                        if (storage_columns.contains(String(storage_column_name)))
+                        {
+                            key_columns.insert(String(storage_column_name));
+                            break;
+                        }
+                    }
+                }
             }
 
             global_ctx->merging_skip_indexes.push_back(index);
