@@ -213,6 +213,7 @@ namespace CurrentMetrics
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric NamedCollection;
     extern const Metric IcebergCatalogThreads;
     extern const Metric IcebergCatalogThreadsActive;
     extern const Metric IcebergCatalogThreadsScheduled;
@@ -224,6 +225,7 @@ namespace CurrentMetrics
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
+    extern const Metric ZooKeeperSessionExpired;
 }
 
 
@@ -341,6 +343,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
 namespace ErrorCodes
@@ -545,6 +548,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
     mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
+    mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
+    mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -565,6 +571,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
+    std::atomic_size_t max_named_collection_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
@@ -938,7 +945,11 @@ struct ContextSharedPart : boost::noncopyable
 
             /// Stop trace collector if any
             trace_collector.reset();
+        }
+
+        {
             /// Stop zookeeper connection
+            std::lock_guard lock(zookeeper_mutex);
             zookeeper.reset();
         }
 
@@ -1317,6 +1328,8 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
+        if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > static_cast<Int64>(shared->max_named_collection_num_to_warn))
+            common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create("The number of named collections is more than {}.", shared->max_named_collection_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1465,7 +1478,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
 }
 
@@ -1505,8 +1518,21 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
     shared->temporary_volume_legacy = volume;
+}
+
+void Context::setTemporaryStorageInDistributedCache([[maybe_unused]] size_t max_size)
+{
+#if ENABLE_DISTRIBUTED_CACHE
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    auto temp_data = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), DistributedCacheTag{});
+    std::lock_guard lock(shared->mutex);
+    shared->root_temp_data_on_disk = std::move(temp_data);
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache for temporary files is not supported");
+#endif
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1530,7 +1556,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
     shared->temporary_volume_legacy = volume;
 }
 
@@ -3102,6 +3128,7 @@ void Context::makeQueryContext()
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    runtime_filter_lookup = createRuntimeFilterLookup();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -4156,6 +4183,16 @@ ThrottlerPtr Context::getMergesThrottler() const
     return shared->merges_throttler;
 }
 
+ThrottlerPtr Context::getDistributedCacheReadThrottler() const
+{
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
+{
+    return shared->distributed_cache_write_throttler;
+}
+
 void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
 {
     if (read_bandwidth)
@@ -4264,7 +4301,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (!shared->zookeeper)
     {
-        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+
+        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4272,6 +4312,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (shared->zookeeper->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
 
@@ -4364,35 +4406,24 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
-void Context::handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded()
+void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 {
-    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
-    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
-    /// instead of pointer to system table and it logs nothing. Furthermore, ZooKeeperConnectionLog will also miss
-    /// entries for connections that were established before initializeSystemLogs() was called.
-    /// This method explicitly sets correct pointer to system log after its initialization and also adds connected
-    /// entries for ZooKeeperConnectionLog.
-    /// TODO get rid of this if possible
-
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
     std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
     {
         SharedLockGuard lock(shared->mutex);
         if (!shared->system_logs)
             return;
 
-        zookeeper_log = shared->system_logs->zookeeper_log;
         zookeeper_connection_log = shared->system_logs->zookeeper_connection_log;
     }
 
-    if (!zookeeper_log && !zookeeper_connection_log)
+    if (!zookeeper_connection_log)
         return;
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
         if (shared->zookeeper)
         {
-            shared->zookeeper->setZooKeeperLog(zookeeper_log);
             if (zookeeper_connection_log)
                 zookeeper_connection_log->addConnected(
                     ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4403,7 +4434,6 @@ void Context::handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeede
         std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
         for (auto & zk : shared->auxiliary_zookeepers)
         {
-            zk.second->setZooKeeperLog(zookeeper_log);
             if (zookeeper_connection_log)
                 zookeeper_connection_log->addConnected(
                     zk.first, *zk.second, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4502,15 +4532,19 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 "config.xml",
                 name);
 
+        zkutil::ZooKeeperArgs args(config, config_name);
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
     }
     else if (zookeeper->second->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
         auto old_zookeeper = zookeeper->second;
         zookeeper->second = zookeeper->second->startNewSession();
 
@@ -4543,7 +4577,9 @@ static void reloadZooKeeperIfChangedImpl(
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
     std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
-    bool server_started)
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
+    bool server_started,
+    const Int32 send_receive_os_threads_nice_value)
 {
     static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
@@ -4553,7 +4589,9 @@ static void reloadZooKeeperIfChangedImpl(
 
         auto old_zk = zk;
 
-        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
+        zkutil::ZooKeeperArgs args(*config, config_name);
+        args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
+        zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
 
         if (zk_concection_log)
         {
@@ -4573,7 +4611,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -4600,7 +4638,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         else
         {
             LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, server_started);
+            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
             ++it;
         }
     }
@@ -4729,6 +4767,12 @@ size_t Context::getMaxPartNumToWarn() const
     return shared->max_part_num_to_warn;
 }
 
+size_t Context::getMaxNamedCollectionNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_named_collection_num_to_warn;
+}
+
 size_t Context::getMaxTableNumToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4769,6 +4813,12 @@ void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_part_num_to_warn = max_part_to_warn;
+}
+
+void Context::setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_named_collection_num_to_warn = max_named_collection_to_warn;
 }
 
 void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
@@ -4986,9 +5036,15 @@ void Context::handleCrash() const
     if (!shared)
         return;
 
-    SharedLockGuard lock2(shared->mutex);
-    if (shared->system_logs)
-        shared->system_logs->handleCrash();
+    std::optional<SystemLogs> system_logs;
+    {
+        SharedLockGuard lock2(shared->mutex);
+        if (!shared->system_logs)
+            return;
+        system_logs.emplace(*shared->system_logs);
+    }
+
+    system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
@@ -5139,7 +5195,11 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
 
     if (!shared->system_logs)
         return {};
@@ -5251,6 +5311,16 @@ std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
     return shared->system_logs->iceberg_metadata_log;
 }
 
+std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->delta_lake_metadata_log;
+}
+
 std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5258,6 +5328,19 @@ std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
         return {};
 
     return shared->system_logs->dead_letter_queue;
+}
+
+std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() const
+{
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return {};
+
+    SharedLockGuard lock2(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->aggregated_zookeeper_log;
 }
 
 SystemLogs Context::getSystemLogs() const
@@ -6775,6 +6858,16 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
+void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
+{
+    runtime_filter_lookup = filter_lookup;
+}
+
+RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
+{
+    return runtime_filter_lookup;
+}
+
 void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
 {
     storage_alias_behaviour = storage_alias_behaviour_;
@@ -6795,14 +6888,15 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
-void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
 {
-    partition_id_to_max_block = std::move(partitions);
+    partition_id_to_max_block[table_uuid] = std::move(partitions);
 }
 
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
 {
-    return partition_id_to_max_block;
+    auto it = partition_id_to_max_block.find(table_uuid);
+    return it != partition_id_to_max_block.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

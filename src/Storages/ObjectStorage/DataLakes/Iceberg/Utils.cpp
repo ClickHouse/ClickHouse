@@ -1,29 +1,33 @@
 
 #include <memory>
 #include <sstream>
-#include <Poco/Dynamic/Var.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/UUIDGenerator.h>
-#include <Common/DateLUT.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Parsers/ASTFunction.h>
+#include <config.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
-#include <base/types.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <config.h>
+#include <base/getThreadId.h>
+#include <base/types.h>
+#include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <Poco/UUID.h>
+#include <Poco/UUIDGenerator.h>
+#include <Common/DateLUT.h>
+
 
 #if USE_AVRO
 
@@ -47,7 +51,6 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -320,9 +323,23 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
+
+static bool isTemporaryMetadataFile(const String & file_name)
+{
+    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
+    return Poco::UUID{}.tryParse(substring);
+}
+
 static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
-    String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    String file_name = std::filesystem::path(path).filename();
+    if (isTemporaryMetadataFile(file_name))
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
+            path);
+    }
     String version_str;
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
@@ -333,7 +350,7 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
@@ -496,7 +513,7 @@ Poco::JSON::Object::Ptr getPartitionField(
             if (identifier)
             {
                 if (field.has_value())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with multiple arguments are not supported in Iceberg.");
                 field = identifier->name();
             }
             const auto * literal = expression_list_child->as<ASTLiteral>();
@@ -507,7 +524,7 @@ Poco::JSON::Object::Ptr getPartitionField(
         }
     }
     if (!field)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with no arguments are not supported in Iceberg.");
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_name, field.value());
@@ -544,11 +561,15 @@ Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "icebergTruncate")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
     else if (partition_function->name == "icebergBucket")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
@@ -704,7 +725,11 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
+        String filename = std::filesystem::path(path).filename();
+        if (isTemporaryMetadataFile(filename))
+            continue;
         auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+
         if (need_all_metadata_files_parsing)
         {
             auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
@@ -813,7 +838,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+        std::string result_metadata_path = std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file;
+        return getMetadataFileAndVersion(result_metadata_path);
     }
     else
     {

@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <mutex>
+#include <shared_mutex>
 
 namespace DB::DimensionalMetrics
 {

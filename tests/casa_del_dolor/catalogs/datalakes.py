@@ -6,10 +6,8 @@ import socket
 import subprocess
 import time
 import typing
-import urllib3
 
 from pathlib import Path
-from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.rest import RestCatalog
 from .laketables import (
@@ -20,8 +18,8 @@ from .laketables import (
 )
 from .tablegenerator import LakeTableGenerator
 from .datagenerator import LakeDataGenerator
+from .tablecheck import SparkAndClickHouseCheck
 
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
@@ -49,8 +47,8 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 """
 
 
-def get_local_base_path(cluster, catalog_name: str) -> str:
-    return f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files" / "lakehouse" / f"{catalog_name}"}"
+def get_local_base_path(catalog_name: str) -> str:
+    return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
 
 
 Parameter = typing.Callable[[], int | float]
@@ -74,7 +72,6 @@ spark_properties = {
     "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
     "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
     "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
-    "spark.databricks.delta.retentionDurationCheck.enabled": true_false_lambda,
     "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
     "spark.databricks.delta.stalenessLimit": lambda: random.choice(
         ["1h", "6h", "12h", "24h"]
@@ -129,9 +126,9 @@ spark_properties = {
         ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"]
     ),
     "spark.sql.parquet.writeLegacyFormat": true_false_lambda,
-    "spark.sql.shuffle.partitions": lambda: random.choice(
-        ["8", "16", "32", "64", "200", "400"]
-    ),
+    # "spark.sql.shuffle.partitions": lambda: random.choice( don't set this too low
+    #    ["8", "16", "32", "64", "200", "400"]
+    # ),
     "spark.sql.sources.partitionOverwriteMode": lambda: random.choice(
         ["static", "dynamic"]
     ),
@@ -141,6 +138,7 @@ spark_properties = {
 
 def get_spark(
     cluster,
+    env,
     sparklogfile: str,
     derbylogfile: str,
     metastore_db: str,
@@ -164,6 +162,12 @@ def get_spark(
         "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
         "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
         "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
+        # Derby jars
+        "org.apache.derby:derby:10.14.2.0",
+        "org.apache.derby:derbytools:10.14.2.0",
+        "org.datanucleus:datanucleus-core:4.1.17",
+        "org.datanucleus:datanucleus-api-jdo:4.2.4",
+        "org.datanucleus:datanucleus-rdbms:4.1.19",
     ]
 
     if lake == LakeFormat.Iceberg:
@@ -182,6 +186,8 @@ def get_spark(
         raise Exception("Unknown lake format")
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
+    for k, val in env.items():
+        os.environ[k] = val
 
     from pyspark.sql import SparkSession
 
@@ -196,12 +202,8 @@ def get_spark(
         "spark.executor.extraJavaOptions",
         f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
     )
-    builder.config(
-        "javax.jdo.option.ConnectionURL", f"jdbc:derby:{metastore_db};create=true"
-    )
-    builder.config(
-        "javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver"
-    )
+    builder.config("spark.driver.memory", "16g")
+    builder.config("spark.driver.memoryOverhead", "2g")
 
     # ============================================================
     # CATALOG CONFIGURATIONS
@@ -225,21 +227,22 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                cluster.minio_access_key,
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_secret_key,
+                cluster.minio_secret_key,
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3://warehouse-glue/data",
+                "s3a://warehouse-glue",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-glue/data",
+                "s3a://warehouse-glue",
             )
     elif catalog == LakeCatalogs.Hive:
         builder.config(
@@ -250,11 +253,11 @@ def get_spark(
         if storage == TableStorage.S3:
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3a://warehouse-hms/data",
+                "s3a://warehouse-hms",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3a://warehouse-hms/data",
+                "s3a://warehouse-hms",
             )
     elif catalog == LakeCatalogs.REST or (
         catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
@@ -273,26 +276,41 @@ def get_spark(
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                cluster.minio_access_key,
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_secret_key,
+                cluster.minio_secret_key,
             )
             builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
-            builder.config("spark.sql.warehouse.dir", "s3://warehouse-rest/data")
+            builder.config("spark.sql.warehouse.dir", "s3a://warehouse-rest")
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3://warehouse-rest/data",
+                "s3a://warehouse-rest",
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
         builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
         builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
     elif lake == LakeFormat.Iceberg:
-        # Something as default for iceberg, nothing needed for delta
+        # Something as default for iceberg
         builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
+    elif lake == LakeFormat.DeltaLake:
+        # Enable persistence
+        builder.config(
+            "spark.hadoop.javax.jdo.option.ConnectionURL",
+            f"jdbc:derby:;databaseName={metastore_db};create=true",
+        )
+        builder.config(
+            "javax.jdo.option.ConnectionDriverName",
+            "org.apache.derby.jdbc.EmbeddedDriver",
+        )
+        builder.config("datanucleus.schema.autoCreateAll", "true")
+        builder.config("datanucleus.fixedDatastore", "false")
+        builder.config("spark.sql.catalogImplementation", "hive")
+        builder.enableHiveSupport()
 
     # ============================================================
     # STORAGE CONFIGURATIONS
@@ -310,8 +328,8 @@ def get_spark(
             )
             builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
             builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-            builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
-            builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
+            builder.config("spark.hadoop.fs.s3a.access.key", cluster.minio_access_key)
+            builder.config("spark.hadoop.fs.s3a.secret.key", cluster.minio_secret_key)
             builder.config(
                 "spark.hadoop.fs.s3a.aws.credentials.provider",
                 "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
@@ -351,18 +369,18 @@ def get_spark(
             f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
         )
     elif storage == TableStorage.Local:
-        os.makedirs(get_local_base_path(cluster, catalog_name), exist_ok=True)
+        os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
 
         builder.config(
             "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
         )
         builder.config(
             "spark.sql.warehouse.dir",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
+            f"file://{get_local_base_path(catalog_name)}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
+            f"file://{get_local_base_path(catalog_name)}",
         )
     else:
         raise Exception("Unknown storage")
@@ -382,6 +400,13 @@ def get_spark(
     # Support very old dates
     builder.config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
     builder.config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
+    # Allow to retain 0 hours on vacuum
+    builder.config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+    # Set timezone to match ClickHouse
+    if "TZ" in env:
+        builder.config("spark.sql.session.timeZone", env["TZ"])
+    for k, val in env.items():
+        builder.config(f"spark.executorEnv.{k}", val)
 
     # Random properties
     if random.randint(1, 100) <= 70:
@@ -398,31 +423,13 @@ class DolorCatalog:
 
     def __init__(
         self,
-        cluster,
-        spark_log_config: str,
-        derby_log_config: str,
-        metastore_db: str,
         _catalog_name: str,
-        _storage_type: TableStorage,
-        _lake_type: LakeFormat,
         _catalog_type: LakeCatalogs,
         _catalog_impl,
     ):
         self.catalog_name = _catalog_name
-        self.storage_type = _storage_type
-        self.lake_type = _lake_type
         self.catalog_type = _catalog_type
         self.catalog_impl = _catalog_impl
-        self.session = get_spark(
-            cluster,
-            spark_log_config,
-            derby_log_config,
-            metastore_db,
-            _catalog_name,
-            _storage_type,
-            _lake_type,
-            _catalog_type,
-        )
         self.spark_tables: dict[str, SparkTable] = {}
 
 
@@ -438,13 +445,13 @@ def wait_for_port(host, port, timeout=90):
 
 
 class SparkHandler:
-    def __init__(self, cluster, args):
+    def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
-        if args.with_unity is not None:
-            self.uc_server_dir = args.with_unity
+        if with_unity is not None:
+            self.uc_server_dir = with_unity
             self.uc_server_run_dir = Path(cluster.instances_dir) / "ucserver"
 
         self.spark_log_dir = Path(cluster.instances_dir) / "spark"
@@ -452,6 +459,9 @@ class SparkHandler:
         self.spark_query_logger = self.spark_log_dir / "query.log"
         self.derby_logger = self.spark_log_dir / "derby.log"
         self.metastore_db = self.spark_log_dir / "metastore_db"
+        self.data_generator = LakeDataGenerator(self.spark_query_logger)
+        self.table_check = SparkAndClickHouseCheck()
+        self.env = env
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -490,19 +500,8 @@ rootLogger.appenderRef.file.ref = file
 logger.jetty.name = org.eclipse.jetty
 logger.jetty.level = warn
 """
-        with open(self.spark_log_config, "w") as f:
+        with open(self.spark_log_config, "w+") as f:
             f.write(spark_log)
-
-    def create_minio_bucket(self, cluster, bucket_name: str):
-        minio_client = Minio(
-            f"{cluster.minio_ip}:{cluster.minio_port}",
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
-            secure=False,
-            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-        )
-        if not minio_client.bucket_exists(bucket_name):
-            minio_client.make_bucket(bucket_name)
 
     def start_uc_server(self):
         if self.uc_server is None:
@@ -523,8 +522,8 @@ logger.jetty.level = warn
             uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
             os.makedirs(self.uc_server_run_dir, exist_ok=True)
             # Start the server
-            with open(self.uc_server_run_dir / "uc_server_bin.log", "w") as f1:
-                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w") as f2:
+            with open(self.uc_server_run_dir / "uc_server_bin.log", "w+") as f1:
+                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w+") as f2:
                     self.uc_server = subprocess.Popen(
                         [str(uc_server_bin)],
                         cwd=str(self.uc_server_run_dir),
@@ -581,6 +580,26 @@ logger.jetty.level = warn
                 f"stderr:\n{proc.stderr}"
             )
 
+    def get_next_session(
+        self,
+        cluster,
+        catalog_name: str,
+        next_storage: TableStorage,
+        next_lake: LakeFormat,
+        next_catalog: LakeCatalogs,
+    ):
+        return get_spark(
+            cluster,
+            self.env,
+            str(self.spark_log_config),
+            str(self.derby_logger),
+            str(self.metastore_db),
+            catalog_name,
+            next_storage,
+            next_lake,
+            next_catalog,
+        )
+
     def run_query(self, session, query: str):
         self.logger.info(f"Running query: {query}")
         with open(self.spark_query_logger, "a") as f:
@@ -591,7 +610,7 @@ logger.jetty.level = warn
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
         self.run_query(session, next_sql)
 
-    def create_lake_database(self, cluster, data):
+    def create_lake_database(self, cluster, data) -> bool:
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
@@ -608,14 +627,14 @@ logger.jetty.level = warn
                     kwargs.update(
                         {
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",
                         }
                     )
-                    next_warehouse = f"s3://{cluster.minio_bucket}/{catalog_name}"
+                    next_warehouse = f"s3a://{catalog_name}"
                 elif next_storage == TableStorage.Azure:
                     kwargs.update(
                         {
@@ -626,9 +645,7 @@ logger.jetty.level = warn
                     )
                     next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
                 elif next_storage == TableStorage.Local:
-                    next_warehouse = (
-                        f"file://{get_local_base_path(cluster, catalog_name)}"
-                    )
+                    next_warehouse = f"file://{get_local_base_path(catalog_name)}"
                 next_catalog_impl = RestCatalog(
                     catalog_name,
                     uri="http://localhost:8182",
@@ -646,11 +663,11 @@ logger.jetty.level = warn
                             "type": "glue",
                             "glue.endpoint": "http://localhost:3000",
                             "glue.region": "us-east-1",
-                            "glue.access-key-id": minio_access_key,
-                            "glue.secret-access-key": minio_secret_key,
+                            "glue.access-key-id": cluster.minio_access_key,
+                            "glue.secret-access-key": cluster.minio_secret_key,
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",
@@ -667,8 +684,8 @@ logger.jetty.level = warn
                             "uri": "thrift://0.0.0.0:9083",
                             "type": "hive",
                             "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
+                            "s3.access-key-id": cluster.minio_access_key,
+                            "s3.secret-access-key": cluster.minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
                             "s3.connection-ssl.enabled": "false",
@@ -683,78 +700,107 @@ logger.jetty.level = warn
             raise Exception("No Nessie yet")
 
         self.catalogs[catalog_name] = DolorCatalog(
-            cluster,
-            str(self.spark_log_config),
-            str(self.derby_logger),
-            str(self.metastore_db),
             catalog_name,
-            next_storage,
-            next_lake,
             next_catalog,
             next_catalog_impl,
         )
-        self.create_database(self.catalogs[catalog_name].session, catalog_name)
+        next_session = self.get_next_session(
+            cluster, catalog_name, next_storage, next_lake, next_catalog
+        )
+        try:
+            self.create_database(next_session, catalog_name)
+        except:
+            next_session.stop()
+            raise
+        next_session.stop()
+        return True
 
-    def create_lake_table(self, cluster, data):
-        catalog_name = data["database_name"]
-        one_time = catalog_name[0] != "d"
-        next_session = None
+    def create_lake_table(self, cluster, data) -> bool:
+        catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
-        next_table_generator = LakeTableGenerator.get_next_generator(
-            cluster.minio_bucket, next_lake
-        )
+        next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
 
-        if one_time:
+        if catalog_name not in self.catalogs:
             self.catalogs[catalog_name] = DolorCatalog(
-                cluster,
-                str(self.spark_log_config),
-                str(self.derby_logger),
-                str(self.metastore_db),
                 catalog_name,
-                next_storage,
-                next_lake,
                 LakeCatalogs.NoCatalog,
                 None,
             )
-            self.create_database(self.catalogs[catalog_name].session, catalog_name)
-        next_session = self.catalogs[catalog_name].session
+            next_session = self.get_next_session(
+                cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
+            )
+            try:
+                self.create_database(next_session, catalog_name)
+            except:
+                next_session.stop()
+                raise
+            next_session.stop()
 
+        # To fix, this is not right for some catalogs
         next_location = ""
         if next_storage == TableStorage.S3:
             next_location = f"s3a://{cluster.minio_bucket}/{catalog_name}"
         elif next_storage == TableStorage.Azure:
             next_location = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
         elif next_storage == TableStorage.Local:
-            next_location = f"file://{get_local_base_path(cluster, catalog_name)}"
+            next_location = f"file://{get_local_base_path(catalog_name)}"
         next_location += f"/test/{data["table_name"]}"
 
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
+            data["database_name"],
             data["table_name"],
             data["columns"],
             data["format"],
             data["deterministic"] > 0,
+            next_storage,
             next_location,
         )
-        self.run_query(next_session, next_sql)
+        next_session = self.get_next_session(
+            cluster,
+            catalog_name,
+            next_storage,
+            next_lake,
+            self.catalogs[catalog_name].catalog_type,
+        )
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
-        if random.randint(1, 5) != 5:
-            self.logger.info(
-                f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
-            )
-            next_data_generator = LakeDataGenerator()
-            next_data_generator.insert_random_data(
-                next_session, catalog_name, next_table
-            )
-
-        if one_time:
+        try:
+            self.run_query(next_session, next_sql)
+            if random.randint(1, 5) != 5:
+                self.data_generator.insert_random_data(next_session, next_table)
+        except:
             next_session.stop()
+            raise
+        next_session.stop()
+        return True
+
+    def update_or_check_table(self, cluster, data, update: bool) -> bool:
+        res = False
+        catalog_name = data["catalog_name"]
+        next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
+
+        next_session = self.get_next_session(
+            cluster,
+            catalog_name,
+            next_table.storage,
+            next_table.lake_format,
+            self.catalogs[catalog_name].catalog_type,
+        )
+        try:
+            res = (
+                self.data_generator.update_table(next_session, next_table)
+                if update
+                else self.table_check.check_table(cluster, next_session, next_table)
+            )
+        except:
+            next_session.stop()
+            raise
+        next_session.stop()
+        return res
 
     def close_sessions(self):
-        for _, val in self.catalogs.items():
-            val.session.stop()
         if self.uc_server is not None and self.uc_server.poll() is None:
             self.uc_server.kill()
             self.uc_server.wait()

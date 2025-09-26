@@ -176,7 +176,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
@@ -348,8 +347,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(
-        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, /* throw_on_error= */ false);
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};

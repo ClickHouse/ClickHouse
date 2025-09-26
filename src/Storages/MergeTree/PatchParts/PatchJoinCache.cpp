@@ -13,6 +13,7 @@
 namespace ProfileEvents
 {
     extern const Event BuildPatchesJoinMicroseconds;
+    extern const Event PatchesJoinRowsAddedToHashTable;
 }
 
 namespace DB
@@ -238,22 +239,27 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
-    size_t new_block_idx = 0;
     size_t num_read_rows = read_block.rows();
-
     if (num_read_rows == 0)
         return;
+
+    ProfileEvents::increment(ProfileEvents::PatchesJoinRowsAddedToHashTable, num_read_rows);
 
     /// System columns are not needed in block, they are stored in the hash map.
     auto block_with_data = std::make_shared<Block>(read_block);
     block_with_data->erase(BlockNumberColumn::name);
     block_with_data->erase(BlockOffsetColumn::name);
+    size_t version_column_position = block_with_data->getPositionByName(PartDataVersionColumn::name);
 
-    {
-        std::lock_guard lock(mutex);
-        new_block_idx = blocks.size();
-        blocks.push_back(std::move(block_with_data));
-    }
+    std::lock_guard lock(mutex);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    for (const auto & block : blocks)
+        assertCompatibleHeader(*block_with_data, *block, "patch join cache");
+#endif
+
+    size_t new_block_idx = blocks.size();
+    blocks.push_back(std::move(block_with_data));
 
     if (new_block_idx > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large index of block ({}) in patch join cache", new_block_idx);
@@ -265,12 +271,11 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
     const auto & block_offset_column = getColumnUInt64Data(read_block, BlockOffsetColumn::name);
     const auto & data_version_column = getColumnUInt64Data(read_block, PartDataVersionColumn::name);
 
-    /// Build hash map locally and then merge it with the global one under the lock.
-    PatchHashMap local_hash_map;
+    PatchOffsetsMap * current_offsets = nullptr;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    UInt64 local_min_block = std::numeric_limits<UInt64>::max();
-    UInt64 local_max_block = 0;
-    OffsetsHashMap * offsets_hash_map = nullptr;
+    /// Offsets are mostly sorted, so use the iterator to latest inserted offset as a hint
+    /// to optimize the insertion. It gives average complexity of O(1) instead of O(log n).
+    PatchOffsetsMap::const_iterator last_inserted_it;
 
     for (size_t i = 0; i < num_read_rows; ++i)
     {
@@ -280,38 +285,36 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
         if (block_number != prev_block_number)
         {
             prev_block_number = block_number;
-            offsets_hash_map = &local_hash_map[block_number];
+            current_offsets = &hash_map[block_number];
 
-            local_min_block = std::min(local_min_block, block_number);
-            local_max_block = std::max(local_max_block, block_number);
+            min_block = std::min(min_block, block_number);
+            max_block = std::max(max_block, block_number);
+            last_inserted_it = current_offsets->end();
         }
 
-        auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
+        /// try_emplace overload with hint doesn't return 'inserted' flag,
+        /// so we need to check size before and after emplace.
+        size_t old_size = current_offsets->size();
+        auto it = current_offsets->try_emplace(last_inserted_it, block_offset);
+        last_inserted_it = it;
+        bool inserted = current_offsets->size() > old_size;
 
-        /// Keep only the row with the highest version.
-        if (inserted || data_version_column[i] > data_version_column[it->second.second])
-            it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
-    }
-
-    {
-        std::lock_guard lock(mutex);
-
-        min_block = std::min(min_block, local_min_block);
-        max_block = std::max(max_block, local_max_block);
-
-        for (auto & [block_number, offsets_map] : local_hash_map)
+        if (inserted)
         {
-            auto [it, inserted] = hash_map.try_emplace(block_number);
+            it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
+        }
+        else
+        {
+            const auto & [patch_block_index, patch_row_index] = it->second;
+            const auto & existing_version_column = blocks[patch_block_index]->getByPosition(version_column_position).column;
 
-            if (inserted)
-            {
-                it->second = std::move(offsets_map);
-            }
-            else
-            {
-                it->second.reserve(it->second.size() + offsets_map.size());
-                it->second.insert(offsets_map.begin(), offsets_map.end());
-            }
+            UInt64 current_version = data_version_column[i];
+            UInt64 existing_version = assert_cast<const ColumnUInt64 &>(*existing_version_column).getData()[patch_row_index];
+            chassert(current_version != existing_version);
+
+            /// Keep only the row with the highest version.
+            if (current_version > existing_version)
+                it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
         }
     }
 }
