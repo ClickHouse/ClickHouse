@@ -950,7 +950,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
     {
-        auto connection_info = object_storage.getConnectionInfo();
+        auto connection_info = DistributedCache::getConnectionInfo(*object_storage);
         if (connection_info)
         {
             auto global_context = Context::getGlobalContextInstance();

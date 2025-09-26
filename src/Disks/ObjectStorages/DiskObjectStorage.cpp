@@ -754,7 +754,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         && settings.read_through_distributed_cache
         && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = object_storage->getConnectionInfo();
+        connection_info = DistributedCache::getConnectionInfo(*object_storage);
         if (connection_info)
             use_distributed_cache = true;
     }
