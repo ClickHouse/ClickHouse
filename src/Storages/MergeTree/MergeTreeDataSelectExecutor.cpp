@@ -886,6 +886,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
+                    if (total_granules > ranges.ranges.getNumberOfMarks())
+                    {
+                        if (auto query_context = context->getQueryContext())
+                        {
+                            std::lock_guard lock(query_context->getQueryAccessInfo().mutex);
+                            // query_context->getQueryAccessInfo().skip_indexes.insert(std::string(index_and_condition.index->index.name));
+                            auto ctx = query_context->getQueryAccessInfo();
+                            ctx.skip_indexes.insert(index_and_condition.index->index.name);
+                        }
+                    }
+
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
