@@ -558,7 +558,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     const bool should_not_narrow = query_info.input_order_info || (
         context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
-    if (!should_not_narrow)    {
+    if (!should_not_narrow)
+    {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
