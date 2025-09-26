@@ -18,6 +18,13 @@ endif()
 
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
+
+if (ARCH_AMD64)
+    set(LINKER_NAME "/usr/bin/wild-x86_64")
+elseif (ARCH_AARCH64)
+    set(LINKER_NAME "/usr/bin/wild-aarch64")
+endif ()
+
 include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
@@ -201,15 +208,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
-
-
-if (ARCH_AMD64)
-    set(LINKER_NAME "/usr/bin/wild-x86_64")
-    message("Set linker to ${LINKER_NAME}")
-elseif (ARCH_AARCH64)
-    set(LINKER_NAME "/usr/bin/wild-aarch64")
-    message("Set linker to ${LINKER_NAME}")
-endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
