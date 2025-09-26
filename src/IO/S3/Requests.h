@@ -176,9 +176,19 @@ using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploa
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
-using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
-using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
+class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>
+{
+public:
+    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+};
 
+class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
+{
+public:
+    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+};
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
 {
