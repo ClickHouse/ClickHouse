@@ -79,7 +79,7 @@ public:
                             right_col ? "NOT NULL" : "NULL");
         }
 
-        // get common type for null-safe comparsion
+        // get common type for null-safe comparison
         DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
 
         ColumnPtr c0_converted = castColumn(arguments[0], common_type);

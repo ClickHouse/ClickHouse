@@ -1,12 +1,8 @@
-#include <Functions/FunctionsComparison.h>
+#pragma once
+#include <Core/AccurateComparison.h>
 #include <Functions/FunctionsNullSafeCmp.h>
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 struct NameFunctionIsDistinctFrom { static constexpr auto name = "isDistinctFrom"; };
 
