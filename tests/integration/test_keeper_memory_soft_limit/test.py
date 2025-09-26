@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-import random
-import string
-
 import pytest
 from kazoo.client import KazooClient
 from helpers.cluster import ClickHouseCluster
@@ -16,10 +13,6 @@ node = cluster.add_instance(
     with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
     main_configs=["configs/setting.xml"],
 )
-
-
-def random_string(length):
-    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 
 def get_connection_zk(nodename, timeout=30.0):
