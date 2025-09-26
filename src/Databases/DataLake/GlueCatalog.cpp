@@ -457,7 +457,6 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         else
             args[0] = std::make_shared<DB::ASTLiteral>(metadata_uri);
 
-        // if (args.size() == 1 && table_metadata.hasStorageCredentials())
         if (table_metadata.hasStorageCredentials())
         {
             if (auto storage_credentials = table_metadata.getStorageCredentials())
