@@ -384,6 +384,12 @@ target_include_directories(_aws SYSTEM BEFORE PUBLIC ${AWS_PUBLIC_INCLUDES})
 target_include_directories(_aws SYSTEM BEFORE PRIVATE ${AWS_PRIVATE_INCLUDES})
 target_compile_definitions(_aws PUBLIC ${AWS_PUBLIC_COMPILE_DEFS})
 target_compile_definitions(_aws PRIVATE ${AWS_PRIVATE_COMPILE_DEFS})
+
+if (OS_DARWIN)
+    target_link_libraries(_aws PRIVATE "-framework CoreFoundation")
+    target_link_libraries(_aws PRIVATE "-framework Security")
+endif()
+
 target_link_libraries(_aws PRIVATE ${AWS_PRIVATE_LIBS})
 
 aws_set_thread_affinity_method(_aws)
