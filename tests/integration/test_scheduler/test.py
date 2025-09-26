@@ -999,3 +999,106 @@ def test_throw_on_unknown_workload():
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "RESOURCE_ACCESS_DENIED" in str(ex)
+
+
+def test_config_based_workloads_and_resources():
+    # Create a test configuration with resources and workloads
+    update_workloads_config(resources_and_workloads="""
+        CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
+        CREATE RESOURCE config_io_write (WRITE DISK s3_no_resource);
+        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000, max_bytes_inflight = 2000000 FOR config_io_write;
+        CREATE WORKLOAD production IN all SETTINGS priority = 1, weight = 3;
+    """
+    )
+
+    # Verify config-based entities are loaded
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "2\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )
+
+    # Verify scheduler nodes exist for config entities
+    assert (
+        node.query(
+            "SELECT count() == 2 FROM system.scheduler WHERE resource IN ('config_io_read', 'config_io_write') AND path = '/all'"
+        )
+        == "1\n"
+    )
+
+    # Try to create SQL entities with same names - should fail
+    try:
+        node.query("CREATE RESOURCE config_io_read (READ DISK non_existent_disk)")
+        assert False, "Should not be able to create resource with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    try:
+        node.query("CREATE WORKLOAD all")
+        assert False, "Should not be able to create workload with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    # Create SQL entities with different names
+    node.query("CREATE RESOURCE sql_io_read (READ DISK non_existent_disk)")
+    node.query("CREATE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
+
+    # Verify both config and SQL entities exist
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources WHERE name IN ('config_io_read', 'config_io_write', 'sql_io_read')"
+        )
+        == "3\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads WHERE name IN ('all', 'production', 'development')"
+        )
+        == "3\n"
+    )
+
+    # Test that config entities cannot be dropped
+    try:
+        node.query("DROP RESOURCE config_io_read")
+        assert False, "Should not be able to drop config-defined resource"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in config" in str(ex)
+
+    try:
+        node.query("DROP WORKLOAD production")
+        assert False, "Should not be able to drop config-defined workload"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'production' that is stored in config" in str(ex)
+
+    # But SQL entities can be dropped
+    node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
+    node.query("DROP RESOURCE sql_io_read")
+
+    # Update config to remove some entities
+    update_workloads_config(resources_and_workloads="""
+        CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
+        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read;
+    """
+    )
+
+    # Verify entities are updated
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )

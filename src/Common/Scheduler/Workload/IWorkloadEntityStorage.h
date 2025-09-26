@@ -7,6 +7,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 
 namespace DB
 {
@@ -33,7 +35,7 @@ public:
     virtual String getReplicationID() const { return ""; }
 
     /// Loads all entities. Can be called once - if entities are already loaded the function does nothing.
-    virtual void loadEntities() = 0;
+    virtual void loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Get entity by name. If no entity stored with entity_name throws exception.
     virtual ASTPtr get(const String & entity_name) const = 0;
