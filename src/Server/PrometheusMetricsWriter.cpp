@@ -73,7 +73,8 @@ constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
 constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
 constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
 constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
-constexpr auto clickhouse_prefix = "clickhouse_";
+constexpr auto histogram_prefix = "ClickHouseHistograms_";
+constexpr auto dimensional_metrics_prefix = "ClickHouseDimensionalMetrics_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 {
@@ -188,7 +189,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 
 void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family)
 {
-    std::string base_name = clickhouse_prefix + family.getName();
+    std::string base_name = histogram_prefix + family.getName();
     if (!replaceInvalidChars(base_name))
         return;
 
@@ -272,7 +273,7 @@ void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
 
 void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family)
 {
-    std::string base_name = clickhouse_prefix + family.getName();
+    std::string base_name = dimensional_metrics_prefix + family.getName();
     if (!replaceInvalidChars(base_name))
         return;
 
