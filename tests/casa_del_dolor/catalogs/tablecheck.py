@@ -14,6 +14,7 @@ from pyspark.sql.types import (
     DateType,
     FloatType,
     DoubleType,
+    DecimalType,
 )
 
 from .laketables import SparkTable, LakeFormat
@@ -127,9 +128,13 @@ class SparkAndClickHouseCheck:
             )
 
             # Spark hash
-            # Convert all columns to string and concatenate
+            # Convert all columns to string and concatenate. Remove trailing 0 for decimals
             spark_strings = {
-                col.column_name: f"CAST({col.column_name} AS STRING)"
+                col.column_name: (
+                    f"TRIM(TRAILING '0' FROM CAST({col.column_name} AS STRING))"
+                    if isinstance(col.spark_type, DecimalType)
+                    else f"CAST({col.column_name} AS STRING)"
+                )
                 for col in order_by_cols
             }
             concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
