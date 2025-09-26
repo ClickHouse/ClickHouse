@@ -1440,7 +1440,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t alter_order_by = 3;
             const uint32_t heavy_delete = 30;
             const uint32_t heavy_update = 40;
-            const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < 10);
+            const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < fc.max_columns);
             const uint32_t materialize_column = 2;
             const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() > 1);
             const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());

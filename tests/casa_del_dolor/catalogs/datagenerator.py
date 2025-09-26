@@ -1,3 +1,4 @@
+import traceback
 import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
@@ -436,32 +437,37 @@ class LakeDataGenerator:
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 1000)
 
-        if next_operation <= 400:
-            # Insert
-            self.insert_random_data(spark, table)
-        elif next_operation <= 600:
-            # Update and delete
-            self.merge_into_table(spark, table)
-        elif next_operation <= 650:
-            # Delete
-            self.delete_table(spark, table)
-        elif next_operation <= 700:
-            # Truncate
-            self.truncate_table(spark, table)
-        elif next_operation <= 850:
-            # SQL Procedures or other statements specific for the lake
-            next_table_generator = LakeTableGenerator.get_next_generator(
-                table.lake_format
-            )
-            self.run_query(
-                spark, next_table_generator.generate_extra_statement(spark, table)
-            )
-        else:
-            # Alter statements
-            next_table_generator = LakeTableGenerator.get_next_generator(
-                table.lake_format
-            )
-            self.run_query(
-                spark, next_table_generator.generate_alter_table_statements(table)
-            )
+        try:
+            if next_operation <= 400:
+                # Insert
+                self.insert_random_data(spark, table)
+            elif next_operation <= 600:
+                # Update and delete
+                self.merge_into_table(spark, table)
+            elif next_operation <= 650:
+                # Delete
+                self.delete_table(spark, table)
+            elif next_operation <= 700:
+                # Truncate
+                self.truncate_table(spark, table)
+            elif next_operation <= 850:
+                # SQL Procedures or other statements specific for the lake
+                next_table_generator = LakeTableGenerator.get_next_generator(
+                    table.lake_format
+                )
+                self.run_query(
+                    spark, next_table_generator.generate_extra_statement(spark, table)
+                )
+            else:
+                # Alter statements
+                next_table_generator = LakeTableGenerator.get_next_generator(
+                    table.lake_format
+                )
+                self.run_query(
+                    spark, next_table_generator.generate_alter_table_statements(table)
+                )
+        except Exception as e:
+            # If an error happens, ignore it, but log it
+            traceback.print_exc()
+            self.logger.error(str(e))
         return True
