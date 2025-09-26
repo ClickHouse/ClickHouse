@@ -126,6 +126,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.comment = ast_comment.value.safeGet<String>();
         }
 
+        if (ast_col_decl.uuid)
+            command.uuid = ast_col_decl.uuid->as<ASTLiteral &>().value.safeGet<DB::UUID>();
+
         if (ast_col_decl.codec)
         {
             if (ast_col_decl.default_specifier == "ALIAS")
@@ -510,6 +513,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
 
         column.ttl = ttl;
+
+        column.uuid = uuid;
 
         if (context->getSettingsRef()[Setting::flatten_nested])
         {
