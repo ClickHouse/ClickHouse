@@ -1002,7 +1002,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         * static_cast<uint32_t>((this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t lambda_expr = 3 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
-    const uint32_t projection_expr = 150 * static_cast<uint32_t>(this->inside_projection);
+    const uint32_t projection_expr = 75 * static_cast<uint32_t>(this->inside_projection);
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr
         + lambda_expr + projection_expr;
