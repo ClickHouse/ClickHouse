@@ -40,86 +40,52 @@ SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('def', 3));
 
 SELECT '-- Check that the text index actually gets used (String)';
 
+DROP VIEW IF EXISTS explain_index_has;
+CREATE VIEW explain_index_has AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN has(arr_fixed, {filter:FixedString(3)})
+                ELSE has(arr, {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
 SELECT '-- -- value exists only in 1024 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr, 'abc')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='abc');
 
 SELECT '-- -- value exists only in 2048 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr, 'baz')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='baz');
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr, 'foo')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='foo');
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr, 'bar')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='bar');
 
 SELECT '-- -- value does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr, 'def')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='def');
 
 SELECT '-- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- value exists only in 1024 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('abc', 3))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('abc', 3));
 
 SELECT '-- -- value exists only in 2048 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('baz', 3));
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('foo', 3))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('foo', 3));
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('bar', 3))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('bar', 3));
 
 SELECT '-- -- value does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('def', 3))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('def', 3));
 
+DROP VIEW explain_index_has;
 DROP TABLE tab;

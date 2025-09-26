@@ -39,71 +39,46 @@ SELECT count() FROM tab WHERE mapContains(map_fixed, toFixedString('K3', 2));
 
 SELECT '-- -- Check that the text index actually gets used (String)';
 
+DROP VIEW IF EXISTS explain_index_mapContains;
+CREATE VIEW explain_index_mapContains AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN mapContains(map_fixed, {filter:FixedString(2)})
+                ELSE mapContains(map, {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map, 'K0')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map, 'K2')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map, 'K1')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map, 'K3')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map_fixed, toFixedString('K0', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map_fixed, toFixedString('K2', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map_fixed, toFixedString('K1', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE mapContains(map_fixed, toFixedString('K3', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K3', 2));
 
 SELECT '-- arrayElement(map, key) support';
 
@@ -123,71 +98,46 @@ SELECT count() FROM tab WHERE map_fixed[toFixedString('K3', 2)] = 'V3';
 
 SELECT '-- -- Check that the text index actually gets used (String)';
 
+DROP VIEW IF EXISTS explain_index_equals;
+CREATE VIEW explain_index_equals AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN map_fixed[{filter:FixedString(2)}] = {value:String}
+                ELSE map[{filter:String}] = {value:String}
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K0'] = 'V0'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K0', value='V3');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K2'] = 'V2'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K2', value='V3');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K1'] = 'V1'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K1', value='V3');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K3'] = 'V3'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed[toFixedString('K0', 2)] = 'V0'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K0', value='V3');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed[toFixedString('K2', 2)] = 'V2'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K2', value='V3');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed[toFixedString('K1', 2)] = 'V1'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K1', value='V3');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed[toFixedString('K3', 2)] = 'V3'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value='V3');
 
 SELECT '-- has support';
 
@@ -207,72 +157,46 @@ SELECT count() FROM tab WHERE has(map_fixed, toFixedString('K3', 2));
 
 SELECT '-- -- Check that the text index actually gets used (String)';
 
+DROP VIEW IF EXISTS explain_index_has;
+CREATE VIEW explain_index_has AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN has(map_fixed, {filter:FixedString(2)})
+                ELSE has(map, {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map, 'K0')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map, 'K2')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map, 'K1')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map, 'K3')
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map_fixed, toFixedString('K0', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map_fixed, toFixedString('K2', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map_fixed, toFixedString('K1', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE has(map_fixed, toFixedString('K3', 2))
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
-DROP TABLE tab;
+SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K3', 2));
 
 SELECT 'text index with mapValues';
 
@@ -311,69 +235,32 @@ SELECT count() FROM tab WHERE map_fixed['K3'] = toFixedString('V3', 2);
 SELECT '-- -- Check that the text index actually gets used (String)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K0'] = 'V0'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K2'] = 'V2'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K1'] = 'V1'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map['K3'] = 'V3'
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed['K0'] = toFixedString('V0', 2)
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed['K2'] = toFixedString('V2', 2)
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed['K1'] = toFixedString('V1', 2)
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE map_fixed['K3'] = toFixedString('V3', 2)
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V3', 2));
 
+DROP VIEW explain_index_mapContains;
+DROP VIEW explain_index_equals;
+DROP VIEW explain_index_has;
 DROP TABLE tab;
