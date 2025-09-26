@@ -129,7 +129,7 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
     }
 }
 
