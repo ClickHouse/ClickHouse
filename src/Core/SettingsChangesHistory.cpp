@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
+            {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},

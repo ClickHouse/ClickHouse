@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/parseGlobs.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
+    extern const SettingsUInt64 keeper_max_retries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -165,6 +167,7 @@ ObjectStorageQueueSource::FileIterator::next()
         return {};
     }
 
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     if (current_batch_processed)
     {
         file_metadatas.clear();
@@ -226,6 +229,8 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Requests requests;
                 size_t num_successful_objects = 0;
+                Strings processing_paths;
+                String processor_info;
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
@@ -237,6 +242,9 @@ ObjectStorageQueueSource::FileIterator::next()
                     {
                         result_indexes[i] = set_processing_result.value();
                         ++num_successful_objects;
+                        processing_paths.push_back(file_metadatas[i]->getProcessingPath());
+                        if (processor_info.empty())
+                            processor_info = file_metadatas[i]->getProcessorInfo();
                     }
                     else
                     {
@@ -246,8 +254,50 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-                auto code = zk_client->tryMulti(requests, responses);
+                Coordination::Error code;
+                bool is_retry = false;
+                zk_retries.retryLoop([&]
+                {
+                    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                    if (is_retry)
+                    {
+                        bool failed = false;
+                        bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
+                        if (is_multi_read_enabled)
+                        {
+                            auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
+                            {
+                                if (processing_paths_responses[i].data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            String data;
+                            for (const auto & path : processing_paths)
+                            {
+                                if (!zk_client->tryGet(path, data) || data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!failed)
+                        {
+                            LOG_TEST(log, "Operation succeeded");
+                            code = Coordination::Error::ZOK;
+                            return;
+                        }
+                    }
+                    code = zk_client->tryMulti(requests, responses);
+                }, [&] { is_retry = true; });
+
                 if (code == Coordination::Error::ZOK)
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
@@ -259,11 +309,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         if (!new_batch[i])
                             continue;
 
-                        const auto & response_indexes = result_indexes[i];
-                        const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
-                            *responses[response_indexes.set_processing_id_node_idx].get());
-
-                        file_metadatas[i]->finalizeProcessing(set_response.stat.version);
+                        file_metadatas[i]->afterSetProcessing(/* success */true);
                     }
                 }
                 else
@@ -541,20 +587,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
-                    if (current_bucket_holder->isZooKeeperSessionExpired())
-                    {
-                        LOG_TRACE(log, "ZooKeeper session expired, bucket no longer held");
-                        current_bucket_holder = {};
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Expected current processor {} to be equal to {} for bucket {}",
-                            current_processor,
-                            bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                            bucket);
-                    }
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected current processor {} to be equal to {} for bucket {}",
+                        current_processor,
+                        bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
+                        bucket);
                 }
 
                 if (current_bucket_holder)
@@ -588,24 +626,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// - once we write and commit files via commit() method.
                 current_bucket_holder->setFinished();
             }
-        }
-
-        if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
-        {
-            LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
-
-            for (auto & [bucket, bucket_info] : listed_keys_cache)
-            {
-                /// Reset current processor for the keys
-                /// to avoid the above error "Expected current processor {} to be equal to {} for bucket {}".
-                if (bucket_info.processor.has_value() && bucket_info.processor.value() == current_processor)
-                {
-                    LOG_DEBUG(log, "Resetting processor ({}) for bucket {}", current_processor, bucket);
-                    bucket_info.processor.reset();
-                }
-            }
-
-            current_bucket_holder = {};
         }
 
         /// If processing thread has already acquired some bucket
@@ -1271,9 +1291,24 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         object_storage->removeObjectsIfExist(successful_objects);
     }
 
-    auto zk_client = getContext()->getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
+
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    const auto & settings = getContext()->getSettingsRef();
+    Coordination::Error code;
+    size_t try_num = 0;
+    zk_retries.retryLoop([&]
+    {
+        ++try_num;
+        code = zk_client->tryMulti(requests, responses);
+    }, []{}, [&]
+    {
+        LOG_TRACE(
+            log, "Failed to commit processed files at try {}/{}",
+            try_num, toString(settings[Setting::keeper_max_retries].value));
+    });
+
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperMultiException(code, requests, responses);
 
