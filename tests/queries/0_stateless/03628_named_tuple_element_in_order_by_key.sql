@@ -14,18 +14,18 @@ SELECT * FROM test ORDER BY x;
 SELECT * FROM test ORDER BY x.a;
 SELECT * FROM test ORDER BY x.b;
 SELECT * FROM test WHERE x.a = 2;
-SELECT * FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1;
+SELECT * FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1, parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 SELECT x.a FROM test ORDER BY x;
 SELECT x.a FROM test ORDER BY x.a;
 SELECT x.a FROM test ORDER BY x.b;
 SELECT x.a FROM test WHERE x.a = 2;
-SELECT x.a FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1;
+SELECT x.a FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1, parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 SELECT x.b FROM test ORDER BY x;
 SELECT x.b FROM test ORDER BY x.a;
 SELECT x.b FROM test ORDER BY x.b;
 SELECT x.b FROM test WHERE x.a = 2;
-SELECT x.b FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1;
+SELECT x.b FROM test WHERE x.b = 'World' SETTINGS max_rows_to_read = 1, parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 DROP TABLE test;

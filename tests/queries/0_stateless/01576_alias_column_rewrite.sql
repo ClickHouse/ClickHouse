@@ -118,7 +118,8 @@ DROP TABLE IF EXISTS test_index;
 
 
 -- check alias column can be used to match projections
-drop table if exists p;
+drop table if exists pd;
+drop table if exists pl;
 create table pd (dt DateTime, i int, dt_m DateTime alias toStartOfMinute(dt)) engine Distributed(test_shard_localhost, currentDatabase(), 'pl');
 create table pl (dt DateTime, i int, projection p (select sum(i) group by toStartOfMinute(dt))) engine MergeTree order by dt;
 

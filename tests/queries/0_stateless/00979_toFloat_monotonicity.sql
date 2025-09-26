@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;
 DROP TABLE IF EXISTS test3;
 
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 CREATE TABLE test1 (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 1;
 CREATE TABLE test2 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
 CREATE TABLE test3 (d Decimal(4, 3)) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;

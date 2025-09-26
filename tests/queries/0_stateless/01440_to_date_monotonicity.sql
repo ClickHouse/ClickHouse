@@ -11,7 +11,7 @@ CREATE TABLE tdm2 (timestamp UInt32) ENGINE = MergeTree ORDER BY timestamp SETTI
 
 INSERT INTO tdm2 VALUES (toUnixTimestamp('2000-01-01 13:12:12')), (toUnixTimestamp('2000-01-01 14:12:12')), (toUnixTimestamp('2000-01-01 15:12:12'));
 
-SET max_rows_to_read = 1;
+SET max_rows_to_read = 1, parallel_replicas_index_analysis_only_on_coordinator = 0;
 SELECT toDateTime(timestamp) FROM tdm2 WHERE toHour(toDateTime(timestamp)) = 13;
 
 DROP TABLE tdm;
