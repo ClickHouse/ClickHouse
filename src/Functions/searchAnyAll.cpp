@@ -34,6 +34,7 @@ FunctionPtr FunctionSearchImpl<SearchTraits>::create(ContextPtr context)
 template <class SearchTraits>
 FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
     : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+    , token_default_extractor(std::make_unique<DefaultTokenExtractor>())
 {
 }
 
@@ -176,19 +177,59 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    if (token_extractor == nullptr || !needles.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' must be used with the index column, but got column '{}'",
-            getName(),
-            arguments[arg_input].name);
-
     auto col_input = arguments[arg_input].column;
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
+    FunctionSearchNeedles needles_tmp;
+
     col_result->getData().resize(input_rows_count);
-    if (needles->empty())
+
+    const ITokenExtractor * extractor_ptr = nullptr;
+    const FunctionSearchNeedles * needles_ptr = nullptr;
+
+    // If token_extractor is not set it means that we are using brute force instead of index
+    if (token_extractor == nullptr)
+    {
+        chassert(!needles.has_value());
+        extractor_ptr = token_default_extractor.get();
+        needles_ptr = &needles_tmp;
+
+        UInt64 counter = 0;
+
+        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+        {
+            // This is brute force execution over a column
+            for (const auto & needle : col_needles_const->getValue<Array>())
+                needles_tmp.emplace(needle.safeGet<String>(), counter++);
+        }
+        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
+        {
+            // This is what happens when called over a string instead of a column
+            const IColumn & needles_data = col_needles_vector->getData();
+            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
+
+            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+
+            for (size_t i = 0; i < needles_offsets[0]; ++i)
+                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), counter++);
+        }
+    }
+    else
+    {
+        if (!needles.has_value())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' must be used with the index column, but got column '{}'",
+                getName(),
+                arguments[arg_input].name);
+
+        extractor_ptr = token_extractor.get();
+        needles_ptr = &needles.value();
+    }
+
+
+    if (needles_ptr->empty())
     {
         /// No needles mean we don't filter and all rows pass
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -197,9 +238,9 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     else
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+            execute<SearchTraits>(extractor_ptr, *column_string, input_rows_count, *needles_ptr, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+            execute<SearchTraits>(extractor_ptr, *column_fixed_string, input_rows_count, *needles_ptr, col_result->getData());
     }
 
     return col_result;
