@@ -430,11 +430,12 @@ bool GlueCatalog::empty() const
 
 bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
-    String metadata_path;
+    String metadata_path, metadata_uri;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
         metadata_path = table_specific_properties->iceberg_metadata_file_location;
+        metadata_uri = metadata_path;
         if (metadata_path.starts_with("s3:/"))
             metadata_path = metadata_path.substr(5);
 
@@ -446,23 +447,20 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     else
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
-    if (!metadata_objects.get(metadata_path))
+    if (!metadata_objects.get(metadata_uri))
     {
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
 
-        auto table_endpoint = settings.storage_endpoint;
         if (args.empty())
-            args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
+            args.emplace_back(std::make_shared<DB::ASTLiteral>(metadata_uri));
         else
-            args[0] = std::make_shared<DB::ASTLiteral>(table_endpoint);
+            args[0] = std::make_shared<DB::ASTLiteral>(metadata_uri);
 
-        if (args.size() == 1 && table_metadata.hasStorageCredentials())
-        {
-            auto storage_credentials = table_metadata.getStorageCredentials();
-            if (storage_credentials)
-                storage_credentials->addCredentialsToEngineArgs(args);
-        }
+        if (table_metadata.hasStorageCredentials())
+            table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
+        else
+            DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
 
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
         storage_settings->loadFromSettingsChanges(settings.allChanged());
