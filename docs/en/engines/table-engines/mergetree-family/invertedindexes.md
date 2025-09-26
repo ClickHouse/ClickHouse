@@ -256,6 +256,115 @@ Example:
 ```sql
 SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
 ```
+### Examples for the text index `Array` and `Map` support.
+
+#### Indexing Array(String)
+
+In a simple blogging platform, authors assign keywords to their posts to categorize content.
+A common feature allows users to discover related content by clicking on keywords or searching for topics.
+
+Consider this table definition:
+
+```sql
+CREATE TABLE posts (
+    post_id UInt64,
+    title String,
+    content String,
+    keywords Array(String) COMMENT 'Author-defined keywords'
+)
+ENGINE = MergeTree;
+ORDER BY (id)
+```
+
+Without a text index, finding posts with a specific keyword (e.g. `clickhouse`) requires scanning all entries:
+
+```sql
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post 
+```
+
+As the platform grows, this becomes increasingly slow because the query must examine every keywords array in every row.
+
+To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
+
+```sql
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'default');
+```
+
+:::note
+Important: After adding the text index, you must rebuild it for existing data:
+
+```sql
+ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
+```
+:::
+
+#### Indexing Map
+
+In a logging system, server requests often store metadata in key-value pairs. Operations teams need to efficiently search through logs for debugging, security incidents, and monitoring.
+
+Consider this logs table:
+
+```sql
+CREATE TABLE logs (
+    id UInt64,
+    timestamp DateTime,
+    message String,
+    attributes Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+```
+
+Without a text index, searching through [Map](/sql-reference/data-types/map.md) data requires full table scans:
+
+1. Finds all logs with rate limiting:
+
+```sql
+SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
+```
+
+2. Finds all logs from a specific IP:
+
+```sql
+SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
+```
+
+As log volume grows, these queries become slow.
+
+The solution is creating a text index for the [Map](/sql-reference/data-types/map.md) keys and values.
+
+Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'no_op');
+```
+
+Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'no_op');
+```
+
+:::note
+Important: After adding the text index, you must rebuild it for existing data:
+
+```sql
+ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+```
+:::
+
+1. Find all rate-limited requests:
+
+```sql
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
+```
+
+2. Finds all logs from a specific IP:
+
+```sql
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
+```
 
 ## Implementation {#implementation}
 

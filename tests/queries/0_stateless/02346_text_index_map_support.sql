@@ -262,6 +262,51 @@ SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toF
 SELECT '-- -- -- key does not exist in granules';
 SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toFixedString('V3', 2));
 
+DROP VIEW IF EXISTS explain_index_has;
+CREATE VIEW explain_index_has AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN has(mapValues(map_fixed), {filter:FixedString(2)})
+                ELSE has(mapValues(map), {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- has support';
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'V2');
+
+SELECT '-- -- -- key exists only in both granules';
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'V3');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V2');
+
+SELECT '-- -- -- key exists only in both granules';
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V3');
+
 DROP VIEW explain_index_mapContains;
 DROP VIEW explain_index_equals;
 DROP VIEW explain_index_has;
