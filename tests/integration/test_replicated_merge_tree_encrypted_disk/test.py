@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node1"},
     with_zookeeper=True,
 )
@@ -19,7 +19,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node2"},
     with_zookeeper=True,
 )
