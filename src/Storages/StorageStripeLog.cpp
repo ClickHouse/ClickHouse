@@ -38,7 +38,9 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <base/insertAtEnd.h>
 
@@ -445,13 +447,17 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    indices.clear();
+    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
+    auto clear_tx = disk->createTransaction();
+    clear_tx->removeFileIfExists(data_file_path);
+    clear_tx->removeFileIfExists(index_file_path);
+    clear_tx->removeFileIfExists(file_checker.getPath());
+    clear_tx->commit();
+
     file_checker.setEmpty(data_file_path);
     file_checker.setEmpty(index_file_path);
 
-    file_checker.save();
-    file_checker.repair();
-
+    indices.clear();
     indices_loaded = true;
     num_indices_saved = 0;
     total_rows = 0;
