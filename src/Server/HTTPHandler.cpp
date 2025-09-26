@@ -39,6 +39,7 @@
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
@@ -587,6 +588,19 @@ void HTTPHandler::processQuery(
         used_output.finalize();
     };
 
+    /// Create callback to defer HTTP 100 Continue response to after quota checks
+    HTTPContinueCallback http_continue_callback = {};
+    if (shouldDeferHTTP100Continue(request))
+    {
+        http_continue_callback = [&request, &response]()
+        {
+            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            {
+                response.sendContinue();
+            }
+        };
+    }
+
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
@@ -596,7 +610,8 @@ void HTTPHandler::processQuery(
         QueryFlags{},
         {},
         handle_exception_in_output_format,
-        query_finish_callback);
+        query_finish_callback,
+        http_continue_callback);
 }
 
 bool HTTPHandler::trySendExceptionToClient(

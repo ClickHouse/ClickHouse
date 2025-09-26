@@ -7,6 +7,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
+#include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -14,7 +15,6 @@
 #include <Core/Settings.h>
 
 #include <numeric>
-#include <shared_mutex>
 #include <fmt/format.h>
 
 
@@ -623,7 +623,7 @@ public:
     std::mutex extra_block_mutex;
     std::list<JoinResultPtr> not_processed_results TSA_GUARDED_BY(extra_block_mutex);
 
-    std::shared_mutex eof_mutex;
+    SharedMutex eof_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()

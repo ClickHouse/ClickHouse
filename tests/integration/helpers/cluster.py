@@ -652,6 +652,9 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
+        # Make it cleaner
+        self.minio_access_key = minio_access_key
+        self.minio_secret_key = minio_secret_key
 
         self.spark_session = None
         self.with_iceberg_catalog = False
@@ -1830,7 +1833,7 @@ class ClickHouseCluster:
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
-        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in DEBUG and ASAN build (i.e. if not explicitly set to false)
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
         with_remote_database_disk=None,
         with_azurite=False,
         with_cassandra=False,
@@ -1910,7 +1913,18 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            # Not enabled in public
+            # FIXME: https://github.com/ClickHouse/ClickHouse/issues/87656
+            #
+            # if ClickHouseInstance.is_local_server_asan_build == None:
+            #     build_opts = subprocess.check_output(
+            #         f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
+            #         stderr=subprocess.STDOUT,
+            #         shell=True,
+            #     ).decode()
+            #     ClickHouseInstance.is_local_server_asan_build = (
+            #         "-fsanitize=address" in build_opts
+            #     )
+            # with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
             with_remote_database_disk = False
 
         if with_remote_database_disk:
@@ -3962,6 +3976,7 @@ services:
 
 
 class ClickHouseInstance:
+    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
@@ -4164,7 +4179,7 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
+        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4698,6 +4713,12 @@ class ClickHouseInstance:
     def rotate_logs(self):
         self.exec_in_container(
             ["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"],
+            user="root",
+        )
+
+    def give_user_files_permissions(self):
+        self.exec_in_container(
+            ["bash", "-c", f"chown -R {str(os.getuid())}:{str(os.getgid())} /var/lib/clickhouse/user_files"],
             user="root",
         )
 
