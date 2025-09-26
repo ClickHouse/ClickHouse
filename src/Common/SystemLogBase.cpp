@@ -16,6 +16,7 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -128,7 +129,7 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
     }
 }
 

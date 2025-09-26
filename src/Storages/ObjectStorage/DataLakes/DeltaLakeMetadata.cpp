@@ -19,7 +19,9 @@
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -244,6 +246,7 @@ struct DeltaLakeMetadataImpl
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
+        String sum_json;
         while (!buf->eof())
         {
             /// May be some invalid characters before json.
@@ -259,6 +262,7 @@ struct DeltaLakeMetadataImpl
             if (json_str.empty())
                 continue;
 
+            sum_json += json_str;
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
@@ -299,7 +303,6 @@ struct DeltaLakeMetadataImpl
                                     file_schema.toString(), current_schema.toString());
                 }
             }
-
             auto configuration_ptr = configuration.lock();
             const auto read_path_string = configuration_ptr->getPathForRead().path;
 
@@ -358,6 +361,8 @@ struct DeltaLakeMetadataImpl
                 result.erase(fs::path(read_path_string) / path);
             }
         }
+        auto configuration_ptr = configuration.lock();
+        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path);
     }
 
     NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const

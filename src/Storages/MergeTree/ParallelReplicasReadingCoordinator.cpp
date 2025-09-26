@@ -174,17 +174,22 @@ public:
 
     Stats stats;
     const size_t replicas_count{0};
+    const CoordinationMode mode;
     size_t unavailable_replicas_count{0};
     size_t received_initial_requests{0};
     ProgressCallback progress_callback;
 
-    explicit ImplInterface(size_t replicas_count_)
+    ImplInterface(size_t replicas_count_, CoordinationMode mode_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
+        , mode(mode_)
     {
     }
 
     virtual ~ImplInterface() = default;
+    ImplInterface(const ImplInterface &) = delete;
+
+    CoordinationMode getCoordinationMode() const { return mode; }
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
@@ -222,8 +227,8 @@ using PartRefs = std::deque<Parts::iterator>;
 class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    explicit DefaultCoordinator(size_t replicas_count_)
-        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
+    DefaultCoordinator(size_t replicas_count_, CoordinationMode mode_)
+        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
         , replica_status(replicas_count_)
         , distribution_by_hash_queue(replicas_count_)
     {
@@ -887,12 +892,11 @@ bool DefaultCoordinator::isReadingCompleted() const
 }
 
 
-template <CoordinationMode mode>
 class InOrderCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    explicit InOrderCoordinator([[ maybe_unused ]] size_t replicas_count_)
-        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
+    InOrderCoordinator([[maybe_unused]] size_t replicas_count_, CoordinationMode mode_)
+        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
     {}
     ~InOrderCoordinator() override
     {
@@ -910,8 +914,7 @@ public:
     LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
-template <CoordinationMode mode>
-void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
+void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     if (stats[replica_number].is_unavailable == false)
     {
@@ -922,8 +925,7 @@ void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
     }
 }
 
-template <CoordinationMode mode>
-void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
 
@@ -1006,14 +1008,8 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
     }
 }
 
-template <CoordinationMode mode>
-ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
+ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest request)
 {
-    if (request.mode != mode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Replica {} decided to read in {} mode, not in {}. This is a bug",
-            request.replica_num, magic_enum::enum_name(request.mode), magic_enum::enum_name(mode));
-
     LOG_TRACE(log, "Got read request: {}", request.describe());
 
     ParallelReadResponse response;
@@ -1046,7 +1042,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         size_t current_mark_size = 0;
 
         /// Now we can recommend to read more intervals
-        if constexpr (mode == CoordinationMode::ReverseOrder)
+        if (mode == CoordinationMode::ReverseOrder)
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
@@ -1068,7 +1064,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
                 global_part_it->description.ranges.pop_back();
             }
         }
-        else if constexpr (mode == CoordinationMode::WithOrder)
+        else if (mode == CoordinationMode::WithOrder)
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
@@ -1153,6 +1149,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         if (!pimpl)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
 
+        if (request.mode != pimpl->getCoordinationMode())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Replica {} decided to read in {} mode, not in {}. This is a bug",
+                request.replica_num,
+                magic_enum::enum_name(request.mode),
+                magic_enum::enum_name(pimpl->getCoordinationMode()));
+
         const auto replica_num = request.replica_num;
         response = pimpl->handleRequest(std::move(request));
         if (!response.finish)
@@ -1225,13 +1229,13 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
     switch (mode)
     {
         case CoordinationMode::Default:
-            pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
+            pimpl = std::make_unique<DefaultCoordinator>(replicas_count, mode);
             break;
         case CoordinationMode::WithOrder:
-            pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
+            pimpl = std::make_unique<InOrderCoordinator>(replicas_count, mode);
             break;
         case CoordinationMode::ReverseOrder:
-            pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
+            pimpl = std::make_unique<InOrderCoordinator>(replicas_count, mode);
             break;
     }
 
