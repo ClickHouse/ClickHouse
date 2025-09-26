@@ -119,7 +119,7 @@ def main():
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
 
         os.environ["CH_HOSTNAME"] = (
-            "https://f03ri840q4.us-east-1.aws.clickhouse.cloud"
+            "https://build-cache.us-east-1.aws.clickhouse.cloud"
         )
         os.environ["CH_USER"] = "ci_builder"
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
