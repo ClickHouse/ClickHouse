@@ -140,9 +140,7 @@
 03325_sqlite_join_wrong_answer
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
-02023_transform_or_to_in
 03174_exact_rows_before_aggregation
-00066_sorting_distributed_many_replicas
 
     https://github.com/ClickHouse/clickhouse-private/issues/19792
 01622_constraints_simple_optimization

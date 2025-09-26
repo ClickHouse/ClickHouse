@@ -197,7 +197,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
@@ -231,11 +231,13 @@ IcebergIterator::IcebergIterator(
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
     IDataLakeMetadata::FileProgressCallback callback_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , table_state_snapshot(table_snapshot_)
+    , persistent_components(persistent_components_)
     , data_files_iterator(
           object_storage,
           local_context_,
@@ -332,6 +334,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
+        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
+
         return object_info;
     }
     {
@@ -343,6 +347,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
         }
     }
+
     return nullptr;
 }
 
