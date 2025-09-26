@@ -938,7 +938,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
     {"query_plan_max_step_description_length",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-    {"query_plan_use_new_logical_join_step", trueOrFalseSetting},
+    {"query_plan_use_logical_join_step", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_through_distributed_cache", trueOrFalseSetting},
