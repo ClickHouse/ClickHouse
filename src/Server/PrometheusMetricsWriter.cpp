@@ -73,7 +73,7 @@ constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
 constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
 constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
 constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
-constexpr auto histogram_prefix = "ClickHouseHistograms_";
+constexpr auto histogram_prefix = "ClickHouseHistogramMetrics_";
 constexpr auto dimensional_metrics_prefix = "ClickHouseDimensionalMetrics_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
