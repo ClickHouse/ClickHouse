@@ -826,6 +826,23 @@ public:
         if (auto column_expression = getColumnNodeAliasExpression(node))
             node = column_expression;
     }
+
+    static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & /*child*/)
+    {
+
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return true;
+        /// Skip JOIN USING section because it can only contain columns, not expressions.
+        /// Column expressions typically come from projections when 'analyzer_compatibility_join_using_top_level_identifier' is enabled.
+        /// Such queries will resolve properly on remote nodes.
+        /// Joining using aliased columns defined in Distributed table definitions is not supported.
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN)
+            return false;
+
+        return true;
+    }
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
