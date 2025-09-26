@@ -16,10 +16,10 @@ namespace DB
 
 void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, WriteBuffer & out)
 {
-    writeIntBinary(DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION, out);
+    writeVarInt(DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION, out);
     if (std::holds_alternative<Iceberg::TableStateSnapshot>(state))
     {
-        writeIntBinary(ICEBERG_TABLE_STATE_SNAPSHOT, out);
+        writeVarInt(ICEBERG_TABLE_STATE_SNAPSHOT, out);
         std::get<Iceberg::TableStateSnapshot>(state).serialize(out);
     }
     else
@@ -31,7 +31,7 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
 DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in)
 {
     int protocol_version;
-    readIntBinary(protocol_version, in);
+    readVarInt(protocol_version, in);
     if (protocol_version > DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION || protocol_version <= 0)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -41,18 +41,15 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
     if (protocol_version == 1)
     {
         int type;
-        readIntBinary(type, in);
-        DataLakeTableStateSnapshot state;
+        readVarInt(type, in);
         if (type == ICEBERG_TABLE_STATE_SNAPSHOT)
         {
-            Iceberg::TableStateSnapshot iceberg_state = Iceberg::TableStateSnapshot::deserialize(in, protocol_version);
-            state = iceberg_state;
+            return Iceberg::TableStateSnapshot::deserialize(in, protocol_version);
         }
         else
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization for this DataLakeTableStateSnapshot type is not implemented");
         }
-        return state;
     }
     UNREACHABLE();
 }

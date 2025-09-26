@@ -6,22 +6,22 @@
 
 using namespace DB;
 
-namespace {
-    std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
-        Iceberg::TableStateSnapshot{
-            .metadata_file_path = "abacaba",
-            .metadata_version = std::numeric_limits<Int32>::min(),
-            .schema_id = std::numeric_limits<Int32>::max(),
-            .snapshot_id = std::optional{std::numeric_limits<Int64>::max()},
-        },
-        Iceberg::TableStateSnapshot{
-            .metadata_file_path = "",
-            .metadata_version = 0,
-            .schema_id = std::numeric_limits<Int32>::max(),
-            .snapshot_id = std::nullopt,
-        },
-
-    };
+namespace
+{
+std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
+    Iceberg::TableStateSnapshot{
+        .metadata_file_path = "abacaba",
+        .metadata_version = std::numeric_limits<Int32>::min(),
+        .schema_id = std::numeric_limits<Int32>::max(),
+        .snapshot_id = std::optional{std::numeric_limits<Int64>::max()},
+    },
+    Iceberg::TableStateSnapshot{
+        .metadata_file_path = "",
+        .metadata_version = 0,
+        .schema_id = std::numeric_limits<Int32>::max(),
+        .snapshot_id = std::nullopt,
+    },
+};
 }
 
 TEST(DatalakeStateSerde, IcebergStateSerde)
