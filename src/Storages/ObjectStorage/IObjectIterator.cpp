@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -99,9 +100,13 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
     if (!last_object_info)
         return {};
 
-    auto buffer = object_storage->readObject(StoredObject(last_object_info->getPath()), getReadSettings());
+    auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), getLogger("GlobIterator"));
     auto input_format = FormatFactory::instance().getInput(
-        configuration->format, *buffer, {}, getContext(), DBMS_DEFAULT_BUFFER_SIZE);
+        last_object_info->getFileFormat().value_or(configuration->format),
+        *buffer,
+        {},
+        getContext(),
+        DBMS_DEFAULT_BUFFER_SIZE);
 
     auto bucket_sizes = input_format->getChunksByteSizes();
     if (bucket_sizes)
