@@ -400,10 +400,62 @@ public:
 
 REGISTER_FUNCTION(Map)
 {
-    factory.registerFunction<FunctionMap>();
-    factory.registerFunction<FunctionMapUpdate>();
-    factory.registerFunction<FunctionMapFromArrays>();
+    /// map function documentation
+    FunctionDocumentation::Description description_map = R"(
+Creates a value of type `Map(key, value)` from key-value pairs.
+)";
+    FunctionDocumentation::Syntax syntax_map = "map(key1, value1[, key2, value2, ...])";
+    FunctionDocumentation::Arguments arguments_map = {
+        {"key_n", "The keys of the map entries.", {"Any"}},
+        {"value_n", "The values of the map entries.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_map = {"Returns a map containing key:value pairs.", {"Map(Any, Any)"}};
+    FunctionDocumentation::Examples examples_map = {
+        {"Usage example", "SELECT map('key1', number, 'key2', number * 2) FROM numbers(3)", "{'key1':0,'key2':0}\n{'key1':1,'key2':2}\n{'key1':2,'key2':4}"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_map = {21, 1};
+    FunctionDocumentation::Category category_map = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, returned_value_map, examples_map, introduced_in_map, category_map};
+    factory.registerFunction<FunctionMap>(documentation_map);
+
+    /// mapFromArrays function documentation
+    FunctionDocumentation::Description description_mapFromArrays = R"(
+Creates a map from an array or map of keys and an array or map of values.
+The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, value_type)')`.
+)";
+    FunctionDocumentation::Syntax syntax_mapFromArrays = "mapFromArrays(keys, values)";
+    FunctionDocumentation::Arguments arguments_mapFromArrays = {
+        {"keys", "Array or map of keys to create the map from.", {"Array", "Map"}},
+        {"values", "Array or map of values to create the map from.", {"Array", "Map"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapFromArrays = {"Returns a map with keys and values constructed from the key array and value array/map.", {"Map"}};
+    FunctionDocumentation::Examples examples_mapFromArrays = {
+        {"Basic usage", "SELECT mapFromArrays(['a', 'b', 'c'], [1, 2, 3])", "{'a':1,'b':2,'c':3}"},
+        {"With map inputs", "SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))", "{1:('a', 1), 2:('b', 2), 3:('c', 3)}"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapFromArrays = {23, 3};
+    FunctionDocumentation::Category category_mapFromArrays = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
+    factory.registerFunction<FunctionMapFromArrays>(documentation_mapFromArrays);
     factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
+
+    /// mapUpdate function documentation
+    FunctionDocumentation::Description description_mapUpdate = R"(
+For two maps, returns the first map with values updated on the values for the corresponding keys in the second map.
+)";
+    FunctionDocumentation::Syntax syntax_mapUpdate = "mapUpdate(map1, map2)";
+    FunctionDocumentation::Arguments arguments_mapUpdate = {
+        {"map1", "The map to update.", {"Map(K, V)"}},
+        {"map2", "The map to use for updating.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapUpdate = {"Returns `map1` with values updated from values for the corresponding keys in `map2`.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapUpdate = {
+        {"Basic usage", "SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))", "{'key3':0,'key1':10,'key2':10}"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapUpdate = {22, 3};
+    FunctionDocumentation::Category category_mapUpdate = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
+    factory.registerFunction<FunctionMapUpdate>(documentation_mapUpdate);
 }
 
 }

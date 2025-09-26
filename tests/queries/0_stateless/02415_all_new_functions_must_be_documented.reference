@@ -42,12 +42,6 @@ inIgnoreSet
 like
 lowCardinalityIndices
 lowCardinalityKeys
-map
-mapAdd
-mapFromArrays
-mapPopulateSeries
-mapSubtract
-mapUpdate
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy

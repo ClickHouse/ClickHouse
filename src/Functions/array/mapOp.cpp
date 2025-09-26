@@ -450,8 +450,41 @@ private:
 
 REGISTER_FUNCTION(MapOp)
 {
-    factory.registerFunction<FunctionMapOp<OpTypes::ADD>>();
-    factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>();
+    /// mapAdd function documentation
+    FunctionDocumentation::Description description_mapAdd = R"(
+Collect all the keys and sum corresponding values.
+)";
+    FunctionDocumentation::Syntax syntax_mapAdd = "mapAdd(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments_mapAdd = {
+        {"arg1[, arg2, ...]", "Maps or tuples of two arrays in which items in the first array represent keys, and the second array contains values for each key.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapAdd = {"Returns a map or returns a tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples examples_mapAdd = {
+        {"With Map type", "SELECT mapAdd(map(1, 1), map(1, 1))", "{1:2}"},
+        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1, 2], [2, 2])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
+    FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
+    factory.registerFunction<FunctionMapOp<OpTypes::ADD>>(documentation_mapAdd);
+
+    /// mapSubtract function documentation
+    FunctionDocumentation::Description description_mapSubtract = R"(
+Collect all the keys and subtract corresponding values.
+)";
+    FunctionDocumentation::Syntax syntax_mapSubtract = "mapSubtract(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments_mapSubtract = {
+        {"arg1[, arg2, ...]", "Maps or tuples of two arrays in which items in the first array represent keys, and the second array contains values for each key.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapSubtract = {"Returns one map or tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples examples_mapSubtract = {
+        {"With Map type", "SELECT mapSubtract(map(1, 1), map(1, 1))", "{1:0}"},
+        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1, 2], [-1, 0])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
+    FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
+    factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>(documentation_mapSubtract);
 }
 
 }
