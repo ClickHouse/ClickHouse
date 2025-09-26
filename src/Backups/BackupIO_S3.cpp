@@ -187,6 +187,17 @@ namespace
 }
 
 
+std::shared_ptr<S3::Client> S3StorageBackupClientFactory::getOrCreate(DiskPtr disk, S3StorageBackupClientCretor creator)
+{
+    std::lock_guard lock(clients_mutex);
+
+    auto [it, inserted] = clients.try_emplace(disk->getName(), nullptr);
+    if (inserted)
+        it->second = creator(disk);
+
+    return it->second;
+}
+
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
@@ -317,6 +328,21 @@ BackupWriterS3::BackupWriterS3(
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
 
+    storage_client_creator = [context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
+    {
+        auto disk_client = disk->getS3StorageClient();
+        const Settings & local_settings = context->getSettingsRef();
+        auto config = disk_client->getClientConfiguration();
+        config.retry_strategy = S3::PocoHTTPClientConfiguration::RetryStrategy{
+            .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
+            .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
+            .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
+
+        config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::s3_slow_all_threads_after_retryable_error];
+        return disk_client->clone(config);
+    };
+
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -338,9 +364,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
-            /// Use backup client instead of storage client because of backup-specific settings.
+            /// Use storage client with overridden retry strategy settings.
+            auto src_client = storage_client_factory.getOrCreate(src_disk, storage_client_creator);
             copyS3File(
-                client,
+                src_client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,

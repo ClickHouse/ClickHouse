@@ -130,6 +130,8 @@ public:
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
             const ClientSettings & client_settings);
 
+    std::unique_ptr<Client> clone(const PocoHTTPClientConfiguration & client_configuration_override) const;
+
     std::unique_ptr<Client> clone() const;
 
     Client & operator=(const Client &) = delete;
