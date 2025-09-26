@@ -346,6 +346,12 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
+    void truncate(ContextPtr local_context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & table_id_) override
+    {
+        assertInitialized();
+        current_metadata->truncate(local_context, catalog, table_id_);
+    }
+
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
     {
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
