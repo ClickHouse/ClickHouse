@@ -454,10 +454,10 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     clear_tx->removeFileIfExists(file_checker.getPath());
     clear_tx->commit();
 
+    indices.clear();
     file_checker.setEmpty(data_file_path);
     file_checker.setEmpty(index_file_path);
 
-    indices.clear();
     indices_loaded = true;
     num_indices_saved = 0;
     total_rows = 0;

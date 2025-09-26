@@ -870,7 +870,10 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     clear_tx->commit();
 
     for (auto & data_file : data_files)
+    {
+        data_file.marks.clear();
         file_checker.setEmpty(data_file.path);
+    }
 
     if (use_marks_file)
         file_checker.setEmpty(marks_file_path);
