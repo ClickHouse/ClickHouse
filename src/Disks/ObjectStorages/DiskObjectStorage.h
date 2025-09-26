@@ -43,7 +43,7 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return true; }
+    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 

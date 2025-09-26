@@ -2558,8 +2558,8 @@ KeyCondition::Description KeyCondition::getDescription() const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::getDescription");
 
-    std::vector<String> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
+    std::vector<String> key_names(num_key_columns);
+    std::vector<bool> is_key_used(num_key_columns, false);
 
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
