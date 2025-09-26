@@ -36,7 +36,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/WriteBuffer.h>
-#include <Client/ClientBaseOptimizedParts.h>
+#include <Client/ClientApplicationBaseParser.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
