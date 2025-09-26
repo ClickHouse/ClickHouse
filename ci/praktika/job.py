@@ -183,6 +183,11 @@ class Job:
             res.allow_merge_on_failure = value
             return res
 
+        def set_post_hooks(self, post_hooks):
+            res = copy.deepcopy(self)
+            res.post_hooks = post_hooks
+            return res
+
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:

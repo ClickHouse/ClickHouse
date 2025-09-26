@@ -266,6 +266,7 @@ CREATE TABLE system.errors
     `value` UInt64,
     `last_error_time` DateTime,
     `last_error_message` String,
+    `last_error_format_string` String,
     `last_error_trace` Array(UInt64),
     `remote` UInt8,
     `query_id` String
@@ -310,6 +311,7 @@ CREATE TABLE system.functions
     `description` String,
     `syntax` String,
     `arguments` String,
+    `parameters` String,
     `returned_value` String,
     `examples` String,
     `introduced_in` String,
@@ -606,6 +608,7 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_compressed_bytes` Array(UInt64),
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
+    `statistics` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
@@ -1155,6 +1158,7 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
+    `definer` String,
     `table` String ALIAS name
 )
 ENGINE = SystemTables
@@ -1179,7 +1183,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11)),
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12)),
     `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),

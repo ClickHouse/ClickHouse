@@ -71,8 +71,16 @@ namespace
                 }
                 case 2:
                 {
-                    res.database = full_name[0];
-                    res.table = full_name[1];
+                    if (access_flags.isGlobalWithParameter())
+                    {
+                        res.parameter = full_name[0];
+                        res.filter = full_name[1];
+                    }
+                    else
+                    {
+                        res.database = full_name[0];
+                        res.table = full_name[1];
+                    }
                     break;
                 }
                 case 3:
@@ -231,7 +239,7 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         chassert(false);
@@ -638,6 +646,16 @@ public:
             for (auto & child : *children)
                 child.dumpTree(buffer, title, depth + 1);
         }
+    }
+
+    std::vector<Filter> getFilters(std::string_view parameter)
+    {
+        std::vector<Filter> res;
+        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        for (auto it = node.begin(); it != node.end(); ++it)
+            res.emplace_back(it->flags, it.getPath());
+
+        return res;
     }
 
 private:
@@ -1267,6 +1285,8 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
     {
         if (element.anyParameter())
             grantImpl<with_grant_option, wildcard>(element.access_flags);
+        else if (element.hasFilter())
+            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
         else
             grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
     }
@@ -1637,6 +1657,15 @@ void AccessRights::makeDifference(const AccessRights & other)
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+std::vector<AccessRights::Filter> AccessRights::getFilters(std::string_view parameter) const
+{
+    if (root)
+        return root->getFilters(parameter);
+
+    return {};
 }
 
 

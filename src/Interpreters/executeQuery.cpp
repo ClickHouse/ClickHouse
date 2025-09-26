@@ -42,6 +42,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -96,6 +97,9 @@ namespace ProfileEvents
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
+    extern const Event FailedInternalQuery;
+    extern const Event FailedInternalInsertQuery;
+    extern const Event FailedInternalSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -172,6 +176,10 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsString promql_database;
+    extern const SettingsString promql_table;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ServerSetting
@@ -593,7 +601,8 @@ void logQueryFinishImpl(
     if (process_list_elem)
     {
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
+        if (!query_pipeline.getProcessors().empty())
+            logProcessorProfile(context, query_pipeline.getProcessors());
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
 
@@ -715,6 +724,15 @@ void logQueryException(
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
 
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (query_ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
+
     QueryStatusInfoPtr info;
     if (process_list_elem)
     {
@@ -757,7 +775,7 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_millliseconds)
+    UInt64 elapsed_milliseconds)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -777,7 +795,7 @@ void logExceptionBeforeStart(
     elem.event_time_microseconds = timeInMicroseconds(query_end_time);
     elem.query_start_time = client_info.initial_query_start_time;
     elem.query_start_time_microseconds = client_info.initial_query_start_time_microseconds;
-    elem.query_duration_ms = elapsed_millliseconds;
+    elem.query_duration_ms = elapsed_milliseconds;
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
@@ -892,6 +910,14 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
     bool top_level = context_value;
 
+    auto field_to_bool = [](const Field & f) -> bool
+    {
+        if (f.getType() == Field::Types::String)
+            return stringToBool(f.safeGet<String>());
+        else
+            return f.safeGet<bool>();
+    };
+
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -902,13 +928,13 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
         {
             if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
             {
-                if (top_level != value->safeGet<bool>())
+                if (top_level != field_to_bool(*value))
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
 
             if (auto * value = set_query->changes.tryGet("enable_analyzer"))
             {
-                if (top_level != value->safeGet<bool>())
+                if (top_level != field_to_bool(*value))
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
         }
@@ -981,7 +1007,8 @@ static BlockIO executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
-    ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
+    ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
+    HTTPContinueCallback http_continue_callback = {})
 {
     const bool internal = flags.internal;
 
@@ -1053,6 +1080,13 @@ static BlockIO executeQueryImpl(
             if (!settings[Setting::allow_experimental_prql_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::promql && !internal)
+        {
+            if (!settings[Setting::allow_experimental_time_series_table])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
@@ -1387,6 +1421,10 @@ static BlockIO executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
+            /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
+            if (http_continue_callback && !internal)
+                http_continue_callback();
+
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1527,6 +1565,10 @@ static BlockIO executeQueryImpl(
                         quota->checkExceeded(QuotaType::ERRORS);
                     }
                 }
+
+                /// Invoke HTTP 100-Continue callback after quota checks are completed
+                if (http_continue_callback && !internal)
+                    http_continue_callback();
 
                 if (interpreter)
                 {
@@ -1790,11 +1832,12 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    HTTPContinueCallback http_continue_callback)
 {
     executeQuery(
         wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
 }
 
 void executeQuery(
@@ -1806,7 +1849,8 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    HTTPContinueCallback http_continue_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1830,9 +1874,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size)
+    if (istr->available() > max_query_size || http_continue_callback)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
+        /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
+        /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
+        /// in the buffer already because it should have been extracted from the query parameter.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -1925,7 +1972,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
     }
     catch (...)
     {

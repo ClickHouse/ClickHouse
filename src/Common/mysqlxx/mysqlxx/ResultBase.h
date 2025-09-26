@@ -9,11 +9,11 @@ class Connection;
 class Query;
 
 
-/** Базовый класс для UseQueryResult.
-  * Содержит общую часть реализации,
-  * Ссылается на Connection. Если уничтожить Connection, то пользоваться ResultBase и любым результатом нельзя.
-  * Использовать объект можно только для результата одного запроса!
-  * (При попытке присвоить объекту результат следующего запроса - UB.)
+/** Base class for UseQueryResult.
+  * Contains the common part of the implementation,
+  * References Connection. If Connection is destroyed, then ResultBase and any result cannot be used.
+  * The object can only be used for the result of one query!
+  * (Attempting to assign the result of the next query to the object is UB.)
   */
 class ResultBase
 {

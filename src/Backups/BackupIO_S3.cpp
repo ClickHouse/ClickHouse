@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -29,12 +30,19 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 backup_restore_s3_retry_attempts;
+    extern const SettingsUInt64 backup_restore_s3_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
+    extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
-    extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
+    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 s3_max_redirects;
 }
 
 namespace S3AuthSetting
@@ -91,6 +99,7 @@ namespace
         }
 
         const auto & request_settings = settings.request_settings;
+        const auto & server_settings = context->getGlobalContext()->getServerSettings();
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
@@ -100,13 +109,19 @@ namespace
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
         }
 
+
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings[S3AuthSetting::region],
             context->getRemoteHostFilter(),
-            static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
-            static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            static_cast<unsigned>(server_settings[ServerSetting::s3_max_redirects]),
+            S3::PocoHTTPClientConfiguration::RetryStrategy{
+                .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+                .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
+                .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
+                .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
+
             local_settings[Setting::s3_slow_all_threads_after_network_error],
-            local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
+            local_settings[Setting::s3_slow_all_threads_after_retryable_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,

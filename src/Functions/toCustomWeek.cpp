@@ -19,7 +19,7 @@ REGISTER_FUNCTION(ToCustomWeek)
 This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts
 on Sunday or Monday and whether the return value should be in the range from `0` to `53` or from `1` to `53`.
 
-[`toISOWeek()`](#toisoweek) is a compatibility function that is equivalent to `toWeek(date,3)`.
+[`toISOWeek()`](#toWeek) is a compatibility function that is equivalent to `toWeek(date,3)`.
 
 The following table describes how the mode argument works.
 

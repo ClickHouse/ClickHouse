@@ -5,6 +5,7 @@ sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
 title: 'Iceberg Table Engine'
+doc_type: 'reference'
 ---
 
 # Iceberg table engine {#iceberg-table-engine}
@@ -91,6 +92,14 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Processing of tables with deleted rows {#deleted-rows}
+
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
 ### Basic usage {#basic-usage}
  ```sql
  SELECT * FROM example_table ORDER BY 1 
@@ -153,8 +162,6 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
-
-
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -211,8 +218,6 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
-
-
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+

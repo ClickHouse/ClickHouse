@@ -2,9 +2,10 @@
 
 -- Test for setting 'vector_search_with_rescoring' with filters.
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -83,7 +84,7 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
-         vector_search_postfilter_multiplier = 3;
+         vector_search_index_fetch_multiplier = 3;
 
 SELECT 'Check that explicit PREWHERE disables the optimization';
 -- Expect no _distance column in result

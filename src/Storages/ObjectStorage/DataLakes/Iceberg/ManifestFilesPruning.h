@@ -11,8 +11,15 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 
-namespace Iceberg
+namespace DB::Iceberg
 {
+
+enum class PruningReturnStatus
+{
+    NOT_PRUNED,
+    PARTITION_PRUNED,
+    MIN_MAX_INDEX_PRUNED
+};
 
 struct ManifestFileEntry;
 class ManifestFileContent;
@@ -23,7 +30,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 class ManifestFilesPruner
 {
 private:
-    const DB::IcebergSchemaProcessor & schema_processor;
+    const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key;
@@ -37,15 +44,14 @@ private:
 
 public:
     ManifestFilesPruner(
-        const DB::IcebergSchemaProcessor & schema_processor_,
+        const IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    bool canBePruned(const ManifestFileEntry & entry) const;
-
+    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
 };
 
 }

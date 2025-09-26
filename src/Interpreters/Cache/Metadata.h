@@ -8,10 +8,10 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 
 #include <memory>
-#include <shared_mutex>
 
 namespace DB
 {
@@ -41,9 +41,11 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool isEvictingOrRemoved(const LockedKey & lock) const
     {
+        if (removed)
+            return true;
         auto iterator = getQueueIterator();
-        if (!iterator || removed)
-            return false;
+        if (!iterator)
+            return false; /// Iterator is set only on first space reservation attempt.
         return iterator->getEntry()->isEvicting(lock);
     }
 
@@ -219,7 +221,7 @@ private:
     const bool write_cache_per_user_directory;
 
     LoggerPtr log;
-    mutable std::shared_mutex key_prefix_directory_mutex;
+    mutable SharedMutex key_prefix_directory_mutex;
 
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {

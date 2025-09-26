@@ -154,7 +154,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
+        explicit RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -176,9 +176,7 @@ public:
         static bool useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error);
 
     private:
-        uint32_t maxRetries;
-        uint32_t scaleFactor;
-        uint32_t maxDelayMs;
+        PocoHTTPClientConfiguration::RetryStrategy config;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -347,7 +345,7 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        unsigned int s3_retry_attempts,
+        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,

@@ -5,6 +5,9 @@ SET allow_experimental_full_text_index = 1;
 SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
+-- Affects the number of read rows.
+SET use_skip_indexes_on_data_read = 0;
+
 ----------------------------------------------------
 SELECT 'Test text(tokenizer="ngram", ngram_size = 2)';
 
@@ -97,19 +100,6 @@ SELECT read_rows==4 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
         AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE s IN (\'x Alick a01 y\', \'x Alick a06 y\') ORDER BY k;')
-        AND type='QueryFinish'
-        AND result_rows==2
-    LIMIT 1;
-
--- search text index with multiSearch
-SELECT * FROM tab_x WHERE multiSearchAny(s, [' a01 ', ' b01 ']) ORDER BY k;
-
--- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS query_log;
-SELECT read_rows==4 from system.query_log
-    WHERE query_kind ='Select'
-        AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE multiSearchAny(s, [\' a01 \', \' b01 \']) ORDER BY k;')
         AND type='QueryFinish'
         AND result_rows==2
     LIMIT 1;
