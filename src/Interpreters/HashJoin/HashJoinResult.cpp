@@ -348,20 +348,29 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     bool is_last = next_row >= offsets.size();
 
     MutableColumns rhs_columns; /// Columns from the right table
-    if (start_row == 0 && is_last)
+    if (!lazy_output.row_refs.empty())
     {
-        rhs_columns = std::move(columns);
+        rhs_columns.reserve(columns.size());
+        for (auto & column : columns)
+            rhs_columns.push_back(column->cloneEmpty());
     }
     else
     {
-        /// The result columns should contain only data for the current block.
-        /// Copy data from the original columns to preserve columns size in the block.
-        rhs_columns.reserve(columns.size());
-        for (auto & column : columns)
-            rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
+        if (start_row == 0 && is_last)
+        {
+            rhs_columns = std::move(columns);
+        }
+        else
+        {
+            /// The result columns should contain only data for the current block.
+            /// Copy data from the original columns to preserve columns size in the block.
+            rhs_columns.reserve(columns.size());
+            for (auto & column : columns)
+                rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
 
-        if (is_last)
-            columns.clear();
+            if (is_last)
+                columns.clear();
+        }
     }
 
     auto block = generateBlock(
