@@ -40,10 +40,8 @@ def create_spark_http_server(
                 res = attachment.create_lake_database(cluster, data)
             elif path == "/sparktable":
                 res = attachment.create_lake_table(cluster, data)
-            elif path in ("/sparkupdate", "/sparkcheck"):
-                res = attachment.update_or_check_table(
-                    cluster, data, path == "/sparkupdate"
-                )
+            elif path == "/sparkupdate":
+                res = attachment.update_or_check_table(cluster, data)
             random.setstate(state)
         except:
             random.setstate(state)
