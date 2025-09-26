@@ -1484,7 +1484,7 @@ void StatementGenerator::addTableColumnInternal(
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
-            flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+            flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
             generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
             this->entries.clear();
         }
@@ -2244,7 +2244,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
-        flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+        flatTableColumnPath(flat_tuple | flat_nested, next.cols, [](const SQLColumn &) { return true; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
         entries.clear();
     }
