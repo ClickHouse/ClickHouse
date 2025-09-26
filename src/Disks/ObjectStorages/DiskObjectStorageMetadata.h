@@ -19,7 +19,7 @@ private:
     static constexpr UInt32 VERSION_INLINE_DATA = 4;
     static constexpr UInt32 VERSION_FULL_OBJECT_KEY = 5; /// only for reading data
 
-    UInt32 version = VERSION_READ_ONLY_FLAG;
+    UInt32 version = VERSION_FULL_OBJECT_KEY;
 
     /// Absolute paths of blobs
     ObjectKeysWithMetadata keys_with_meta;
@@ -56,6 +56,7 @@ public:
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
+    bool tryDeserializeFromString(const std::string & data) noexcept;
     /// This method was deleted from public fork recently by Azat
     void createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
@@ -130,7 +131,6 @@ public:
         return inline_data;
     }
 
-    static bool getWriteFullObjectKeySetting();
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;
