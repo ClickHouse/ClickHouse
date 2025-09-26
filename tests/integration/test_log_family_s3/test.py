@@ -81,9 +81,8 @@ def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_i
         )
         assert_objects_count(cluster, files_overhead_per_insert * 3 + files_overhead)
 
-        # Truncate will remove all files except the sizes.json, so here we expect to have 1 blob after query execution
         node.query("TRUNCATE TABLE s3_test")
-        assert_objects_count(cluster, 1)
+        assert_objects_count(cluster, 0)
     finally:
         node.query("DROP TABLE s3_test SYNC")
 
