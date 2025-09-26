@@ -170,6 +170,7 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
     virtual bool supportsPartialPathPrefix() const { return true; }

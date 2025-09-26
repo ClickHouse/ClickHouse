@@ -44,6 +44,12 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DDEBUG_BUILD")
 endif()
 
+if (OS_LINUX)
+    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_ENABLE_EPOLL")
+elseif (OS_DARWIN)
+    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_ENABLE_KQUEUE")
+endif()
+
 set(ENABLE_OPENSSL_ENCRYPTION ON)
 if (ENABLE_OPENSSL_ENCRYPTION)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DENABLE_OPENSSL_ENCRYPTION")
@@ -98,6 +104,7 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/factory/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/event/*.cpp"
@@ -168,6 +175,7 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_AUTH_DIR}/include/")
 # aws-c-cal
 file(GLOB AWS_CAL_SRC
     "${AWS_CAL_DIR}/source/*.c"
+    "${AWS_CAL_DIR}/source/shared/*.c"
 )
 
 if (ENABLE_OPENSSL_ENCRYPTION)
@@ -196,6 +204,8 @@ file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/external/*.c"
     "${AWS_COMMON_DIR}/source/posix/*.c"
     "${AWS_COMMON_DIR}/source/linux/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/*.c"
 )
 
 file(GLOB AWS_COMMON_ARCH_SRC
@@ -230,6 +240,11 @@ list(APPEND AWS_SOURCES ${AWS_COMMON_SRC} ${AWS_COMMON_ARCH_SRC} ${AWS_COMMON_AV
 list(APPEND AWS_PUBLIC_INCLUDES
     "${AWS_COMMON_DIR}/include/"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
+)
+
+list(APPEND AWS_PRIVATE_INCLUDES
+    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/"
+    "${AWS_COMMON_DIR}/source/external/libcbor/"
 )
 
 
@@ -296,6 +311,7 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/external/*.cpp"
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
+    "${AWS_CRT_DIR}/source/checksum/*.cpp"
 )
 
 list(APPEND AWS_SOURCES ${AWS_CRT_SRC})
