@@ -59,7 +59,7 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
     with PartitionManager() as pm:
         for node in started_cluster.instances.values():
             for zk in ["zoo1", "zoo2"]:
-                pm._add_rule(
+                pm.add_rule(
                     {
                         "source": node.ip_address,
                         "destination": cluster.get_instance_ip(zk),
@@ -96,7 +96,7 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
 
     with PartitionManager() as pm:
         for node in started_cluster.instances.values():
-            pm._add_rule(
+            pm.add_rule(
                 {
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo3"),

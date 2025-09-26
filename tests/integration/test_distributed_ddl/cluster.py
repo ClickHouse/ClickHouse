@@ -62,7 +62,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
             sacrifice = self.instances["ch4"]
             self.pm_random_drops = PartitionManager()
-            self.pm_random_drops._add_rule(
+            self.pm_random_drops.add_rule(
                 {
                     "probability": 0.01,
                     "destination": sacrifice.ip_address,
@@ -70,7 +70,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     "action": "REJECT --reject-with tcp-reset",
                 }
             )
-            self.pm_random_drops._add_rule(
+            self.pm_random_drops.add_rule(
                 {
                     "probability": 0.01,
                     "source": sacrifice.ip_address,
