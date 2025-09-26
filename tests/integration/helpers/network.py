@@ -113,6 +113,18 @@ class PartitionManager:
                 "protocol": "tcp", "action": action, "__ipv6": True,
             })
 
+    def restore_instance_zk_connections(self, instance, action="DROP"):
+        self._check_instance(instance)
+        self.delete_rule({
+            "instance": instance, "chain": "OUTPUT", "destination_port": 2181,
+            "protocol": "tcp", "action": action,
+        })
+        if instance.ipv6_address:
+            self.delete_rule({
+                "instance": instance, "chain": "OUTPUT", "destination_port": 2181,
+                "protocol": "tcp", "action": action, "__ipv6": True,
+            })
+
     def partition_instances(self, left, right, port=None, action="DROP"):
         self._check_instance(left)
         self._check_instance(right)
