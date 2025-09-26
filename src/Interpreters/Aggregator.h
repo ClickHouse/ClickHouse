@@ -472,7 +472,7 @@ private:
         Arena * arena) const;
 
     template <typename Method, typename Table>
-    bool ensureLimitsFixedMapMergeImpl(Table & table, AggregateDataPtr overflow_row, Arena * arena) const;
+    void ensureLimitsFixedMapMergeImpl(Table & table) const;
 
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
@@ -635,12 +635,7 @@ private:
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
 
-    /** Ensures limits are respected during fixed map merging by iterating all key-value pairs,
-      * counting rows, and calling checkLimits. If checkLimits returns false, resets the remaining rows.
-      * When no_more_keys is true but overflow_row is specified and not empty, merges remaining keys 
-      * to the overflow_row using aggregate function instructions.
-      */
-    bool ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data, AggregateDataPtr overflow_row);
+    void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
     void prepareAggregateInstructions(
         Columns columns,

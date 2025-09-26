@@ -52,14 +52,14 @@ struct FixedHashTableCell
 template <typename Cell>
 struct FixedHashTableStoredSize
 {
-    std::atomic<size_t> m_size = 0;
+    size_t m_size = 0;
 
-    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size.load(); }
-    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size.load() == 0; }
+    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
+    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
 
-    void increaseSize() { m_size.fetch_add(1); }
-    void clearSize() { m_size.store(0); }
-    void setSize(size_t to) { m_size.store(to); }
+    void increaseSize() { ++m_size; }
+    void clearSize() { m_size = 0; }
+    void setSize(size_t to) { m_size = to; }
 };
 
 template <typename Cell>

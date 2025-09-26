@@ -359,12 +359,11 @@ public:
                 createSources();
         }
 
-        else if (num_threads == 4 &&  (
+        else if (num_threads > 1 &&  (
             data->at(0)->type == AggregatedDataVariants::Type::key8  ||
             data->at(0)->type == AggregatedDataVariants::Type::key16))
         {
             parallelize_single_level_merge = true;
-            LOG_INFO(getLogger("AggTranform"), "ConvertingAggregatedToChunksTransform: parallelize_single_level_merge set to true");
             if (inputs.empty())
                 createSourcesForFixedHashMap();
             else
@@ -372,7 +371,6 @@ public:
         }
         else
         {
-            LOG_INFO(getLogger("AggTranform"), "ConvertingAggregatedToChunksTransform: mergeSingleLevel, num_threads: {}", num_threads);
             mergeSingleLevel();
         }
     }
@@ -630,12 +628,12 @@ private:
         {
             params->aggregator.resetAggregatorExceptFirst(*data);
 
-            /// We are not using 
-            params->aggregator.ensureLimitsFixedMapMerge(first, first->without_key);
+            /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
+            /// Therefore here we need to check additional after merges are completed from different threads.
+            params->aggregator.ensureLimitsFixedMapMerge(first);
         }
         else
         {
-            LOG_INFO(getLogger("AggTranform"), "jianfei mergeSingleLevel sequential merge path");
             // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
             if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
             {
@@ -656,8 +654,6 @@ private:
         }
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-
-        // TODO: make decision here.
         for (auto & block : blocks)
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));

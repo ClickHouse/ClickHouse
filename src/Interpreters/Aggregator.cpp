@@ -2039,80 +2039,43 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 
 
 template <typename Method, typename Table>
-bool Aggregator::ensureLimitsFixedMapMergeImpl(Table & table, AggregateDataPtr overflow_row, Arena * arena) const
+void Aggregator::ensureLimitsFixedMapMergeImpl(Table & table) const
 {
-    if (table.empty())
-        return true;
-
     size_t rows_count = 0;
     bool no_more_keys = false;
     bool ignore_rest = false;
 
-    std::vector<std::pair<typename Table::key_type, AggregateDataPtr>> entries_to_process;
-    
-    /// We want to respect the limits of `max_rows_to_group_by`, but parallel merge would be slightly
-    /// different from single thread merge for fixed map.
-    /// - THROW mode: this is the same, exception would be thrown.
-    /// - BREAK mode: different because we already have all keys in the final map. They would produce output.
-    /// - ANY mode: different because we already have all keys in the final map. They would produce output.
-    table.forEachValue([&](const auto & key, auto & mapped)
+    /// We want to respect the limits of `max_rows_to_group_by`, depending on `group_by_overflow_mode`:
+    /// - throw mode: this is the same, exception would be thrown.
+    /// - break/any mode: do nothing for a few reasons.
+    /// `max_rows_to_group_by` is to limit the memory usage, however `execute` and `merge` we already
+    /// finishes the majority of the work, so the memory usage peak has been reached. Additionally during
+    /// exuection phase, we already check the limit. Last this is for fixed hashmap, the number of rows
+    /// are bounded.
+    table.forEachValue([&](const auto &, auto &)
     {
-        if (!ignore_rest)
+        if (ignore_rest)
+            return;
+        ++rows_count;
+        if (!checkLimits(rows_count, no_more_keys))
         {
-            ++rows_count;
-
-            /// TODO: here should just inline a customized checkLimits, only handle break and throw mode.
-            if (!checkLimits(rows_count, no_more_keys))
-            {
-                LOG_INFO(log, "ensureLimitsFixedMapMergeImpl: hit limit, ignoring and destroy rest");
-                ignore_rest = true;
-                return;
-            }
-
-            /// If no_more_keys is set and we have overflow_row, collect entries for merging
-            if (no_more_keys && overflow_row)
-                entries_to_process.emplace_back(key, mapped);
+            ignore_rest = true;
+            return;
         }
     });
-    
-    if (overflow_row && no_more_keys && !entries_to_process.empty())
-    {
-        LOG_INFO(log, "ensureLimitsFixedMapMergeImpl: merging entries to overflow_row, size: {}", entries_to_process.size());
-        for (auto & [key, mapped] : entries_to_process)
-        {
-            if (mapped != nullptr)
-            {
-                /// Merge aggregate states from this entry to overflow_row
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                {
-                    aggregate_functions[i]->merge(
-                        overflow_row + offsets_of_aggregate_states[i],
-                        mapped + offsets_of_aggregate_states[i],
-                        arena);
-                }
-
-                /// Destroy original state after merging
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
-                mapped = nullptr;
-            }
-        }
-    }
-    
-    return !ignore_rest;
 }
 
 
-bool Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data, AggregateDataPtr overflow_row)
+void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
 {
     if (!data || data->empty())
-        return true;
+        return;
 
     /// Only handle key8 and key16 FixedHashMap variants (similar to mergeSingleLevelDataImplFixedMap)
     if (data->type == AggregatedDataVariants::Type::key8)
-        return ensureLimitsFixedMapMergeImpl<decltype(data->key8)::element_type>(data->key8->data, overflow_row, data->aggregates_pool);
+        ensureLimitsFixedMapMergeImpl<decltype(data->key8)::element_type>(data->key8->data);
     else if (data->type == AggregatedDataVariants::Type::key16)
-        return ensureLimitsFixedMapMergeImpl<decltype(data->key16)::element_type>(data->key16->data, overflow_row, data->aggregates_pool);
+        ensureLimitsFixedMapMergeImpl<decltype(data->key16)::element_type>(data->key16->data);
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
@@ -2193,9 +2156,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
         };
 
-        // out_cols a middle calculated states variable.
         init_out_cols();
-
         auto fill_blocks = [&]<bool is_final>(const auto & key, auto & mapped)
         {
             if (!out_cols.has_value())
@@ -2214,16 +2175,10 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 out_cols->aggregate_columns_data[0]->push_back(reinterpret_cast<AggregateDataPtr>(&states[rows_in_states]));
             }
 
-            // just fill in one row to the block?
             ++rows_in_current_block;
             ++rows_in_states;
-
-            // if (checkLimits(rows_in_current_block, no_more_keys))
-            //     ;
-
             if (!return_single_block && rows_in_current_block >= max_block_size)
             {
-                // Could check here.
                 blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
                 out_cols.reset();
                 rows_in_current_block = 0;
@@ -2244,19 +2199,16 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         return blocks;
     }
 
-    // Bulk of changes should be done here for other cases.
     bool use_compiled_functions = false;
     if (final)
     {
 #if USE_EMBEDDED_COMPILER
         use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
 #endif
-        // TODO: changeable.
         res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, return_single_block);
     }
     else
     {
-        // TODO: changeable.
         res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block);
     }
 
@@ -2682,7 +2634,6 @@ Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variant
 {
     ConvertToBlockResVariant res_variant;
 
-    // total size. could be larger than limit.
     const size_t rows = data_variants.sizeWithoutOverflowRow();
 
 #define M(NAME) \
@@ -3126,21 +3077,16 @@ template <typename Method>
 void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const
 {
-    LOG_INFO(log, "jianfei mergeSingleLevelDataImpl invoked");
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
-    
+
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
-        bool continue_processing = checkLimits(res->sizeWithoutOverflowRow(), no_more_keys);
-        LOG_INFO(log, "jianfei mergeSingleLevelDataImpl: res size: {}, continue_processing: {}, no_more_keys: {}",
-            res->sizeWithoutOverflowRow(), continue_processing, no_more_keys);
-
-        if (!continue_processing)
+        if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
             break;
 
         AggregatedDataVariants & current = *non_empty_data[result_num];
