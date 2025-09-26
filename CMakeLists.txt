@@ -18,6 +18,13 @@ endif()
 
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
+
+if (ARCH_AMD64)
+    set(LINKER_NAME "/usr/bin/wild")
+elseif (ARCH_AARCH64)
+    set(LINKER_NAME "/usr/bin/wild-aarch64")
+endif ()
+
 include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
