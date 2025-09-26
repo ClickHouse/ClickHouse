@@ -2122,6 +2122,9 @@ packetpool
 packetsize
 PagerDuty
 pageviews
+paimon
+Paimon
+paimonCluster
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 parallelization
@@ -3344,6 +3347,7 @@ UUIDv
 Vadim
 Valgrind
 ValueType
+VARBINARY
 VARCHAR
 variadic
 variantElement
