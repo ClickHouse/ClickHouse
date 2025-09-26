@@ -443,11 +443,15 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
         chassert(
             !zk_client->exists(processing_node_path),
-            fmt::format("Expected path {} not to exist", processing_node_path));
+            fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
+
+        chassert(
+            !zk_client->exists(failed_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", failed_node_path, path));
 
         chassert(
             zk_client->exists(processed_node_path),
-            fmt::format("Expected path {} to exist", processed_node_path));
+            fmt::format("Expected path {} to exist while finalizing {}", processed_node_path, path));
     });
 #endif
 
@@ -460,6 +464,25 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     file_status->onFailed(exception_message);
 
     set_processing = false;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        chassert(
+            !zk_client->exists(processing_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
+
+        chassert(
+            !zk_client->exists(processed_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
+
+        chassert(
+            zk_client->exists(failed_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", failed_node_path, path));
+
+    });
+#endif
 
     LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
