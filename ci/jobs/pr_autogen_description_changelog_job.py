@@ -1,12 +1,52 @@
 import os
-import sys
 
-from praktika.info import Info
-
-from ci.jobs.scripts.ci_agent import CIAgent
+from ci.jobs.scripts.ci_agent import SECTION_CHANGELOG, SECTION_DESCRIPTION, CIAgent
 from ci.praktika.gh import GH
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
+
+
+def get_pr_info(diff_file):
+    Shell.check("which claude", verbose=True, strict=True)
+    Shell.check("gh auth status", strict=True, verbose=True)
+    pr_diff = GH.get_pr_diff()
+    assert pr_diff
+    with open(diff_file, "w", encoding="utf-8") as file:
+        file.write(pr_diff)
+    return True
+
+
+def process_description(should_format, diff_file, pr_body_container, format_only):
+    if should_format:
+        updated_description = agent.format_description_or_changelog(
+            "description", current_description
+        )
+    else:
+        updated_description = agent.generate_description(diff_file, info.pr_body)
+    assert updated_description
+    pr_body_container[0] = agent.insert_content_between_tags(
+        pr_body_container[0], SECTION_DESCRIPTION, updated_description, format_only
+    )
+    return True
+
+
+def process_changelog(should_format, diff_file, pr_body_container, format_only):
+    if should_format:
+        updated_changelog = agent.format_description_or_changelog(
+            "changelog", current_changelog
+        )
+    else:
+        updated_changelog = agent.generate_changelog_entry(
+            diff_file, pr_body_container[0]
+        )
+    assert updated_changelog
+    pr_body_container[0] = agent.insert_content_between_tags(
+        pr_body_container[0], SECTION_CHANGELOG, updated_changelog, format_only
+    )
+    assert updated_changelog in pr_body_container[0]
+    return True
+
 
 if __name__ == "__main__":
 
@@ -26,144 +66,96 @@ if __name__ == "__main__":
     results = []
     stop_watch = Utils.Stopwatch()
     temp_dir = f"{Utils.cwd()}/ci/tmp/"
+    diff_file = f"{temp_dir}/diff.txt"
 
     info = Info()
     agent = CIAgent()
 
-    testname = "Test GitHub authorization"
-    results.append(
-        Result.from_commands_run(
-            name=testname,
-            command=["gh auth status"],
-        )
+    should_process_description, should_format_description, current_description = (
+        agent.should_process_section(SECTION_DESCRIPTION)
+    )
+    should_process_changelog, should_format_changelog, current_changelog = (
+        agent.should_process_section(SECTION_CHANGELOG)
     )
 
-    pr_diff = GH.get_pr_diff()
-
-    diff_file = "diff.txt"
-    with open(diff_file, "w", encoding="utf-8") as file:
-        file.write(pr_diff)
-
-    should_process_description, description_params = agent.should_process_section(
-        "BEGIN_DESCRIPTION"
+    print(
+        f"should_process_description: {should_process_description}, should_format_description: {should_format_description}, current_description: {current_description}"
     )
-    should_process_changelog, changelog_params = agent.should_process_section(
-        "BEGIN_CHANGELOG_ENTRY"
+    print(
+        f"should_process_changelog: {should_process_changelog}, should_format_changelog: {should_format_changelog}, current_changelog: {current_changelog}"
     )
 
-    # Check for cached API errors in the PR body content (from previous failed runs)
-    _, description_content = description_params
-    _, changelog_content = changelog_params
+    test_results = []
+    pr_body_container = [info.pr_body]
 
-    if "API Error: " in description_content:
-        results.append(
-            Result(
-                "PR description check",
-                Result.Status.FAILED,
-                f"Cached API error detected in PR description: {description_content}",
-            )
-        )
-        Result.create_from(results=results).complete_job()
-        sys.exit(1)
+    is_ok = True
 
-    if "API Error: " in changelog_content:
-        results.append(
-            Result(
-                "PR changelog check",
-                Result.Status.FAILED,
-                f"Cached API error detected in PR changelog: {changelog_content}",
-            )
-        )
-        Result.create_from(results=results).complete_job()
-        sys.exit(1)
-
-    updated_pr_body = info.pr_body
-
-    if should_process_description:
-        should_format, content = description_params
-        updated_description = ""
-        try:
-            if should_format:
-                testname = "Format PR description"
-                updated_description = agent.format_description_or_changelog(
-                    "description", content
-                )
-                results.append(Result(testname, "OK"))
-            else:
-                testname = "Autogenerate PR description"
-                updated_description = agent.generate_description(
-                    diff_file, info.pr_body
-                )
-                results.append(Result(testname, "OK"))
-            updated_pr_body = agent.insert_content_between_tags(
-                updated_pr_body, "BEGIN_DESCRIPTION", updated_description
-            )
-        except RuntimeError as e:
-            if "API Error: " in str(e):
-                # API error detected - fail the job
-                results.append(Result(testname, Result.Status.FAILED, str(e)))
-                Result.create_from(results=results).complete_job()
-                sys.exit(1)
-            raise
-    else:
-        testname = "Format / autogenerate PR description"
-        results.append(
-            Result(
-                testname,
-                Result.Status.SKIPPED,
-                "Skipping PR description formatting / autogeneration. Either no tags were found, or the tags have body text but format=false",
-            )
-        )
-
-    if should_process_changelog:
-        should_format, content = changelog_params
-        updated_changelog_entry = ""
-        try:
-            if should_format:
-                testname = "Format PR changelog entry"
-                updated_changelog_entry = agent.format_description_or_changelog(
-                    "changelog", content
-                )
-                results.append(Result(testname, "OK"))
-            else:
-                testname = "Autogenerate PR changelog entry"
-                updated_changelog_entry = agent.generate_changelog_entry(
-                    diff_file, updated_pr_body
-                )
-                results.append(Result(testname, "OK"))
-            updated_pr_body = agent.insert_content_between_tags(
-                updated_pr_body, "BEGIN_CHANGELOG_ENTRY", updated_changelog_entry
-            )
-        except RuntimeError as e:
-            if "API Error: " in str(e):
-                # API error detected - fail the job
-                results.append(Result(testname, Result.Status.FAILED, str(e)))
-                Result.create_from(results=results).complete_job()
-                sys.exit(1)
-            raise
-    else:
-        testname = "Format / autogenerate changelog entry"
-        results.append(
-            Result(
-                testname,
-                Result.Status.SKIPPED,
-                "Skipping PR changelog entry formatting / autogeneration. Either no tags were found, or the tags have body text but format=false",
-            )
-        )
-
-    testname = "Update PR body"
     if should_process_description or should_process_changelog:
-        Result.from_commands_run(
-            name=testname,
-            command=GH.update_pr_body(updated_pr_body),
+        test_results.append(
+            Result.from_commands_run(
+                name="get info", command=lambda: get_pr_info(diff_file)
+            )
         )
+        is_ok = test_results[-1].is_ok()
+
+    if is_ok and should_process_description:
+        test_results.append(
+            Result.from_commands_run(
+                name="process description",
+                command=lambda: process_description(
+                    should_format_description,
+                    diff_file,
+                    pr_body_container,
+                    should_format_description,
+                ),
+            )
+        )
+        is_ok = test_results[-1].is_ok()
     else:
-        results.append(
+        test_results.append(
             Result(
-                testname,
-                Result.Status.SKIPPED,
-                "No conditions were detected for automatically generating or formatting a changelog entry or a PR description",
+                name="process description",
+                status=Result.Status.SKIPPED,
+                info="the section is disabled, not present, or already contains user-provided content.",
             )
         )
 
-    Result.create_from(results=results).complete_job()
+    if is_ok and should_process_changelog:
+        test_results.append(
+            Result.from_commands_run(
+                name="process changelog",
+                command=lambda: process_changelog(
+                    should_format_changelog,
+                    diff_file,
+                    pr_body_container,
+                    should_format_changelog,
+                ),
+            )
+        )
+        is_ok = test_results[-1].is_ok()
+    else:
+        test_results.append(
+            Result(
+                name="process changelog",
+                status=Result.Status.SKIPPED,
+                info="the section is disabled, not present, or already contains user-provided content.",
+            )
+        )
+
+    if is_ok and (should_process_description or should_process_changelog):
+        test_results.append(
+            Result.from_commands_run(
+                name="update PR body",
+                command=lambda: GH.update_pr_body(pr_body_container[0]),
+            )
+        )
+    else:
+        test_results.append(
+            Result(
+                name="update PR body",
+                status=Result.Status.SKIPPED,
+                info="automatic generation or formating disabled",
+            )
+        )
+
+    Result.create_from(results=test_results).complete_job()

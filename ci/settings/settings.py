@@ -50,3 +50,11 @@ DISABLED_WORKFLOWS = [
 
 DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
 READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
+
+LOCAL_ENV_PR_BODY = """\
+<!--- LLM-generated Change Description BEGIN enabled=false format_only=false -->
+<!--- LLM-generated Change Description END --->
+
+<!--- LLM-generated Changelog Entry BEGIN enabled=true format_only=false -->
+<!--- LLM-generated Changelog Entry END -->
+"""

@@ -102,6 +102,7 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/pr_autogen_description_changelog_job.py",
         enable_gh_auth=True,
+        allow_merge_on_failure=True,
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,

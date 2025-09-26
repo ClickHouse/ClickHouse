@@ -69,10 +69,27 @@ class Runner:
             filtered_jobs={},
             custom_data={},
         )
+
+        repo_url = Shell.get_output(
+            "git config --get remote.origin.url",
+            strict=True,
+        ).strip()
+        # Support both SSH (git@github.com:Owner/Repo.git) and HTTPS (https://github.com/Owner/Repo.git)
+        m = re.search(r"(?:[:/])([^/:]+)/([^/]+?)(?:\.git)?$", repo_url)
+        if m:
+            repo_owner, repo_name = m.group(1).strip(), m.group(2).strip()
+        else:
+            # Fallback to last two path segments split by '/'
+            parts = repo_url.strip().split("/")
+            repo_owner = parts[-2] if len(parts) >= 2 else "ClickHouse"
+            repo_name = parts[-1] if parts else "ClickHouse"
+        # Ensure repo_name without trailing .git
+        repo_name = re.sub(r"\.git$", "", repo_name)
+
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
-            REPOSITORY="",
+            REPOSITORY=f"{repo_owner}/{repo_name}",
             BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr if not branch else 0,
@@ -88,7 +105,7 @@ class Runner:
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
-            PR_BODY="",
+            PR_BODY=Settings.LOCAL_ENV_PR_BODY,
             PR_TITLE="",
             USER_LOGIN="",
             FORK_NAME="",

@@ -3,7 +3,6 @@ import sys
 from typing import Tuple
 
 from praktika.info import Info
-from praktika.utils import Shell
 
 LABEL_CATEGORIES = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
@@ -167,55 +166,8 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
     return not description_error, category
 
 
-def check_labels(category, info):
-    pr_labels_to_add = []
-    pr_labels_to_remove = []
-    labels = info.pr_labels
-    if category in CATEGORY_TO_LABEL and CATEGORY_TO_LABEL[category] not in labels:
-        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
-
-    for label in labels:
-        if (
-            label in CATEGORY_TO_LABEL.values()
-            and category in CATEGORY_TO_LABEL
-            and label != CATEGORY_TO_LABEL[category]
-        ):
-            pr_labels_to_remove.append(label)
-
-    if info.pr_number:
-        changed_files = info.get_kv_data("changed_files")
-        if "contrib/" in " ".join(changed_files):
-            pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
-
-    if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
-        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
-        pr_labels_to_add += [label for label in backport_labels if label not in labels]
-        print(f"Add backport labels [{backport_labels}] for PR category [{category}]")
-
-    cmd = f"gh pr edit {info.pr_number}"
-    if pr_labels_to_add:
-        print(f"Add labels [{pr_labels_to_add}]")
-        for label in pr_labels_to_add:
-            cmd += f" --add-label '{label}'"
-            if label in info.pr_labels:
-                info.pr_labels.append(label)
-            info.dump()
-
-    if pr_labels_to_remove:
-        print(f"Remove labels [{pr_labels_to_remove}]")
-        for label in pr_labels_to_remove:
-            cmd += f" --remove-label '{label}'"
-            if label in info.pr_labels:
-                info.pr_labels.remove(label)
-            info.dump()
-
-    if pr_labels_to_remove or pr_labels_to_add:
-        Shell.check(cmd, verbose=True, strict=True)
-
-
 if __name__ == "__main__":
     info = Info()
     is_ok, category = check_category(info.pr_body)
     if not is_ok:
         sys.exit(1)
-    check_labels(category, info)
