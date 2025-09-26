@@ -11,6 +11,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 
 namespace CurrentMetrics
 {
@@ -155,7 +157,9 @@ public:
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false);
+        bool skip_merging_ = false,
+        UpdaterPtr updater_ = nullptr);
+
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -209,6 +213,8 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
     std::list<TemporaryBlockStreamHolder> tmp_files;
+
+    UpdaterPtr updater;
 
     void initGenerate();
 };

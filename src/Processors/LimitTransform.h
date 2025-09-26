@@ -6,6 +6,8 @@
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -53,15 +55,22 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
+    UpdaterPtr updater;
+
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
 public:
     LimitTransform(
-        SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
-        bool always_read_till_end_ = false, bool with_ties_ = false,
-        SortDescription description_ = {});
+        SharedHeader header_,
+        UInt64 limit_,
+        UInt64 offset_,
+        size_t num_streams = 1,
+        bool always_read_till_end_ = false,
+        bool with_ties_ = false,
+        SortDescription description_ = {},
+        UpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "Limit"; }
 

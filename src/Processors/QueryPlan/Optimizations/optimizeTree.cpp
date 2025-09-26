@@ -1,21 +1,41 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Common/Exception.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
+#include <memory>
 #include <stack>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool enable_automatic_parallel_replicas;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsNonZeroUInt64 max_parallel_replicas;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+}
+
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
-    extern const int PROJECTION_NOT_USED;
+extern const int INCORRECT_DATA;
+extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+extern const int PROJECTION_NOT_USED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -65,8 +85,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             /// Traverse all children first.
             if (frame.next_child < frame.node->children.size())
             {
-                stack.push(
-                {
+                stack.push({
                     .node = frame.node->children[frame.next_child],
                     .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
                 });
@@ -93,9 +112,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 if (optimization_settings.is_explain)
                     return;
 
-                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
+                throw Exception(
+                    ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                    "Too many optimizations applied to query plan. Current limit {}",
+                    max_optimizations_to_apply);
             }
 
 
@@ -119,7 +139,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-struct NoOp{};
+struct NoOp
+{
+};
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
@@ -154,6 +176,175 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
         }
 
         stack.pop_back();
+    }
+}
+
+QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_replicas_root)
+{
+    QueryPlan::Node * replicas_plan_top_node = nullptr;
+
+    Stack stack;
+    stack.push_back({.node = plan_with_parallel_replicas_root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if (typeid_cast<UnionStep *>(frame.node->step.get()))
+        {
+            bool found_read_from_parallel_replicas = false;
+            for (const auto & child : frame.node->children)
+            {
+                auto * node = child;
+                if (typeid_cast<const ExpressionStep *>(node->step.get()))
+                    node = child->children.front();
+                if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
+                {
+                    found_read_from_parallel_replicas = true;
+                }
+                else
+                {
+                    if (replicas_plan_top_node)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "");
+
+                    replicas_plan_top_node = node;
+                }
+            }
+
+            if (!found_read_from_parallel_replicas)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "");
+
+            if (replicas_plan_top_node)
+                break;
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    // if (!replicas_plan_top_node)
+    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
+    return replicas_plan_top_node;
+}
+
+std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+    const QueryPlan::Node & final_node_in_replica_plan,
+    QueryPlan::Node & parallel_replicas_plan_root,
+    QueryPlan::Node & single_replica_plan_root)
+{
+    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
+    if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "final_node_in_replica_plan hash={}", it->second);
+        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+
+        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
+        {
+            if (nopr_hash == it->second)
+            {
+                LOG_DEBUG(&Poco::Logger::get("debug"), "Found matching node in original plan: {}", nopr_node->step->getName());
+                return std::make_pair(nopr_node, nopr_hash);
+            }
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find matching hash for replicas_plan_top_node");
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find hash for replicas_plan_top_node");
+    }
+}
+
+void considerEnablingParallelReplicas(
+    [[maybe_unused]] const QueryPlanOptimizationSettings & optimization_settings,
+    [[maybe_unused]] QueryPlan::Node & root,
+    [[maybe_unused]] QueryPlan::Nodes & nodes,
+    [[maybe_unused]] QueryPlan & query_plan)
+{
+    if (!optimization_settings.query_plan_builder)
+        return;
+
+    if (optimization_settings.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+        return;
+
+    if (!optimization_settings.context->getSettingsRef()[Setting::enable_automatic_parallel_replicas])
+        return;
+
+    auto dump = [&](const QueryPlan & plan)
+    {
+        WriteBufferFromOwnString wb;
+        plan.explainPlan(wb, ExplainPlanOptions{});
+        LOG_DEBUG(&Poco::Logger::get("debug"), "\nwb.str()={}", wb.str());
+    };
+
+    auto plan_with_parallel_replicas = std::make_unique<QueryPlan>(optimization_settings.query_plan_builder());
+
+    const auto * final_node_in_replica_plan = findReplicasTopNode(plan_with_parallel_replicas->getRootNode());
+    if (!final_node_in_replica_plan)
+        return;
+    chassert(final_node_in_replica_plan);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "replicas_plan_top_node->step->getName()={}", final_node_in_replica_plan->step->getName());
+
+    [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
+        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+    chassert(corresponding_node_in_single_replica_plan);
+
+    {
+        const auto * reading_step = corresponding_node_in_single_replica_plan;
+        while (reading_step && !reading_step->children.empty())
+            // TODO(nickitat): Maybe we should consider all leafs?
+            reading_step = reading_step->children.front();
+
+        if (!typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The corresponding node in single node plan is not ReadFromMergeTree");
+
+        if (!reading_step->step->supportsDataflowStatisticsCollection()
+            || !corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "Step ({}) doesn't support dataflow statistics collection",
+                corresponding_node_in_single_replica_plan->step->getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Step ({}) doesn't support dataflow statistics collection",
+                corresponding_node_in_single_replica_plan->step->getName());
+            // return;
+        }
+
+        reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
+        corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
+    }
+
+    const auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
+    {
+        const auto max_threads = optimization_settings.context->getSettingsRef()[Setting::max_threads];
+        const auto num_replicas = optimization_settings.context->getSettingsRef()[Setting::max_parallel_replicas];
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
+            stats->input_bytes,
+            stats->output_bytes,
+            max_threads.value,
+            num_replicas.value);
+        if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
+        {
+            dump(query_plan);
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+            dump(query_plan);
+        }
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 }
 
@@ -318,9 +509,10 @@ void optimizeTreeSecondPass(
                 {
                     /// Limit only first pass in EXPLAIN mode.
                     if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
+                        throw Exception(
+                            ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                            "Too many projection optimizations applied to query plan. Current limit {}",
+                            max_optimizations_to_apply);
                 }
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
@@ -350,7 +542,7 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
         {
             read_from_local_parallel_replica_plan = true;
 
@@ -434,23 +626,26 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            ErrorCodes::PROJECTION_NOT_USED, "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
-    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt && !applied_projection_names.contains(optimization_settings.force_projection_name))
+    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt
+        && !applied_projection_names.contains(optimization_settings.force_projection_name))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Projection {} is specified in setting force_optimize_projection_name but not used",
-             optimization_settings.force_projection_name);
+            optimization_settings.force_projection_name);
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    considerEnablingParallelReplicas(optimization_settings, root, nodes, query_plan);
 }
 
-void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
