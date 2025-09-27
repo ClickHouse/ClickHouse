@@ -137,7 +137,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     /// those query settings
     /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
     auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
-    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+    auto set_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(ast, set_context);
 
     return {
         ast->getTable(),
