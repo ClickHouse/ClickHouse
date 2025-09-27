@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
@@ -27,6 +28,9 @@ struct RemoveRequest
 };
 
 using RemoveBatchRequest = std::vector<RemoveRequest>;
+
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 /// Simple interface batch execution of write disk operations.
 /// Method are almost equal to disk methods.
@@ -144,9 +148,18 @@ public:
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
 
     /// Truncate file to the target size.
-    virtual void truncateFile(const std::string & src_path, size_t size) = 0;
+    virtual void truncateFile(const std::string & src_path, size_t target_size) = 0;
+
+    virtual std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction( /// NOLINT
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint = {}) const = 0;
+
+    virtual bool isTransactional() const = 0;
+
+    virtual void validateTransaction(std::function<void(IDiskTransaction&)> check_function) = 0;
 };
 
-using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 }

@@ -236,9 +236,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
-    auto & data_part_storage = new_part->getDataPartStorage();
-    if (data_part_storage.hasActiveTransaction())
-        data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 

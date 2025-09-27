@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <vector>
 #include <Poco/Timestamp.h>
 
 
@@ -158,6 +159,8 @@ public:
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
     void commit(const TransactionCommitOptionsVariant & options) override;
+
+    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 
     bool supportsChmod() const override { return false; }
 };

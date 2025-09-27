@@ -146,6 +146,11 @@ public:
     {
         return delegate->tryGetBlobsFromTransactionIfExists(path);
     }
+
+    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override
+    {
+        return delegate->listUncommittedDirectory(wrappedPath(path));
+    }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage

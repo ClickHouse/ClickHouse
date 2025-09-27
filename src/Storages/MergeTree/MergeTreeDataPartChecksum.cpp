@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Common/SipHash.h>
-#include <base/hex.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -10,6 +9,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <filesystem>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
+
 #include <optional>
 
 #include <fmt/ranges.h>
@@ -110,6 +113,19 @@ UInt64 MergeTreeDataPartChecksums::getTotalSizeUncompressedOnDisk() const
     for (const auto & [_, checksum] : files)
         res += checksum.uncompressed_size;
     return res;
+}
+
+std::vector<std::string> MergeTreeDataPartChecksums::getFileNames() const
+{
+    std::vector<std::string> result;
+    result.reserve(files.size());
+
+    for (const auto & [name, _] : files)
+        result.push_back(name);
+
+    std::sort(result.begin(), result.end());
+
+    return result;
 }
 
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)

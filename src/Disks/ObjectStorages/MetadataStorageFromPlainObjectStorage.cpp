@@ -356,6 +356,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionC
     operations.finalize();
 }
 
+std::vector<std::string> MetadataStorageFromPlainObjectStorageTransaction::listUncommittedDirectory(const std::string & path) const
+{
+    chassert(!metadata_storage.isTransactional());
+    return metadata_storage.listDirectory(path);
+}
+
 std::optional<StoredObjects>
 MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {
