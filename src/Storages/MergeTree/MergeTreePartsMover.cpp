@@ -297,7 +297,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
             cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part.part->loadVersionMetadata();
+    cloned_part.part->version->loadAndVerifyMetadata(log);
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
     return cloned_part;
 }
