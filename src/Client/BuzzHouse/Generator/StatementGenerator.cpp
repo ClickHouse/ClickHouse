@@ -7,6 +7,44 @@
 namespace BuzzHouse
 {
 
+const std::vector<std::vector<OutFormat>> StatementGenerator::outFormats
+    = {{OutFormat::OUT_Arrow},
+       {OutFormat::OUT_Avro},
+       {OutFormat::OUT_BSONEachRow},
+       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_JSON,
+        OutFormat::OUT_JSONColumns,
+        OutFormat::OUT_JSONColumnsWithMetadata,
+        OutFormat::OUT_JSONCompact,
+        OutFormat::OUT_JSONCompactColumns,
+        OutFormat::OUT_JSONCompactEachRow,
+        OutFormat::OUT_JSONCompactEachRowWithNames,
+        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactStringsEachRow,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONEachRow,
+        OutFormat::OUT_JSONLines,
+        OutFormat::OUT_JSONObjectEachRow,
+        OutFormat::OUT_JSONStringsEachRow},
+       {OutFormat::OUT_LineAsString},
+       {OutFormat::OUT_MsgPack},
+       {OutFormat::OUT_Native},
+       {OutFormat::OUT_ORC},
+       {OutFormat::OUT_Parquet},
+       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
+       {OutFormat::OUT_RawBLOB},
+       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated,
+        OutFormat::OUT_TabSeparatedRaw,
+        OutFormat::OUT_TabSeparatedRawWithNames,
+        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
+        OutFormat::OUT_TabSeparatedWithNames,
+        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TSKV},
+       {OutFormat::OUT_Values}};
+
 const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
     = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
        {OutFormat::OUT_Avro, InFormat::IN_Avro},
@@ -348,7 +386,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
-        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 26)
+        if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
@@ -652,6 +690,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
 bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, TableOrFunction * tof)
 {
     bool is_url = false;
+    bool cluster_or_remote = false;
     const std::optional<String> & cluster = t.getCluster();
     const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
     const uint32_t remote_func = 5;
@@ -671,10 +710,12 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, t, tof->mutable_tfunc());
         tof = isCluster ? const_cast<ClusterFunc &>(tof->tfunc().cluster()).mutable_tof()
                         : const_cast<RemoteFunc &>(tof->tfunc().remote()).mutable_tof();
+        cluster_or_remote = true;
     }
 
-    const uint32_t engine_func = 10 * static_cast<uint32_t>(t.isEngineReplaceable());
-    const uint32_t url_func = 5;
+    /// Only schema, table declarations are allowed inside cluster and remote functions
+    const uint32_t engine_func = 10 * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+    const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
@@ -691,7 +732,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         String buf;
         bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
-        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
         const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
             ? outIn.at(outf)
@@ -1346,7 +1387,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         t.setName(sot->mutable_est(), false);
         for (uint32_t i = 0; i < nalters; i++)
         {
-            const uint32_t alter_order_by = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t alter_order_by = 3;
             const uint32_t heavy_delete = 30;
             const uint32_t heavy_update = 40;
             const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < 10);
@@ -1356,11 +1397,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t clear_column = 2;
             const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
             const uint32_t comment_column = 2;
-            const uint32_t add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t add_stats = 3;
+            const uint32_t mod_stats = 3;
+            const uint32_t drop_stats = 3;
+            const uint32_t clear_stats = 3;
+            const uint32_t mat_stats = 3;
             const uint32_t delete_mask = 8;
             const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
             const uint32_t materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
@@ -1388,8 +1429,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
             const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
             const uint32_t move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty());
-            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
-            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
+            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(!t.is_deterministic);
+            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(!t.is_deterministic);
             const uint32_t attach_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t replace_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t comment_table = 2;
@@ -2377,6 +2418,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLView>(has_refreshable_view_func));
     const uint32_t has_distributed_table
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_distributed_table_func));
+    const uint32_t has_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(attached_tables));
 
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
@@ -2417,11 +2459,10 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t restart_replicas = 3;
     const uint32_t drop_filesystem_cache = 3;
     const uint32_t sync_file_cache = 1;
-    /// For merge trees
     const uint32_t load_pks = 3;
-    const uint32_t load_pk = 8 * has_merge_tree;
+    const uint32_t load_pk = 8 * has_table;
     const uint32_t unload_pks = 3;
-    const uint32_t unload_pk = 8 * has_merge_tree;
+    const uint32_t unload_pk = 8 * has_table;
     /// for refreshable views
     const uint32_t refresh_views = 0;
     const uint32_t refresh_view = 8 * has_refreshable_view;
@@ -2431,8 +2472,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t start_view = 8 * has_refreshable_view;
     const uint32_t cancel_view = 8 * has_refreshable_view;
     const uint32_t wait_view = 8 * has_refreshable_view;
-    const uint32_t prewarm_cache = 8 * has_merge_tree;
-    const uint32_t prewarm_primary_index_cache = 8 * has_merge_tree;
+    const uint32_t prewarm_cache = 8 * has_table;
+    const uint32_t prewarm_primary_index_cache = 8 * has_table;
     const uint32_t drop_connections_cache = 3;
     const uint32_t drop_primary_index_cache = 3;
     const uint32_t drop_index_mark_cache = 3;
@@ -2856,7 +2897,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_load_pk());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_load_pk());
     }
     else if (
         unload_pks
@@ -2883,7 +2924,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_unload_pk());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_unload_pk());
     }
     else if (
         refresh_views
@@ -3010,7 +3051,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_cache());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_prewarm_cache());
     }
     else if (
         prewarm_primary_index_cache
@@ -3025,7 +3066,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_primary_index_cache());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_prewarm_primary_index_cache());
     }
     else if (
         drop_connections_cache
@@ -3516,7 +3557,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     {
         /// Most of the times, use formats that can be read later
         br->set_outformat(
-            rg.nextBool() ? rg.pickRandomly(outIn)
+            rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                           : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
     }
 }
