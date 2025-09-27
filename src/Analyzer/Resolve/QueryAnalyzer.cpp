@@ -2216,11 +2216,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             if (query_node)
             {
                 /// Inline replacement function to avoid separate visitor class
-                auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void {
+                auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void
+                {
                     if (!node) return;
 
                     /// Simple recursive replacement logic
-                    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void {
+                    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
+                    {
                         if (!current) return;
 
                         if (auto * identifier = current->as<IdentifierNode>())
@@ -2239,6 +2241,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             auto & arguments = function_node->getArguments().getNodes();
                             for (auto & arg : arguments)
                                 replace_recursive(arg);
+
+                            /// Also process WindowNode for window functions like ROW_NUMBER() OVER (ORDER BY ...)
+                            if (function_node->getWindowNode())
+                            {
+                                auto window_node = function_node->getWindowNode();
+                                replace_recursive(window_node);
+                                function_node->getWindowNode() = window_node;
+                            }
                         }
                         else if (auto * list_node = current->as<ListNode>())
                         {
@@ -2250,6 +2260,22 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         {
                             if (auto & expression = sort_node->getExpression())
                                 replace_recursive(expression);
+                        }
+                        else if (auto * window_node = current->as<WindowNode>())
+                        {
+                            /// Process ORDER BY and PARTITION BY in window node
+                            if (window_node->hasOrderBy())
+                            {
+                                auto order_by_node = window_node->getOrderByNode();
+                                replace_recursive(order_by_node);
+                                window_node->getOrderByNode() = order_by_node;
+                            }
+                            if (window_node->hasPartitionBy())
+                            {
+                                auto partition_by_node = window_node->getPartitionByNode();
+                                replace_recursive(partition_by_node);
+                                window_node->getPartitionByNode() = partition_by_node;
+                            }
                         }
                     };
 
@@ -2303,6 +2329,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto window_node = query_node->getWindowNode();
                     replace_identifiers_in_node(window_node);
                     query_node->getWindowNode() = window_node;
+                }
+
+                /// Also process projection list for window functions in SELECT
+                {
+                    auto projection_node = query_node->getProjectionNode();
+                    replace_identifiers_in_node(projection_node);
+                    query_node->getProjectionNode() = projection_node;
                 }
             }
         }
