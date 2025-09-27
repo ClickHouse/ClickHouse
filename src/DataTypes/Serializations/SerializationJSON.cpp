@@ -23,8 +23,9 @@ SerializationJSON<Parser>::SerializationJSON(
     std::unordered_map<String, SerializationPtr> typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
+    const DataTypePtr & dynamic_type_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_)
+    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -211,7 +212,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 {
                     writeChar(settings.json.pretty_print_indent, (indent + i + 1) * settings.json.pretty_print_indent_multiplier, ostr);
                     writeJSONKey(path_elements.elements[i], ostr, settings);
-                    writeCString(" : {\n", ostr);
+                    writeCString(": {\n", ostr);
                 }
                 else
                 {
@@ -241,7 +242,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         {
             writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() + 1) * settings.json.pretty_print_indent_multiplier, ostr);
             writeJSONKey(path_elements.elements.back(), ostr, settings);
-            writeCString(" : ", ostr);
+            writeCString(": ", ostr);
         }
         else
         {
@@ -304,7 +305,7 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", object);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", object.substr(0, std::min(object.size(), 1000uz)), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
 
     String error;
     JSONExtractInsertSettings insert_settings;

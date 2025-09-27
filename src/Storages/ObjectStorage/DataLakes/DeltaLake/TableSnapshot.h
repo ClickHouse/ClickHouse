@@ -35,7 +35,7 @@ public:
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update(const DB::ContextPtr & context);
+    void update(const DB::ContextPtr & context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -55,6 +55,7 @@ public:
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
 
+    DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
     class Iterator;
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;

@@ -1,7 +1,9 @@
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -78,6 +80,12 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
+Type DataTypeEnum<Type>::getDefaultValue() const
+{
+    return this->getValues().front().second;
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     const auto & default_value = this->getValues().front().second;
@@ -139,6 +147,7 @@ static void checkOverflow(Int64 value)
     if (!(std::numeric_limits<Type>::min() <= value && value <= std::numeric_limits<Type>::max()))
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unexpected value {}", toString(value));
 }
+
 
 template <typename Type>
 Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const

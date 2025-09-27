@@ -64,6 +64,7 @@ static struct InitFiu
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
+    ONCE(object_storage_queue_fail_commit_once) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -113,7 +114,12 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
-    ONCE(smt_commit_exception_before_op)
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_delay_update_coordination_state_running) \
+    REGULAR(sleep_in_logs_flush) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+
 
 namespace FailPoints
 {

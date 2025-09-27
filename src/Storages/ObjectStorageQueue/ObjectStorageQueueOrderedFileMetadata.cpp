@@ -124,6 +124,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     size_t buckets_num_,
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
+    bool use_persistent_processing_nodes_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
@@ -133,6 +134,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
+        use_persistent_processing_nodes_,
         log_)
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
@@ -149,12 +151,14 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
 {
     if (DB::useBucketsForProcessing(buckets_num))
     {
-        std::vector<std::string> paths{"buckets", "failed", "processing"};
+        std::vector<std::string> paths{"buckets", "failed", "processing", "persistent_processing"};
         for (size_t i = 0; i < buckets_num; ++i)
             paths.push_back("buckets/" + toString(i));
         return paths;
     }
-    return {"failed", "processing"};
+    /// We do not return "processed" node here,
+    /// because we do not want it to be created in advance.
+    return {"failed", "processing", "persistent_processing"};
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -274,7 +278,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     auto processor_info = getProcessorInfo(processing_id.value());
 
-    const size_t max_num_tries = 1000;
+    const size_t max_num_tries = 100;
     Coordination::Error code;
     for (size_t i = 0; i < max_num_tries; ++i)
     {
@@ -343,7 +347,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
         const auto create_processing_path_idx = requests.size();
-        requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
+
+        requests.push_back(
+            zkutil::makeCreateRequest(
+                processing_node_path,
+                node_metadata.toString(),
+                use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
         bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
         if (create_if_not_exists_enabled)
@@ -386,6 +395,17 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             return {true, FileStatus::State::None};
         }
 
+        /// Requests:
+        /// 1. check failed node does not exist
+        /// 2. check processing node does not exist
+        /// 3. create processing id node if not exists
+        /// 4. set processing id
+        /// 5. if has bucket, check bucket version
+        /// 6. check processed node version did not change
+
+        auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+        LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, requests[failed_idx]->getPath());
+
         if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
 
@@ -408,7 +428,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// most likely the processing node id path node was removed or created so let's try again
-        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
+        LOG_DEBUG(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
 
     throw Exception(

@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+
 -- Test for issue #85608: Logical Error when using DROP COLUMN and COMMENT COLUMN IF EXISTS in same ALTER
 -- This test verifies that COMMENT COLUMN IF EXISTS works correctly when the column is being dropped in the same ALTER statement
 

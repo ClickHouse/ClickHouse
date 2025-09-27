@@ -28,6 +28,8 @@ public:
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
+    bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override { return getNested()->supportsDynamicSubcolumns(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
