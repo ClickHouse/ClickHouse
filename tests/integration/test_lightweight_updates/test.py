@@ -9,11 +9,13 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
 )
 
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
 )
 
 node3 = cluster.add_instance(
@@ -182,4 +184,46 @@ def test_lwu_upgrade(started_cluster, table_engine):
             settings={"apply_patch_parts": 0},
         )
         == "100000\n"
+    )
+
+
+def test_lwu_on_cluster(started_cluster):
+    node1.query("DROP TABLE IF EXISTS t_lwu_on_cluster")
+    node2.query("DROP TABLE IF EXISTS t_lwu_on_cluster")
+
+    create_query = """
+    CREATE TABLE t_lwu_on_cluster
+    (
+        `id` UInt32,
+        `value` String,
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+"""
+
+    node1.query(create_query)
+    node2.query(create_query)
+
+    node1.query(
+        "INSERT INTO t_lwu_on_cluster SELECT number, '' FROM numbers(10000) WHERE number % 4 != 0"
+    )
+    node2.query(
+        "INSERT INTO t_lwu_on_cluster SELECT number, '' FROM numbers(10000) WHERE number % 4 != 1"
+    )
+
+    assert (
+        node1.query(
+            "SELECT count() from remote(test_cluster, currentDatabase(), t_lwu_on_cluster)"
+        )
+        == "15000\n"
+    )
+    node1.query(
+        "UPDATE t_lwu_on_cluster ON CLUSTER test_cluster SET value = 'updated' WHERE id >= 2000 AND id < 3000"
+    )
+    assert (
+        node1.query(
+            "SELECT count() from remote(test_cluster, currentDatabase(), t_lwu_on_cluster) WHERE value = 'updated'"
+        )
+        == "1500\n"
     )
