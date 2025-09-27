@@ -26,8 +26,8 @@
 #- test_storage_iceberg_disks/
 # - test_storage_iceberg_concurrent/
 #- test_storage_iceberg_no_spark/
-#- test_storage_iceberg_schema_evolution/
-#- test_storage_iceberg_with_spark/
+- test_storage_iceberg_schema_evolution/
+- test_storage_iceberg_with_spark/
 #- test_keeper_map/
 #- test_keeper_multinode_simple/
 #- test_keeper_two_nodes_cluster/
@@ -61,5 +61,5 @@
 ## Creates too much servers
 #- test_backup_restore_on_cluster/test_concurrency.py
 ## TODO (alesapin) Try to verify that it's concurrency issue
-#- test_database_delta/test.py
+- test_database_delta/test.py
 #- test_keeper_ipv4_fallback/test.py
