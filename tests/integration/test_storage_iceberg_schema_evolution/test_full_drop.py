@@ -44,7 +44,7 @@ def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, sto
 def test_writes_truncate(started_cluster_iceberg_schema_evolution, format_version, storage_type):
     instance = started_cluster_iceberg_schema_evolution.instances["node1"]
     spark = started_cluster_iceberg_schema_evolution.spark_session
-    TABLE_NAME = "test_writes_complex_types_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_truncate_" + storage_type + "_" + get_uuid_str()
 
     schema = "(x String)"
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_schema_evolution, schema, format_version)

@@ -226,6 +226,8 @@ Int32 IcebergMetadata::parseTableSchema(
 bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg configuration lock is not successful");    
 
     std::lock_guard lock(mutex);
 
