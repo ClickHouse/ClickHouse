@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
+#include <shared_mutex>
+
 
 namespace DB
 {

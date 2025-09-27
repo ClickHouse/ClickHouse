@@ -3,6 +3,7 @@ description: 'System table which shows the content of the query cache.'
 keywords: ['system table', 'query_cache']
 slug: /operations/system-tables/query_cache
 title: 'system.query_cache'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
