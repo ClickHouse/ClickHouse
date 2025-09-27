@@ -88,10 +88,12 @@ def test_attach_without_zk(start_cluster):
     with PartitionManager() as pm:
         pm.add_rule(
             {
+                "instance": node1,
                 "probability": 0.5,
                 "source": node1.ip_address,
                 "destination_port": 2181,
                 "action": "DROP",
+                "protocol": "tcp",
             }
         )
         try:
