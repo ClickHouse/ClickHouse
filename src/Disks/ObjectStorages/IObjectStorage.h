@@ -199,10 +199,11 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
 
-    /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
     virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
 

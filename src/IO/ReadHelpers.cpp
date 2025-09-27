@@ -1303,7 +1303,6 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -1568,25 +1567,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if constexpr (throw_exception)
-        {
-            if (unlikely(year == 0))
-                datetime = 0;
-            else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-        }
+        if (unlikely(year == 0))
+            datetime = 0;
         else
-        {
-            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-            if (!datetime_maybe)
-                return false;
-
-            /// For usual DateTime check if value is within supported range
-            if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
-                return false;
-
-            datetime = *datetime_maybe;
-        }
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
     }
     else
     {

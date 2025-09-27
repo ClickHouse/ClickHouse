@@ -132,6 +132,7 @@ void logToSystemTextLogQueue(
 
 #undef SET_VALUE_IF_EXISTS
 
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     text_log_locked->push(std::move(elem));
 }
 }
@@ -139,6 +140,7 @@ void logToSystemTextLogQueue(
 void OwnSplitChannel::logSplit(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
 {
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     const Poco::Message & msg = *msg_ext.base;
 
     try
@@ -393,6 +395,7 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 
 void OwnAsyncSplitChannel::log(Poco::Message && msg)
 {
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
         /// Based on logger_useful.h this won't be called if the message is not needed

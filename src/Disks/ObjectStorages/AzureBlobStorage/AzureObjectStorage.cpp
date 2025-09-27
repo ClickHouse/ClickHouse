@@ -325,18 +325,6 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     return result;
 }
 
-std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path) const
-try
-{
-    return getObjectMetadata(path);
-}
-catch (const Azure::Storage::StorageException & e)
-{
-    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-        return {};
-    throw;
-}
-
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,

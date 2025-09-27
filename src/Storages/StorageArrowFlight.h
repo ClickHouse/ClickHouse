@@ -58,7 +58,7 @@ public:
     SinkToStoragePtr
     write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write) override;
 
-    static ColumnsDescription getTableStructureFromData(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_);
+    Names getColumnNames();
 
 private:
     std::shared_ptr<ArrowFlightConnection> connection;

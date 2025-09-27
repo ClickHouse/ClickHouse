@@ -68,8 +68,7 @@ public:
     bool refreshesStopped() const;
 
     /// Called during shutdown, after setRefreshesStopped(true).
-    /// Returns false if some tasks are still running after deadline.
-    bool joinBackgroundTasks(std::chrono::steady_clock::time_point deadline);
+    void joinBackgroundTasks(std::chrono::steady_clock::time_point deadline);
 
 private:
     using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;

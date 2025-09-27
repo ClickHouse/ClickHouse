@@ -468,7 +468,7 @@ struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
     ZooKeeperCheckRequest() = default;
     explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
-    OpNum getOpNum() const override;
+    OpNum getOpNum() const override { return not_exists ? OpNum::CheckNotExists : OpNum::Check; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -495,12 +495,6 @@ struct ZooKeeperCheckResponse : CheckResponse, ZooKeeperResponse
 struct ZooKeeperCheckNotExistsResponse : public ZooKeeperCheckResponse
 {
     OpNum getOpNum() const override { return OpNum::CheckNotExists; }
-    using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
-};
-
-struct ZooKeeperCheckStatResponse : public ZooKeeperCheckResponse
-{
-    OpNum getOpNum() const override { return OpNum::CheckStat; }
     using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
 };
 

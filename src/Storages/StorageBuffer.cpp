@@ -1,6 +1,5 @@
 #include <Storages/StorageBuffer.h>
 
-#include <Access/Common/AccessFlags.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
@@ -291,7 +290,6 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -644,14 +642,13 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage, WithContext
+class BufferSink : public SinkToStorage
 {
 public:
     explicit BufferSink(
         StorageBuffer & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const ContextPtr & context_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
+        const StorageMetadataPtr & metadata_snapshot_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
@@ -672,7 +669,6 @@ public:
         StoragePtr destination = storage.getDestinationTable();
         if (destination)
         {
-            getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
@@ -770,9 +766,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot, local_context);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
 
 

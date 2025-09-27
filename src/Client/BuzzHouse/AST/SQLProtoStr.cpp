@@ -2323,7 +2323,7 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
 
 CONV_FN(ArrowFlightFunc, afunc)
 {
-    ret += "arrowFlight('";
+    ret += "arrowflight('";
     ret += afunc.address();
     ret += "', '";
     ret += afunc.dataset();
@@ -4889,10 +4889,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
             ret += FailPoint_Name(cmd.disable_failpoint());
-            break;
-        case CmdType::kIcebergMetadataCache:
-            ret += "DROP ICEBERG METADATA CACHE";
-            can_set_cluster = true;
             break;
         default:
             ret += "FLUSH LOGS";

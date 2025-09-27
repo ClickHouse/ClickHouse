@@ -255,9 +255,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global)
         {
             /// For global memory tracker always update memory usage.
-            Int64 will_be = amount.fetch_add(size, std::memory_order_relaxed);
+            amount.fetch_add(size, std::memory_order_relaxed);
             rss.fetch_add(size, std::memory_order_relaxed);
-            updatePeak(will_be, /*log_memory_usage=*/ false);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
