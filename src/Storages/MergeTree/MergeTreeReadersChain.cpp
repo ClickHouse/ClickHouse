@@ -61,13 +61,23 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
 
+    ReadResult read_result{log};
+
     if (range_readers.empty())
-        return ReadResult{log};
+        return read_result;
 
     auto & first_reader = range_readers.front();
-    auto read_result = first_reader.startReadingChain(max_rows, ranges);
 
-    LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
+    try
+    {
+        read_result = first_reader.startReadingChain(max_rows, ranges);
+        LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While reading part {}", first_reader.getReader()->data_part_info_for_read->getPartName());
+        throw;
+    }
 
     if (read_result.num_rows != 0)
     {
