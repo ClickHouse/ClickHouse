@@ -65,6 +65,7 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
                         "source": node.ip_address,
                         "destination": cluster.get_instance_ip(zk),
                         "action": "REJECT --reject-with tcp-reset",
+                        "protocol": "tcp",
                     }
                 )
 
@@ -103,6 +104,7 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo3"),
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
 

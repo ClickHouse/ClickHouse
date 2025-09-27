@@ -141,9 +141,11 @@ def test_round_robin(started_cluster):
 
             pm.add_rule(
                 {
+                    "instance": node,
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo" + str(idx + 1)),
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
 
@@ -168,6 +170,7 @@ def test_az(started_cluster):
                 "source": node4.ip_address,
                 "destination": cluster.get_instance_ip("zoo2"),
                 "action": "REJECT --reject-with tcp-reset",
+                "protocol": "tcp",
             }
         )
 
