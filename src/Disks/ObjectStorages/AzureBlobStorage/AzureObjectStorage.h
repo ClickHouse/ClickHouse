@@ -9,7 +9,6 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorageConnectionInfo.h>
 
 namespace Poco
 {
@@ -75,8 +74,6 @@ public:
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
-
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

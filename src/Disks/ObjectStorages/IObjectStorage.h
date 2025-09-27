@@ -13,7 +13,6 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
-#include <Disks/ObjectStorages/IObjectStorageConnectionInfo.h>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -203,8 +202,6 @@ public:
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
-
-    virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

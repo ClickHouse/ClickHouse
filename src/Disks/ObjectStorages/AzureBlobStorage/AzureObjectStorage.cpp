@@ -397,11 +397,6 @@ void AzureObjectStorage::applyNewSettings(
 }
 
 
-ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
-{
-    return DB::getAzureObjectStorageConnectionInfo(connection_params);
-}
-
 }
 
 #endif
