@@ -79,6 +79,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -477,7 +479,15 @@ getColumnsForNewDataPart(
         }
     }
 
-    SerializationInfoByName new_serialization_infos;
+    SerializationInfo::Settings settings
+    {
+        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+    };
+
+    SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -498,12 +508,6 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
-
-        SerializationInfo::Settings settings
-        {
-            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false
-        };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
             continue;
@@ -977,11 +981,8 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    if (!source_part->getSerializationInfos().empty()
-        && new_part->getSerializationInfos().empty())
-    {
+    if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
-    }
 
     return rename_vector;
 }
@@ -1022,11 +1023,12 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_ttl));
     }
 
-    if (!new_data_part->getSerializationInfos().empty())
+    const auto & serialization_infos = new_data_part->getSerializationInfos();
+    if (serialization_infos.needsPersistence())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        serialization_infos.writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();

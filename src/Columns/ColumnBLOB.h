@@ -121,13 +121,12 @@ public:
         ColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
-        const FormatSettings * format_settings,
-        double avg_value_size_hint)
+        const FormatSettings * format_settings)
     {
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
         return nested;
     }
 
