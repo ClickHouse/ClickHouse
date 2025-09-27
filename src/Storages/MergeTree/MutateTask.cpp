@@ -193,6 +193,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -333,6 +334,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
