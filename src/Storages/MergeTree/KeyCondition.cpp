@@ -46,8 +46,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -3237,12 +3235,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
 {
     std::vector<BoolMask> rpn_stack;
 
-#if 0
-    std::stringstream ss;
-    for (const auto & element : rpn)
-	    ss << "-" << element.function << "(" << element.key_column << ")";
-    /// LOG_TRACE(getLogger(""), "KeyCondition is {}, rpn is {}", toString(), ss.str());
-#endif
     auto curve_type = [&](size_t key_column_pos)
     {
         for (const auto & curve : key_space_filling_curves)

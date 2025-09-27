@@ -670,7 +670,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
-    const KeyCondition & key_condition_rpn_template,
+    const std::optional<KeyCondition> & key_condition_rpn_template,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
@@ -761,7 +761,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
-    const bool support_disjuncts = !key_condition_rpn_template.isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts];
+    const bool support_disjuncts = key_condition_rpn_template && !key_condition_rpn_template.value().isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts];
 
     /// Let's find what range to read from each part.
     {
@@ -848,7 +848,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
-                std::unordered_map<size_t, KeyCondition::RPN> partial_eval_results;
+                std::unordered_map<size_t, std::vector<bool>> partial_eval_results;
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -892,7 +892,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
-			    support_disjuncts,
+                            support_disjuncts,
                             partial_eval_results,
                             log);
                     }
@@ -904,11 +904,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-		if (support_disjuncts)
-		{
-			ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part, ranges.ranges, key_condition_rpn_template.getRPN(), partial_eval_results);
-			sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-		}
+                if (support_disjuncts)
+                {
+                    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+                            reader_settings.merge_tree_min_rows_for_seek,
+                            reader_settings.merge_tree_min_bytes_for_seek,
+                            ranges.data_part->index_granularity_info.fixed_index_granularity,
+                            ranges.data_part->index_granularity_info.index_granularity_bytes);
+
+                    ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
+                                        ranges.ranges, key_condition_rpn_template.value(),
+                                        partial_eval_results, min_marks_for_seek, log);
+
+                    sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+                }
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
                 {
@@ -1059,7 +1068,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             index_stats.emplace_back(ReadFromMergeTree::IndexStat{
                 .type = ReadFromMergeTree::IndexType::Skip,
-                .name = "<Combined>",
+                .name = "<Combined Skip Indexes>",
                 .description = "Final set of granules after AND/OR processing",
                 .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
                 .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
@@ -1760,17 +1769,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     return res;
 }
-/*
-static void partial_results_callback(size_t position, bool result)
-{
-    LOG_TRACE(getLogger(""), "Partial results {} -> {}", position, result);
-}
-*/
 
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
-    const KeyCondition & key_condition_rpn_template,
+    const std::optional<KeyCondition> & key_condition_rpn_template,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const RangesInDataPartReadHints & in_read_hints,
@@ -1779,7 +1782,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool support_disjuncts,
-    std::unordered_map<size_t, KeyCondition::RPN> & partial_eval_results_for_disjuncts,
+    std::unordered_map<size_t, std::vector<bool>> & partial_eval_results_for_disjuncts,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1802,6 +1805,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+
 
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
@@ -1939,27 +1943,25 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 else
                 {
                     bool result = true;
-		    if (support_disjuncts)
+                    if (support_disjuncts)
                     {
                         auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
-                        if (partial_eval_results_for_disjuncts.find(range_begin) == partial_eval_results_for_disjuncts.end())
-                            partial_eval_results_for_disjuncts[range_begin] = key_condition_rpn_template.getRPN();
+                        const size_t rpn_expr_length =  key_condition_rpn_template.value().getRPN().size();
+                        auto [it, inserted] = partial_eval_results_for_disjuncts.emplace(range_begin, std::vector<bool>(rpn_expr_length, true));
+                        auto & rpn_of_range = it->second;
 
-			auto & rpn_of_range = partial_eval_results_for_disjuncts[range_begin];
-
-                        auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown) {
-                            /// LOG_TRACE(getLogger(""), "New partial {} {} {}", part->name, position, result);
+                        auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown)
+                        {
                             if (!is_unknown)
-                                rpn_of_range[position].function =
-                                    element_result ? KeyCondition::RPNElement::Function::ALWAYS_TRUE : KeyCondition::RPNElement::Function::ALWAYS_FALSE;
-		            };
+                                rpn_of_range[position] = element_result;
+                        };
                         result = condition->mayBeTrueOnGranule(granule, support_disjunct_callback);
-		    }
+                    }
                     else
-		    {
+                    {
                         result = condition->mayBeTrueOnGranule(granule);
-		    }
-                       
+                    }
+
                     if (!result)
                         continue;
 
@@ -1967,7 +1969,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         std::max(ranges[i].begin, index_mark * index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
-                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek || support_disjuncts)
+                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
@@ -2251,83 +2253,89 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     }
 }
 
+/// Evaluate the predicate condition using the saved partial results.
+/// e.g (A = 5 OR (B = 5 AND C = 5))
+/// For each range, we have saved the results of evaluation with
+/// skip index A, skip index B, skip index C. Now we run a "final pass"
+/// to see if the range qualifies on the whole condition.
 MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
-    MergeTreeData::DataPartPtr /*part*/,
+    MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const KeyCondition::RPN & rpn_template_for_eval_result,
-    const std::unordered_map<size_t, KeyCondition::RPN> & partial_eval_results)
+    const KeyCondition & rpn_template_for_eval_result,
+    const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
+    const size_t min_marks_for_seek,
+    LoggerPtr log)
 {
     MarkRanges res;
 
-    /// LOG_TRACE(getLogger(""), "Finalizing for part {}, ranges = {}", part->name, ranges.size());
-/*
-    auto getResultForRangeAndPosition = [&](size_t range_begin, size_t position)
-    {
-        auto range_result = partial_eval_results.find(range_begin);
-        if (range_result != partial_eval_results.end())
-        {
-            if (range_result->second[position].function == KeyCondition::RPNElement::ALWAYS_FALSE)
-                return false;
-        }
-	return true;
-    };
-*/
+    auto rpn_template_for_eval_result_string = rpn_template_for_eval_result.toString();
+
+    LOG_DEBUG(log, "Entered finalSetOfRangesForConditionWithORs for part {}, rpn = {}",
+              part->name, rpn_template_for_eval_result_string);
+
     /// Evaluate the RPN over all the ranges.
+    auto rpn = rpn_template_for_eval_result.getRPN();
     for (auto range : ranges)
     {
-        std::vector<bool> rpn_stack;
-        size_t position = 0;
-        auto range_result = partial_eval_results.find(range.begin);
-        auto range_found = range_result != partial_eval_results.end();
-        for (const auto & element : rpn_template_for_eval_result)
+        for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
         {
-            if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+            size_t position = 0;
+            auto range_result = partial_eval_results.find(range_begin);
+            auto range_found = range_result != partial_eval_results.end();
+
+            std::vector<bool> rpn_stack;
+
+            for (const auto & element : rpn)
             {
-	        if (range_found && range_result->second[position].function == KeyCondition::RPNElement::ALWAYS_FALSE)
-                    rpn_stack.emplace_back(false);
-		else
+                if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+                {
+                    if (range_found)
+                        rpn_stack.emplace_back(range_result->second[position]);
+                    else
+                        rpn_stack.emplace_back(true);
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+                {
+                    rpn_stack.back() = !rpn_stack.back();
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+                {
+                    auto arg1 = rpn_stack.back();
+                    rpn_stack.pop_back();
+                    auto arg2 = rpn_stack.back();
+                    rpn_stack.back() = arg1 || arg2;
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+                {
+                    auto arg1 = rpn_stack.back();
+                    rpn_stack.pop_back();
+                    auto arg2 = rpn_stack.back();
+                    rpn_stack.back() = arg1 && arg2;
+                }
+                else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
+                {
                     rpn_stack.emplace_back(true);
+                }
+                else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+                {
+                    rpn_stack.emplace_back(false);
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForConditionWithORs(), RPN = {}", element.function, rpn_template_for_eval_result_string);
+                position++;
             }
-            else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+
+            if (rpn_stack.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForConditionWithORs(), RPN = {}", rpn_stack.size(), rpn_template_for_eval_result_string);
+
+            if (rpn_stack[0])
             {
-                rpn_stack.back() = !rpn_stack.back();
+                if (res.empty() || range_begin - res.back().end > min_marks_for_seek)
+                    res.push_back({range_begin, range_begin + 1});
+                else
+                    res.back().end = range_begin + 1;
             }
-            else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
-            {
-                auto arg1 = rpn_stack.back();
-                rpn_stack.pop_back();
-                auto arg2 = rpn_stack.back();
-                rpn_stack.back() = arg1 || arg2;
-            }
-            else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
-            {
-                auto arg1 = rpn_stack.back();
-                rpn_stack.pop_back();
-                auto arg2 = rpn_stack.back();
-                rpn_stack.back() = arg1 && arg2;
-            }
-            else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
-            {
-                rpn_stack.emplace_back(true);
-            }
-            else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
-            {
-                rpn_stack.emplace_back(false);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForConditionWithORs()", element.function);
-            position++;
         }
-
-        if (rpn_stack.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForConditionWithORs()", rpn_stack.size());
-
-        if (rpn_stack[0])
-	{
-            /// LOG_TRACE(getLogger(""), "finalized range {}", range.begin);
-            res.push_back({range.begin, range.end}); /// TODO - range coalesce
-						     ///
-	}
     }
     return res;
 }

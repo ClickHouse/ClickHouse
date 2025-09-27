@@ -37,7 +37,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
-#if 0
+    std::unordered_map<size_t, std::vector<bool>> partial_results_unused;
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -47,9 +47,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             break;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
+	    {},
             part.data_part,
             ranges,
             part.read_hints,
@@ -57,9 +59,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
+            false, /* support disjuncts */
+            partial_results_unused,
             log).first;
     }
-#endif
+
     for (const auto & indices_and_condition : skip_indexes.merged_indices)
     {
         if (is_cancelled)

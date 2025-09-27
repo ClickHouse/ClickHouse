@@ -2082,7 +2082,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
-            indexes->key_condition_rpn_template.value(),
+            indexes->key_condition_rpn_template,
             indexes->skip_indexes,
             reader_settings,
             log,

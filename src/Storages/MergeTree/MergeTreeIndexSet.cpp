@@ -736,7 +736,6 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
 
     auto column_name = tree_node.getColumnName();
-    LOG_TRACE(getLogger("SetUseless"), "Checking set column {} result {}", column_name, key_columns.contains(column_name));
     return !key_columns.contains(column_name);
 }
 
