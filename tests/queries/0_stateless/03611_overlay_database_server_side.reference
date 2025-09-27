@@ -1,0 +1,26 @@
+CREATE DATABASE db_overlay\nENGINE = Overlay(\'db_a\', \'db_b\')
+t_a
+t_b
+1	a1
+2	a2
+10	b10
+20	b20
+t_a
+t_b
+t_new
+100	x
+200	y
+100	x
+200	y
+999	Pass-through overlay
+100	x
+200	y
+999	Pass-through overlay
+t_a
+t_b
+t_new_renamed
+100	x
+200	y
+999	Pass-through overlay
+t_a
+t_b
