@@ -29,6 +29,7 @@ extern const SettingsNonZeroUInt64 max_block_size;
 }
 namespace DB::ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -144,7 +145,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ChunkInfoRowNumOffset does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
     size_t row_num_offset = chunk_info->row_num_offset;
     for (size_t i = 0; i < num_rows; i++)
