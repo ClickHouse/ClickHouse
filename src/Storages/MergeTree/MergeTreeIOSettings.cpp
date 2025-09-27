@@ -28,7 +28,6 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
-    extern const SettingsDouble query_condition_cache_selectivity_threshold;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsUInt64 filesystem_prefetches_limit;
@@ -107,7 +106,6 @@ MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & conte
         .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
         .use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer],
         .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
-        .query_condition_cache_selectivity_threshold = settings[Setting::query_condition_cache_selectivity_threshold],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
         .secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering],
