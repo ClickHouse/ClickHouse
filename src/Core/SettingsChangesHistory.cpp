@@ -44,20 +44,24 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
+            {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
+            {"allow_experimental_qbit_type", false, false, "New experimental setting"},
+            {"optimize_qbit_distance_function_reads", true, true, "New setting"},
+            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
-            {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
-            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
@@ -77,7 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
-            {"os_thread_priority", 0, 0, "Obsolete setting."},
+            {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -129,7 +133,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
@@ -145,7 +149,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -194,8 +198,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
