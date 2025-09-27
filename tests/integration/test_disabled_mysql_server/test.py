@@ -67,8 +67,9 @@ def test_disabled_mysql_server(started_cluster):
             f"CREATE DATABASE test_db_disabled ENGINE = MySQL('mysql80:3306', 'test_db_disabled', 'root', '{mysql_pass}')"
         )
 
-        pm._add_rule(
+        pm.add_rule(
             {
+                "instance": clickhouse_node,
                 "source": clickhouse_node.ip_address,
                 "destination_port": 3306,
                 "action": "DROP",

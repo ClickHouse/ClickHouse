@@ -30,7 +30,7 @@ CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
 CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
-NUM_WORKERS = 4
+NUM_WORKERS = 3
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
@@ -547,7 +547,8 @@ class ClickhouseIntegrationTestsRunner:
             report_name = f"{test_group_str}_{i}.jsonl"
             report_path = os.path.join(self.repo_path, "tests/integration", report_name)
 
-            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
+            module_names = {name.split("::")[0] for name in test_names}
+            test_cmd = " ".join([shlex.quote(module) for module in sorted(module_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
             # Run flaky tests in a random order to increase chance to catch an error
             repeat_cmd = (
