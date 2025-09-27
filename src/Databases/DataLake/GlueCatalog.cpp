@@ -430,7 +430,8 @@ bool GlueCatalog::empty() const
 
 bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
-    String metadata_path, metadata_uri;
+    String metadata_path;
+    String metadata_uri;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
