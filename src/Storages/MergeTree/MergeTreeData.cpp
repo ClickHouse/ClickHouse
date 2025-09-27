@@ -3192,7 +3192,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         for (const auto & it_to_delete : parts_to_delete)
         {
             res.emplace_back(*it_to_delete);
-            modifyPartState(it_to_delete, DataPartState::Deleting);
+            modifyPartState(it_to_delete, DataPartState::Deleting, parts_lock);
         }
     }
 
@@ -3211,7 +3211,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     {
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
-        modifyPartState(part, DataPartState::Outdated);
+        modifyPartState(part, DataPartState::Outdated, lock);
         part->removal_state.store(DataPartRemovalState::REMOVE_ROLLED_BACK, std::memory_order_relaxed);
     }
 }
@@ -3734,7 +3734,7 @@ void MergeTreeData::dropAllData()
             ++skipped_parts;
             continue;
         }
-        modifyPartState(it, DataPartState::Deleting);
+        modifyPartState(it, DataPartState::Deleting, lock);
         all_parts.push_back(*it);
     }
     if (skipped_parts > 0)
@@ -4986,7 +4986,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->getState() != MergeTreeDataPartState::Outdated)
-            modifyPartState(part, MergeTreeDataPartState::Outdated);
+            modifyPartState(part, MergeTreeDataPartState::Outdated, acquired_lock);
     }
 
     if (removed_active_part)
@@ -5005,7 +5005,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
 
         assert(part->getState() == MergeTreeDataPartState::PreActive);
 
-        modifyPartState(part, MergeTreeDataPartState::Temporary);
+        modifyPartState(part, MergeTreeDataPartState::Temporary, lock);
         /// Erase immediately
         LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
         data_parts_indexes.erase(it_part);
@@ -5199,7 +5199,7 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     addPartContributionToColumnAndSecondaryIndexSizes(part);
     addPartContributionToUncompressedBytesInPatches(part);
     addPartContributionToDataVolume(part);
-    modifyPartState(part, DataPartState::Active);
+    modifyPartState(part, DataPartState::Active, lock);
 }
 
 
@@ -5243,7 +5243,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         removed_active_part = true;
     }
 
-    modifyPartState(it_part, DataPartState::Deleting);
+    modifyPartState(it_part, DataPartState::Deleting, lock);
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
@@ -5282,7 +5282,7 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
                 return false;
             }
 
-            modifyPartState(it, DataPartState::Deleting);
+            modifyPartState(it, DataPartState::Deleting, lock);
 
             part_to_delete = *it;
         }
@@ -5618,7 +5618,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 }
 
 
-void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &)
+void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & lock)
 {
     for (auto original_active_part : getDataPartsStateRange(DataPartState::Active)) // NOLINT (copy is intended)
     {
@@ -5640,13 +5640,13 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
                 original_active_part->force_keep_shared_data = true;
             }
 
-            modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
+            modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);
 
             LOG_TEST(log, "swapActivePart: inserting {} into data_parts_indexes", part_copy->getNameWithState());
             auto part_it = data_parts_indexes.insert(part_copy).first;
-            modifyPartState(part_it, DataPartState::Active);
+            modifyPartState(part_it, DataPartState::Active, lock);
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
@@ -7934,7 +7934,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                         LOG_INFO(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
                     part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
-                    data.modifyPartState(part, DataPartState::Outdated);
+                    data.modifyPartState(part, DataPartState::Outdated, *owing_parts_lock);
                 }
                 else
                 {
@@ -7949,7 +7949,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                         reduce_bytes += covered_part->getBytesOnDisk();
                         reduce_rows += covered_part->rows_count;
 
-                        data.modifyPartState(covered_part, DataPartState::Outdated);
+                        data.modifyPartState(covered_part, DataPartState::Outdated, *owing_parts_lock);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
                         data.removePartContributionToUncompressedBytesInPatches(covered_part);
                     }
@@ -7960,7 +7960,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                     add_rows += part->rows_count;
                     ++add_parts;
 
-                    data.modifyPartState(part, DataPartState::Active);
+                    data.modifyPartState(part, DataPartState::Active, *owing_parts_lock);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
                     data.addPartContributionToUncompressedBytesInPatches(part);
                 }
