@@ -458,16 +458,9 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
             args[0] = std::make_shared<DB::ASTLiteral>(metadata_uri);
 
         if (table_metadata.hasStorageCredentials())
-        {
-            if (auto storage_credentials = table_metadata.getStorageCredentials())
-            {
-                storage_credentials->addCredentialsToEngineArgs(args);
-            }
-        }
+            table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
         else
-        {
             DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
-        }
 
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
         storage_settings->loadFromSettingsChanges(settings.allChanged());
