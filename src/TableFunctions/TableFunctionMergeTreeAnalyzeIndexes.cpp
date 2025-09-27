@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
@@ -156,9 +157,16 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
 {
     StoragePtr source_table;
     if (source_table_id.hasUUID())
-        source_table = DatabaseCatalog::instance().getByUUID(source_table_id.uuid).second;
+    {
+        /// Note, there is no getByUUID() at the time of writing, hence using try*() methods.
+        auto database_and_table = DatabaseCatalog::instance().tryGetByUUID(source_table_id.uuid);
+        source_table = DatabaseCatalog::instance().tryGetByUUID(source_table_id.uuid).second;
+        if (!source_table)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", source_table_id.uuid);
+    }
     else
         source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 
