@@ -1,0 +1,114 @@
+=====================================================================
+Test : ClickHouse NULL-safe comparison
+(1) <=> (IS NOT DISTINCT FROM)
+(2) IS DISTINCT FROM
+=====================================================================
+Purpose:
+1. Validate behavior of <=> and IS DISTINCT FROM across a wide range of ClickHouse data types and SQL clauses.
+2. Cover numeric, floating, string, enum, date/time, complex types, and NULL / NaN edge cases.
+3. test null-safe comparison in SELECT clause, WHERE, ORDER BY, GROUP BY, HAVING, JOIN, CASE/IF, WINDOW, and subqueries.
+=====================================================================
+0. Main table with many types
+Insert rows containing:
+• normal values
+• NULLs
+• NaN
+• edge numeric boundaries
+1.1 Basic NULL-safe equality and distinctness
+Compare same column to itself and cross type
+1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0
+1	0	1	0	0	1	1	0
+1	0	0	1	0	1	0	1
+1.2 NaN behavior
+NaN <=> NaN = 0, NaN <=> number = 0
+NaN is distinct from NaN = 1, NaN is distinct from number = 1
+-0	0	1	0	1
+0	0	1	0	1
+1	0	1	1	0
+nan	0	1	0	1
+1.3 String, FixedString, Enum
+0	1	0	1	1	0	1	0
+0	1	0	1	0	1	0	1
+1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1
+1.4 Date and time
+0	1	0	1	0	1
+0	1	0	1	0	1
+1	0	1	0	1	0
+0	1	0	1	0	1
+1.5 Complex types: Array / Tuple / Map / JSON
+0	1	0	1	0	1	0	1
+0	1	0	1	0	1	0	1
+1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1
+1.6 UUID / IPv4 / IPv6 comparisons
+NULL-safe comparisons with type-correct literals
+1	0	0	1	0	1
+1	0	0	1	0	1
+1	0	1	0	1	0
+1	0	0	1	0	1
+prepare table
+1.7 WHERE Clause
+1	1	1	1	0
+2	1	\N	0	1
+3	\N	\N	1	0
+4	2	2	1	0
+1.8 WHERE Clause + Union All
+<=> 1	1	1	1	x
+<=> 1	2	1	\N	x
+IS DISTINCT FROM 1	3	\N	\N	y
+IS DISTINCT FROM 1	4	2	2	z
+1.9 ORDER BY Clause
+1	1	1	1	0
+3	\N	\N	1	0
+4	2	2	1	0
+2	1	\N	0	1
+1.10 GROUP BY Clause
+0	1	1	[2]
+1	0	3	[1,3,4]
+1.11 Aggregate Func
+2	2	4
+1.12 HAVING Clause
+x	1	1	1	0
+y	\N	\N	1	0
+z	2	2	1	0
+1.13 JOIN Clause
+<=> JOIN	1	1	1	1
+<=> JOIN	2	1	1	1
+<=> JOIN	3	2	\N	\N
+<=> JOIN	3	3	\N	\N
+<=> JOIN	4	4	2	2
+IS DISTINCT FROM JOIN	1	2	1	\N
+IS DISTINCT FROM JOIN	1	3	1	\N
+IS DISTINCT FROM JOIN	1	4	1	2
+IS DISTINCT FROM JOIN	2	2	1	\N
+IS DISTINCT FROM JOIN	2	3	1	\N
+IS DISTINCT FROM JOIN	2	4	1	2
+IS DISTINCT FROM JOIN	3	1	\N	1
+IS DISTINCT FROM JOIN	3	4	\N	2
+IS DISTINCT FROM JOIN	4	1	2	1
+IS DISTINCT FROM JOIN	4	2	2	\N
+IS DISTINCT FROM JOIN	4	3	2	\N
+1.14 CASE WHEN Clause
+1	1	1	null_safe_equal	same
+2	1	\N	null_safe_distinct	different
+3	\N	\N	null_safe_equal	same
+4	2	2	null_safe_equal	same
+1.15 IF function
+1	1	1	safe-equal	same
+2	1	\N	not_equal	distinct
+3	\N	\N	safe-equal	same
+4	2	2	safe-equal	same
+1.16 Window Func
+1	1	1	1	0	3	3	3
+2	1	\N	0	1	1	1	1
+3	\N	\N	1	0	3	3	3
+4	2	2	1	0	3	3	3
+1.17 Subquery filter
+1	1	1	0	1
+2	1	\N	1	1
+3	\N	\N	0	0
+4	2	2	0	1
+1.18 OR / AND
+0	1
