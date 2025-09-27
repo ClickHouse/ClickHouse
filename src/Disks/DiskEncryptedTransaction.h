@@ -89,13 +89,6 @@ public:
         delegate_transaction->createDirectories(wrapped_path);
     }
 
-    /// Remove all files from the directory. Directories are not removed.
-    void clearDirectory(const std::string & path) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate_transaction->clearDirectory(wrapped_path);
-    }
-
     /// Move directory from `from_path` to `to_path`.
     void moveDirectory(const std::string & from_path, const std::string & to_path) override
     {
