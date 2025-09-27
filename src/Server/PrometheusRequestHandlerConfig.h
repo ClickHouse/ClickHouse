@@ -29,6 +29,8 @@ struct PrometheusRequestHandlerConfig
     bool expose_asynchronous_metrics = false;
     bool expose_events = false;
     bool expose_errors = false;
+    bool expose_histograms = false;
+    bool expose_dimensional_metrics = false;
 
     /// Settings for types RemoteWrite, RemoteRead:
     QualifiedTableName time_series_table_name;

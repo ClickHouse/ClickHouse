@@ -43,6 +43,8 @@ namespace
         res.expose_asynchronous_metrics = config.getBool(config_prefix + ".asynchronous_metrics", true);
         res.expose_events = config.getBool(config_prefix + ".events", true);
         res.expose_errors = config.getBool(config_prefix + ".errors", true);
+        res.expose_histograms = config.getBool(config_prefix + ".histograms", true);
+        res.expose_dimensional_metrics = config.getBool(config_prefix + ".dimensional_metrics", true);
         parseCommonConfig(config, res);
         return res;
     }
