@@ -1644,6 +1644,11 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     if (type->hasCustomName())
         return makeNullableSafe(type);
 
+    /// Leave named compound types unchanged.
+    /// E.g. don't turn `Point` into `Tuple(Nullable(Float64), Nullable(Float64))`.
+    if (type->hasCustomName())
+        return makeNullableSafe(type);
+
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
