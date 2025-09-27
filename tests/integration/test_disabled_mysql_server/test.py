@@ -69,6 +69,7 @@ def test_disabled_mysql_server(started_cluster):
 
         pm.add_rule(
             {
+                "instance": clickhouse_node,
                 "source": clickhouse_node.ip_address,
                 "destination_port": 3306,
                 "action": "DROP",

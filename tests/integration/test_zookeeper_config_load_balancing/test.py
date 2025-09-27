@@ -164,6 +164,7 @@ def test_az(started_cluster):
         # make sure it disconnects from the optimal node
         pm.add_rule(
             {
+                "instance": node4,
                 "source": node4.ip_address,
                 "destination": cluster.get_instance_ip("zoo2"),
                 "action": "REJECT --reject-with tcp-reset",

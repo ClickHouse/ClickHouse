@@ -69,6 +69,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     "destination": sacrifice.ip_address,
                     "source_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
             self.pm_random_drops.add_rule(
@@ -78,6 +79,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     "source": sacrifice.ip_address,
                     "destination_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
 
