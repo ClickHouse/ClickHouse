@@ -1768,4 +1768,12 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
         getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
+void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+    for (size_t i = 0; i != variants.size(); ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+}
+
+
 }
