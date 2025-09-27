@@ -1,35 +1,35 @@
 --
 0
 SELECT NOT 1
-SELECT NOT 1
+SELECT not(1)
 --
 SELECT not(1, 1, 1)
 SELECT not(1, 1, 1)
 --
-SELECT NOT tuple(1)
-SELECT NOT tuple(1)
+SELECT not(tuple(1))
+SELECT not(tuple(1))
 SELECT NOT tuple(1)
 --
+SELECT not((1, 1, 1))
+SELECT not((1, 1, 1))
 SELECT NOT ((1, 1, 1))
-SELECT NOT ((1, 1, 1))
-SELECT NOT ((1, 1, 1))
-SELECT NOT ((1, 1, 1))
+SELECT not((1, 1, 1))
 --
 SELECT NOT [1]
+SELECT NOT array(1)
+SELECT not(array(1))
 SELECT NOT [1]
-SELECT NOT [1]
-SELECT NOT [1]
-SELECT NOT [1]
+SELECT not([1])
 --
 SELECT -[1]
-SELECT -[1]
-SELECT -[1]
+SELECT -array(1)
+SELECT -array(1)
 SELECT -[1]
 SELECT -[1]
 --
 (-1,-1,-1)
 SELECT -(1, 1, 1)
-SELECT -(1, 1, 1)
+SELECT negate((1, 1, 1))
 SELECT -(1, 1, 1)
 SELECT -(1, 1, 1)
 --
