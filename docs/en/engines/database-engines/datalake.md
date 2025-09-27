@@ -3,7 +3,6 @@ description: 'The DataLakeCatalog database engine enables you to connect ClickHo
 sidebar_label: 'DataLakeCatalog'
 slug: /engines/database-engines/datalakecatalog
 title: 'DataLakeCatalog'
-doc_type: 'reference'
 ---
 
 # DataLakeCatalog

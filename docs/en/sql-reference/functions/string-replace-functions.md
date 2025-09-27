@@ -3,7 +3,6 @@ description: 'Documentation for Functions for Replacing in Strings'
 sidebar_label: 'String replacement'
 slug: /sql-reference/functions/string-replace-functions
 title: 'Functions for Replacing in Strings'
-doc_type: 'reference'
 ---
 
 # Functions for Replacing in Strings
@@ -346,6 +345,8 @@ Query:
 ```sql
 SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
+
+
 ```response
 ┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
 │ %Hello World 2024                            │

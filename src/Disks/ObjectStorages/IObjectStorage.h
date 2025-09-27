@@ -134,7 +134,6 @@ struct RelativePathWithMetadata
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 };
 
 struct ObjectKeyWithMetadata
@@ -199,10 +198,11 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
 
-    /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
     virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
 
@@ -210,7 +210,8 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

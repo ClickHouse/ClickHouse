@@ -56,6 +56,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
@@ -1504,13 +1505,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
-                        "Temporary objects (tables/views) cannot be inside a database. "
-                        "You should not specify a database for a temporary objects.");
-
-    if (create.temporary && !create.cluster.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Temporary objects (tables/views) cannot be created ON CLUSTER."
-            "You should not specify a cluster for a temporary objects.");
+                        "Temporary tables cannot be inside a database. "
+                        "You should not specify a database for a temporary table.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -1971,7 +1967,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateVirtualColumns(*res);
 
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumnsDeprecated())
+    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1979,7 +1975,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->getName());
     }
 
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumns())
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
@@ -2385,10 +2381,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
     else if (create.isView())
     {
+        assert(!create.temporary);
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
-        else if (create.temporary)
-            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }

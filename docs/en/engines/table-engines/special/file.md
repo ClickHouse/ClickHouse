@@ -5,7 +5,6 @@ sidebar_label: 'File'
 sidebar_position: 40
 slug: /engines/table-engines/special/file
 title: 'File Table Engine'
-doc_type: 'reference'
 ---
 
 # `File` table engine

@@ -41,7 +41,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             requireRemainingBytes(1);
             bit_width = size_t(UInt8(*data));
             data += 1;
-            if (bit_width > 8 * sizeof(T))
+            if (bit_width > 8 * sizeof(T) || (bit_width == 0 && limit > 1))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
         }
         else
@@ -120,7 +120,7 @@ struct BitPackedRLEDecoder : public PageDecoder
     {
         if (bit_width == 0)
         {
-            /// bit_width == 0 means all values are 0.
+            /// bit_width == 0 can be used for dictionary indices if the dictionary has only one value.
             if constexpr (!skip)
                 memset(out, 0, num_values * sizeof(T));
             return;
@@ -249,7 +249,7 @@ struct PlainBooleanDecoder : public PageDecoder
                 /// x = 00000000 000000hg 00000000 000000fe 00000000 000000dc 00000000 000000ba
                 x = (x | (x <<  7)) & 0x0101010101010101ul;
                 /// x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b 0000000a
-                memcpy(to + i, &x, 8);
+                memcpy(to + i * 8, &x, 8);
                 i += 8;
             }
             else

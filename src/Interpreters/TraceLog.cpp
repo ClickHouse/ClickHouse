@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
@@ -31,8 +30,6 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
     {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
-    {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
-    {"MemoryAllocatedWithoutCheck", static_cast<UInt8>(TraceType::MemoryAllocatedWithoutCheck)},
 };
 
 ColumnsDescription TraceLogElement::getColumnsDescription()
@@ -53,14 +50,12 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark. "
             "`MemorySample` represents collecting random allocations and deallocations. "
             "`MemoryPeak` represents collecting updates of peak memory usage. "
-            "`ProfileEvent` represents collecting of increments of profile events. "
-            "`JemallocSample` represents collecting of jemalloc samples. "
-            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
+            "`ProfileEvent` represents collecting of increments of profile events."
         },
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
-        {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
+        {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},

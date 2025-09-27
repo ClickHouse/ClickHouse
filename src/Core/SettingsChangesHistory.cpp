@@ -39,51 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.10",
-        {
-            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
-            {"enable_join_runtime_filters", false, false, "New setting"},
-            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
-            {"use_join_disjunctions_push_down", false, false, "New setting."},
-            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"delta_lake_log_metadata", false, false, "New setting."},
-            {"allow_experimental_qbit_type", false, false, "New experimental setting"},
-            {"optimize_qbit_distance_function_reads", true, true, "New setting"},
-            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
-            {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
-            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
-            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
-        });
-        addSettingsChanges(settings_changes_history, "25.9",
-        {
-            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
-            {"iceberg_delete_data_on_drop", false, false, "New setting"},
-            {"use_skip_indexes_on_data_read", false, false, "New setting"},
-            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
-            {"query_plan_display_internal_aliases", false, false, "New setting"},
-            {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
-            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
-            {"query_plan_convert_any_join_to_semi_or_anti_join", true, true, "New setting."},
-            {"text_index_use_bloom_filter", true, true, "New setting."},
-            {"query_plan_direct_read_from_text_index", true, true, "New setting."},
-            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
-            {"jemalloc_enable_profiler", false, false, "New setting"},
-            {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
-            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
-            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
-            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
-            {"os_threads_nice_value_query", 0, 0, "New setting."},
-            {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
-            {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
-        });
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
@@ -141,6 +96,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"per_part_index_stats", false, false, "New setting."},
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
+            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
@@ -148,9 +105,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
+            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"iceberg_metadata_log_level", "none", "none", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -893,19 +852,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
-        {
-
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
-        {
-            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
-            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
-            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
-            {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
-            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},

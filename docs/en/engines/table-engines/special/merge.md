@@ -5,7 +5,6 @@ sidebar_label: 'Merge'
 sidebar_position: 30
 slug: /engines/table-engines/special/merge
 title: 'Merge Table Engine'
-doc_type: 'reference'
 ---
 
 # Merge table engine

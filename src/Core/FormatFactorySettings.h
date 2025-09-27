@@ -349,13 +349,9 @@ If the `schema_inference_hints` is not formatted properly, or if there is a typo
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
 Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
 )", 0) \
-    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 3, R"(
+    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 1, R"(
 Controls making inferred types `Nullable` in schema inference.
-Possible values:
- * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what do do with null values in this case),
- * 1 - all inferred types will be `Nullable`,
- * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
- * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 )", 0) \
     DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
 Controls making inferred JSON types `Nullable` in schema inference.
@@ -1455,9 +1451,6 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
-)", 0) \
-    DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
-Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types

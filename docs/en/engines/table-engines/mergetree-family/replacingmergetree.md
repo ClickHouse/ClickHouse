@@ -5,7 +5,6 @@ sidebar_label: 'ReplacingMergeTree'
 sidebar_position: 40
 slug: /engines/table-engines/mergetree-family/replacingmergetree
 title: 'ReplacingMergeTree'
-doc_type: 'reference'
 ---
 
 # ReplacingMergeTree
