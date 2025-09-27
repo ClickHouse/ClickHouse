@@ -387,7 +387,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
+    cache->emplace(getSubcolumnNameForStream(path, true), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
