@@ -1,4 +1,6 @@
 #include <Storages/ObjectStorage/Utils.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include "config.h"
 
@@ -76,6 +78,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         String format = position_deletes_object.file_format;
+        if (boost::to_lower_copy(format) != "parquet")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
+
         Block initial_header;
         {
             std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
@@ -140,7 +145,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ChunkInfoRowNumOffset does not exist");
 
     size_t row_num_offset = chunk_info->row_num_offset;
     for (size_t i = 0; i < num_rows; i++)
