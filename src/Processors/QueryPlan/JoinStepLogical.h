@@ -158,6 +158,9 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// Swap left and right sides
+    void swapInputs();
+
 protected:
     void updateOutputHeader() override;
 
