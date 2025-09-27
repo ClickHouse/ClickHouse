@@ -2216,7 +2216,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             if (query_node)
             {
                 /// Inline replacement function to avoid separate visitor class
-                auto replaceIdentifiersInNode = [&](QueryTreeNodePtr & node) -> void {
+                auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void {
                     if (!node) return;
 
                     /// Simple recursive replacement logic
@@ -2240,6 +2240,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             for (auto & arg : arguments)
                                 replace_recursive(arg);
                         }
+                        else if (auto * list_node = current->as<ListNode>())
+                        {
+                            auto & nodes = list_node->getNodes();
+                            for (auto & child_node : nodes)
+                                replace_recursive(child_node);
+                        }
+                        else if (auto * sort_node = current->as<SortNode>())
+                        {
+                            if (auto & expression = sort_node->getExpression())
+                                replace_recursive(expression);
+                        }
                     };
 
                     replace_recursive(node);
@@ -2248,15 +2259,50 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (query_node->getWhere())
                 {
                     auto where_node = query_node->getWhere();
-                    replaceIdentifiersInNode(where_node);
+                    replace_identifiers_in_node(where_node);
                     query_node->getWhere() = where_node;
                 }
 
                 if (query_node->hasHaving())
                 {
                     auto having_node = query_node->getHaving();
-                    replaceIdentifiersInNode(having_node);
+                    replace_identifiers_in_node(having_node);
                     query_node->getHaving() = having_node;
+                }
+
+                if (query_node->getPrewhere())
+                {
+                    auto prewhere_node = query_node->getPrewhere();
+                    replace_identifiers_in_node(prewhere_node);
+                    query_node->getPrewhere() = prewhere_node;
+                }
+
+                if (query_node->hasOrderBy())
+                {
+                    auto order_by_node = query_node->getOrderByNode();
+                    replace_identifiers_in_node(order_by_node);
+                    query_node->getOrderByNode() = order_by_node;
+                }
+
+                if (query_node->hasGroupBy())
+                {
+                    auto group_by_node = query_node->getGroupByNode();
+                    replace_identifiers_in_node(group_by_node);
+                    query_node->getGroupByNode() = group_by_node;
+                }
+
+                if (query_node->hasLimitBy())
+                {
+                    auto limit_by_node = query_node->getLimitByNode();
+                    replace_identifiers_in_node(limit_by_node);
+                    query_node->getLimitByNode() = limit_by_node;
+                }
+
+                if (query_node->hasWindow())
+                {
+                    auto window_node = query_node->getWindowNode();
+                    replace_identifiers_in_node(window_node);
+                    query_node->getWindowNode() = window_node;
                 }
             }
         }
