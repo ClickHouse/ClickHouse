@@ -29,7 +29,7 @@ To create a text index, first enable the corresponding experimental setting:
 SET allow_experimental_full_text_index = true;
 ```
 
-A text index can be defined on a [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md) column using the following syntax:
+A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), and [Array(FixedString)](/sql-reference/data-types/array.md) column using the following syntax:
 
 ```sql
 CREATE TABLE tab
@@ -235,6 +235,26 @@ Example:
 SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 
 SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+```
+
+#### `has` {#functions-example-has}
+
+Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+#### `mapContains` {#functions-example-mapcontains}
+
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias: `mapContainsKey`) matches against a single token in the keys of a map.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
 ```
 
 ## Implementation {#implementation}
