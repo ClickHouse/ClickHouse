@@ -288,6 +288,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
+    friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
@@ -435,6 +436,13 @@ private:
         Method & method,
         TemporaryBlockStreamHolder & out) const;
 
+    /// Parameters for parallel merge workers for single level.
+    struct ParallelMergeWorker
+    {
+        UInt32 worker_id;
+        UInt32 total_worker;
+    };
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -442,10 +450,10 @@ private:
             Table & table_src,
             Arena * arena) const;
 
-    /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -463,6 +471,9 @@ private:
         Table & table_src,
         Arena * arena) const;
 
+    template <typename Method, typename Table>
+    void ensureLimitsFixedMapMergeImpl(Table & table) const;
+
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
         std::atomic<bool> & is_cancelled) const;
@@ -470,6 +481,18 @@ private:
     template <typename Method>
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
+
+    template <typename Method>
+    void mergeSingleLevelDataImplFixedMap(
+        ManyAggregatedDataVariants & non_empty_data,
+        Arena * arena,
+        UInt32 worker_id,
+        UInt32 total_worker,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// Set data_variants[1..last] aggregator as nullptr to ensure aggregator destruction only invoked in data_variants[0]'s destructor.
+    /// Used for single level merge.
+    void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
@@ -611,6 +634,8 @@ private:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
     void prepareAggregateInstructions(
         Columns columns,

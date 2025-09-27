@@ -112,6 +112,24 @@ public:
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
+
+    /// mergeToViaIndexFilter is a special mergeTo function to allow `total_worker` worker to merge without race conditions.
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaIndexFilter(Self & that, Func && func, UInt32 worker_id, UInt32 total_worker)
+    {
+        /// Increment by total_worker to make distribution of merge evenly.
+        for (UInt32 i = worker_id; i < this->getBufferSizeInCells(); i += total_worker)
+        {
+            if (!this->buf[i].isZero(*this))
+            {
+                typename Self::LookupResult res_it;
+                bool inserted;
+                that.emplace(i, res_it, inserted, i);
+                func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
+            }
+        }
+    }
+
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {

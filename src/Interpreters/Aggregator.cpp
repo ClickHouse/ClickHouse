@@ -1878,6 +1878,68 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     return block;
 }
 
+template <typename Method>
+void Aggregator::mergeSingleLevelDataImplFixedMap(
+    ManyAggregatedDataVariants & non_empty_data,
+    Arena * arena,
+    const UInt32 worker_id,
+    const UInt32 total_worker,
+    std::atomic<bool> & is_cancelled) const
+{
+    AggregatedDataVariantsPtr & res = non_empty_data[0];
+    bool no_more_keys = false;
+    ParallelMergeWorker parallel_param{worker_id, total_worker};
+
+    /// We merge all aggregation results to the first.
+    for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
+    {
+        AggregatedDataVariants & current = *non_empty_data[result_num];
+
+        if (!no_more_keys)
+        {
+#if USE_EMBEDDED_COMPILER
+            if (compiled_aggregate_functions_holder)
+            {
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                     getDataVariant<Method>(current).data,
+                     arena, true,
+                     false, /*prefetch*/
+                    is_cancelled, &parallel_param);
+            }
+            else
+#endif
+            {
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                     getDataVariant<Method>(current).data,
+                     arena, false,
+                      false, /*prefetch*/
+                    is_cancelled, &parallel_param);
+            }
+        }
+        else if (res->without_key)
+        {
+            /// Ensure only thread 0 is working on these merges, because currently mergeDataNoMoreKeysImpl and
+            //  mergeDataOnlyExistingKeysImpl uses mergeToViaFind which does not support filter based on worker id as mergeToViaIndexFilter.
+            if (worker_id == 0)
+                mergeDataNoMoreKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    res->without_key,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+        }
+        else
+        {
+            if (worker_id == 0)
+                mergeDataOnlyExistingKeysImpl<Method>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+        }
+    }
+}
+
 Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
     const auto method = variants.type;
@@ -1973,6 +2035,49 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
     /// but still tracks memory. Check it here.
     CurrentMemoryTracker::check();
     return true;
+}
+
+
+template <typename Method, typename Table>
+void Aggregator::ensureLimitsFixedMapMergeImpl(Table & table) const
+{
+    size_t rows_count = 0;
+    bool no_more_keys = false;
+    bool ignore_rest = false;
+
+    /// We want to respect the limits of `max_rows_to_group_by`, depending on `group_by_overflow_mode`:
+    /// - throw mode: this is the same, exception would be thrown.
+    /// - break/any mode: do nothing for a few reasons.
+    /// `max_rows_to_group_by` is to limit the memory usage, however `execute` and `merge` we already
+    /// finishes the majority of the work, so the memory usage peak has been reached. Additionally during
+    /// exuection phase, we already check the limit. Last this is for fixed hashmap, the number of rows
+    /// are bounded.
+    table.forEachValue([&](const auto &, auto &)
+    {
+        if (ignore_rest)
+            return;
+        ++rows_count;
+        if (!checkLimits(rows_count, no_more_keys))
+        {
+            ignore_rest = true;
+            return;
+        }
+    });
+}
+
+
+void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
+{
+    if (!data || data->empty())
+        return;
+
+    /// Only handle key8 and key16 FixedHashMap variants (similar to mergeSingleLevelDataImplFixedMap)
+    if (data->type == AggregatedDataVariants::Type::key8)
+        ensureLimitsFixedMapMergeImpl<decltype(data->key8)::element_type>(data->key8->data);
+    else if (data->type == AggregatedDataVariants::Type::key16)
+        ensureLimitsFixedMapMergeImpl<decltype(data->key16)::element_type>(data->key16->data);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
 
 
@@ -2528,7 +2633,9 @@ Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     ConvertToBlockResVariant res_variant;
+
     const size_t rows = data_variants.sizeWithoutOverflowRow();
+
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
     { \
@@ -2724,7 +2831,8 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch, std::atomic<bool> & is_cancelled) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
+    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
 {
     if (is_simple_count)
     {
@@ -2739,11 +2847,20 @@ void NO_INLINE Aggregator::mergeDataImpl(
                 getInlineCountState(dst) += getInlineCountState(src);
         };
 
-        if (prefetch)
-            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        if (parallel_worker)
+        {
+            if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+                std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+        }
         else
-            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-        table_src.clearAndShrink();
+        {
+            if (prefetch)
+                table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+            else
+                table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+            table_src.clearAndShrink();
+        }
         return;
     }
 
@@ -2768,11 +2885,20 @@ void NO_INLINE Aggregator::mergeDataImpl(
         src = nullptr;
     };
 
-    if (prefetch)
-        table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+    if (parallel_worker)
+    {
+        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+    }
     else
-        table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-    table_src.clearAndShrink();
+    {
+        if (prefetch)
+            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        else
+            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+        table_src.clearAndShrink();
+    }
 
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
@@ -2957,7 +3083,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
-    /// We merge all aggregation results to the first.
+    /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
         if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
@@ -2995,10 +3121,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
         }
-
-        /// `current` will not destroy the states of aggregate functions in the destructor
-        current.aggregator = nullptr;
     }
+    resetAggregatorExceptFirst(non_empty_data);
 }
 
 #define M(NAME) \
@@ -3006,6 +3130,18 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
+
+template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+
+
+void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const
+{
+    for (size_t i = 1, size = data_variants.size(); i < size; ++i)
+        data_variants[i]->aggregator = nullptr;
+}
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(

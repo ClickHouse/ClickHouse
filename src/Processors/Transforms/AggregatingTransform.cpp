@@ -86,6 +86,54 @@ namespace
     };
 }
 
+/// Worker which merges states for single-level aggregation of FixedHashMap.
+/// Each worker is assigned to a subset of the keys, so that we can merge in-place without race conditions.
+class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap final : public ISource
+{
+public:
+    struct SharedData
+    {
+        std::atomic<bool> is_cancelled = false;
+    };
+
+    using SharedDataPtr = std::shared_ptr<SharedData>;
+
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::make_shared<SharedData>())
+        , thread_index(thread_index_)
+        , num_threads(num_threads_)
+        , arena(arena_)
+    {
+    }
+
+    String getName() const override { return "ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap"; }
+
+protected:
+    Chunk generate() override
+    {
+        AggregatedDataVariantsPtr & first = data->at(0);
+        if (first->type == AggregatedDataVariants::Type::key8)
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
+        else
+            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
+
+        finished = true;
+        data.reset();
+        return Chunk{};
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    UInt32 thread_index;
+    UInt32 num_threads;
+    Arena * arena;
+};
+
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
 class ConvertingAggregatedToChunksWithMergingSource final : public ISource
@@ -310,6 +358,17 @@ public:
             if (inputs.empty())
                 createSources();
         }
+
+        else if (num_threads > 1 &&  (
+            data->at(0)->type == AggregatedDataVariants::Type::key8  ||
+            data->at(0)->type == AggregatedDataVariants::Type::key16))
+        {
+            parallelize_single_level_merge = true;
+            if (inputs.empty())
+                createSourcesForFixedHashMap();
+            else
+                mergeSingleLevel();
+        }
         else
         {
             mergeSingleLevel();
@@ -365,6 +424,9 @@ public:
         /// Single level case.
         if (inputs.empty())
             return Status::Ready;
+        else if (parallelize_single_level_merge)
+            // Also single level, but need to check all input ports are finished.
+            return prepareParallelizeSingleLevel();
 
         /// Two-level case.
         return prepareTwoLevel();
@@ -376,6 +438,17 @@ public:
     }
 
 private:
+    IProcessor::Status prepareParallelizeSingleLevel()
+    {
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished())
+                return Status::NeedData;
+        }
+
+        return Status::Ready;
+    }
+
     IProcessor::Status preparePushToOutput()
     {
         if (single_level_chunks.empty())
@@ -504,6 +577,7 @@ private:
 
     bool is_initialized = false;
     bool finished = false;
+    bool parallelize_single_level_merge = false;
 
     Chunks single_level_chunks;
 
@@ -550,23 +624,34 @@ private:
     void mergeSingleLevel()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-
-        if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+        if (parallelize_single_level_merge)
         {
-            finished = true;
-            return;
-        }
+            params->aggregator.resetAggregatorExceptFirst(*data);
 
-        ++current_bucket_num;
+            /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
+            /// Therefore here we need to check additional after merges are completed from different threads.
+            params->aggregator.ensureLimitsFixedMapMerge(first);
+        }
+        else
+        {
+            // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
+            if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+            {
+                finished = true;
+                return;
+            }
+
+            ++current_bucket_num;
 
 #define M(NAME) \
     else if (first->type == AggregatedDataVariants::Type::NAME) \
         params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
-        if (false) {} // NOLINT
-        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+            if (false) {} // NOLINT
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-        else
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+            else
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+        }
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
@@ -592,6 +677,28 @@ private:
         }
 
         data.reset();
+    }
+
+    void createSourcesForFixedHashMap()
+    {
+        /// Disable min max optimization to avoid race condition.
+        for (auto & variant : *data)
+        {
+            if (variant->type == AggregatedDataVariants::Type::key8)
+                variant->key8->data.disableMinMaxOptimization();
+            else if (variant->type == AggregatedDataVariants::Type::key16)
+                variant->key16->data.disableMinMaxOptimization();
+            else
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+        }
+
+        processors.reserve(num_threads);
+        AggregatedDataVariantsPtr & first = data->at(0);
+        for (size_t thread = 0; thread < num_threads; ++thread)
+        {
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, first->aggregates_pools.at(thread).get());
+            processors.emplace_back(std::move(source));
+        }
     }
 };
 
