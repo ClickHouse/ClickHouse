@@ -1,0 +1,1 @@
+SELECT true AS bool_true, false AS bool_false
