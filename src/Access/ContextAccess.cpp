@@ -128,11 +128,15 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if ((level == 0) && (max_flags_with_children & create_view))
             res |= create_temporary_view;
 
-        /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
+        /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
         if (res & alter_ttl)
             res |= alter_materialize_ttl;
+        /// ALTER_TTL => ALTER_MATERIALIZE
+        static const AccessFlags alter_materialize = AccessType::ALTER_MATERIALIZE;
+        if (res & alter_ttl)
+            res |= alter_materialize;
 
         /// RELOAD_DICTIONARY (global) => RELOAD_EMBEDDED_DICTIONARIES (global)
         static const AccessFlags reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
