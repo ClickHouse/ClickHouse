@@ -2,6 +2,7 @@
 
 #include <base/defines.h> /// DEBUG_OR_SANITIZER_BUILD
 
+/// Use it if you need to suppress MemoryAllocatedWithoutCheck for known big allocations.
 #ifdef DEBUG_OR_SANITIZER_BUILD
 struct MemoryTrackerDebugBlockerInThread
 {
