@@ -27,14 +27,12 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
     const StorageObjectStorageConfigurationPtr & configuration,
     const std::string & sample_path,
-    bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context);
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStorage(
     ColumnsDescription & columns,
     const std::string & sample_path,
-    bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context);
 

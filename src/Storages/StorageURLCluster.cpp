@@ -89,7 +89,6 @@ StorageURLCluster::StorageURLCluster(
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         getSampleURI(uri, context),
-        columns_.empty(),
         std::nullopt,
         context);
 
