@@ -403,6 +403,8 @@
     max_rows limit
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
+    !!!max rows: 20.00 million, current rows: 21.00 million
+02275_full_sort_join_long.gen
     !!!max rows: 16.00, current rows: 3.08 thousand
 00990_hasToken_and_tokenbf
     !!!max rows: 8.00, current rows: 16.38 thousand
@@ -413,10 +415,6 @@
 01585_use_index_for_global_in
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
-    max rows: 2.00, current rows: 4.00
-02461_mullable_pk_monotonicity_bug
-    max bytes: 1.00 B, current bytes: 60.00 B
-02950_part_offset_as_primary_key
 
 00955_test_final_mark_use
 01624_soft_constraints
