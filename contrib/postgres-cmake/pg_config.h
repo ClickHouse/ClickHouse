@@ -118,9 +118,13 @@
 #define HAVE_DECL_STRLCPY 1
 #endif
 
-/* Define to 1 if you have the declaration of `sys_siglist', and to 0 if you
+/* Define to 1 if you have the declaration of `strnlen', and to 0 if you
    don't. */
-#define HAVE_DECL_SYS_SIGLIST 1
+#define HAVE_DECL_STRNLEN 1
+
+/* Define to 1 if you have the declaration of `strsep', and to 0 if you don't.
+   */
+#define HAVE_DECL_STRSEP 1
 
 /* Define to 1 if you have the declaration of `vsnprintf', and to 0 if you
    don't. */
@@ -540,6 +544,11 @@
 /* Define to 1 if your compiler knows the visibility("hidden") attribute. */
 /* #undef HAVE_VISIBILITY_ATTRIBUTE */
 
+/* Define to 1 if you have the <xlocale.h> header file. */
+#if OS_DARWIN
+#define HAVE_XLOCALE_H 1
+#endif
+
 /* Define to 1 if you have the `vsnprintf' function. */
 #define HAVE_VSNPRINTF 1
 
@@ -656,16 +665,16 @@
 #define RELSEG_SIZE 131072
 
 /* The size of `long', as computed by sizeof. */
-#define SIZEOF_LONG 4
+#define SIZEOF_LONG 8
 
 /* The size of `off_t', as computed by sizeof. */
 #define SIZEOF_OFF_T 8
 
 /* The size of `size_t', as computed by sizeof. */
-#define SIZEOF_SIZE_T 4
+#define SIZEOF_SIZE_T 8
 
 /* The size of `void *', as computed by sizeof. */
-#define SIZEOF_VOID_P 4
+#define SIZEOF_VOID_P 8
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
@@ -711,8 +720,6 @@
 #define USE_OPENSSL 0
 
 #define USE_OPENSSL_RANDOM 0
-
-#define FRONTEND 1
 
 /* Define to 1 to build with PAM support. (--with-pam) */
 #define USE_PAM 1
@@ -790,6 +797,10 @@
 #ifndef __cplusplus
 /* #undef inline */
 #endif
+
+/* Define to keyword to use for C99 restrict support, or to nothing if not
+   supported */
+#define pg_restrict __restrict
 
 /* Define to the type of a signed integer type wide enough to hold a pointer,
    if such a type exists, and if the system does not define it. */
