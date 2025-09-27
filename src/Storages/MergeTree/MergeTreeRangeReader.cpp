@@ -16,6 +16,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
 #include <base/scope_guard.h>
+#include <fmt/ranges.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -232,6 +233,12 @@ void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_r
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read from granule more than index_granularity.");
 }
 
+void MergeTreeRangeReader::Stream::checkNoDelayedRows() const
+{
+    if (stream.numDelayedRows() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected no delayed rows (got {}).", stream.numDelayedRows());
+}
+
 size_t MergeTreeRangeReader::Stream::readRows(Columns & columns, size_t num_rows)
 {
     size_t rows_read = stream.read(columns, current_mark, offset_after_current_mark, num_rows);
@@ -331,9 +338,11 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
 
     if (num_rows_to_subtract > rows_per_granule.back())
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
-                        rows_per_granule.back(), num_rows_to_subtract);
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows (num_read_rows = {}, rows_per_granule = [{}])",
+                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, fmt::join(rows_per_granule, ", "));
+    }
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -952,6 +961,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     std::optional<size_t> current_mark;
     if (!stream.isFinished())
         current_mark = stream.current_mark;
+
+    /// There should be no delayed rows from the previous read request.
+    /// (If it's so then the previous read request didn't call stream.finalize().)
+    stream.checkNoDelayedRows();
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
