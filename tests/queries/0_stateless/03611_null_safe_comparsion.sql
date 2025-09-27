@@ -220,14 +220,25 @@ FROM 03611_t_nullsafe
 ORDER BY id;
 
 SELECT '1.8 WHERE Clause + Union All';
-SELECT '<=> 1' as condition_type, *
-FROM 03611_t_nullsafe
-WHERE a <=> 1
-UNION ALL
-SELECT 'IS DISTINCT FROM 1' as condition_type, *
-FROM 03611_t_nullsafe
-WHERE a IS DISTINCT FROM 1
-ORDER BY condition_type, id;
+SELECT *
+FROM
+(
+    SELECT
+        '<=> 1' AS condition_type,
+        *
+    FROM `03611_t_nullsafe`
+    WHERE a <=> 1
+    UNION ALL
+    SELECT
+        'IS DISTINCT FROM 1' AS condition_type,
+        *
+    FROM `03611_t_nullsafe`
+    WHERE a IS DISTINCT FROM 1
+)
+ORDER BY
+    condition_type ASC,
+    id ASC
+
 
 SELECT '1.9 ORDER BY Clause';
 SELECT id, a, b,
@@ -328,3 +339,6 @@ ORDER BY id;
 SELECT '1.18 OR / AND';
 select 1 <=> 1 AND 1 is distinct from 1,
        1 <=> 1 OR 1 is distinct from 1;
+
+-- DROP TABLE IF EXISTS 03611_nscmp_tbl;
+-- DROP TABLE IF EXISTS 03611_t_nullsafe;

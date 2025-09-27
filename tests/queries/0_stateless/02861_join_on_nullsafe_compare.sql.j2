@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS t4;
 
 CREATE TABLE t1 (a Nullable(UInt32), b Nullable(Int16), val UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t1 SELECT if(number % 2 == 0, NULL, number), if(number % 6 == 0, NULL, number), number, FROM numbers(1, 20);
@@ -105,6 +107,6 @@ SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a); -- { serverError SYNTAX_ERR
 SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a, t2.a, t2.b); -- { serverError SYNTAX_ERROR,NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT isNotDistinctFrom(a) from t1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT isNotDistinctFrom(a, b) from t1; -- { serverError NOT_IMPLEMENTED }
-SELECT a <=> b from t1; -- { serverError NOT_IMPLEMENTED }
-SELECT a IS NOT DISTINCT FROM b from t1; -- { serverError NOT_IMPLEMENTED }
+SELECT isNotDistinctFrom(a, b) from t1;
+SELECT a <=> b from t1;
+SELECT a IS NOT DISTINCT FROM b from t1;
