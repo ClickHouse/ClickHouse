@@ -95,8 +95,11 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 
 
 def load_catalog_impl(started_cluster):
+    # Use the host-published dynamic MinIO API port for PyIceberg
+    minio_port = started_cluster.env_variables.get("MINIO_API_EXTERNAL_PORT")
     minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9002"
+    assert minio_port, "MINIO_API_EXTERNAL_PORT is not set in env_variables"
+    s3_endpoint = f"http://{minio_ip}:{minio_port}"
 
     return RestCatalog(
         name="my_catalog",

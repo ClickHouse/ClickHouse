@@ -29,6 +29,7 @@ DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\
 
 
 def create_warehouse(minio_ip):
+    # Host-side access to MinIO uses the dynamically assigned external port on localhost
     minio_endpoint = f"http://{minio_ip}:9000"
 
     warehouse_data = {
@@ -73,8 +74,10 @@ def create_warehouse(minio_ip):
 
 
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9000"
+    # Use the host-published MinIO API port for PyIceberg
+    minio_port = started_cluster.env_variables.get("MINIO_API_EXTERNAL_PORT")
+    assert minio_port, "MINIO_API_EXTERNAL_PORT is not set in env_variables"
+    s3_endpoint = f"http://127.0.0.1:{minio_port}"
 
     return RestCatalog(
         name="my_catalog",
