@@ -520,6 +520,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
+        case Type::RECONNECT_ZOOKEEPER:
             break;
         case Type::UNKNOWN:
         case Type::END:
