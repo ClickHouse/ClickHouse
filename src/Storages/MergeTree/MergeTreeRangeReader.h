@@ -172,6 +172,8 @@ private:
 
         bool isFinished() const { return is_finished; }
 
+        size_t currentTaskLastMark() const { return current_task_last_mark; }
+
     private:
         size_t current_mark = 0;
         /// Offset from current mark in rows
