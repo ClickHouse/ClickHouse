@@ -4801,13 +4801,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                'timeout {} stdbuf -o0 -e0 tail -Fn{} "{}" | stdbuf -o0 -e0 tee /dev/stderr | grep -Em {} {}'.format(
-                    timeout,
-                    look_behind_lines,
-                    filename,
-                    repetitions,
-                    shlex.quote(regexp),
-                ),
+                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
             ]
         )
 
