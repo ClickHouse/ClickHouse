@@ -681,8 +681,18 @@ private:
 
     void createSourcesForFixedHashMap()
     {
-        processors.reserve(num_threads);
+        /// Disable min max optimization to avoid race condition.
+        for (auto & variant : *data)
+        {
+            if (variant->type == AggregatedDataVariants::Type::key8)
+                variant->key8->data.disableMinMaxOptimization();
+            else if (variant->type == AggregatedDataVariants::Type::key16)
+                variant->key16->data.disableMinMaxOptimization();
+            else
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+        }
 
+        processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
