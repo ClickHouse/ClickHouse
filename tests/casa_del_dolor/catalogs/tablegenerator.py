@@ -1,9 +1,15 @@
 import random
 from abc import abstractmethod
-from datetime import datetime, timedelta
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
-from .laketables import LakeFormat, SparkTable, FileFormat, TableStorage, SparkColumn
+from .laketables import (
+    LakeFormat,
+    SparkTable,
+    FileFormat,
+    TableStorage,
+    SparkColumn,
+    get_timestamp_for_table,
+)
 
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
@@ -160,7 +166,9 @@ class LakeTableGenerator:
         table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        next_operation = random.randint(1, 1000)
+        next_operation = random.randint(
+            1, 500 if self.get_format() == "delta" else 1000
+        )
 
         if next_operation <= 250:
             # Set random properties
@@ -169,7 +177,7 @@ class LakeTableGenerator:
             )
             if properties:
                 key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE `{table.get_table_full_path()}` SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
         elif next_operation <= 500:
             # Unset a property
             properties = self.generate_table_properties(
@@ -177,7 +185,7 @@ class LakeTableGenerator:
             )
             if properties:
                 key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE `{table.get_table_full_path()}` UNSET TBLPROPERTIES ('{key}');"
+                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
         elif next_operation <= 600:
             # Add or drop partition field
             partition_clauses = self.add_partition_clauses(table.columns)
@@ -185,7 +193,7 @@ class LakeTableGenerator:
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
         elif next_operation <= 700:
             # Replace partition field
             partition_clauses = self.add_partition_clauses(table.columns)
@@ -197,20 +205,20 @@ class LakeTableGenerator:
             random_subset2 = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            return f"ALTER TABLE `{table.get_table_full_path()}` REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+            return f"ALTER TABLE {table.get_table_full_path()} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
         elif next_operation <= 800:
             # Set ORDER BY
             if random.randint(1, 2) == 1:
-                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE UNORDERED"
-            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
         elif next_operation <= 900:
             # Set distribution
             if random.randint(1, 2) == 1:
-                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION"
-            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
         elif next_operation <= 1000:
             # Set identifier fields
-            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
         return ""
 
     @abstractmethod
@@ -599,9 +607,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         table: SparkTable,
     ) -> str:
         next_option = random.randint(1, 9)
-        restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
-        ).strftime("%Y-%m-%d %H:%M:%S.%f")
+        restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if next_option == 1:
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}')"
@@ -635,7 +641,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 5:
-            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
         if next_option == 6:
             res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
@@ -647,11 +653,11 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 7:
-            return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.compute_table_stats('{table.get_namespace_path()}')"
         if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.compute_partition_stats('{table.get_table_full_path()}')"
         if next_option == 9:
-            return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
+            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
         # if next_option == 10:
         #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
@@ -811,13 +817,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         mapping_mode = random.choice(["none", "name", "id"])
         properties["delta.columnMapping.mode"] = mapping_mode
 
-        # Min reader/writer version based on features
-        if mapping_mode != "none":
-            properties["delta.minReaderVersion"] = "2"
-            properties["delta.minWriterVersion"] = "5"
-        else:
-            properties["delta.minReaderVersion"] = "1"
-            properties["delta.minWriterVersion"] = random.choice(["2", "3", "4"])
+        # Set minimum versions for readers and writers
+        properties["delta.minReaderVersion"] = random.choice(
+            [f"{i}" for i in range(1, 4)]
+        )
+        properties["delta.minWriterVersion"] = random.choice(
+            [f"{i}" for i in range(1, 8)]
+        )
 
         return properties
 
@@ -934,12 +940,16 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         self,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 100)
+        next_option = random.randint(1, 3)
 
-        if next_option <= 50:
+        if next_option == 1:
+            # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
-
-        restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
-        ).strftime("%Y-%m-%d %H:%M:%S.%f")
-        return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 2:
+            # Restore
+            restore_to = get_timestamp_for_table().strftime("%Y-%m-%d %H:%M:%S.%f")
+            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 3:
+            # Optimize
+            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
+        return ""
