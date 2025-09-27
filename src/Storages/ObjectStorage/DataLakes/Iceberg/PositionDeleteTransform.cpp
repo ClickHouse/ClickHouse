@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/Utils.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Common/logger_useful.h>
 #include "config.h"
 
@@ -28,6 +29,7 @@ extern const SettingsNonZeroUInt64 max_block_size;
 }
 namespace DB::ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -76,6 +78,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         String format = position_deletes_object.file_format;
+        if (boost::to_lower_copy(format) != "parquet")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
+
         Block initial_header;
         {
             std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
