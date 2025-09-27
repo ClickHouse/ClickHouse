@@ -1,6 +1,5 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include "config.h"
 
