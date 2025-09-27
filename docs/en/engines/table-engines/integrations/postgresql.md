@@ -5,6 +5,7 @@ sidebar_label: 'PostgreSQL'
 sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
 title: 'PostgreSQL Table Engine'
+doc_type: 'guide'
 ---
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
@@ -17,7 +18,7 @@ Currently, only PostgreSQL versions 12 and up are supported.
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -65,7 +66,7 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -112,7 +113,7 @@ In the example below replica `example01-1` has the highest priority:
 </source>
 ```
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 ### Table in PostgreSQL {#table-in-postgresql}
 
@@ -201,7 +202,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Using Non-default Schema {#using-non-default-schema}
+### Using non-default schema {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";

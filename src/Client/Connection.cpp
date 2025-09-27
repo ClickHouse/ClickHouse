@@ -841,6 +841,14 @@ void Connection::sendQuery(
         std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
         /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
@@ -1017,7 +1025,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -1031,12 +1039,12 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     block_out->write(block);
     if (maybe_compressed_out != out)
         maybe_compressed_out->next();
-    if (!block)
+    if (block.empty())
         out->finishChunk();
     out->next();
 
     if (throttler)
-        throttler->add(out->count() - prev_bytes);
+        throttler->throttle(out->count() - prev_bytes);
 }
 
 void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
@@ -1142,7 +1150,7 @@ class ExternalTableDataSink : public ISink
 public:
     using OnCancell = std::function<void()>;
 
-    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+    ExternalTableDataSink(SharedHeader header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
             : ISink(std::move(header)), connection(connection_), table_data(table_data_),
               on_cancell(std::move(callback))
     {}
@@ -1201,8 +1209,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
             if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -1417,7 +1425,7 @@ Block Connection::receiveDataImpl(NativeReader & reader)
     Block res = reader.read();
 
     if (throttler)
-        throttler->add(in->count() - prev_bytes);
+        throttler->throttle(in->count() - prev_bytes);
 
     return res;
 }
@@ -1528,7 +1536,7 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in);
+    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const

@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 };
 
 #if USE_LIBFIU
@@ -46,6 +46,8 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
+    PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \
@@ -60,8 +62,15 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(s3_read_buffer_throw_expired_token) \
+    ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
+    ONCE(object_storage_queue_fail_commit_once) \
+    REGULAR(distributed_cache_fail_connect_non_retriable) \
+    REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
+    REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
+    REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
@@ -74,9 +83,11 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
+    PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -97,8 +108,17 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
-    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
+    REGULAR(output_format_sleep_on_progress) \
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    ONCE(iceberg_writes_cleanup) \
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_delay_update_coordination_state_running) \
+    REGULAR(sleep_in_logs_flush) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
 
 
 namespace FailPoints
@@ -164,7 +184,7 @@ void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UI
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -199,7 +219,7 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE
 
 #endif
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
@@ -220,7 +240,7 @@ void FailPointInjection::wait(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find channel for fail point {}", fail_point_name);
 
     lock.unlock();
     auto ptr = iter->second;

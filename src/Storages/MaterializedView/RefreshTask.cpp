@@ -1,29 +1,30 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Common/Macros.h>
-#include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/Macros.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace CurrentMetrics
@@ -73,6 +74,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
+}
+
+namespace FailPoints
+{
+extern const char refresh_task_delay_update_coordination_state_running[];
 }
 
 RefreshTask::RefreshTask(
@@ -158,6 +164,13 @@ OwnedRefreshTask RefreshTask::create(
 
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
+
+    task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+    {
+        w->root_watch_active.store(false);
+        w->should_reread_znodes.store(true);
+        (*task_waker)(response);
+    });
 
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
@@ -326,7 +339,15 @@ void RefreshTask::startReplicated()
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
-    const auto zookeeper = view->getContext()->getZooKeeper();
+
+    const auto zookeeper = [this]()
+    {
+        std::lock_guard guard(mutex);
+        if (!view)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
+        return view->getContext()->getZooKeeper();
+    }();
+
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryRemove(path);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
@@ -337,7 +358,15 @@ void RefreshTask::stopReplicated(const String & reason)
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
-    const auto zookeeper = view->getContext()->getZooKeeper();
+
+    const auto zookeeper = [this]()
+    {
+        std::lock_guard guard(mutex);
+        if (!view)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
+        return view->getContext()->getZooKeeper();
+    }();
+
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryCreate(path, reason, zkutil::CreateMode::Persistent);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
@@ -639,7 +668,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    ContextMutablePtr refresh_context;
+    ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
@@ -920,24 +949,12 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr,
-            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-            {
-                w->root_watch_active.store(false);
-                w->should_reread_znodes.store(true);
-                task_waker(response);
-            });
+        zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr,
-            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-            {
-                w->children_watch_active.store(false);
-                w->should_reread_znodes.store(true);
-                task_waker(response);
-            });
+        zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -973,9 +990,18 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
+        {
+            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
+                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
+                std::this_thread::sleep_for(sleep_time);
+            });
+            ops.emplace_back(
+                zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
+        }
         else
+        {
             ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/running", -1));
+        }
 
         Coordination::Responses responses;
 
@@ -1131,7 +1157,7 @@ void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution(Int64(-1e9), Int64(1e9))(thread_local_rng);
+    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
 String RefreshTask::CoordinationZnode::toString() const

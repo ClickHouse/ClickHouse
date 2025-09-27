@@ -251,7 +251,8 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path || !has_replica_name)
             throw Exception(
-        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
+                ErrorCodes::BAD_ARGUMENTS,
+                "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
         const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY

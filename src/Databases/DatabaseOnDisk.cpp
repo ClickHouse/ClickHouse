@@ -167,7 +167,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
@@ -595,7 +595,10 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    {
+        std::lock_guard lock(mutex);
+        assert(tables.empty());
+    }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);
@@ -898,7 +901,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
@@ -925,18 +928,18 @@ void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    checkTableNameLengthUnlocked(table_name);
+    checkTableNameLengthUnlocked(database_name, table_name, getContext());
 }
 
-void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex)
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_)
 {
-    const size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, context_);
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "The max length of table name for database {} is {}, current length is {}",
-            database_name, allowed_max_length, escaped_name_length);
+            database_name_, allowed_max_length, escaped_name_length);
     }
 }
 

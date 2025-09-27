@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -36,7 +38,6 @@ public:
         DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
-        DROP_DISTRIBUTED_CACHE_CONNECTIONS,
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
@@ -47,6 +48,7 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
@@ -144,6 +146,7 @@ public:
     String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool with_tables{false};
     String storage_policy;
     String volume;
     String disk;
@@ -174,6 +177,10 @@ public:
     Strings logs;
 
     ServerType server_type;
+
+#if USE_JEMALLOC
+    String jemalloc_profile_path;
+#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

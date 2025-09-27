@@ -1,12 +1,12 @@
 ---
 description: 'Documentation for Functions for Working with IPv4 and IPv6 Addresses'
 sidebar_label: 'IP Addresses'
-sidebar_position: 95
 slug: /sql-reference/functions/ip-address-functions
 title: 'Functions for Working with IPv4 and IPv6 Addresses'
+doc_type: 'reference'
 ---
 
-# Functions for Working with IPv4 and IPv6 Addresses
+# Functions for working with IPv4 and IPv6 addresses
 
 ## IPv4NumToString {#IPv4NumToString}
 
@@ -298,8 +298,6 @@ Result:
 │ ABE1822D                          │ ABE1822D                 │
 └───────────────────────────────────┴──────────────────────────┘
 ```
-
-
 Query:
 
 ```sql

@@ -2,8 +2,8 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
-#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -15,13 +15,22 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/DistributedCacheLog.h>
+#include <Interpreters/DistributedCacheServerLog.h>
+#endif
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -120,7 +129,7 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
     }
 }
 
@@ -159,8 +168,6 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
 
     auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
-        if (should_prepare_tables_anyway)
-            return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
         return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
@@ -196,6 +203,8 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+
     PopResult result;
     size_t prev_ignored_logs = 0;
 
@@ -304,15 +313,22 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     queue->push(std::move(element));
 }
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
+#if CLICKHOUSE_CLOUD
+    SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_BASE)
+#endif
 SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 
 #define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
+#if CLICKHOUSE_CLOUD
+SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_QUEUE)
+#endif
 SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }

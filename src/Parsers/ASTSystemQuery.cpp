@@ -94,14 +94,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(identifier)
+                     ;
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        ostr << keyword;
         return ostr;
     };
 
@@ -118,6 +118,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         if (if_exists)
             print_keyword(" IF EXISTS");
+
+        return ostr;
+    };
+
+    auto print_restore_database_replica = [&]() -> WriteBuffer &
+    {
+        chassert(database);
+
+        ostr << " ";
+        print_identifier(getDatabase());
 
         return ostr;
     };
@@ -233,7 +243,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                ostr << settings.nl_or_ws << "SETTINGS ";
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -271,7 +281,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            print_identifier(database->as<ASTIdentifier>()->name());
+            database->format(ostr, settings, state, frame);
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
             {
                 ostr << ' ';
@@ -284,6 +294,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_CATALOG_REPLICA:
         {
             print_drop_replica();
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            if (database)
+            {
+                print_restore_database_replica();
+            }
             break;
         }
         case Type::SUSPEND:
@@ -328,16 +346,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
-        {
-            break;
-        }
         case Type::DROP_DISTRIBUTED_CACHE:
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
+                ostr << " " << distributed_cache_server_id;
             break;
         }
         case Type::UNFREEZE:
@@ -349,8 +363,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNLOCK_SNAPSHOT:
         {
             ostr << quoteString(backup_name);
-            print_keyword(" FROM ");
-            backup_source->format(ostr, settings);
+            if (backup_source)
+            {
+                print_keyword(" FROM ");
+                backup_source->format(ostr, settings);
+            }
             break;
         }
         case Type::START_LISTEN:
@@ -451,6 +468,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+#if USE_JEMALLOC
+            if (!jemalloc_profile_path.empty())
+            {
+                print_keyword(" TO ");
+                ostr << quoteString(jemalloc_profile_path);
+            }
+#endif
+            break;
+        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
@@ -472,7 +500,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
