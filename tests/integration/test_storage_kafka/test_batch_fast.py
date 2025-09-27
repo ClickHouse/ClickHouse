@@ -591,7 +591,6 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
     instance.wait_for_log_line(
         "kafka.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
-        look_behind_lines=100,
         timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
     )
 
@@ -1000,7 +999,6 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         instance.wait_for_log_line(
             log_line,
             repetitions=6,
-            look_behind_lines=100,
         )
 
         instance.query(
@@ -1018,7 +1016,6 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         instance.wait_for_log_line(
             log_line,
             repetitions=6,
-            look_behind_lines=100,
         )
 
         # data was not flushed yet (it will be flushed 7.5 sec after creating MV)
@@ -1711,7 +1708,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             )
             producer.flush()
 
-            instance.wait_for_log_line(log_line, repetitions=4, look_behind_lines=6000)
+            instance.wait_for_log_line(log_line, repetitions=4)
 
             members = k.describe_consumer_group(kafka_cluster, consumer_group)
             # pprint.pprint(members)
@@ -2302,7 +2299,6 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             instance.wait_for_log_line(
                 "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
-                look_behind_lines=500
             )
 
         instance.wait_for_log_line("Committed offset 22")

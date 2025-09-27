@@ -104,7 +104,7 @@ def test_kafka_handling_commit_failure(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
 
     with kafka_cluster.pause_container("kafka1"):
-        instance.wait_for_log_line("timeout", timeout=60, look_behind_lines=100)
+        instance.wait_for_log_line("timeout", timeout=60)
 
     # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line("Committed offset 22")
