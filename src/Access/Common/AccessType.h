@@ -208,6 +208,8 @@ enum class AccessType : uint8_t
     M(ALTER_TTL, "ALTER MODIFY TTL, MODIFY TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY TTL */\
     M(ALTER_MATERIALIZE_TTL, "MATERIALIZE TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MATERIALIZE TTL;
                                                                        enabled implicitly by the grant ALTER_TABLE */\
+    M(ALTER_MATERIALIZE, "MATERIALIZE", TABLE, ALTER_TABLE) /* allows to execute ALTER MATERIALIZE
+                                                               enabled implicitly by the grant ALTER_TABLE */\
     M(ALTER_SETTINGS, "ALTER SETTING, ALTER MODIFY SETTING, MODIFY SETTING, RESET SETTING", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_MOVE_PARTITION, "ALTER MOVE PART, MOVE PARTITION, MOVE PART", TABLE, ALTER_TABLE) \
     M(ALTER_FETCH_PARTITION, "ALTER FETCH PART, FETCH PARTITION", TABLE, ALTER_TABLE) \

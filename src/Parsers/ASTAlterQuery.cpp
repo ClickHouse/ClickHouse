@@ -470,6 +470,15 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::MATERIALIZE)
+    {
+        ostr << "MATERIALIZE";
+        if (partition)
+        {
+            ostr << " IN PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
         ostr << "MODIFY SETTING ";

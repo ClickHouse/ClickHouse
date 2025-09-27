@@ -25,6 +25,7 @@ The following operations with [partitions](/engines/table-engines/mergetree-fami
 - [MOVE PARTITION\|PART](#move-partitionpart) — Move partition/data part to another disk or volume.
 - [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 - [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
+- [MATERIALIZE](#materialize) — Materialize data inside the table (or partition).
 
 <!-- -->
 
@@ -342,6 +343,17 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 
 -- using partition id
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
+```
+
+## MATERIALIZE {#materialize}
+
+This can be useful to apply some settings (i.e. `use_const_adaptive_granularity`) that requires rewriting all parts.
+
+### Example
+
+```
+ALTER TABLE mt MATERIALIZE;
+ALTER TABLE mt MATERIALIZE IN PARTITION 2;
 ```
 
 ### See Also {#see-also-1}

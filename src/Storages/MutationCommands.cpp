@@ -32,7 +32,7 @@ bool MutationCommand::isBarrierCommand() const
 
 bool MutationCommand::affectsAllColumns() const
 {
-    return type == DELETE || type == APPLY_DELETED_MASK;
+    return type == DELETE || type == APPLY_DELETED_MASK || type == MATERIALIZE;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
@@ -209,6 +209,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
+        if (command->partition)
+            res.partition = command->partition->clone();
+        return res;
+    }
+    if (command->type == ASTAlterCommand::MATERIALIZE)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE;
         if (command->partition)
             res.partition = command->partition->clone();
         return res;
