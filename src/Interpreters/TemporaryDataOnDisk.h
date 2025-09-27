@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <boost/noncopyable.hpp>
 
@@ -199,7 +200,7 @@ public:
         size_t uncompressed_size = 0;
     };
 
-    explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    explicit TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
     ~TemporaryDataBuffer() override;
 
     void nextImpl() override;
@@ -219,8 +220,9 @@ public:
 
 private:
     void updateAllocAndCheck();
+    void freeAlloc();
 
-    TemporaryDataOnDiskScope * parent;
+    std::shared_ptr<TemporaryDataOnDiskScope> parent;
     std::unique_ptr<TemporaryFileHolder> file_holder;
     WrapperGuard<CompressedWriteBuffer, WriteBuffer> out_compressed_buf;
     std::once_flag write_finished;
@@ -235,7 +237,7 @@ using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {
 public:
-    TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
 
     TemporaryBlockStreamReaderHolder getReadStream() const;
 

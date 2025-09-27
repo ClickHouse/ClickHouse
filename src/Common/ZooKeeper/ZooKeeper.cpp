@@ -82,7 +82,7 @@ void ZooKeeper::updateAvailabilityZones()
         try
         {
             ShuffleHosts single_node{node};
-            auto tmp_impl = std::make_unique<Coordination::ZooKeeper>(single_node, args, zk_log);
+            auto tmp_impl = std::make_unique<Coordination::ZooKeeper>(single_node, args, zk_log, aggregated_zookeeper_log);
             auto idx = node.original_index;
             availability_zones[idx] = tmp_impl->tryGetAvailabilityZone();
             LOG_TEST(log, "Got availability zone for {}: {}", args.hosts[idx], availability_zones[idx]);
@@ -132,7 +132,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
         ShuffleHosts shuffled_hosts = shuffleHosts();
 
-        impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log);
+        impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log, aggregated_zookeeper_log);
         auto node_idx = impl->getConnectedNodeIdx();
 
         if (args.chroot.empty())
@@ -157,7 +157,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                 {
                     LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
                     ShuffleHosts node{optimal_host};
-                    std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
+                    std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log, aggregated_zookeeper_log);
 
                     auto new_node_idx = new_impl->getConnectedNodeIdx();
                     chassert(new_node_idx.has_value());
@@ -221,15 +221,18 @@ ZooKeeper::~ZooKeeper()
         (*reconnect_task)->deactivate();
 }
 
-ZooKeeper::ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeper::ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_)
     : zk_log(std::move(zk_log_))
+    , aggregated_zookeeper_log(std::move(aggregated_zookeeper_log_))
 {
     init(std::move(args_), /*existing_impl*/ {});
 }
 
 
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl)
-    : availability_zones(std::move(availability_zones_)), zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl)
+    : availability_zones(std::move(availability_zones_))
+    , zk_log(std::move(zk_log_))
+    , aggregated_zookeeper_log(std::move(aggregated_zookeeper_log_))
 {
     if (availability_zones.size() != args_.hosts.size())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Argument sizes mismatch: availability_zones count {} and hosts count {}",
@@ -1105,9 +1108,9 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     return future_result.get();
 }
 
-ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_)
 {
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(std::move(args_), std::move(zk_log_)));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(std::move(args_), std::move(zk_log_), std::move(aggregated_zookeeper_log_)));
     res->initSession();
     return res;
 }
@@ -1117,7 +1120,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     if (reconnect_task)
         (*reconnect_task)->deactivate();
 
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, zk_log, availability_zones, std::move(optimal_impl)));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
     res->initSession();
     return res;
 }
@@ -1547,13 +1550,6 @@ void ZooKeeper::finalize(const String & reason)
     impl->finalize(reason);
 }
 
-void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-{
-    zk_log = std::move(zk_log_);
-    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
-        zk->setZooKeeperLog(zk_log);
-}
-
 void ZooKeeper::setServerCompletelyStarted()
 {
     if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
@@ -1675,11 +1671,16 @@ Coordination::RequestPtr makeSetRequest(const std::string & path, const std::str
     return request;
 }
 
-Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
+Coordination::RequestPtr makeCheckRequest(const std::string & path, int version, bool not_exists, std::optional<Coordination::Stat> stat_to_check)
 {
+    if (not_exists && stat_to_check)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Check request supports only single extension at a time");
+
     auto request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
+    request->not_exists = not_exists;
+    request->stat_to_check = std::move(stat_to_check);
     return request;
 }
 

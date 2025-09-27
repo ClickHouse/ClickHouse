@@ -36,7 +36,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,

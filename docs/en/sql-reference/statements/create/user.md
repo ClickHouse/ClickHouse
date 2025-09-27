@@ -4,6 +4,7 @@ sidebar_label: 'USER'
 sidebar_position: 39
 slug: /sql-reference/statements/create/user
 title: 'CREATE USER'
+doc_type: 'reference'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).

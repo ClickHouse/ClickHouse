@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -676,14 +675,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    /// If parallel_replicas_support_projection is enabled, selected_marks will be used to determine the optimal projection.
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
-        && !settings[Setting::parallel_replicas_support_projection])
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
     {
-        // Skip index analysis and return parts with all marks
-        // The coordinator will choose ranges to read for workers based on index analysis on its side
-        return parts_with_ranges;
+        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
+        bool is_handling_projection_parts = std::any_of(
+            parts_with_ranges.begin(),
+            parts_with_ranges.end(),
+            [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
+        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts || metadata_snapshot->hasProjections());
+
+        if (!support_projection_optimization)
+            // Skip index analysis and return parts with all marks
+            // The coordinator will choose ranges to read for workers based on index analysis on its side
+            return parts_with_ranges;
     }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
@@ -1838,10 +1843,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        GinPostingsListsCacheForStore postings_lists_cache_for_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            postings_lists_cache_for_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -1849,7 +1850,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                    reader.read(index_mark, granule);
+                {
+                    reader.read(index_mark, condition.get(), granule);
+                }
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
@@ -1887,13 +1890,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = postings_lists_cache_for_store.store
-                                    ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, postings_lists_cache_for_store)
-                                    : true;
-                    else
-                        result = condition->mayBeTrueOnGranule(granule);
+                    bool result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
                         continue;
@@ -1990,7 +1987,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(index_mark, granules[i]);
+                    readers[i]->read(index_mark, nullptr, granules[i]);
                     granules_filled = true;
                 }
             }

@@ -110,7 +110,33 @@ public:
 
 REGISTER_FUNCTION(H3IndexesAreNeighbors)
 {
-    factory.registerFunction<FunctionH3IndexesAreNeighbors>();
+    FunctionDocumentation::Description description = R"(
+Returns whether or not the provided [H3](#h3-index) indexes are neighbors.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3IndexesAreNeighbors(index1, index2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index1", "First H3 index.", {"UInt64"}},
+        {"index2", "Second H3 index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the indexes are neighbors (sharing an edge), `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check if two H3 indexes are neighbors",
+            "SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n",
+            R"(
+┌─n─┐
+│ 1 │
+└───┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3IndexesAreNeighbors>(documentation);
 }
 
 }

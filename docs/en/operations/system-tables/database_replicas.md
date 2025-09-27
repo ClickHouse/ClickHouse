@@ -3,6 +3,7 @@ description: 'System table containing information about and status of replicated
 keywords: ['system table', 'database_replicas']
 slug: /operations/system-tables/database_replicas
 title: 'system.database_replicas'
+doc_type: 'reference'
 ---
 
 Contains information of each Replicated database replicas.
