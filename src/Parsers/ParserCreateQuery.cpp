@@ -739,7 +739,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
-
     if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
@@ -1545,6 +1544,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_empty(Keyword::EMPTY);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_to{Keyword::TO};
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -1576,6 +1576,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_populate = false;
     bool is_create_empty = false;
     bool replace_view = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1599,6 +1600,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
         is_ordinary_view = true;
+
+    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    {
+        is_temporary = true;
+    }
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -1725,6 +1731,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
+    query->temporary = is_temporary;
 
     auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
@@ -1774,7 +1781,15 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         targets = std::make_shared<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+        {
+            if (!to_table->as<ASTTableIdentifier>()->isParam())
+                targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            else
+            {
+                chassert(is_materialized_view);
+                targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
+            }
+        }
         if (to_inner_uuid)
             targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
         if (storage)

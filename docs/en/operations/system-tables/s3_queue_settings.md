@@ -4,6 +4,7 @@ description: 'System table containing information about the settings of S3Queue 
 keywords: ['system table', 's3_queue_settings']
 slug: /operations/system-tables/s3_queue_settings
 title: 'system.s3_queue_settings'
+doc_type: 'reference'
 ---
 
 # system.s3_queue_settings

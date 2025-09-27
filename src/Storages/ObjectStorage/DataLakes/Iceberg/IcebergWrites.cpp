@@ -36,10 +36,12 @@
 #include <Common/randomSeed.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Columns/IColumn.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/CastOverloadResolver.h>
 #include <IO/WriteHelpers.h>
@@ -78,6 +80,8 @@ namespace Setting
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 }
 
 namespace DataLakeStorageSetting
@@ -224,7 +228,12 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_)
+FileNamesGenerator::FileNamesGenerator(
+    const String & table_dir_,
+    const String & storage_dir_,
+    bool use_uuid_in_metadata_,
+    CompressionMethod compression_method_,
+    const String & format_name_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
@@ -233,6 +242,7 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String &
     , storage_metadata_dir(storage_dir + "metadata/")
     , use_uuid_in_metadata(use_uuid_in_metadata_)
     , compression_method(compression_method_)
+    , format_name(boost::to_lower_copy(format_name_))
 {
 }
 
@@ -248,6 +258,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 }
 
 FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
@@ -265,6 +276,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 
     return *this;
 }
@@ -274,8 +286,8 @@ FileNamesGenerator::Result FileNamesGenerator::generateDataFileName()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}data-{}.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}data-{}.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}data-{}.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}data-{}.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
@@ -338,13 +350,15 @@ FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}{}-deletes.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}{}-deletes.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}{}-deletes.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}{}-deletes.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
+    if (!metadata_path.starts_with(table_dir))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paths in Iceberg must use a consistent format — either /your/path or s3://your/path. Use the write_full_path_in_iceberg_metadata setting to control this behavior {} {}", metadata_path, table_dir);
     return storage_dir + metadata_path.substr(table_dir.size());
 }
 
@@ -371,8 +385,7 @@ void extendSchemaForPartitions(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        Int32 iter = 1;
-        field->set(Iceberg::f_type, getIcebergType(partition_types[i], iter).first);
+        field->set(Iceberg::f_type, getAvroType(partition_types[i]));
         partition_fields->add(field);
     }
 
@@ -498,6 +511,9 @@ void generateManifestFile(
             auto statistics = data_file_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int32>(value); });
 
+            statistics = data_file_statistics->getNullCounts();
+            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int32>(value); });
+
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
@@ -533,10 +549,44 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
-                partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<Int64>());
-            else if (partition_values[i].getType() == Field::Types::String)
-                partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
+            switch (partition_values[i].getType())
+            {
+                case Field::Types::Int64:
+                case Field::Types::UInt64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                    break;
+
+                case Field::Types::String:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<String>());
+                    break;
+
+                case Field::Types::Float64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                    break;
+
+                case Field::Types::Decimal32:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                    break;
+
+                case Field::Types::Decimal64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    break;
+
+                case Field::Types::Null:
+                    break;
+
+                default:
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unsupported type to write into avro file {}",
+                        partition_values[i].getType()
+                    );
+            }
         }
 
         writer.write(manifest_datum);
@@ -1099,6 +1149,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     if (column_sizes.empty())
     {
         column_sizes.resize(num_columns, 0);
+        null_counts.resize(num_columns, 0);
         for (size_t i = 0; i < num_columns; ++i)
         {
             ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
@@ -1109,6 +1160,9 @@ void DataFileStatistics::update(const Chunk & chunk)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
+        column_sizes[i] += chunk.getColumns()[i]->byteSize();
+        for (size_t j = 0; j < chunk.getNumRows(); ++j)
+            null_counts[i] += (chunk.getColumns()[i]->isNullAt(j));
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(chunk.getColumns()[i]));
     }
 }
@@ -1132,6 +1186,17 @@ std::vector<std::pair<size_t, size_t>> DataFileStatistics::getColumnSizes() cons
     return result;
 }
 
+std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNullCounts() const
+{
+    std::vector<std::pair<size_t, size_t>> result;
+    for (size_t i = 0; i < null_counts.size(); ++i)
+    {
+        result.push_back({field_ids[i], null_counts[i]});
+    }
+    return result;
+}
+
+
 std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
 {
     std::vector<std::pair<size_t, Field>> result;
@@ -1152,6 +1217,90 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getUpperBounds() const
     return result;
 }
 
+MultipleFileWriter::MultipleFileWriter(
+    UInt64 max_data_file_num_rows_,
+    UInt64 max_data_file_num_bytes_,
+    Poco::JSON::Array::Ptr schema,
+    FileNamesGenerator & filename_generator_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_,
+    const std::optional<FormatSettings> & format_settings_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    SharedHeader sample_block_)
+    : max_data_file_num_rows(max_data_file_num_rows_)
+    , max_data_file_num_bytes(max_data_file_num_bytes_)
+    , stats(schema)
+    , filename_generator(filename_generator_)
+    , object_storage(object_storage_)
+    , context(context_)
+    , format_settings(format_settings_)
+    , configuration(configuration_)
+    , sample_block(sample_block_)
+{
+}
+
+void MultipleFileWriter::consume(const Chunk & chunk)
+{
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
+    {
+        if (buffer)
+            finalize();
+
+        current_file_num_rows = 0;
+        current_file_num_bytes = 0;
+        auto filename = filename_generator.generateDataFileName();
+
+        data_file_names.push_back(filename.path_in_storage);
+        buffer = object_storage->writeObject(
+            StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+
+        if (format_settings)
+        {
+            format_settings->parquet.write_page_index = true;
+            format_settings->parquet.bloom_filter_push_down = true;
+            format_settings->parquet.filter_push_down = true;
+        }
+        output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            configuration->format, *buffer, *sample_block, context, format_settings);
+    }
+    output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
+    output_format->flush();
+    *current_file_num_rows += chunk.getNumRows();
+    *current_file_num_bytes += chunk.bytes();
+    stats.update(chunk);
+}
+
+void MultipleFileWriter::finalize()
+{
+    output_format->flush();
+    output_format->finalize();
+    buffer->finalize();
+    total_bytes += buffer->count();
+}
+
+void MultipleFileWriter::release()
+{
+    output_format.reset();
+    buffer.reset();
+}
+
+void MultipleFileWriter::cancel()
+{
+    output_format->cancel();
+    buffer->cancel();
+}
+
+void MultipleFileWriter::clearAllDataFiles() const
+{
+    for (const auto & data_filename : data_file_names)
+        object_storage->removeObjectIfExists(StoredObject(data_filename));
+}
+
+UInt64 MultipleFileWriter::getResultBytes() const
+{
+    return total_bytes;
+}
+
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -1169,7 +1318,7 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, /* if_not_updated_before */ true);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
@@ -1179,16 +1328,19 @@ IcebergStorageSink::IcebergStorageSink(
     auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
+    if (!config_path.starts_with('/'))
+        config_path = '/' + config_path;
+
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -1232,31 +1384,22 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
     for (const auto & [partition_key, part_chunk] : partition_result)
     {
-        if (!data_filenames.contains(partition_key))
+        if (!writer_per_partition_key.contains(partition_key))
         {
-            auto [data_filename, data_filename_in_storage] = filename_generator.generateDataFileName();
-            data_filenames[partition_key] = data_filename;
-            if (!statistics.contains(partition_key))
-            {
-                statistics.emplace(partition_key, current_schema->getArray(Iceberg::f_fields));
-            }
-            statistics.at(partition_key).update(part_chunk);
-
-            auto buffer = object_storage->writeObject(
-                StoredObject(data_filename_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-
-            write_buffers[partition_key] = std::move(buffer);
-            if (format_settings)
-            {
-                format_settings->parquet.write_page_index = true;
-                format_settings->parquet.bloom_filter_push_down = true;
-                format_settings->parquet.filter_push_down = true;
-            }
-            writers[partition_key] = FormatFactory::instance().getOutputFormatParallelIfPossible(
-                configuration->format, *write_buffers[partition_key], *sample_block, context, format_settings);
+            auto writer = MultipleFileWriter(
+                context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file],
+                context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
+                current_schema->getArray(Iceberg::f_fields),
+                filename_generator,
+                object_storage,
+                context,
+                format_settings,
+                configuration,
+                sample_block);
+            writer_per_partition_key.emplace(partition_key, std::move(writer));
         }
 
-        writers[partition_key]->write(getHeader().cloneWithColumns(part_chunk.getColumns()));
+        writer_per_partition_key.at(partition_key).consume(part_chunk);
     }
 }
 
@@ -1271,26 +1414,13 @@ void IcebergStorageSink::onFinish()
 
 void IcebergStorageSink::finalizeBuffers()
 {
-    for (const auto & [partition_key, _] : data_filenames)
+    for (auto & [partition_key, writer] : writer_per_partition_key)
     {
-        try
-        {
-            writers[partition_key]->flush();
-            writers[partition_key]->finalize();
-        }
-        catch (...)
-        {
-            /// Stop ParallelFormattingOutputFormat correctly.
-            cancelBuffers();
-            releaseBuffers();
-            throw;
-        }
-
-        write_buffers[partition_key]->finalize();
-        total_chunks_size += write_buffers[partition_key]->count();
+        writer.finalize();
+        total_chunks_size += writer.getResultBytes();
     }
 
-    if (data_filenames.empty())
+    if (writer_per_partition_key.empty())
         return;
 
     while (!initializeMetadata())
@@ -1300,21 +1430,17 @@ void IcebergStorageSink::finalizeBuffers()
 
 void IcebergStorageSink::releaseBuffers()
 {
-    for (const auto & [partition_key, _] : data_filenames)
+    for (auto & [_, writer] : writer_per_partition_key)
     {
-        writers[partition_key].reset();
-        write_buffers[partition_key].reset();
+        writer.release();
     }
 }
 
 void IcebergStorageSink::cancelBuffers()
 {
-    for (const auto & [partition_key, _] : data_filenames)
+    for (auto & [_, writer] : writer_per_partition_key)
     {
-        if (writers[partition_key])
-            writers[partition_key]->cancel();
-        if (write_buffers[partition_key])
-            write_buffers[partition_key]->cancel();
+        writer.cancel();
     }
 }
 
@@ -1325,8 +1451,11 @@ bool IcebergStorageSink::initializeMetadata()
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
+    Int32 total_data_files = 0;
+    for (const auto & [_, writer] : writer_per_partition_key)
+        total_data_files += writer.getDataFiles().size();
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), /* added_delete_files */0, /* num_deleted_rows */0);
+        filename_generator, metadata_name, parent_snapshot, total_data_files, total_rows, total_chunks_size, total_data_files, /* added_delete_files */0, /* num_deleted_rows */0);
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
@@ -1336,8 +1465,8 @@ bool IcebergStorageSink::initializeMetadata()
     {
         try
         {
-            for (const auto & [_, data_filename] : data_filenames)
-                object_storage->removeObjectIfExists(StoredObject(data_filename));
+            for (const auto & [_, writer] : writer_per_partition_key)
+                writer.clearAllDataFiles();
 
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
@@ -1353,7 +1482,7 @@ bool IcebergStorageSink::initializeMetadata()
 
     try
     {
-        for (const auto & [partition_key, data_filename] : data_filenames)
+        for (const auto & [partition_key, writer] : writer_per_partition_key)
         {
             auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
             manifest_entries_in_storage.push_back(storage_manifest_entry_name);
@@ -1368,8 +1497,8 @@ bool IcebergStorageSink::initializeMetadata()
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
                     partition_key,
                     partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
-                    {data_filename},
-                    statistics.at(partition_key),
+                    writer.getDataFiles(),
+                    writer.getResultStatistics(),
                     sample_block,
                     new_snapshot,
                     configuration->format,

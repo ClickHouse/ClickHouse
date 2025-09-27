@@ -64,9 +64,11 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_experimental_insert_into_iceberg", 1);
     context->setSetting("allow_experimental_iceberg_compaction", 1);
+    context->setSetting("allow_experimental_delta_lake_writes", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
+    context->setSetting("allow_experimental_qbit_type", 1);
 }
 
 }

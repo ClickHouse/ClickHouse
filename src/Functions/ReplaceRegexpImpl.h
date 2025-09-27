@@ -450,8 +450,8 @@ struct ReplaceRegexpImpl
             chassert(input_rows_count == haystack_data.size() / n);
             res_data.assign(haystack_data.begin(), haystack_data.end());
             res_offsets.resize(input_rows_count);
-            for (size_t i = 1; i <= input_rows_count; ++i)
-                res_offsets[i] = i * n;
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_offsets[i] = (i + 1) * n;
             return;
         }
 

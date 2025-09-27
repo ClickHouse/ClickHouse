@@ -5,6 +5,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -135,7 +136,7 @@ namespace
 {
 
 template <
-    bool is_rate,
+    bool is_rate_or_resets,
     bool is_predict,
     bool array_arguments,
     typename ValueType,
@@ -180,7 +181,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         }
         else
         {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
+            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
         }
     }
@@ -199,7 +200,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         }
         else
         {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate>>>
+            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, 0);
         }
     }
@@ -212,7 +213,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 }
 
 template <
-    bool is_rate,
+    bool is_rate_or_resets,
     bool is_predict,
     template <bool, typename, typename, typename, bool> class FunctionTraits,
     template <typename> class Function
@@ -239,16 +240,16 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
     if (value_type->getTypeId() == TypeIndex::Float64)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else if (value_type->getTypeId() == TypeIndex::Float32)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else
     {
@@ -277,6 +278,11 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
     factory.registerFunction("timeSeriesPredictLinearToGrid",
         createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
+
+    factory.registerFunction("timeSeriesChangesToGrid",
+        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>);
+    factory.registerFunction("timeSeriesResetsToGrid",
+        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>);
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);

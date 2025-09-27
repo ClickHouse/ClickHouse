@@ -12,14 +12,14 @@ using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSeco
 REGISTER_FUNCTION(ToSecond)
 {
     FunctionDocumentation::Description description = R"(
-Returns the second component (0-59) of a `Date` or `DateTime` value.
+Returns the second component (0-59) of a `DateTime` or `DateTime64` value.
         )";
     FunctionDocumentation::Syntax syntax = "toSecond(datetime)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Date or date with time to get the second from.", {"Date", "Date32", "DateTime", "DateTime64"}}
+        {"datetime", "Date with time to get the second from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the second in the minute (0 - 59) of the given `Date` or `DateTime` value", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the second in the minute (0 - 59) of `datetime`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
