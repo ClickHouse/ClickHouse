@@ -44,9 +44,10 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     SortDescription description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     Graphite::Params params_,
     time_t time_of_merge_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs, std::make_unique<GraphiteRollupMergedData>(false, max_block_size_rows_, max_block_size_bytes_))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs, std::make_unique<GraphiteRollupMergedData>(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
     , graphite_rollup_merged_data(assert_cast<GraphiteRollupMergedData &>(*merged_data))
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)

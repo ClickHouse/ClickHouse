@@ -171,7 +171,7 @@ public:
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {
