@@ -281,6 +281,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             case RPNElement::ALWAYS_FALSE:
                 rpn_stack.emplace_back(false, true);
                 break;
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
     }
 

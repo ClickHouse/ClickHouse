@@ -3799,6 +3799,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
                 rpn_stack.back() = arg1 | arg2;
                 break;
             }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
     }
 
