@@ -237,7 +237,7 @@ FROM
 )
 ORDER BY
     condition_type ASC,
-    id ASC
+    id ASC;
 
 
 SELECT '1.9 ORDER BY Clause';
