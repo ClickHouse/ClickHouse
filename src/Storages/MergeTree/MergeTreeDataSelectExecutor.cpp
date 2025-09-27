@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -760,6 +761,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+    const bool support_disjuncts = !key_condition_rpn_template.isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts];
 
     /// Let's find what range to read from each part.
     {
@@ -845,6 +847,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 };
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
+
                 std::unordered_map<size_t, KeyCondition::RPN> partial_eval_results;
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
@@ -889,7 +892,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
-			    true,
+			    support_disjuncts,
                             partial_eval_results,
                             log);
                     }
@@ -901,7 +904,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-		/// if ()
+		if (support_disjuncts)
 		{
 			ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part, ranges.ranges, key_condition_rpn_template.getRPN(), partial_eval_results);
 			sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1052,13 +1055,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
         }
+        if (support_disjuncts)
+        {
+            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                .type = ReadFromMergeTree::IndexType::Skip,
+                .name = "<Combined>",
+                .description = "Final set of granules after AND/OR processing",
+                .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+                .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
+        }
     }
-                        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-                        .type = ReadFromMergeTree::IndexType::Skip,
-                        .name = "<Combined>",
-                        .description = "Final list of ranges after AND/OR processing",
-                        .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-                        .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
 
     for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
     {
@@ -1942,7 +1948,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 			auto & rpn_of_range = partial_eval_results_for_disjuncts[range_begin];
 
                         auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown) {
-                            LOG_TRACE(getLogger(""), "New partial {} {} {}", part->name, position, result);
+                            /// LOG_TRACE(getLogger(""), "New partial {} {} {}", part->name, position, result);
                             if (!is_unknown)
                                 rpn_of_range[position].function =
                                     element_result ? KeyCondition::RPNElement::Function::ALWAYS_TRUE : KeyCondition::RPNElement::Function::ALWAYS_FALSE;
@@ -2246,15 +2252,15 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 }
 
 MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
-    MergeTreeData::DataPartPtr part,
+    MergeTreeData::DataPartPtr /*part*/,
     const MarkRanges & ranges,
     const KeyCondition::RPN & rpn_template_for_eval_result,
     const std::unordered_map<size_t, KeyCondition::RPN> & partial_eval_results)
 {
     MarkRanges res;
 
-    LOG_TRACE(getLogger(""), "Finalizing for part {}, ranges = {}", part->name, ranges.size());
-
+    /// LOG_TRACE(getLogger(""), "Finalizing for part {}, ranges = {}", part->name, ranges.size());
+/*
     auto getResultForRangeAndPosition = [&](size_t range_begin, size_t position)
     {
         auto range_result = partial_eval_results.find(range_begin);
@@ -2265,17 +2271,22 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
         }
 	return true;
     };
-
+*/
     /// Evaluate the RPN over all the ranges.
     for (auto range : ranges)
     {
         std::vector<bool> rpn_stack;
         size_t position = 0;
+        auto range_result = partial_eval_results.find(range.begin);
+        auto range_found = range_result != partial_eval_results.end();
         for (const auto & element : rpn_template_for_eval_result)
         {
             if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
             {
-                rpn_stack.emplace_back(getResultForRangeAndPosition(range.begin, position));
+	        if (range_found && range_result->second[position].function == KeyCondition::RPNElement::ALWAYS_FALSE)
+                    rpn_stack.emplace_back(false);
+		else
+                    rpn_stack.emplace_back(true);
             }
             else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
             {
@@ -2313,7 +2324,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
 
         if (rpn_stack[0])
 	{
-            LOG_TRACE(getLogger(""), "finalized range {}", range.begin);
+            /// LOG_TRACE(getLogger(""), "finalized range {}", range.begin);
             res.push_back({range.begin, range.end}); /// TODO - range coalesce
 						     ///
 	}

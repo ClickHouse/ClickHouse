@@ -185,7 +185,7 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 }
 
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
-bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & /*partial_eval_results_function*/) const
+bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const
 {
     std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleBloomFilterText>(idx_granule);
@@ -194,6 +194,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+    size_t position = 0;
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
@@ -292,6 +293,9 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in BloomFilterCondition::RPNElement");
+        if (partial_eval_results_function)
+            partial_eval_results_function(position, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+	position++;
     }
 
     if (rpn_stack.size() != 1)

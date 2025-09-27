@@ -1011,6 +1011,13 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     return node.tryGetConstant(out_value, out_type);
 }
 
+bool KeyCondition::isOnlyConjuncts() const
+{
+    return std::find_if(rpn.begin(), rpn.end(),
+                        [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; }
+                       ) == rpn.end();
+}
+
 
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
@@ -3230,11 +3237,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
 {
     std::vector<BoolMask> rpn_stack;
 
+#if 0
     std::stringstream ss;
     for (const auto & element : rpn)
 	    ss << "-" << element.function << "(" << element.key_column << ")";
-    LOG_TRACE(getLogger(""), "KeyCondition is {}, rpn is {}", toString(), ss.str());
-
+    /// LOG_TRACE(getLogger(""), "KeyCondition is {}, rpn is {}", toString(), ss.str());
+#endif
     auto curve_type = [&](size_t key_column_pos)
     {
         for (const auto & curve : key_space_filling_curves)
