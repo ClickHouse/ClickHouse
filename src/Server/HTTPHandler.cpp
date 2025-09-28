@@ -1,5 +1,6 @@
 #include <Server/HTTPHandler.h>
 
+#include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -38,6 +39,7 @@
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
@@ -267,16 +269,17 @@ void HTTPHandler::processQuery(
         if (reserved_param_names.contains(name))
             return true;
 
-        /// For external data we also want settings.
         if (has_external_data)
         {
-            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
+            /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
+            /// because some of them are used in the query as a settings, like 'date_time_input_format',
             static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
-                    return true;
+                    return (!context->getAccessControl().isSettingNameAllowed(name));
             }
         }
 
@@ -385,7 +388,7 @@ void HTTPHandler::processQuery(
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
             });
         }
         else
@@ -585,6 +588,19 @@ void HTTPHandler::processQuery(
         used_output.finalize();
     };
 
+    /// Create callback to defer HTTP 100 Continue response to after quota checks
+    HTTPContinueCallback http_continue_callback = {};
+    if (shouldDeferHTTP100Continue(request))
+    {
+        http_continue_callback = [&request, &response]()
+        {
+            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            {
+                response.sendContinue();
+            }
+        };
+    }
+
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
@@ -594,7 +610,8 @@ void HTTPHandler::processQuery(
         QueryFlags{},
         {},
         handle_exception_in_output_format,
-        query_finish_callback);
+        query_finish_callback,
+        http_continue_callback);
 }
 
 bool HTTPHandler::trySendExceptionToClient(

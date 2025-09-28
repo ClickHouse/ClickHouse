@@ -22,6 +22,15 @@
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
         <level>trace</level>
+
+        <!-- Startup level is used to set the root logger level at server startup.
+             It is useful for debugging startup issues.
+             The root logger level will be reset to the default level after the server is fully initialized -->
+        <!-- <startup_level>trace</startup_level> -->
+       <!-- Shutdown level is used to set the root logger level at server Shutdown.
+             It is useful for debugging shutdown issues -->
+        <!-- <shutdown_level>trace</shutdown_level> -->
+
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -37,6 +46,12 @@
         <!-- <syslog_level>trace</syslog_level> -->
 
         <!-- <stream_compress>0</stream_compress> -->
+
+        <!-- By default logging happens in different threads so it does not block the execution
+             If the amount of messages waiting to be flushed is too large, new messages will be dropped.
+        -->
+        <!-- <async>1</async> -->
+        <!-- <async_queue_max_size>100000</async_queue_max_size> -->
 
         <!-- Per level overrides (legacy):
 
@@ -66,10 +81,12 @@
           </logger>
         </levels>
         -->
+
         <!-- Structured log formatting:
-        You can specify log format(for now, JSON only). In that case, the console log will be printed
-        in specified format like JSON.
-        For example, as below:
+
+        You can specify log format(for now, JSON only).
+        It can be done either on a per-channel (log, errorlog, console, syslog) level (set `channel`, i.e. `<channel>console</channel>') or for all channels (omit `channel`).
+        The log will be printed in specified format like JSON, example:
 
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         {"date_time_utc":"2024-11-06T09:06:09Z","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
@@ -85,8 +102,10 @@
         However, if you comment out all the tags under <names>, the program will print default values for as
         below.
         -->
-        <!-- <formatting>
+        <!--
+        <formatting>
             <type>json</type>
+            <channel></channel>
             <names>
                 <date_time>date_time</date_time>
                 <date_time_utc>date_time_utc</date_time_utc>
@@ -99,7 +118,8 @@
                 <source_file>source_file</source_file>
                 <source_line>source_line</source_line>
             </names>
-        </formatting> -->
+        </formatting>
+        -->
     </logger>
 
     <url_scheme_mappers>
@@ -1275,6 +1295,25 @@
         <flush_on_crash>false</flush_on_crash>
     </asynchronous_metric_log>
 
+    <iceberg_metadata_log>
+        <database>system</database>
+        <table>iceberg_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </iceberg_metadata_log>
+
+    <delta_lake_metadata_log>
+        <database>system</database>
+        <table>delta_lake_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </delta_lake_metadata_log>
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
 
@@ -1390,6 +1429,16 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
+
+    <!-- Aggregated ZooKeeper log.
+    -->
+    <aggregated_zookeeper_log>
+        <database>system</database>
+        <table>aggregated_zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </aggregated_zookeeper_log>
 
     <!-- Configure system.dashboards for dashboard.html.
 
@@ -1559,6 +1608,17 @@
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
     -->
 
+    <!-- Settings to tune cpu and memory overload warnings for system.warnings.
+    <resource_overload_warnings>
+        <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
+        <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
+        <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
+        <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+        <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
+        <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
+    </resource_overload_warnings>
+    -->
+
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
@@ -1573,6 +1633,18 @@
     <replicated_merge_tree>
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
     </replicated_merge_tree>
+    -->
+
+    <!-- Settings to fine-tune DatabaseReplicatedSettings. See documentation in source code, in DatabaseReplicatedSettings.h -->
+    <!--
+    <database_replicated>
+        <max_broken_tables_ratio>1</max_broken_tables_ratio>
+        <max_replication_lag_to_enqueue>50</max_replication_lag_to_enqueue>
+        <wait_entry_commited_timeout_sec>3600</wait_entry_commited_timeout_sec>
+        <collection_name>default_collection</collection_name>
+        <check_consistency>true</check_consistency>
+        <max_retries_before_automatic_recovery>10</max_retries_before_automatic_recovery>
+    </database_replicated>
     -->
 
     <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
@@ -1648,7 +1720,9 @@
     <!-- Uncomment to use custom http handlers.
 
         rules are checked from top to bottom, first match runs the handler
-            url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
+            url - to match request URL (path and query string only), you can use 'regex:' prefix to use regex match(optional)
+            full_url - to match request **full** URL (schema, host:port, path and query string), you can use 'regex:' prefix to use regex match(optional)
+                       note, ClickHouse does not support "virtual hosts" so "host" will contain IP address not the "Host" header.
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)
@@ -1681,6 +1755,22 @@
             <handler>
                 <type>predefined_query_handler</type>
                 <query>SELECT * FROM system.settings</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <url>/play</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play?user=play</location>
+            </handler>
+        </rule>
+
+        <rule>
+            <full_url>regex:http?://[^/]/dashboard</full_url>
+            <handler>
+                <type>redirect</type>
+                <location>/dashboard?user=play</location>
             </handler>
         </rule>
 
@@ -1817,5 +1907,18 @@
         when instrumenting ClickHouse via eBPF probes.
 
     <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
+    -->
+
+    <!-- Tune maximum core file size (RLIMIT_CORE) -->
+    <!--
+    <core_dump>
+        <size_limit></size_limit>
+    </core_dump>
+    -->
+
+    <!-- Tune maximum number of pending signals
+         (You may want to increase it if you see CANNOT_CREATE_TIMER exceptions) -->
+    <!--
+    <pending_signals></pending_signals>
     -->
 </clickhouse>

@@ -70,7 +70,7 @@ namespace DB
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = offsets ? (*offsets)[i] : current_offset + fixed_string_size;
-                const size_t string_size = offsets ? next_offset - current_offset - 1 : fixed_string_size;
+                const size_t string_size = offsets ? next_offset - current_offset : fixed_string_size;
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
                 current_offset = next_offset;
 

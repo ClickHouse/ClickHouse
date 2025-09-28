@@ -61,7 +61,33 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
 
 REGISTER_FUNCTION(Replicate)
 {
-    factory.registerFunction<FunctionReplicate>();
+    FunctionDocumentation::Description description_replicate = R"(
+Creates an array with a single value.
+)";
+    FunctionDocumentation::Syntax syntax_replicate = "replicate(x, arr)";
+    FunctionDocumentation::Arguments arguments_replicate = {
+        {"x", "The value to fill the result array with.", {"Any"}},
+        {"arr", "An array.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_replicate = {"Returns an array of the same length as `arr` filled with value `x`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_replicate = {
+    {
+        "Usage example",
+        R"(
+SELECT replicate(1, ['a', 'b', 'c']);
+        )",
+        R"(
+┌─replicate(1, ['a', 'b', 'c'])───┐
+│ [1, 1, 1]                       │
+└─────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_replicate = {1, 1};
+    FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
+
+    factory.registerFunction<FunctionReplicate>(documentation_replicate);
 }
 
 }

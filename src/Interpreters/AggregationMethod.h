@@ -278,7 +278,9 @@ struct AggregationMethodSerialized
 
     AggregationMethodSerialized() = default;
 
-    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint) { }
+    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint)
+    {
+    }
 
     template <typename Other>
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)

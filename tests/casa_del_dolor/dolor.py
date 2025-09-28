@@ -10,28 +10,30 @@ import time
 import signal
 import sys
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 sys.path.append("..")
-from integration.helpers.cluster import is_port_free, ZOOKEEPER_CONTAINERS
-
+from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
+from sparkserver import (
+    get_unique_free_ports,
+    create_spark_http_server,
+    close_spark_http_server,
+)
 
 # Needs to get free ports before importing ClickHouseCluster
-def get_unique_free_ports(total):
-    ports = []
-    for port in range(30000, 55000):
-        if is_port_free(port) and port not in ports:
-            ports.append(port)
-
-        if len(ports) == total:
-            return ports
-
-    raise Exception(f"Can't collect {total} ports. Collected: {len(ports)}")
-
-
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
 from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
+from integration.helpers.s3_tools import (
+    AzureUploader,
+    LocalUploader,
+    S3Uploader,
+    LocalDownloader,
+    prepare_s3_bucket,
+)
 from generators import Generator, BuzzHouseGenerator
 from oracles import ElOraculoDeTablas
 from properties import (
@@ -193,14 +195,13 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
-    "--with-postgresql", action="store_true", help="With PostgreSQL integration"
-)
-parser.add_argument("--with-mysql", action="store_true", help="With MySQL integration")
-parser.add_argument(
     "--without-minio",
     action="store_false",
     dest="with_minio",
     help="Without MinIO integration",
+)
+parser.add_argument(
+    "--with-azurite", action="store_true", help="With Azure integration"
 )
 parser.add_argument(
     "--without-zookeeper",
@@ -208,10 +209,11 @@ parser.add_argument(
     dest="with_zookeeper",
     help="Without Zookeeper server",
 )
-parser.add_argument("--with-nginx", action="store_true", help="With Nginx integration")
 parser.add_argument(
-    "--with-azurite", action="store_true", help="With Azure integration"
+    "--with-postgresql", action="store_true", help="With PostgreSQL integration"
 )
+parser.add_argument("--with-mysql", action="store_true", help="With MySQL integration")
+parser.add_argument("--with-nginx", action="store_true", help="With Nginx integration")
 parser.add_argument(
     "--with-sqlite", action="store_true", help="With SQLite integration"
 )
@@ -219,6 +221,9 @@ parser.add_argument(
     "--with-mongodb", action="store_true", help="With MongoDB integration"
 )
 parser.add_argument("--with-redis", action="store_true", help="With Redis integration")
+parser.add_argument(
+    "--with-arrowflight", action="store_true", help="With Arrow flight support"
+)
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -233,6 +238,12 @@ parser.add_argument(
     action="store_false",
     dest="add_transactions",
     help="Add 'allow_experimental_transactions' server setting",
+)
+parser.add_argument(
+    "--without-log-tables",
+    action="store_false",
+    dest="add_log_tables",
+    help="Add log tables server settings",
 )
 parser.add_argument(
     "--without-distributed-ddl",
@@ -275,13 +286,21 @@ parser.add_argument(
     help="Probability to set keeper server properties",
 )
 parser.add_argument(
-    "--with-glue", action="store_true", help="With AWS Glue catalog for MinIO"
+    "--with-spark", action="store_true", help="With Spark support in Dolor HTTP server"
 )
 parser.add_argument(
-    "--with-rest", action="store_true", help="With Iceberg REST catalog for MinIO"
+    "--with-glue", action="store_true", help="With AWS Glue catalog for Spark"
 )
 parser.add_argument(
-    "--with-hms", action="store_true", help="With Hive catalog for MinIO"
+    "--with-rest", action="store_true", help="With Iceberg REST catalog for Spark"
+)
+parser.add_argument(
+    "--with-hms", action="store_true", help="With Hive catalog for Spark"
+)
+parser.add_argument(
+    "--with-unity",
+    type=pathlib.Path,
+    help="With Unity catalog for Spark, path to Unity dir",
 )
 
 args = parser.parse_args()
@@ -329,7 +348,9 @@ with open(current_server, "r+") as f:
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
-cluster = ClickHouseCluster(__file__, custom_keeper_configs=keeper_configs)
+cluster = ClickHouseCluster(
+    __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
+)
 
 # Set environment variables such as locales and timezones
 test_env_variables = set_environment_variables(logger, args, "cluster")
@@ -379,6 +400,7 @@ for i in range(0, len(args.replica_values)):
             with_iceberg_catalog=args.with_rest,
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
+            with_arrowflight=args.with_arrowflight,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -391,8 +413,36 @@ logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
 )
 for i in range(0, len(args.replica_values)):
-    logger.info(f"Server node{i} running on host {servers[i].ip_address}, port 9000")
+    logger.info(
+        f"Server node{i} running on host {servers[i].hostname}, with IPv4 {servers[i].ip_address}, port 9000"
+    )
 servers[len(servers) - 1].wait_start(8)
+servers[0].give_user_files_permissions()
+
+# Uploaders for object storage
+credentials_file = tempfile.NamedTemporaryFile()
+if args.with_minio:
+    prepare_s3_bucket(cluster)
+    cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
+    os.environ["AWS_ACCESS_KEY_ID"] = cluster.minio_access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = cluster.minio_secret_key
+    os.environ["AWS_REGION"] = "us-east-1"
+    with open(credentials_file.name, "w+") as file:
+        file.write(
+            f"[default]\naws_access_key_id = {cluster.minio_access_key}\naws_secret_access_key = {cluster.minio_secret_key}\n"
+        )
+    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
+if args.with_azurite:
+    cluster.blob_service_client = cluster.blob_service_client
+    cluster.container_client = cluster.blob_service_client.create_container(
+        cluster.azure_container_name
+    )
+    cluster.default_azure_uploader = AzureUploader(
+        cluster.blob_service_client, cluster.azure_container_name
+    )
+cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
+cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -403,10 +453,14 @@ if args.with_postgresql:
     cursor.close()
     postgres_conn.close()
 
+
+# Handler for HTTP server
+catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
+
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster)
+    generator = BuzzHouseGenerator(args, cluster, catalog_server)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
 
@@ -416,9 +470,10 @@ def dolor_cleanup():
         client.process.kill()
         client.process.wait()
     try:
-        cluster.shutdown()
+        cluster.shutdown(kill=True, ignore_fatal=True)
     except:
         pass
+    close_spark_http_server(catalog_server)
     if modified_server_settings:
         try:
             os.unlink(server_settings)
@@ -441,6 +496,11 @@ def dolor_cleanup():
         os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
+    if args.with_minio:
+        try:
+            os.unlink(credentials_file.name)
+        except FileNotFoundError:
+            pass
     for entry in keeper_configs:
         try:
             os.unlink(entry)

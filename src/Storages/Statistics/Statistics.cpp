@@ -266,6 +266,18 @@ UInt64 ColumnStatistics::rowCount() const
     return rows;
 }
 
+String ColumnStatistics::getNameForLogs() const
+{
+    String ret;
+    for (const auto & [type, single_stats] : stats)
+    {
+        ret += single_stats->getNameForLogs();
+        ret += " | ";
+    }
+    ret += "rows: " + std::to_string(rows);
+    return ret;
+}
+
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
 {
     if (!creators.emplace(stats_type, std::move(creator)).second)

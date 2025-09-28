@@ -92,14 +92,13 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
             settings.binary.max_binary_string_size);
 
     size_t old_chars_size = data.size();
-    size_t offset = old_chars_size + size + 1;
+    size_t offset = old_chars_size + size;
     offsets.push_back(offset);
 
     try
     {
         data.resize(offset);
-        istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
-        data.back() = 0;
+        istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
     }
     catch (...)
     {
@@ -124,25 +123,20 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    if (offset == 0)
-    {
-        UInt64 str_size = offsets[0] - 1;
-        writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(data.data()), str_size);
-
-        ++offset;
-    }
-
+    ColumnString::Offset prev_string_offset = offsets[offset - 1];
     for (size_t i = offset; i < end; ++i)
     {
-        UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
+        ColumnString::Offset next_string_offset = offsets[i];
+        UInt64 str_size = next_string_offset - prev_string_offset;
         writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
+        ostr.write(reinterpret_cast<const char *>(&data[prev_string_offset]), str_size);
+        prev_string_offset = next_string_offset;
     }
 }
 
 template <size_t copy_size>
 static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+try
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
@@ -164,9 +158,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
                 size,
                 max_string_size);
 
-        offset += size + 1;
-        offsets.push_back(offset);
-
+        offset += size;
         if (unlikely(offset > data.size()))
             data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
@@ -177,7 +169,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
             {
                 const char * src_pos = istr.position();
                 const char * src_end = src_pos + size;
-                auto * dst_pos = &data[offset - size - 1];
+                auto * dst_pos = &data[offset - size];
 
                 while (src_pos < src_end)
                 {
@@ -191,19 +183,26 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
             }
             else
             {
-                istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+                istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
             }
         }
 
-        data[offset - 1] = 0;
+        offsets.push_back(offset);
     }
 
     data.resize_exact(offset);
+}
+catch (...)
+{
+    /// We are doing resize_exact() of bigger values than we have, let's make sure that it will be correct (even in case of exceptions)
+    data.resize_exact(offsets.back());
+    throw;
 }
 
 
 void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
+    /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
         UInt64 size;
@@ -215,13 +214,12 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    double avg_chars_size = 1; /// By default reserve only for empty strings.
+    double avg_chars_size = 0; /// By default, do not reserve (as for empty strings).
 
     if (avg_value_size_hint > 0.0 && avg_value_size_hint > sizeof(offsets[0]))
     {
         /// Randomly selected.
         constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
-
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
@@ -296,7 +294,6 @@ static inline ReturnType read(IColumn & column, Reader && reader)
             return false;
         }
 
-        data.push_back(0);
         offsets.push_back(data.size());
         return ReturnType(true);
     }
