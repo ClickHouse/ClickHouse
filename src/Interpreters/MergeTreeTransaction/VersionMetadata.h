@@ -40,10 +40,7 @@ struct TransactionInfoContext
 class VersionMetadata
 {
 public:
-    explicit VersionMetadata(IMergeTreeDataPart * merge_tree_data_part_)
-        : merge_tree_data_part(merge_tree_data_part_)
-    {
-    }
+    explicit VersionMetadata(IMergeTreeDataPart * merge_tree_data_part_);
     virtual ~VersionMetadata() = default;
 
     /**
@@ -55,7 +52,7 @@ public:
     void setCreationCSN(CSN csn) { creation_csn.store(csn); }
     CSN getCreationCSN() const { return creation_csn.load(); }
 
-    void setRemovalCSN(CSN csn) { removal_csn.store(csn); }
+    void setRemovalCSN(CSN csn);
     CSN getRemovalCSN() const { return removal_csn.load(); }
 
     /**
@@ -257,7 +254,7 @@ protected:
     static inline constexpr char REMOVAL_TID_STR[] = "removal_tid:  ";
     static inline constexpr char REMOVAL_CSN_STR[] = "removal_csn:  ";
 
-    const IMergeTreeDataPart * merge_tree_data_part;
+    IMergeTreeDataPart * merge_tree_data_part;
 
     /// ID of transaction that has created/is trying to create this object stored in the storage.
     TransactionID creation_tid = Tx::EmptyTID;

@@ -104,8 +104,9 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         /// Lock part for removal with special TID, so transactions will not try to remove it concurrently.
         /// We lock it only in memory if part was not involved in any transactions.
         part_to_remove->version->lockRemovalTID(Tx::PrehistoricTID, transaction_context);
-        if (part_to_remove->wasInvolvedInTransaction())
-            part_to_remove->version->appendRemovalTIDToStoredMetadata(Tx::PrehistoricTID);
+        part_to_remove->version->appendRemovalTIDToStoredMetadata(Tx::PrehistoricTID);
+        part_to_remove->version->setRemovalCSN(Tx::PrehistoricCSN);
+        part_to_remove->version->appendRemovalCSNToStoredMetadata();
     }
 }
 
@@ -131,17 +132,14 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
-            bool was_involved_in_transaction = covered->wasInvolvedInTransaction();
-
-            covered->version->lockRemovalTID(tid, transaction_context);
-            if (was_involved_in_transaction)
+            if (!covered->version->getRemovalCSN())
+            {
+                covered->version->lockRemovalTID(tid, transaction_context);
                 covered->version->appendRemovalTIDToStoredMetadata(tid);
-
-            covered->version->setRemovalCSN(Tx::PrehistoricCSN);
-            if (was_involved_in_transaction)
+                covered->version->setRemovalCSN(Tx::PrehistoricCSN);
                 covered->version->appendRemovalCSNToStoredMetadata();
-
-            covered->version->unlockRemovalTID(tid, transaction_context);
+                covered->version->unlockRemovalTID(tid, transaction_context);
+            }
         }
     }
 }
@@ -258,7 +256,6 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     {
         part->version->setRemovalCSN(csn);
         part->version->appendRemovalCSNToStoredMetadata();
-        part->version->unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
     for (const auto & storage_and_mutation : committed_mutations)

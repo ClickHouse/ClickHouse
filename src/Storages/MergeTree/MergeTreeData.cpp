@@ -1784,7 +1784,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 
     /// Explicitly set removal_tid_lock for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    if (!part->version->isRemovalTIDLocked())
+    if (part->version->getRemovalCSN() == 0 && !part->version->isRemovalTIDLocked())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
         part->version->lockRemovalTID(Tx::PrehistoricTID, transaction_context);
@@ -8501,6 +8501,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               src_part_storage->getFullPath(),
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
+    LOG_DEBUG(log, "File txn_keeper_node.txt, exist {}", dst_part_storage->existsFile("txn_keeper_node.txt"));
 
     auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings())
         .withPartFormatFromDisk()
