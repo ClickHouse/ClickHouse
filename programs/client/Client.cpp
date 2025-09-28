@@ -319,6 +319,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
         client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
+    /// Use <warnings/> unless --no-warnings is specified
+    if (!config().has("no-warnings") && !config().getBool("warnings", true))
+        config().setBool("no-warnings", true);
 }
 
 
