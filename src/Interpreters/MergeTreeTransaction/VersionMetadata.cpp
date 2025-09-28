@@ -26,6 +26,10 @@ extern const int SERIALIZATION_ERROR;
 extern const int CORRUPTED_DATA;
 }
 
+VersionMetadata::VersionMetadata(IMergeTreeDataPart * merge_tree_data_part_)
+    : merge_tree_data_part(merge_tree_data_part_)
+{
+}
 
 bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 {
@@ -34,7 +38,6 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 
 bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
-    LOG_TEST(log, "Check visible of object {} for snapshot_version {} and current_tid {}", getObjectName(), snapshot_version, current_tid);
     chassert(!creation_tid.isEmpty());
     CSN creation = getCreationCSN();
     TIDHash removal_lock = getRemovalTIDLock();
@@ -113,10 +116,17 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     {
         removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
-            removal_csn.store(removal, std::memory_order_relaxed);
+            setRemovalCSN(removal);
     }
 
     return creation <= snapshot_version && (!removal || snapshot_version < removal);
+}
+
+void VersionMetadata::setRemovalCSN(CSN csn)
+{
+    LOG_TEST(log, "Object {}, setRemovalCSN {}", getObjectName(), getRemovalCSN());
+    chassert(!getRemovalTID().isEmpty());
+    removal_csn.store(csn);
 }
 
 void VersionMetadata::appendCreationCSNToStoredMetadata()
@@ -195,12 +205,35 @@ TransactionID VersionMetadata::getRemovalTIDForLogging() const
 
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(log, "Trying to lock removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
+    LOG_TEST(
+        log,
+        "Object {}, trying to lock removal_tid by {}, table: {}, part: {}",
+        getObjectName(),
+        tid,
+        context.table.getNameForLogs(),
+        context.part_name);
+    String part_desc;
+    auto removal = getRemovalCSN();
+    if (removal != 0)
+    {
+        if (context.covering_part.empty())
+            part_desc = context.part_name;
+        else
+            part_desc = fmt::format("{} (covered by {})", context.part_name, context.covering_part);
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Serialization error: Transaction {} tried to remove data object {} from {}, but it's removed by another transaction with csn "
+            "{}",
+            tid,
+            part_desc,
+            context.table.getNameForLogs(),
+            removal);
+    }
+
     TIDHash locked_by = 0;
     if (tryLockRemovalTID(tid, context, &locked_by))
         return;
 
-    String part_desc;
     if (context.covering_part.empty())
         part_desc = context.part_name;
     else
@@ -219,6 +252,7 @@ void VersionMetadata::lockRemovalTID(const TransactionID & tid, const Transactio
 
 void VersionMetadata::setCreationTID(const TransactionID & tid, TransactionInfoContext * context)
 {
+    LOG_DEBUG(log, "Object {}, setCreationTID {}, creation_tid {}", getObjectName(), tid, creation_tid);
     /// NOTE ReplicatedMergeTreeSink may add one part multiple times
     chassert(creation_tid.isEmpty() || creation_tid == tid);
     creation_tid = tid;
@@ -285,7 +319,7 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
         /// Part removal is not committed yet
         removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
-            removal_csn.store(removal, std::memory_order_relaxed);
+            setRemovalCSN(removal);
         else
             return false;
     }
@@ -476,7 +510,10 @@ void VersionMetadata::readFromBuffer(ReadBuffer & buf)
     creation_tid = info.creation_tid;
     removal_tid = info.removal_tid;
     creation_csn = info.creation_csn;
-    removal_csn = info.removal_csn;
+    if (info.creation_csn != getCreationCSN())
+        setCreationCSN(info.creation_csn);
+    if (info.removal_csn != getRemovalCSN())
+        setRemovalCSN(info.removal_csn);
 }
 
 
