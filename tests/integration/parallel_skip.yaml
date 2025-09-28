@@ -24,6 +24,7 @@
 - test_insert_into_distributed_through_materialized_view/
 - test_storage_delta_disks/
 - test_storage_iceberg_disks/
+- test_storage_iceberg_concurrent/
 - test_storage_iceberg_no_spark/
 - test_storage_iceberg_schema_evolution/
 - test_storage_iceberg_with_spark/
