@@ -3513,9 +3513,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
-        if (partial_eval_results_function)
+        if (unlikely(partial_eval_results_function))
+        {
             partial_eval_results_function(position, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-        position++;
+            position++;
+        }
     }
 
     if (rpn_stack.size() != 1)
