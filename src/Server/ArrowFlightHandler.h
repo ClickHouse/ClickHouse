@@ -101,6 +101,9 @@ private:
     std::optional<ThreadFromGlobalPool> server_thread;
     bool initialized = false;
     std::atomic<bool> stopped = false;
+
+    class CallsData;
+    std::unique_ptr<CallsData> calls_data;
 };
 
 }
