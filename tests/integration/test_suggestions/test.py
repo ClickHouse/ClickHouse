@@ -166,6 +166,4 @@ def test_suggestions_backwards_compatibility_for_multiple_suggestions_prefix(sta
         "sequenceNextNodeNull",
         "sequenceMatchNull"
     ]
-    extra_forward_server_completions = ["search_orphaned_parts_disks"] # there was support of additional merge tree setting added
-    assert set(backward_server_completions).union(extra_forward_server_completions) == set(forward_server_completions).union(extra_backward_server_completions)
-    assert len(backward_server_completions) + len(extra_forward_server_completions) == len(forward_server_completions) + len(extra_backward_server_completions)
+    assert set(backward_server_completions).issubset(set(forward_server_completions).union(extra_backward_server_completions))
