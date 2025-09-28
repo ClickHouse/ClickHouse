@@ -78,7 +78,6 @@ private:
 
     //Variables to track patterns in points[]
     UInt32 sorted_prefix;
-    bool monotone_nondecreasing;
     Mean last_inserted;
 
     // Weighted values representation of histogram.
@@ -126,8 +125,8 @@ private:
         { return a.mean < b.mean; };
         UInt32 prefix = sorted_prefix;
         if (prefix > size) prefix = 0; // reset prefix, because it should be larger than size
-        //if we have a monotone_nondecreasing function and positive prefix, we can skip sorting
-        if (!(monotone_nondecreasing && prefix > 0))
+        //if we have a fully sorted array, we can skip sorting
+        if (prefix != size)
         {
             if (prefix == 0)
             {
@@ -208,7 +207,6 @@ private:
         }
         size = new_size;
         sorted_prefix = size;
-        monotone_nondecreasing = true;
         last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
     }
 
@@ -246,7 +244,6 @@ public:
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
         , sorted_prefix(0)
-        , monotone_nondecreasing(true)
         , last_inserted(std::numeric_limits<Mean>::lowest())
     {
         static_assert(offsetof(AggregateFunctionHistogramData, points) == sizeof(AggregateFunctionHistogramData), "points should be last member");
@@ -284,8 +281,11 @@ public:
         points[size] = {value, weight};
         ++size;
         //check if the input sequence is monotonic increasing, which is a commonly occurring pattern
-        if (monotone_nondecreasing && value < last_inserted)
-            monotone_nondecreasing = false;
+        if (sorted_prefix == size - 1 && value < last_inserted) {
+            sorted_prefix = 0;
+        } else if (sorted_prefix == size - 1) {
+            sorted_prefix = size;
+        }
         last_inserted = value;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
@@ -326,7 +326,6 @@ public:
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
         sorted_prefix = 0;
-        monotone_nondecreasing = true;
         last_inserted = std::numeric_limits<Mean>::lowest();
     }
 };
