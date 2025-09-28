@@ -402,6 +402,7 @@ void skipStringUntilWhitespace(ReadBuffer & buf);
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
+void readStringUntilComma(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
