@@ -3,6 +3,9 @@ SET use_skip_indexes_on_data_read = 0;
 SET allow_suspicious_low_cardinality_types = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 DROP TABLE IF EXISTS single_column_bloom_filter;
 
 CREATE TABLE single_column_bloom_filter (u64 UInt64, i32 Int32, i64 UInt64, INDEX idx (i32) TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree() ORDER BY u64 SETTINGS index_granularity = 6, index_granularity_bytes = '10Mi';

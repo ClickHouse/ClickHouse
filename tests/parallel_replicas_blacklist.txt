@@ -409,10 +409,24 @@
 00990_hasToken_and_tokenbf
     !!!max rows: 8.00, current rows: 16.38 thousand
 01414_push_predicate_when_contains_with_clause
+    !!!max rows: 20.00 million, current rows: 22.00 million
+02435_rollback_cancelled_queries
+    !!!max rows: 20.00 million, current rows: 26.64 million
+00063_loyalty_joins
+    max rows: 5.00, current rows: 20.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52038) (comment: 00489_pk_subexpression.sql) (in query: SELECT toUInt32(`__table1`.`x`) AS `toUInt32(x)`, `__table1`.`y` AS `y`, `__table1`.`z` AS `z` FROM `test_i815geoe`.`pk` AS `__table1` WHERE (`__table1`.`x` >= _CAST(0, 'DateTime')) AND (`__table1`.`x` <= _CAST(59, 'DateTime')))
+00489_pk_subexpression
+    max rows: 7.12 thousand, current rows: 51.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:59090) (comment: 01064_incremental_streaming_from_2_src_with_feedback.sql) (in query: SELECT `__table1`.`id` AS `id`, maxMerge(`__table1`.`latest_checkout_time`) AS `current_latest_checkout_time` FROM `test_jgsjo4al`.`target_table` AS `__table1` WHERE `__table1`.`id` IN (SELECT `__table1`.`id` AS `id` FROM `test_jgsjo4al`.`logins` AS `__table1`) GROUP BY `__table1`.`id`)
+01064_incremental_streaming_from_2_src_with_feedback
     max rows: 3.00, current rows: 13.00
 01410_nullable_key_and_index
+    max rows: 1.00, current rows: 10.00
+01576_alias_column_rewrite
     max rows: 4.00, current rows: 10.00
 01585_use_index_for_global_in
+    max rows: 5.00, current rows: 20.00
+00926_adaptive_index_granularity_pk
+    max rows: 12.00, current rows: 20.00
+01583_const_column_in_set_index
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
 

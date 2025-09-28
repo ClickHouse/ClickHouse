@@ -4,10 +4,6 @@ create table insub (i int, j int) engine MergeTree order by i settings index_gra
 insert into insub select number a, a + 2 from numbers(10);
 
 SET max_rows_to_read = 12; -- 10 from numbers + 2 from table
-
--- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
-SET parallel_replicas_index_analysis_only_on_coordinator = 0;
-
 select * from insub where i in (select toInt32(3) from numbers(10));
 
 drop table if exists insub;

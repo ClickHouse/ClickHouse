@@ -20,8 +20,6 @@ INSERT INTO pk (x, y, z) VALUES (1, 11, 1235), (2, 11, 4395), (3, 22, 3545), (4,
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1;
--- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
-SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 -- Test inferred limit
 SET max_rows_to_read = 5;
