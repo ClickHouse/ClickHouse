@@ -753,7 +753,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
-    const bool support_disjuncts = key_condition_rpn_template && !key_condition_rpn_template.value().isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts] && !use_skip_indexes_on_data_read;
+    const bool support_disjuncts = skip_indexes.useful_indices.size() > 1 && key_condition_rpn_template && !key_condition_rpn_template.value().isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts] && !use_skip_indexes_on_data_read;
 
     /// Let's find what range to read from each part.
     {
