@@ -73,6 +73,7 @@ def test_disabled_mysql_server(started_cluster):
                 "source": clickhouse_node.ip_address,
                 "destination_port": 3306,
                 "action": "DROP",
+                "protocol": "tcp"
             }
         )
         clickhouse_node.query("SELECT * FROM system.parts")
