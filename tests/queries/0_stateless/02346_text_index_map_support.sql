@@ -1,9 +1,11 @@
 -- Tags: no-parallel-replicas
 
+-- Tests that text indexes can be build on and used with Map columns.
+
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
-SELECT 'text index with mapKeys';
+SELECT 'Function mapKeys';
 
 DROP TABLE IF EXISTS tab;
 
@@ -21,7 +23,7 @@ ORDER BY (id);
 INSERT INTO tab VALUES (0, {'K0':'V0', 'K1':'V1'}, {'K0':'V0', 'K1':'V1'});
 INSERT INTO tab VALUES (1, {'K1':'V1', 'K2':'V2'}, {'K1':'V1', 'K2':'V2'});
 
-SELECT '-- mapContainsKey support';
+SELECT '-- mapContains support';
 
 SELECT '-- -- query with String';
 
@@ -42,9 +44,9 @@ SELECT '-- -- Check that the text index actually gets used (String)';
 DROP VIEW IF EXISTS explain_index_mapContains;
 CREATE VIEW explain_index_mapContains AS (
     SELECT trimLeft(explain) AS explain FROM (
-        EXPLAIN indexes=1
+        EXPLAIN indexes = 1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN mapContains(map_fixed, {filter:FixedString(2)})
                 ELSE mapContains(map, {filter:String})
             END
@@ -55,32 +57,32 @@ CREATE VIEW explain_index_mapContains AS (
 );
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K0');
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 0, filter = 'K0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K2');
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 0, filter = 'K2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K1');
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 0, filter = 'K1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=0, filter='K3');
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 0, filter = 'K3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K0', 2));
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 1, filter = toFixedString('K0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K2', 2));
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 1, filter = toFixedString('K2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K1', 2));
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 1, filter = toFixedString('K1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_mapContains(use_idx_fixed=1, filter=toFixedString('K3', 2));
+SELECT * FROM explain_index_mapContains(use_idx_fixed = 1, filter = toFixedString('K3', 2));
 
-SELECT '-- arrayElement(map, key) support';
+SELECT '-- operator[] support';
 
 SELECT '-- -- query with String';
 
@@ -101,9 +103,9 @@ SELECT '-- -- Check that the text index actually gets used (String)';
 DROP VIEW IF EXISTS explain_index_equals;
 CREATE VIEW explain_index_equals AS (
     SELECT trimLeft(explain) AS explain FROM (
-        EXPLAIN indexes=1
+        EXPLAIN indexes = 1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN map_fixed[{filter:FixedString(2)}] = {value:String}
                 ELSE map[{filter:String}] = {value:String}
             END
@@ -114,30 +116,30 @@ CREATE VIEW explain_index_equals AS (
 );
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K0', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K0', value = 'V3');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K2', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K2', value = 'V3');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K1', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K1', value = 'V3');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K3', value = 'V3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K0', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K0', value = 'V3');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K2', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K2', value = 'V3');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K1', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K1', value = 'V3');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = 'V3');
 
 SELECT '-- has support';
 
@@ -160,9 +162,9 @@ SELECT '-- -- Check that the text index actually gets used (String)';
 DROP VIEW IF EXISTS explain_index_has;
 CREATE VIEW explain_index_has AS (
     SELECT trimLeft(explain) AS explain FROM (
-        EXPLAIN indexes=1
+        EXPLAIN indexes = 1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN has(map_fixed, {filter:FixedString(2)})
                 ELSE has(map, {filter:String})
             END
@@ -173,34 +175,34 @@ CREATE VIEW explain_index_has AS (
 );
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K0');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'K0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K2');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'K2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K1');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'K1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='K3');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'K3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K0', 2));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K2', 2));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K1', 2));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('K3', 2));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K3', 2));
 
-SELECT 'text index with mapValues';
+SELECT 'Function mapValues';
 
-DROP TABLE IF EXISTS tab;
+DROP TABLE tab;
 
 CREATE TABLE tab
 (
@@ -216,7 +218,7 @@ ORDER BY (id);
 INSERT INTO tab VALUES (0, {'K0':'V0', 'K1':'V1'}, {'K0':'V0', 'K1':'V1'});
 INSERT INTO tab VALUES (1, {'K1':'V1', 'K2':'V2'}, {'K1':'V1', 'K2':'V2'});
 
-SELECT '-- arrayElement(map, key) support';
+SELECT '-- operator[] support';
 
 SELECT '-- -- query with String';
 
@@ -235,30 +237,30 @@ SELECT count() FROM tab WHERE map_fixed['K3'] = toFixedString('V3', 2);
 SELECT '-- -- Check that the text index actually gets used (String)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V0');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K3', value = 'V0');
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V2');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K3', value = 'V2');
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V1');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K3', value = 'V1');
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=0, filter='K3', value='V3');
+SELECT * FROM explain_index_equals(use_idx_fixed = 0, filter = 'K3', value = 'V3');
 
 SELECT '-- -- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- -- key exists only in the first granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V0', 2));
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toFixedString('V0', 2));
 
 SELECT '-- -- -- key exists only in the second granule';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V2', 2));
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toFixedString('V2', 2));
 
 SELECT '-- -- -- key exists only in both granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V1', 2));
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toFixedString('V1', 2));
 
 SELECT '-- -- -- key does not exist in granules';
-SELECT * FROM explain_index_equals(use_idx_fixed=1, filter='K3', value=toFixedString('V3', 2));
+SELECT * FROM explain_index_equals(use_idx_fixed = 1, filter = 'K3', value = toFixedString('V3', 2));
 
 DROP VIEW explain_index_mapContains;
 DROP VIEW explain_index_equals;

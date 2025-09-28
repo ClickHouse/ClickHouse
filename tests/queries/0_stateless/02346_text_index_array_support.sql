@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 
+-- Tests that text indexes can be build on and used with Array columns.
+
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
@@ -43,9 +45,9 @@ SELECT '-- Check that the text index actually gets used (String)';
 DROP VIEW IF EXISTS explain_index_has;
 CREATE VIEW explain_index_has AS (
     SELECT trimLeft(explain) AS explain FROM (
-        EXPLAIN indexes=1
+        EXPLAIN indexes = 1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN has(arr_fixed, {filter:FixedString(3)})
                 ELSE has(arr, {filter:String})
             END
@@ -56,36 +58,36 @@ CREATE VIEW explain_index_has AS (
 );
 
 SELECT '-- -- value exists only in 1024 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='abc');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'abc');
 
 SELECT '-- -- value exists only in 2048 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='baz');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'baz');
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='foo');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'foo');
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='bar');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'bar');
 
 SELECT '-- -- value does not exist in granules';
-SELECT * FROM explain_index_has(use_idx_fixed=0, filter='def');
+SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'def');
 
 SELECT '-- Check that the text index actually gets used (FixedString)';
 
 SELECT '-- -- value exists only in 1024 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('abc', 3));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('abc', 3));
 
 SELECT '-- -- value exists only in 2048 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('baz', 3));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('baz', 3));
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('foo', 3));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('foo', 3));
 
 SELECT '-- -- value exists only in 3072 granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('bar', 3));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('bar', 3));
 
 SELECT '-- -- value does not exist in granules';
-SELECT * FROM explain_index_has(use_idx_fixed=1, filter=toFixedString('def', 3));
+SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('def', 3));
 
 DROP VIEW explain_index_has;
 DROP TABLE tab;

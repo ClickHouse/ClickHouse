@@ -1,5 +1,5 @@
-text index with mapKeys
--- mapContainsKey support
+Function mapKeys
+-- mapContains support
 -- -- query with String
 1
 2
@@ -44,7 +44,7 @@ Granules: 2/2
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
--- arrayElement(map, key) support
+-- operator[] support
 -- -- query with String
 1
 2
@@ -134,8 +134,8 @@ Granules: 2/2
 Description: text GRANULARITY 64
 Parts: 0/2
 Granules: 0/2
-text index with mapValues
--- arrayElement(map, key) support
+Function mapValues
+-- operator[] support
 -- -- query with String
 1
 2

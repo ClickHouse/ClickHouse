@@ -136,7 +136,7 @@ std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const 
         return std::nullopt;
 
     size_t counter = function_name_to_index[query.function_name]++;
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
+    String virtual_column_name = std::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -358,8 +358,8 @@ bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, con
     if (function.getFunctionName() == "arrayElement")
     {
         const auto map_column_name = function.getArgumentAt(0).getColumnName();
-        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", map_column_name));
-        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", map_column_name));
+        bool has_maps_keys_index_column_name = header.has(std::format("mapKeys({})", map_column_name));
+        bool has_map_values_index_column_name = header.has(std::format("mapValues({})", map_column_name));
         if (has_maps_keys_index_column_name)
         {
             const auto & argument_const_key = function.getArgumentAt(1);
@@ -387,7 +387,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     bool index_column_exists = header.has(index_column_node.getColumnName());
-    bool index_column_map_keys_exists = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
+    bool index_column_map_keys_exists = header.has(std::format("mapKeys({})", index_column_node.getColumnName()));
 
     Field const_value = value_field;
     if (index_column_node.isFunction())
