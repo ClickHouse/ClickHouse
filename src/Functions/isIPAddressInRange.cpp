@@ -294,6 +294,18 @@ namespace DB
         template <IPKind kind>
         static ColumnPtr executeImpl(const IPTrait<kind>::ColumnType * col_addr, const IPAddressCIDR & cidr, size_t input_rows_count)
         {
+            if (cidr.address.asV6())
+            {
+                /// CIDR is IPv6, however column is IPv4
+                if constexpr (kind == IPKind::IPv4)
+                    return ColumnUInt8::create(input_rows_count, 0);
+            }
+            else
+            {
+                /// CIDR is IPv4, however column is IPv6
+                if constexpr (kind == IPKind::IPv6)
+                    return ColumnUInt8::create(input_rows_count, 0);
+            }
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
@@ -343,6 +355,33 @@ namespace DB
         static ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count)
         {
             const auto cidr = parseIPWithCIDR(col_cidr_const.getDataAt(0).toView());
+            /// Specialized implementation for IPv4 CIDR, enabling compiler utilization of SIMD instructions for performance acceleration
+            if (cidr.address.asV6() == nullptr)
+            {
+                const auto cidr_v4 = cidr.address.asV4();
+                if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&(col_addr)))
+                {
+                    auto const * ipv4_data = ipv4_column->getData().data();
+                    ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
+                    auto * vec_res = col_res->getData().data();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        vec_res[i] = DB::matchIPv4Subnet(ipv4_data[i], cidr_v4, cidr.prefix);
+                    return col_res;
+                }
+                else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr))
+                {
+                    if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&(nullable_column->getNestedColumn())))
+                    {
+                        auto const * ipv4_data = ipv4_column->getData().data();
+                        auto const * null_map_data = nullable_column->getNullMapData().data();
+                        ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
+                        auto * vec_res = col_res->getData().data();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            vec_res[i] = DB::matchIPv4Subnet(ipv4_data[i], cidr_v4, cidr.prefix) & !null_map_data[i];
+                        return col_res;
+                    }
+                }
+            }
             return executeImpl<IPAddressCIDR>(col_addr, cidr, input_rows_count);
         }
 
