@@ -11,6 +11,10 @@ namespace DB::Iceberg
 {
 #if USE_AVRO
 
+void unlockCompaction(
+    DB::ObjectStoragePtr object_storage,
+    DB::StorageObjectStorageConfigurationPtr configuration);
+
 void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
@@ -19,7 +23,8 @@ void compactIcebergTable(
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
-    DB::CompressionMethod compression_method_);
+    DB::CompressionMethod compression_method_,
+    bool wait_concurrent_compaction = false);
 
 #endif
 }

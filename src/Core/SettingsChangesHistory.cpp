@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"iceberg_period_compaction", 0, 0, "New setting "},
+            {"iceberg_compaction_backoff_time", 0, 0, "New setting "},
+            {"allow_experimental_iceberg_background_compaction", 0, 0, "New setting "},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},

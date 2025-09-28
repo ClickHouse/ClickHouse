@@ -38,6 +38,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 
 #include <Poco/Logger.h>
 

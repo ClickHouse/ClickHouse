@@ -1,4 +1,5 @@
 
+#include "IO/CompressionMethod.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -110,6 +111,9 @@ extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool iceberg_delete_data_on_drop;
+extern const SettingsMilliseconds iceberg_period_compaction;
+extern const SettingsBool allow_experimental_iceberg_background_compaction;
+extern const SettingsMilliseconds iceberg_compaction_backoff_time;
 }
 
 namespace
@@ -120,8 +124,68 @@ String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_objec
     Poco::JSON::Stringifier::stringify(metadata_object, oss);
     return removeEscapedSlashes(oss.str());
 }
+
+void waitUntilCompressionIsDone(
+    StorageObjectStorageConfigurationPtr configuration,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    while (true)
+    {
+        auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+        if (object_storage->exists(key))
+        {
+            auto backoff_time_ms = context->getSettingsRef()[Setting::iceberg_compaction_backoff_time];
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_time_ms));
+
+            continue;
+        }
+        return;
+    }
 }
 
+void scheduleCompactionJob(
+    const Iceberg::IcebergHistory & snapshots_info,
+    const Iceberg::PersistentTableComponents & persistent_components,
+    CompressionMethod metadata_compression_method,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    SharedHeader sample_block,
+    ContextPtr context)
+{
+    auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
+    std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
+    /// Compaction thread poll responses for compaction tasks.
+    {
+        auto log = getLogger("IcebergCompaction");
+        try
+        {
+            compactIcebergTable(
+                snapshots_info,
+                persistent_components,
+                object_storage,
+                configuration,
+                format_settings,
+                sample_block,
+                context,
+                metadata_compression_method,
+                true);
+        }
+        catch (Exception & ex)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed {}", ex.what());
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed with unknown error");
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
+    }
+}
+
+}
 
 using namespace Iceberg;
 
@@ -227,6 +291,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
     std::lock_guard lock(mutex);
 
     const auto [metadata_version, metadata_file_path, compression_method]
@@ -358,7 +423,8 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
             format_settings,
             sample_block,
             context,
-            metadata_compression_method);
+            metadata_compression_method,
+            true);
         return true;
     }
     else
@@ -370,6 +436,7 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
 {
     auto configuration_ptr = configuration.lock();
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
 
     std::optional<String> manifest_list_file;
 
@@ -467,6 +534,23 @@ void IcebergMetadata::mutate(
     auto configuration_ptr = configuration.lock();
 
     DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
+    {
+        auto snapshots_info = getHistory(context);
+        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([this, snapshots_info, configuration_ptr, context, format_settings, metadata_snapshot]
+        {
+            const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+            scheduleCompactionJob(
+                snapshots_info,
+                persistent_components,
+                metadata_compression_method,
+                object_storage,
+                configuration_ptr,
+                format_settings,
+                sample_block,
+                context);
+        });
+    }
 }
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)

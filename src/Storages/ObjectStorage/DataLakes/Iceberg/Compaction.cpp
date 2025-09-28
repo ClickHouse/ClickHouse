@@ -31,6 +31,11 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsMilliseconds iceberg_compaction_backoff_time;
+}
+
 namespace DB::Iceberg
 {
 
@@ -504,6 +509,29 @@ void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & 
     }
 }
 
+/// Only 1 thread at certain moment of time can compact table.
+/// TODO: implement CAS for ObjectStoragePtr
+/// TODO: Move lock into keeper
+bool tryGetLockCompaction(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration)
+{
+    auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+    if (object_storage->exists(key))
+        return false;
+    auto buffer = object_storage->writeObject(key, WriteMode::Rewrite);
+    buffer->finalize();
+    return true;
+}
+
+void unlockCompaction(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration)
+{
+    auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+    object_storage->removeObjectIfExists(key);
+}
+
 void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
@@ -512,16 +540,31 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    CompressionMethod compression_method_)
+    CompressionMethod compression_method_,
+    bool wait_concurrent_compaction)
 {
     auto plan
         = getPlan(std::move(snapshots_info), persistent_table_components, object_storage_, configuration_, context_, compression_method_);
     if (plan.need_optimize)
     {
-        auto old_files = getOldFiles(object_storage_, configuration_);
-        writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-        writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_);
-        clearOldFiles(object_storage_, old_files);
+        bool need_merge = true;
+        while (!tryGetLockCompaction(object_storage_, configuration_))
+        {
+            /// In this case we will wait until another thread will optimize our table.
+            if (!wait_concurrent_compaction)
+                return;
+            need_merge = false;
+            auto backoff_time_ms = context_->getSettingsRef()[Setting::iceberg_compaction_backoff_time];
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_time_ms));
+        }
+        if (need_merge)
+        {
+            auto old_files = getOldFiles(object_storage_, configuration_);
+            writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
+            writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_);
+            clearOldFiles(object_storage_, old_files);
+            unlockCompaction(object_storage_, configuration_);
+        }
     }
 }
 
