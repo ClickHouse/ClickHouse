@@ -67,6 +67,12 @@ try
 
     if (data_part_storage.existsFile(TXN_VERSION_METADATA_FILE_NAME))
     {
+        {
+            auto buf = openForReading(data_part_storage, TXN_VERSION_METADATA_FILE_NAME);
+            String content;
+            readStringUntilEOF(content, *buf);
+            LOG_TEST(log, "Object {}, load metadata content\n{}", getObjectName(), content);
+        }
         auto buf = openForReading(data_part_storage, TXN_VERSION_METADATA_FILE_NAME);
         readFromBuffer(*buf);
 
@@ -74,6 +80,8 @@ try
             remove_tmp_file();
         return;
     }
+
+    LOG_TEST(log, "Object {}, no metadata", getObjectName());
 
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
@@ -109,14 +117,9 @@ catch (Exception & e)
     throw;
 }
 
-void VersionMetadataOnDisk::storeMetadata(bool force)
+void VersionMetadataOnDisk::storeMetadata(bool)
 {
-    if (!merge_tree_data_part->wasInvolvedInTransaction() && !force)
-        return;
     const auto & storage = merge_tree_data_part->storage;
-    if (!storage.supportsTransactions())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage does not support transaction. It is a bug");
-
     LOG_TEST(
         storage.log,
         "Writing version for {} (creation: {}, removal {}, creation csn {})",
@@ -147,6 +150,8 @@ void VersionMetadataOnDisk::storeMetadata(bool force)
         if ((*storage.getSettings())[MergeTreeSetting::fsync_part_directory])
             sync_guard = data_part_storage.getDirectorySyncGuard();
         data_part_storage.replaceFile(tmp_filename, filename);
+
+        LOG_TEST(log, "Object {}, store metadata content: {}", getObjectName(), toString());
     }
     catch (...)
     {
@@ -229,11 +234,25 @@ bool VersionMetadataOnDisk::hasStoredMetadata() const
 
 void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_hash)
 {
+    LOG_TEST(
+        merge_tree_data_part->storage.log,
+        "Object {}, setRemovalTIDLock removal_tid_hash {}",
+        getObjectName(),
+        getCreationCSN());
     removal_tid_lock = removal_tid_hash;
 }
 
 void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
 {
+    LOG_TEST(
+        merge_tree_data_part->storage.log,
+        "Object {}, appending creation_csn {}",
+        getObjectName(),
+        getCreationCSN());
+
+    if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append creation CSN to non-existing metadata");
+
     auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
     writeCreationCSNToBuffer(*out);
     out->finalize();
@@ -241,6 +260,15 @@ void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
 
 void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
 {
+    LOG_TEST(
+        merge_tree_data_part->storage.log,
+        "Object {}, appending removal_csn {}",
+        getObjectName(),
+        getRemovalCSN());
+
+    if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal CSN to non-existing metadata");
+
     auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
     writeRemovalCSNToBuffer(*out);
     out->finalize();
@@ -254,6 +282,9 @@ void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(const Transacti
         merge_tree_data_part->name,
         creation_tid,
         tid);
+
+    if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal TID to non-existing metadata");
 
     auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
     writeRemovalTIDToBuffer(*out, tid);
