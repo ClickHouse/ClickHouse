@@ -1947,7 +1947,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     }
                     else
                     {
-                        result = condition->mayBeTrueOnGranule(granule);
+                        result = condition->mayBeTrueOnGranule(granule, nullptr);
                     }
 
                     if (!result)
@@ -2251,7 +2251,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
     const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
-    const size_t min_marks_for_seek,
+    size_t min_marks_for_seek,
     LoggerPtr log)
 {
     MarkRanges res;

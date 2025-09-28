@@ -118,7 +118,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
 
         index_reader->adjustRightMark(index_last_mark);
         index_reader->read(index_mark, index.condition.get(), granule.granule);
-        granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule);
+        granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule, nullptr);
         granule.need_read_postings = granule.may_be_true;
 
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule.granule);
