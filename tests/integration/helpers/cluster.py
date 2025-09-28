@@ -864,18 +864,18 @@ class ClickHouseCluster:
             import pyspark
 
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
-            (
-                pyspark.sql.SparkSession.builder.appName("spark_test")
-                # The jars are now linked to "$SPARK_HOME/jars" and we don't
-                # need packages to be downloaded once and once again
-                # .config(
-                #     "spark.jars.packages",
-                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                # )
-                .master("local")
-                .getOrCreate()
-                .stop()
-            )
+            # (
+            #     pyspark.sql.SparkSession.builder.appName("spark_test")
+            #     # The jars are now linked to "$SPARK_HOME/jars" and we don't
+            #     # need packages to be downloaded once and once again
+            #     # .config(
+            #     #     "spark.jars.packages",
+            #     #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            #     # )
+            #     .master("local")
+            #     .getOrCreate()
+            #     .stop()
+            # )
 
         self.port_pool = PortPoolManager()
 
@@ -3799,6 +3799,10 @@ class ClickHouseCluster:
                     sanitizer_assert_instance
                 )
             )
+
+        if self.spark_session:
+            self.spark_session.stop()
+
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
