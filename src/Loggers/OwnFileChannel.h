@@ -90,7 +90,8 @@ private:
         /// Split size and time or interval strategies
         /// 100M,daily / daily,100M
         /// 100M,Mon,00:00 / Mon,00:00,100M
-        std::string rotation_size, rotation_interval;
+        std::string rotation_size;
+        std::string rotation_interval;
         std::vector<std::string> elems;
         std::string item;
 
@@ -110,7 +111,7 @@ private:
             in.ignore();
         } while (true);
 
-        for (auto elem : elems)
+        for (const auto & elem : elems)
         {
             if (isSizeRotation(elem))
             {
@@ -197,7 +198,7 @@ private:
         if (_rotationSize.empty() && _rotationInterval.empty())
             return;
 
-        auto comp = new OwnRotateStrategy();
+        auto * comp = new OwnRotateStrategy();
 
         if (!_rotationSize.empty() && _rotationSize != "never")
         {
