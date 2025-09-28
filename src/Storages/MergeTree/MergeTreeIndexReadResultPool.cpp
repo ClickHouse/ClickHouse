@@ -51,7 +51,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
-	    {},
+            {},
             part.data_part,
             ranges,
             part.read_hints,

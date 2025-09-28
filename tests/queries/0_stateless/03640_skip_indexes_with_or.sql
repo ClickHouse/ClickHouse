@@ -68,7 +68,7 @@ SELECT trimLeft(explain) AS explain FROM (
 
 -- Complex condition, 0 granules selected
 SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (v1 BETWEEN 10 AND 20 AND v2 BETWEEN 10 AND 20) OR (v1 BETWEEN 100 AND 2000 AND v2 BETWEEN 100 AND 2000) OR (v1 > 9000 AND v2 > 9000) 
+    EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (v1 BETWEEN 10 AND 20 AND v2 BETWEEN 10 AND 20) OR (v1 BETWEEN 100 AND 2000 AND v2 BETWEEN 100 AND 2000) OR (v1 > 9000 AND v2 > 9000)
 ) WHERE explain LIKE '%Granules%';
 
 DROP TABLE tab1;
