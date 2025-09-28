@@ -1,13 +1,12 @@
 #pragma once
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/LocalDateTime.h>
 #include <Poco/RotateStrategy.h>
 #include <Poco/Ascii.h>
-#include <iostream>
-#include <sstream>
 #include <vector>
-#include <memory>
 
 
 namespace DB
@@ -45,8 +44,13 @@ public:
     {
         if (name == Poco::FileChannel::PROP_ROTATION)
         {
-            parseRotation(value); /// Parse rotation size and time or interval 
-            updateStrategy();
+            bool composite = false;
+            parseRotation(value, composite); /// Parse rotation size and time or interval
+
+            if (composite)
+                updateStrategy();
+            else
+                Poco::FileChannel::setRotation(value);
         }
         else
         {
@@ -77,47 +81,56 @@ private:
     }
 
     /// Example of rotation: 100M,daily
-    void parseRotation(const std::string & rotation)
+    void parseRotation(const std::string & rotation, bool & composite)
     {
-        if (rotation.find(',') != std::string::npos)
+        /// Simple rotation
+        if (rotation.find(',') == std::string::npos)
+            return;
+
+        /// Split size and time or interval strategies
+        /// 100M,daily / daily,100M
+        /// 100M,Mon,00:00 / Mon,00:00,100M
+        std::string rotation_size, rotation_interval;
+        std::vector<std::string> elems;
+        std::string item;
+
+        ReadBufferFromString in(rotation);
+
+        do
         {
-            std::vector<std::string> elems;
-            std::stringstream ss(rotation);
-            std::string item;
-            while (std::getline(ss, item, ','))
+            readStringUntilComma(item, in);
+
+            item = trim(item);
+            if (!item.empty())
+                elems.push_back(item);
+
+            if (in.eof())
+                break;
+
+            in.ignore();
+        } while (true);
+
+        for (auto elem : elems)
+        {
+            if (isSizeRotation(elem))
             {
-                item = trim(item);
-                if (!item.empty())
-                    elems.push_back(item);
+                if (!rotation_size.empty())
+                    throw Poco::InvalidArgumentException("rotation", rotation);
+
+                rotation_size = elem;
             }
-
-            /// Split size and time or inteval strategies
-            /// 100M,daily / daily,100M
-            /// 100M,Mon,00:00 / Mon,00:00,100M
-            std::string rotation_size, rotation_time;
-            for (auto elem : elems)
-            {
-                if (isSizeRotation(elem))
-                {
-                    if (!rotation_size.empty())
-                        throw Poco::InvalidArgumentException("rotation", rotation);
-
-                    rotation_size = elem;
-                }
-                else
-                    rotation_time += rotation_time.empty() ? elem : "," + elem;
-            }
-
-            /// Simple rotation strategy: size or time/interval
-            if (rotation_size.empty() || rotation_time.empty())
-                return Poco::FileChannel::setRotation(rotation);
-
-            /// The combined rotation strategies should contain size and (time or interval)
-            _rotationSize = rotation_size;
-            _rotationInterval = rotation_time;
+            else
+                rotation_interval += rotation_interval.empty() ? elem : "," + elem;
         }
-        else
-            return Poco::FileChannel::setRotation(rotation);
+
+        /// Simple rotation strategy: size or time/interval
+        if (rotation_size.empty() || rotation_interval.empty())
+            return;
+
+        /// The combined rotation strategies should contain size and (time or interval)
+        _rotationSize = rotation_size;
+        _rotationInterval = rotation_interval;
+        composite = true;
     }
 
     Poco::UInt64 parseSize(const std::string & rotation_size)
@@ -157,23 +170,23 @@ private:
         while (it != end && Poco::Ascii::isAlpha(*it)) unit += *it++;
 
         if (unit == "daily")
-		    return Poco::Timespan(1 * Poco::Timespan::DAYS);
-	    if (unit == "weekly")
-		    return Poco::Timespan(7 *  Poco::Timespan::DAYS);
-	    if (unit == "monthly")
-		    return Poco::Timespan(30 * Poco::Timespan::DAYS);
-	    if (unit == "seconds") // for testing only
-		    return Poco::Timespan(n * Poco::Timespan::SECONDS);
-	    if (unit == "minutes")
-		    return Poco::Timespan(n * Poco::Timespan::MINUTES);
-	    if (unit == "hours")
-		    return Poco::Timespan(n * Poco::Timespan::HOURS);
-	    if (unit == "days")
-		    return Poco::Timespan(n * Poco::Timespan::DAYS);
-	    if (unit == "weeks")
-		    return Poco::Timespan(n * 7 * Poco::Timespan::DAYS);
-	    if (unit == "months")
-		    return Poco::Timespan(n * 30 * Poco::Timespan::DAYS);
+            return Poco::Timespan(1 * Poco::Timespan::DAYS);
+        if (unit == "weekly")
+            return Poco::Timespan(7 *  Poco::Timespan::DAYS);
+        if (unit == "monthly")
+            return Poco::Timespan(30 * Poco::Timespan::DAYS);
+        if (unit == "seconds") // for testing only
+            return Poco::Timespan(n * Poco::Timespan::SECONDS);
+        if (unit == "minutes")
+            return Poco::Timespan(n * Poco::Timespan::MINUTES);
+        if (unit == "hours")
+            return Poco::Timespan(n * Poco::Timespan::HOURS);
+        if (unit == "days")
+            return Poco::Timespan(n * Poco::Timespan::DAYS);
+        if (unit == "weeks")
+            return Poco::Timespan(n * 7 * Poco::Timespan::DAYS);
+        if (unit == "months")
+            return Poco::Timespan(n * 30 * Poco::Timespan::DAYS);
 
         throw Poco::InvalidArgumentException("rotation", rotation_interval);
     }
@@ -189,13 +202,11 @@ private:
         if (!_rotationSize.empty() && _rotationSize != "never")
         {
             Poco::UInt64 size = parseSize(_rotationSize);
-            std::cerr << "Logging rotation size " << size << std::endl;
             comp->addRotateStrategy(new Poco::RotateBySizeStrategy(size));
         }
 
         if (!_rotationInterval.empty() && _rotationInterval != "never")
         {
-            std::cerr << "Logging rotation time " << _rotationInterval << std::endl;
             if ((_rotationInterval.find(',') != std::string::npos) || (_rotationInterval.find(':') != std::string::npos))
             {
                 std::string times = getProperty(Poco::FileChannel::PROP_TIMES);
