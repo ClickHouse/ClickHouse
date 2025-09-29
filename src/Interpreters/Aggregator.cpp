@@ -2085,10 +2085,16 @@ bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
     for (const auto & aggregate_function : aggregate_functions)
     {
         const String & function_name = aggregate_function->getName();
-        if (function_name == "uniq" || function_name == "uniqCombined" ||
-            function_name == "groupArray" || function_name == "topK" ||
-            function_name == "histogram")
-            return true;
+        if (function_name.starts_with("sum") ||
+            function_name.starts_with("count") ||
+            function_name.starts_with("any") ||
+            function_name.starts_with("avg") ||
+            function_name.starts_with("min") ||
+            function_name.starts_with("max"))
+        {
+            continue;
+        }
+        return true;
     }
     return false;
 }
