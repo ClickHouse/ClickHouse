@@ -88,10 +88,12 @@ namespace
 constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 
-template <typename StringColumnType>
+template <typename T>
+concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
+
 void executeSearchAny(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
     const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
@@ -114,10 +116,9 @@ void executeSearchAny(
     }
 }
 
-template <typename StringColumnType>
 void executeSearchAll(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
     const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
@@ -149,23 +150,28 @@ void executeSearchAll(
     }
 }
 
-template <class SearchTraits, typename StringColumnType>
+template <class SearchTraits>
 void execute(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
     const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    switch (SearchTraits::mode)
+    if (needles.empty())
     {
-        case SearchAnyAllMode::Any:
-            executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
-            break;
-        case SearchAnyAllMode::All:
-            executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
-            break;
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result[i] = true;
+        return;
     }
+
+    if constexpr (SearchTraits::mode == SearchAnyAllMode::Any)
+        executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
+    else if constexpr (SearchTraits::mode == SearchAnyAllMode::All)
+        executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
+    else
+        static_assert(false, "Unknown search mode value detected");
 }
 }
 
@@ -177,24 +183,18 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
         return ColumnVector<UInt8>::create();
 
     auto col_input = arguments[arg_input].column;
-    auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    Needles needles_tmp;
-
     col_result->getData().resize(input_rows_count);
-
-    const ITokenExtractor * extractor_ptr = nullptr;
-    const Needles * needles_ptr = nullptr;
 
     // If token_extractor is not set it means that we are using brute force instead of index
     if (token_extractor == nullptr)
     {
         chassert(!needles.has_value());
-        extractor_ptr = token_default_extractor.get();
-        needles_ptr = &needles_tmp;
 
         UInt64 counter = 0;
+        Needles needles_tmp;
+        auto col_needles = arguments[arg_needles].column;
 
         if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
@@ -213,9 +213,16 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
             for (size_t i = 0; i < needles_offsets[0]; ++i)
                 needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), counter++);
         }
+
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_default_extractor.get(), *column_string, input_rows_count, needles_tmp, col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_default_extractor.get(), *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+
     }
     else
     {
+        // token_extractor != nullptr => We are using a column with index.
         if (!needles.has_value())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -223,23 +230,10 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
                 getName(),
                 arguments[arg_input].name);
 
-        extractor_ptr = token_extractor.get();
-        needles_ptr = &needles.value();
-    }
-
-
-    if (needles_ptr->empty())
-    {
-        /// No needles mean we don't filter and all rows pass
-        for (size_t i = 0; i < input_rows_count; ++i)
-            col_result->getData()[i] = true;
-    }
-    else
-    {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<SearchTraits>(extractor_ptr, *column_string, input_rows_count, *needles_ptr, col_result->getData());
+            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<SearchTraits>(extractor_ptr, *column_fixed_string, input_rows_count, *needles_ptr, col_result->getData());
+            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
     }
 
     return col_result;
