@@ -17,10 +17,13 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
 }
 
 namespace ErrorCodes
@@ -126,11 +129,14 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     for (const auto & stat_ptr : stats)
     {
-        String stats_file_name = escapeForFileName(stat_ptr->getStatisticName());
+        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+            stats_filename = sipHash128String(stats_filename);
+
         stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_file_name,
+                                       stats_filename,
                                        data_part_storage,
-                                       stats_file_name,
+                                       stats_filename,
                                        STATS_FILE_SUFFIX,
                                        default_codec,
                                        settings.max_compress_block_size,

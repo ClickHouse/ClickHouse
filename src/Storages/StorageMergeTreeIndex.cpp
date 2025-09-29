@@ -194,7 +194,7 @@ private:
 
         if (isWidePart(part))
         {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, part->checksums))
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums))
             {
                 col_idx = 0;
                 has_marks_in_part = true;

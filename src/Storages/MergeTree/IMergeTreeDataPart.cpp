@@ -857,8 +857,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     ColumnsStatistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = escapeForFileName(stat->getStatisticName()) + STATS_FILE_SUFFIX;
-        String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+        String escaped_name = escapeForFileName(stat->getStatisticName());
+        auto stream_name = getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, checksums);
+
+        if (!stream_name.has_value())
+        {
+            LOG_INFO(storage.log, "File for statistics with name '{}' is not found", escaped_name);
+            continue;
+        }
+
+        String file_name = *stream_name + STATS_FILE_SUFFIX;
 
         if (auto stat_file = readFileIfExists(file_name))
         {
@@ -867,7 +875,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
             result.push_back(stat);
         }
         else
-            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+        {
+            String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+            LOG_INFO(storage.log, "Cannot read stats file {}", file_path);
+        }
     }
     return result;
 }
@@ -2560,13 +2571,14 @@ String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
 
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & stream_name,
+    const String & extension,
     const Checksums & checksums_)
 {
-    if (checksums_.files.contains(stream_name + ".bin"))
+    if (checksums_.files.contains(stream_name + extension))
         return stream_name;
 
     auto hash = sipHash128String(stream_name);
-    if (checksums_.files.contains(hash + ".bin"))
+    if (checksums_.files.contains(hash + extension))
         return hash;
 
     return {};
@@ -2590,19 +2602,21 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const String & column_name,
     const ISerialization::SubstreamPath & substream_path,
+    const String & extension,
     const Checksums & checksums_)
 {
     auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
-    return getStreamNameOrHash(stream_name, checksums_);
+    return getStreamNameOrHash(stream_name, extension, checksums_);
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path,
+    const String & extension,
     const Checksums & checksums_)
 {
     auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
-    return getStreamNameOrHash(stream_name, checksums_);
+    return getStreamNameOrHash(stream_name, extension, checksums_);
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(

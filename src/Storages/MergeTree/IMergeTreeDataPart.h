@@ -595,6 +595,7 @@ public:
 
     static std::optional<String> getStreamNameOrHash(
         const String & name,
+        const String & extension,
         const IMergeTreeDataPart::Checksums & checksums);
 
     static std::optional<String> getStreamNameOrHash(
@@ -605,11 +606,13 @@ public:
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
         const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
         const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(

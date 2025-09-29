@@ -756,7 +756,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, source_part_checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums);
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -800,7 +800,13 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
-        files_to_skip.insert(escapeForFileName(stat->getStatisticName()) + STATS_FILE_SUFFIX);
+    {
+        auto stats_name = escapeForFileName(stat->getStatisticName());
+        auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(stats_name, STATS_FILE_SUFFIX, source_part->checksums);
+
+        if (stream_name)
+            files_to_skip.insert(*stream_name + STATS_FILE_SUFFIX);
+    }
 
     if (isWidePart(source_part))
     {
@@ -900,7 +906,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, source_part->checksums);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums);
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -931,7 +937,7 @@ static NameToNameVector collectFilesForRenames(
                     String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, source_part->checksums);
+                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
                     if (!stream_from)
                         return;
 
