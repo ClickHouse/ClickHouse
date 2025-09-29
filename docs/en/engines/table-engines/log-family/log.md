@@ -4,7 +4,6 @@ slug: /engines/table-engines/log-family/log
 toc_priority: 33
 toc_title: 'Log'
 title: 'Log'
-doc_type: 'reference'
 ---
 
 # Log

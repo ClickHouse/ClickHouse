@@ -13,8 +13,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Common/Exception.h>
-#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -215,19 +213,7 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & commands)
-    {
-        /// Check if any of the alter commands is ADD_INDEX and throw immediately
-        const bool alter_adds_index
-            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
-        if (alter_adds_index)
-        {
-            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
-            if (!features.supports_skipping_indices)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
-        }
-    }
-
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
@@ -247,8 +233,6 @@ public:
         return false;
     }
 
-    virtual void drop(ContextPtr) {}
-
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -261,10 +245,6 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
-    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
-    }
 
     void assertInitialized() const;
 

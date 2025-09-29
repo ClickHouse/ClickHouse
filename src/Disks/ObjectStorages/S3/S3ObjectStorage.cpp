@@ -176,6 +176,7 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();

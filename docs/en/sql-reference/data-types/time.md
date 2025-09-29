@@ -5,58 +5,43 @@ slug: /sql-reference/data-types/time
 sidebar_position: 15
 sidebar_label: 'Time'
 title: 'Time'
-doc_type: 'reference'
 ---
 
 # Time
 
-Data type `Time` represents a time with hour, minute, and second components.
-It is independent of any calendar date and is suitable for values which do not need day, months and year components.
+The `Time` data type is used to store a time value independent of any calendar date. It is ideal for representing daily schedules, event times, or any situation where only the time component (hours, minutes, seconds) is important.
 
 Syntax:
 
 ``` sql
-Time
+Time()
 ```
 
-Text representation range: [-999:59:59, 999:59:59].
+Supported range of values: \[-999:59:59, 999:59:59\].
 
 Resolution: 1 second.
 
-## Implementation details {#implementation-details}
+## Speed {#speed}
 
-**Representation and Performance**.
-Data type `Time` internally stores a signed 32-bit integer that encodes the seconds.
-Values of type `Time` and `DateTime` have the same byte size and thus comparable performance.
+The `Date` data type is faster than `Time` under _most_ conditions. But the `Time` data type is around the same as `DateTime` data type.
 
-**Normalization**.
-When parsing strings to `Time`, the time components are normalized and not validated.
-For example, `25:70:70` is interpreted as `26:11:10`.
+Due to the implementation details, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, during compression, the size difference between Date and Time becomes more significant.
 
-**Negative values**.
-Leading minus signs are supported and preserved.
-Negative values typically arise from arithmetic operations on `Time` values.
-For `Time` type, negative inputs are preserved for both text (e.g., `'-01:02:03'`) and numeric inputs (e.g., `-3723`).
+## Usage Remarks {#usage-remarks}
 
-**Saturation**.
-The time-of-day component is capped to the range [-999:59:59, 999:59:59].
-Values with hours beyond 999 (or below -999) are represented and round-tripped via text as `999:59:59` (or `-999:59:59`).
+The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time.
 
-**Time zones**.
-`Time` does not support time zones, i.e. `Time` value are interpreted without regional context.
-Specifying a time zone for `Time` as a type parameter or during value creation throws an error.
-Likewise, attempts to apply or change the time zone on `Time` columns are not supported and result in an error.
-`Time` values are not silently reinterpreted under different time zones.
+**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
 
 ## Examples {#examples}
 
 **1.** Creating a table with a `Time`-type column and inserting data into it:
 
 ``` sql
-CREATE TABLE tab
+CREATE TABLE dt
 (
-    `event_id` UInt8,
-    `time` Time
+    `time` Time,
+    `event_id` UInt8
 )
 ENGINE = TinyLog;
 ```
@@ -64,54 +49,52 @@ ENGINE = TinyLog;
 ``` sql
 -- Parse Time
 -- - from string,
--- - from integer interpreted as number of seconds since 00:00:00.
-INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+-- - from integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('100:00:00', 1), (12453, 3);
 
-SELECT * FROM tab ORDER BY event_id;
+SELECT * FROM dt;
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+   ┌──────time─┬─event_id─┐
+1. │ 100:00:00 │        1 │
+2. │  03:27:33 │        3 │
+   └───────────┴──────────┘
 ```
 
 **2.** Filtering on `Time` values
 
 ``` sql
-SELECT * FROM tab WHERE time = toTime('14:30:25')
+SELECT * FROM dt WHERE time = toTime('100:00:00')
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+   ┌──────time─┬─event_id─┐
+1. │ 100:00:00 │        1 │
+   └───────────┴──────────┘
 ```
 
 `Time` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `Time` automatically:
 
 ``` sql
-SELECT * FROM tab WHERE time = '14:30:25'
+SELECT * FROM dt WHERE time = '100:00:00'
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+   ┌──────time─┬─event_id─┐
+1. │ 100:00:00 │        1 │
+   └───────────┴──────────┘
 ```
 
-**3.** Inspecting the resulting type:
+**3.** Getting a time zone for a `Time`-type column:
 
 ``` sql
-SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+SELECT toTime(now()) AS column, toTypeName(column) AS x
 ```
 
 ``` text
-   ┌────column─┬─type─┐
-1. │ 14:30:25 │ Time │
+   ┌────column─┬─x────┐
+1. │  18:55:15 │ Time │
    └───────────┴──────┘
 ```
 

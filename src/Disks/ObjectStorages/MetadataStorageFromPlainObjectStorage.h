@@ -106,13 +106,13 @@ protected:
 };
 
 
-class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
 protected:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 
-    MetadataOperationsHolder operations;
+    std::vector<MetadataOperationPtr> operations;
 
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(

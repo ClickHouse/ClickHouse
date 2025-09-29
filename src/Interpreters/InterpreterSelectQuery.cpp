@@ -83,7 +83,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -196,7 +195,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
 }
 
 namespace ServerSetting
@@ -809,7 +807,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
-                    storage_snapshot,
+                    metadata_snapshot,
                     storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
@@ -1576,21 +1574,6 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
-template <size_t size>
-ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
-{
-    if (!expression)
-        return;
-
-    auto dag = expression->dag.clone();
-    if (expression->project_input)
-        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
-
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
-
-    expression_step->setStepDescription(description);
-    query_plan.addStep(std::move(expression_step));
-}
 
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
@@ -1787,7 +1770,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            const auto add_filter_step = [&](auto & new_filter_info, const auto & description)
+            const auto add_filter_step = [&](auto & new_filter_info, const std::string & description)
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -1858,13 +1841,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             plan.getCurrentHeader(),
                             std::move(order_descr),
                             0 /* LIMIT */, sort_settings);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos), options.max_step_description_length);
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
 
                     auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
                     auto add_create_set
-                        = [&settings, crosswise_connection, max_len = options.max_step_description_length](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                        = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
                             plan.getCurrentHeader(),
@@ -1872,7 +1855,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings[Setting::max_rows_in_set_to_optimize_join],
                             crosswise_connection,
                             join_pos);
-                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
+                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
 
                         auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
@@ -1935,7 +1918,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         analysis_result.optimize_read_in_order,
                         /* use_new_analyzer_ = */ false);
 
-                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
+                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
@@ -2799,7 +2782,8 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
-    return Aggregator::Params{
+    return Aggregator::Params
+    {
         keys,
         aggregates,
         overflow_row,
@@ -2807,8 +2791,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::group_by_overflow_mode],
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
@@ -2822,8 +2805,8 @@ static Aggregator::Params getAggregatorParams(
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]};
+        stats_collecting_params
+    };
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -2989,6 +2972,21 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     query_plan.addStep(std::move(step));
 }
 
+void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description)
+{
+    if (!expression)
+        return;
+
+    auto dag = expression->dag.clone();
+    if (expression->project_input)
+        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+
+    expression_step->setStepDescription(description);
+    query_plan.addStep(std::move(expression_step));
+}
+
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)
 {
     const auto & left = _left->full_sort_description;
@@ -3072,7 +3070,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.partition_by,
                 0 /* LIMIT */,
                 sort_settings);
-            sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
+            sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
 
@@ -3082,7 +3080,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == windows_sorted.size());
 
         auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out);
-        window_step->setStepDescription(fmt::format("Window step for window '{}'", window.window_name), options.max_step_description_length);
+        window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));
     }
@@ -3145,7 +3143,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
-    merging_sorted->setStepDescription(fmt::format("Merge sorted streams {}", description), options.max_step_description_length);
+    merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
 

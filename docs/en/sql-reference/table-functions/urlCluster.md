@@ -5,7 +5,6 @@ sidebar_label: 'urlCluster'
 sidebar_position: 201
 slug: /sql-reference/table-functions/urlCluster
 title: 'urlCluster'
-doc_type: 'reference'
 ---
 
 # urlCluster Table Function

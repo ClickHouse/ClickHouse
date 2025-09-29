@@ -5,7 +5,6 @@ sidebar_label: 'generateRandom'
 sidebar_position: 75
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
-doc_type: 'reference'
 ---
 
 # generateRandom Table Function

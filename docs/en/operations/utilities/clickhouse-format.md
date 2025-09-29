@@ -2,7 +2,6 @@
 description: 'Guide to using the format utility for working with ClickHouse data formats'
 slug: /operations/utilities/clickhouse-format
 title: 'clickhouse-format'
-doc_type: 'reference'
 ---
 
 # clickhouse-format utility

@@ -5,7 +5,6 @@ sidebar_label: 'AzureQueue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/azure-queue
 title: 'AzureQueue Table Engine'
-doc_type: 'reference'
 ---
 
 # AzureQueue table engine

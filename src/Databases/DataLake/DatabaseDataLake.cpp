@@ -6,7 +6,6 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -61,7 +60,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
-
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
@@ -242,12 +240,6 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
                     return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-                }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:

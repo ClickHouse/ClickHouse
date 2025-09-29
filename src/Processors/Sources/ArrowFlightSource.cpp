@@ -8,7 +8,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <arrow/array.h>
 #include <base/range.h>
 #include <Common/assert_cast.h>
@@ -25,13 +24,13 @@ extern const int ARROWFLIGHT_INTERNAL_ERROR;
 }
 
 ArrowFlightSource::ArrowFlightSource(
-    std::shared_ptr<ArrowFlightConnection> connection_,
+    const FlightClientPtr & client_,
     const std::string & query_,
     const Block & sample_block_,
     const std::vector<std::string> & column_names_,
     UInt64 /*max_block_size_*/)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
-    , connection(connection_)
+    , client(client_)
     , query(query_)
     , sample_block(sample_block_)
     , column_names(column_names_)
@@ -41,12 +40,10 @@ ArrowFlightSource::ArrowFlightSource(
 
 void ArrowFlightSource::initializeStream()
 {
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
-
+    arrow::flight::FlightCallOptions options;
     arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({query});
 
-    auto flight_info_result = client->GetFlightInfo(*options, descriptor);
+    auto flight_info_result = client->GetFlightInfo(options, descriptor);
     if (!flight_info_result.ok())
     {
         throw Exception(
@@ -64,7 +61,7 @@ void ArrowFlightSource::initializeStream()
 
     arrow::flight::Ticket ticket = flight_info->endpoints()[0].ticket;
 
-    auto result = client->DoGet(*options, ticket);
+    auto result = client->DoGet(options, ticket);
     if (!result.ok())
     {
         throw Exception(
