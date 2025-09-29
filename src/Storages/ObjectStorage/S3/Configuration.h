@@ -87,7 +87,7 @@ public:
     bool isArchive() const override { return url.archive_pattern.has_value(); }
     std::string getPathInArchive() const override;
 
-    void check(ContextPtr context) const override;
+    void check(ContextPtr context) override;
     void validateNamespace(const String & name) const override;
     bool isStaticConfiguration() const override { return static_configuration; }
 
