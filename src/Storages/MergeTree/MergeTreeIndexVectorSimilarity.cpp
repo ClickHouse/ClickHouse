@@ -123,8 +123,17 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
 {
     auto callback = [&ostr](void * from, size_t n)
     {
-        ostr.write(reinterpret_cast<const char *>(from), n);
-        return true;
+        /// USearch may call callback from noexcept function
+        try
+        {
+            ostr.write(reinterpret_cast<const char *>(from), n);
+            return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException("VectorSimilarityIndex", "An error while serializing USearch index");
+            return false;
+        }
     };
 
     if (auto result = Base::save_to_stream(callback); !result)
@@ -135,8 +144,17 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
 {
     auto callback = [&istr](void * from, size_t n)
     {
-        istr.readStrict(reinterpret_cast<char *>(from), n);
-        return true;
+        /// USearch may call callback from noexcept function
+        try
+        {
+            istr.readStrict(reinterpret_cast<char *>(from), n);
+            return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException("VectorSimilarityIndex", "An error while deserializing USearch index");
+            return false;
+        }
     };
 
     if (auto result = Base::load_from_stream(callback); !result)
