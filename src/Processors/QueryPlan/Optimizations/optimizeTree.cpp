@@ -46,8 +46,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     if (!optimization_settings.optimize_plan)
         return;
 
-    const auto & optimizations = getOptimizations();
-
     struct Frame
     {
         QueryPlan::Node * node = nullptr;
@@ -100,7 +98,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         size_t max_update_depth = 0;
 
         /// Apply all optimizations.
-        for (const auto & optimization : optimizations)
+        for (const auto & optimization : getOptimizations())
         {
             if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
