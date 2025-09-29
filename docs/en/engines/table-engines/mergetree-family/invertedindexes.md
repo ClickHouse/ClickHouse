@@ -29,7 +29,7 @@ To create a text index, first enable the corresponding experimental setting:
 SET allow_experimental_full_text_index = true;
 ```
 
-A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), and [Array(FixedString)](/sql-reference/data-types/array.md) column using the following syntax:
+A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) map functions) column using the following syntax:
 
 ```sql
 CREATE TABLE tab
@@ -255,7 +255,22 @@ Example:
 
 ```sql
 SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+-- OR
+SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 ```
+
+#### `operator[]` {#functions-example-access-operator}
+
+Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+```
+
+See the following examples for the usage of `Array(T)` and `Map(K, V)` with the text index.
+
 ### Examples for the text index `Array` and `Map` support.
 
 #### Indexing Array(String)
