@@ -537,7 +537,7 @@ void IcebergMetadata::mutate(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
     {
         auto snapshots_info = getHistory(context);
-        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([this, snapshots_info, configuration_ptr, context, format_settings, metadata_snapshot]
+        context->getIcebergCompactionThreadPool().scheduleOrThrow([this, snapshots_info, configuration_ptr, context, format_settings, metadata_snapshot]
         {
             const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
             scheduleCompactionJob(

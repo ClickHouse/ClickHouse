@@ -220,9 +220,6 @@ namespace CurrentMetrics
     extern const Metric IcebergCompactionThreads;
     extern const Metric IcebergCompactionThreadsActive;
     extern const Metric IcebergCompactionThreadsScheduled;
-    extern const Metric IcebergSchedulerCompactionThreads;
-    extern const Metric IcebergSchedulerCompactionThreadsActive;
-    extern const Metric IcebergSchedulerCompactionThreadsScheduled;
     extern const Metric IndexMarkCacheBytes;
     extern const Metric IndexMarkCacheFiles;
     extern const Metric MarkCacheBytes;
@@ -3636,23 +3633,6 @@ ThreadPool & Context::getIcebergCompactionThreadPool() const
     });
 
     return *shared->iceberg_compaction_threadpool;
-}
-
-ThreadPool & Context::getIcebergSchedulerCompactionThreadPool() const
-{
-    callOnce(shared->iceberg_scheduler_compaction_threadpool_initialized, [&]
-    {
-        auto pool_size = shared->server_settings[ServerSetting::iceberg_scheduler_compaction_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::iceberg_scheduler_compaction_threadpool_queue_size];
-
-        shared->iceberg_scheduler_compaction_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IcebergSchedulerCompactionThreads,
-            CurrentMetrics::IcebergSchedulerCompactionThreadsActive,
-            CurrentMetrics::IcebergSchedulerCompactionThreadsScheduled,
-            pool_size, pool_size, queue_size);
-    });
-
-    return *shared->iceberg_scheduler_compaction_threadpool;
 }
 
 void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)

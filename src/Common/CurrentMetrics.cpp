@@ -204,9 +204,6 @@
     M(IcebergCompactionThreads, "Number of threads in the IcebergCompaction thread pool.") \
     M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
     M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
-    M(IcebergSchedulerCompactionThreads, "Number of threads in the IcebergSchedulerCompaction thread pool.") \
-    M(IcebergSchedulerCompactionThreadsActive, "Number of threads in the IcebergSchedulerCompaction thread pool running a task.") \
-    M(IcebergSchedulerCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergSchedulerCompaction thread pool.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
