@@ -1508,7 +1508,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (next_option < 4)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                    flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                     columnPathRef(rg.pickRandomly(this->entries), add_col->mutable_add_where()->mutable_col());
                     this->entries.clear();
                 }
@@ -1542,6 +1542,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                     chassert(nested_col.tp && ncol.tp);
                     ntp->subtypes.emplace_back(NestedSubType(ncname, ncol.tp));
+                    ncol.tp = nullptr;
                     nested_cols[nested_col.cname] = nested_col;
                     flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
                     columnPathRef(this->entries.back(), def->mutable_col());
@@ -1611,7 +1612,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (next_option < 4)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                    flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                     columnPathRef(rg.pickRandomly(this->entries), add_col->mutable_add_where()->mutable_col());
                     this->entries.clear();
                 }
