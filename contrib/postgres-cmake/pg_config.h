@@ -157,17 +157,17 @@
 #define HAVE_FSEEKO 1
 
 /* Define to 1 if you have __atomic_compare_exchange_n(int *, int *, int). */
-#define HAVE_GCC__ATOMIC_INT32_CAS 1
+/* #undef HAVE_GCC__ATOMIC_INT32_CAS */
 
 /* Define to 1 if you have __atomic_compare_exchange_n(int64 *, int64 *,
    int64). */
-#define HAVE_GCC__ATOMIC_INT64_CAS 1
+/* #undef HAVE_GCC__ATOMIC_INT64_CAS */
 
 /* Define to 1 if you have __sync_lock_test_and_set(char *) and friends. */
 #define HAVE_GCC__SYNC_CHAR_TAS 1
 
 /* Define to 1 if you have __sync_val_compare_and_swap(int *, int, int). */
-#define HAVE_GCC__SYNC_INT32_CAS 1
+/* #undef HAVE_GCC__SYNC_INT32_CAS */
 
 /* Define to 1 if you have __sync_lock_test_and_set(int *) and friends. */
 #define HAVE_GCC__SYNC_INT32_TAS 1
@@ -249,7 +249,7 @@
 /* #undef HAVE_LDAP_INITIALIZE */
 
 /* Define to 1 if you have the `crypto' library (-lcrypto). */
-/* #undef HAVE_LIBCRYPTO */
+#define HAVE_LIBCRYPTO 1
 
 /* Define to 1 if you have the `curl' library (-lcurl). */
 /* #undef HAVE_LIBCURL */
@@ -363,13 +363,13 @@
 #define HAVE_RL_FILENAME_QUOTING_FUNCTION 1
 
 /* Define to 1 if you have the `rl_reset_screen_size' function. */
-#define HAVE_RL_RESET_SCREEN_SIZE 1
+/* #undef HAVE_RL_RESET_SCREEN_SIZE */
 
 /* Define to 1 if you have the `rl_variable_bind' function. */
 #define HAVE_RL_VARIABLE_BIND 1
 
 /* Define to 1 if you have the <security/pam_appl.h> header file. */
-/* #undef HAVE_SECURITY_PAM_APPL_H */
+#define HAVE_SECURITY_PAM_APPL_H 1
 
 /* Define to 1 if you have the `setproctitle' function. */
 /* #undef HAVE_SETPROCTITLE */
@@ -408,10 +408,10 @@
 #define HAVE_STRING_H 1
 
 /* Define to 1 if you have the `strlcat' function. */
-#define HAVE_STRLCAT 1
+/* #undef HAVE_STRLCAT */
 
 /* Define to 1 if you have the `strlcpy' function. */
-#define HAVE_STRLCPY 1
+/* #undef HAVE_STRLCPY */
 
 /* Define to 1 if you have the `strnlen' function. */
 #define HAVE_STRNLEN 1
@@ -500,16 +500,16 @@
 /* #undef HAVE_UUID_E2FS */
 
 /* Define to 1 if you have the <uuid.h> header file. */
-/* #undef HAVE_UUID_H */
+#define HAVE_UUID_H 1
 
 /* Define to 1 if you have OSSP UUID support. */
-/* #undef HAVE_UUID_OSSP */
+#define HAVE_UUID_OSSP 1
 
 /* Define to 1 if you have the <uuid/uuid.h> header file. */
 /* #undef HAVE_UUID_UUID_H */
 
 /* Define to 1 if your compiler knows the visibility("hidden") attribute. */
-#define HAVE_VISIBILITY_ATTRIBUTE 1
+/* #undef HAVE_VISIBILITY_ATTRIBUTE */
 
 /* Define to 1 if you have the `wcstombs_l' function. */
 /* #undef HAVE_WCSTOMBS_L */
@@ -559,7 +559,7 @@
 #define HAVE__BUILTIN_TYPES_COMPATIBLE_P 1
 
 /* Define to 1 if your compiler understands __builtin_unreachable. */
-#define HAVE__BUILTIN_UNREACHABLE 1
+/* #define HAVE__BUILTIN_UNREACHABLE */
 
 /* Define to 1 if you have __cpuid. */
 /* #undef HAVE__CPUID */
@@ -714,11 +714,11 @@
 /* #undef USE_LIBURING */
 
 /* Define to 1 to build with XML support. (--with-libxml) */
-/* #undef USE_LIBXML */
+#define USE_LIBXML 1
 
 /* Define to 1 to use XSLT support when building contrib/xml2.
    (--with-libxslt) */
-/* #undef USE_LIBXSLT */
+#define USE_LIBXSLT 1
 
 /* Define to 1 to build with LLVM based JIT support. (--with-llvm) */
 /* #undef USE_LLVM */
@@ -754,7 +754,7 @@
 /* #undef USE_SYSTEMD */
 
 /* Define to select SysV-style semaphores. */
-/* #undef USE_SYSV_SEMAPHORES */
+#define USE_SYSV_SEMAPHORES 1
 
 /* Define to select SysV-style shared memory. */
 #define USE_SYSV_SHARED_MEMORY 1
