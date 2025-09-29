@@ -53,13 +53,12 @@ SELECT *
 FROM numbers(8)
 WHERE number IN (select number from numbers(5));
 Expression
-  Filter
-    JoinLogical
-      Expression
+  JoinLogical
+    Expression
+      ReadFromSystemNumbers
+    Expression
+      Filter
         ReadFromSystemNumbers
-      Expression
-        Filter
-          ReadFromSystemNumbers
 -- Same subquery as CTE
 EXPLAIN keep_logical_steps=1, description=0
 WITH
@@ -68,13 +67,12 @@ SELECT *
 FROM numbers(8)
 WHERE number IN t;
 Expression
-  Filter
-    JoinLogical
-      Expression
+  JoinLogical
+    Expression
+      ReadFromSystemNumbers
+    Expression
+      Filter
         ReadFromSystemNumbers
-      Expression
-        Filter
-          ReadFromSystemNumbers
 WITH
     t as (select number from numbers(5))
 SELECT *
