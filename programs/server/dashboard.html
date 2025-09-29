@@ -548,7 +548,10 @@ let queries = [];
 /// All other parameters will be automatically found in the queries.
 let default_params = {
     'rounding': '60',
-    'seconds': '86400'
+    'seconds': '86400',
+    // If unset, the `seconds` is used
+    'from': '',
+    'to': '',
 };
 let params = default_params;
 
