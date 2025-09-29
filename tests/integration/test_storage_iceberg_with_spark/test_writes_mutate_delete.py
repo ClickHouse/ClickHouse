@@ -60,3 +60,21 @@ def test_writes_mutate_delete(started_cluster_iceberg_with_spark, storage_type, 
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
+def test_writes_mutate_delete_bug(started_cluster_iceberg_with_spark, storage_type):
+    format_version = 2
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_mutate_delete_bug_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int)", format_version)
+    instance.query(f"INSERT INTO TABLE {TABLE_NAME} VALUES (1)", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n'
+    instance.query(f"DELETE FROM {TABLE_NAME} WHERE TRUE", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+    instance.query(f"INSERT INTO TABLE {TABLE_NAME} VALUES (2)", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '2\n'
+    instance.query(f"DELETE FROM {TABLE_NAME} WHERE TRUE", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
