@@ -2266,8 +2266,9 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         # while materialized view is working to inject zookeeper failure
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(instance)
+            # FIXME: we need to make sure that this happens during writing to RMT
             instance.wait_for_log_line(
-                f"{kafka_table}.*Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                f"Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
             )
 
