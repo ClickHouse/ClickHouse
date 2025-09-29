@@ -1484,7 +1484,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t qbit_type
         = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats && supports_cloud_features);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
-        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type;
+        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1764,8 +1764,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         SQLType * sub;
         FloatingPoints nflo;
         QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
-        const uint32_t dimension
-            = this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
+        const uint32_t dimension = rg.nextSmallNumber();
 
         std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
         if (tp)
