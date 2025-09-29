@@ -53,8 +53,8 @@ CREATE VIEW explain_index_has AS (
             END
         )
     )
-    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-    LIMIT 2, 3
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Granules:%'
+    LIMIT 1, 2
 );
 
 SELECT '-- -- value exists only in 1024 granules';

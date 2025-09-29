@@ -249,7 +249,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias: `mapContainsKey`) matches against a single token in the keys of a map.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias of: `mapContainsKey`) matches against a single token in the keys of a map.
 
 Example:
 
@@ -272,8 +272,8 @@ CREATE TABLE posts (
     content String,
     keywords Array(String) COMMENT 'Author-defined keywords'
 )
-ENGINE = MergeTree;
-ORDER BY (id)
+ENGINE = MergeTree
+ORDER BY (post_id);
 ```
 
 Without a text index, finding posts with a specific keyword (e.g. `clickhouse`) requires scanning all entries:

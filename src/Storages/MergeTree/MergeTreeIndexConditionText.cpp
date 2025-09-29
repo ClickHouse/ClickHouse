@@ -136,7 +136,7 @@ std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const 
         return std::nullopt;
 
     size_t counter = function_name_to_index[query.function_name]++;
-    String virtual_column_name = std::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -352,14 +352,18 @@ std::vector<String> substringToTokens(const Field & field, const ITokenExtractor
     return tokens;
 }
 
+/**
+  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
+  * The expected data is either form of Array(String) or Array(FixedString).
+  */
 bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
 {
     const auto function = index_column_node.toFunctionNode();
     if (function.getFunctionName() == "arrayElement")
     {
-        const auto map_column_name = function.getArgumentAt(0).getColumnName();
-        bool has_maps_keys_index_column_name = header.has(std::format("mapKeys({})", map_column_name));
-        bool has_map_values_index_column_name = header.has(std::format("mapValues({})", map_column_name));
+        const auto column_name = function.getArgumentAt(0).getColumnName();
+        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", column_name));
+        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", column_name));
         if (has_maps_keys_index_column_name)
         {
             const auto & argument_const_key = function.getArgumentAt(1);
@@ -387,7 +391,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     bool index_column_exists = header.has(index_column_node.getColumnName());
-    bool index_column_map_keys_exists = header.has(std::format("mapKeys({})", index_column_node.getColumnName()));
+    bool index_column_map_keys_exists = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
 
     Field const_value = value_field;
     if (index_column_node.isFunction())
@@ -402,23 +406,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     const String & function_name = function_node.getFunctionName();
 
-    if (function_name == "mapContainsKey")
-    {
-        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
-            return false;
-        auto tokens = stringToTokens(const_value, *token_extractor);
-        out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
-        return true;
-    }
-    if (function_name == "has")
-    {
-        auto tokens = stringToTokens(const_value, *token_extractor);
-        out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
-        return true;
-    }
     if (function_name == "notEquals")
     {
         auto tokens = stringToTokens(const_value, *token_extractor);
@@ -539,6 +526,23 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
 
         return false;
+    }
+    if (function_name == "mapContainsKey")
+    {
+        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
+        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
+            return false;
+        auto tokens = stringToTokens(const_value, *token_extractor);
+        out.function = RPNElement::FUNCTION_HAS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        return true;
+    }
+    if (function_name == "has")
+    {
+        auto tokens = stringToTokens(const_value, *token_extractor);
+        out.function = RPNElement::FUNCTION_HAS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        return true;
     }
 
     return false;
