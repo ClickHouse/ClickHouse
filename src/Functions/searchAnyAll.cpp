@@ -179,6 +179,8 @@ template <class SearchTraits>
 ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
+    static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
+
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
@@ -187,42 +189,26 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 
     col_result->getData().resize(input_rows_count);
 
-    // If token_extractor is not set it means that we are using brute force instead of index
+    /// If token_extractor == nullptr, we do a brute force scan on a column without index
     if (token_extractor == nullptr)
     {
         chassert(!needles.has_value());
 
-        UInt64 counter = 0;
+        /// Populate needles from function arguments
         Needles needles_tmp;
-        auto col_needles = arguments[arg_needles].column;
-
-        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
-        {
-            // This is brute force execution over a column
-            for (const auto & needle : col_needles_const->getValue<Array>())
-                needles_tmp.emplace(needle.safeGet<String>(), counter++);
-        }
-        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
-        {
-            // This is what happens when called over a string instead of a column
-            const IColumn & needles_data = col_needles_vector->getData();
-            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
-
-            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
-
-            for (size_t i = 0; i < needles_offsets[0]; ++i)
-                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), counter++);
-        }
+        UInt64 position_in_needles_tmp = 0;
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(arguments[arg_needles].column.get());
+        for (const auto & needle : col_needles_const->getValue<Array>())
+            needles_tmp.emplace(needle.safeGet<String>(), ++position_in_needles_tmp);
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
             execute<SearchTraits>(token_default_extractor.get(), *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
             execute<SearchTraits>(token_default_extractor.get(), *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
-
     }
     else
     {
-        // token_extractor != nullptr => We are using a column with index.
+        /// If token_extractor != nullptr, we are doing text index lookups
         if (!needles.has_value())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -247,10 +233,12 @@ REGISTER_FUNCTION(SearchAny)
     FunctionDocumentation::Description description_searchAny = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
-The `input` column should have a text index defined for optimal performance. Otherwise the function will perform a full column scan which is
-expected to be orders of magnitude slower. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+The `input` column should have a text index defined for optimal performance.
+Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
+
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
-If the column lacks a text index, the default tokenizer is used instead.
 
 **Example**
 
@@ -317,10 +305,12 @@ REGISTER_FUNCTION(SearchAll)
     FunctionDocumentation::Description description_searchAll = R"(
 Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
-The `input` column should have a text index defined for optimal performance. Otherwise the function will perform a full column scan which is
-expected to be orders of magnitude slower. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+The `input` column should have a text index defined for optimal performance.
+Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
+
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
-If the column lacks a text index, the default tokenizer is used instead.
 
 **Example**
 

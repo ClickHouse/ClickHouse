@@ -56,7 +56,5 @@ private:
     const bool allow_experimental_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
     std::optional<Needles> needles;
-
-    inline static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
 };
 }

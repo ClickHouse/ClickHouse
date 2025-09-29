@@ -124,6 +124,7 @@ ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'default');
 ## Using a Text Index {#using-a-text-index}
 
 Using a text index in SELECT queries is straightforward as common string search functions will leverage the index automatically.
+If no index exists, below string search functions will fall back to slow brute-force scans.
 
 ### Supported functions {#functions-support}
 
@@ -236,11 +237,6 @@ SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 
 SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
 ```
-
-All the functions `hasToken`, `searchAny` and `searchAll` implement compatibility code for columns without a defined text index. In that
-case they perform a full column scan which produce correct results but is intended to be some orders of magnitude slower than using the text
-index.
-
 
 ## Implementation {#implementation}
 
