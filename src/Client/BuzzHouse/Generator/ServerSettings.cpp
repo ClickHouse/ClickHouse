@@ -22,6 +22,8 @@ static const auto setSetting = CHSetting(
     {},
     false);
 
+static const auto overflowSetting = CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false);
+
 std::unordered_map<String, CHSetting> hotSettings;
 
 std::unordered_map<String, CHSetting> performanceSettings = {
@@ -354,6 +356,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"describe_extend_object_types", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
+    {"distinct_overflow_mode", overflowSetting},
     {"dictionary_use_async_executor", trueOrFalseSettingNoOracle},
     {"dictionary_validate_primary_key_type", trueOrFalseSettingNoOracle},
     {"distributed_aggregation_memory_efficient", trueOrFalseSetting},
@@ -414,7 +417,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_push_down_limit", trueOrFalseSetting},
     {"do_not_merge_across_partitions_select_final", trueOrFalseSettingNoOracle},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", trueOrFalseSettingNoOracle},
-    //{"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, the oracle doesn't get output
+    /// {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, the oracle doesn't get output
     {"enable_blob_storage_log", trueOrFalseSettingNoOracle},
     {"enable_early_constant_folding", trueOrFalseSettingNoOracle},
     {"enable_extended_results_for_datetime_functions", trueOrFalseSettingNoOracle},
@@ -446,7 +449,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
-    //{"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
+    /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
@@ -489,7 +492,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
     {"grace_hash_join_max_buckets",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
-    /// {"group_by_overflow_mode", CHSetting([](RandomGenerator & rg) { static const DB::Strings & choices = {"'throw'", "'break'", "'any'"}; return rg.pickRandomly(choices); }, {}, false)},
+    {"group_by_overflow_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices = {"'throw'", "'break'", "'any'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"group_by_use_nulls", trueOrFalseSettingNoOracle},
     {"hdfs_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"hdfs_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
@@ -536,7 +547,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},
-    //{"ignore_data_skipping_indices", trueOrFalseSetting}, Don't use this, gives a strange error
+    /// {"ignore_data_skipping_indices", trueOrFalseSetting}, Don't use this, gives a strange error
     {"ignore_materialized_views_with_dropped_target_table", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_access_entities_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
@@ -637,7 +648,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
     {"intersect_default_mode", setSetting},
     {"interval_output_format", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'kusto'" : "'numeric'"; }, {}, false)},
-    /// {"join_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'throw'" : "'break'"; }, {}, false)},
+    {"join_overflow_mode", overflowSetting},
     {"join_default_strictness",
      CHSetting(
          [](RandomGenerator & rg)
@@ -944,6 +955,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_use_new_logical_join_step", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
+    {"read_overflow_mode", overflowSetting},
     {"read_through_distributed_cache", trueOrFalseSetting},
     {"regexp_dict_allow_hyperscan", trueOrFalseSetting},
     {"regexp_dict_flag_case_insensitive", trueOrFalseSettingNoOracle},
@@ -957,6 +969,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"restore_replace_external_engines_to_null", trueOrFalseSettingNoOracle},
     {"restore_replace_external_table_functions_to_null", trueOrFalseSettingNoOracle},
     {"restore_replicated_merge_tree_to_shared_merge_tree", trueOrFalseSettingNoOracle},
+    {"result_overflow_mode", overflowSetting},
+    {"read_overflow_mode_leaf", overflowSetting},
     {"rows_before_aggregation", trueOrFalseSetting},
     {"s3_allow_multipart_copy", trueOrFalseSetting},
     {"s3_allow_parallel_part_upload", trueOrFalseSettingNoOracle},
@@ -1017,7 +1031,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"skip_download_if_exceeds_query_cache", trueOrFalseSetting},
     {"skip_redundant_aliases_in_udf", trueOrFalseSettingNoOracle},
     {"skip_unavailable_shards", trueOrFalseSettingNoOracle},
-    /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
+    {"set_overflow_mode", overflowSetting},
+    {"sort_overflow_mode", overflowSetting},
     {"splitby_max_substrings_includes_remaining_string", trueOrFalseSettingNoOracle},
     {"storage_file_read_method",
      CHSetting(
@@ -1039,6 +1054,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"throw_on_error_from_cache_on_write_operations", trueOrFalseSettingNoOracle},
     {"throw_on_max_partitions_per_insert_block", trueOrFalseSettingNoOracle},
     {"throw_on_unsupported_query_inside_transaction", trueOrFalseSettingNoOracle},
+    {"timeout_overflow_mode", overflowSetting},
+    {"timeout_overflow_mode_leaf", overflowSetting},
     {"totals_auto_threshold", CHSetting(probRange, {}, false)},
     {"totals_mode",
      CHSetting(
@@ -1051,6 +1068,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"trace_profile_events", trueOrFalseSettingNoOracle},
+    {"transfer_overflow_mode", overflowSetting},
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
     {"union_default_mode", setSetting},
