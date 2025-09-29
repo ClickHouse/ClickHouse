@@ -4,7 +4,6 @@ sidebar_label: 'clickhouse-benchmark'
 sidebar_position: 61
 slug: /operations/utilities/clickhouse-benchmark
 title: 'clickhouse-benchmark'
-doc_type: 'reference'
 ---
 
 # clickhouse-benchmark 

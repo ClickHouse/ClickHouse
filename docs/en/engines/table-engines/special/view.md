@@ -7,7 +7,6 @@ sidebar_label: 'View'
 sidebar_position: 90
 slug: /engines/table-engines/special/view
 title: 'View Table Engine'
-doc_type: 'reference'
 ---
 
 # View table engine

@@ -6,7 +6,6 @@ sidebar_label: 'Executable'
 sidebar_position: 40
 slug: /engines/table-engines/special/executable
 title: 'Executable and ExecutablePool Table Engines'
-doc_type: 'reference'
 ---
 
 # `Executable` and `ExecutablePool` table engines

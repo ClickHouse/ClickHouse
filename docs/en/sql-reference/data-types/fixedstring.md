@@ -4,7 +4,6 @@ sidebar_label: 'FixedString(N)'
 sidebar_position: 10
 slug: /sql-reference/data-types/fixedstring
 title: 'FixedString(N)'
-doc_type: 'reference'
 ---
 
 # FixedString(N)

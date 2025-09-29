@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
-#include <base/defines.h>
 #include <Poco/Util/Application.h>
 
 #ifdef OS_LINUX
@@ -210,8 +209,7 @@ Aggregator::Params::Params(
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    const StatsCollectingParams & stats_collecting_params_,
-    bool enable_producing_buckets_out_of_order_in_aggregation_)
+    const StatsCollectingParams & stats_collecting_params_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -234,7 +232,6 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
-    , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
 {
 }
 
@@ -1220,14 +1217,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - this affects only optimize_aggregation_in_order,
     /// - this is just a pointer, so it should not be significant,
     /// - and plus this will require other changes in the interface.
-    size_t places_size = all_keys_are_const ? 1 : row_end;
-    AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
-    auto places_deleter = [&allocator, &places_size](auto * ptr)
-    {
-        if (ptr) [[likely]]
-            allocator.deallocate(ptr, places_size);
-    };
-    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[all_keys_are_const ? 1 : row_end]);
 
     size_t key_start;
     size_t key_end;
@@ -1320,7 +1310,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         row_begin,
         row_end,
         aggregate_instructions,
-        places.get(),
+        places,
         key_start,
         state.hasOnlyOneValueSinceLastReset(),
         all_keys_are_const,
@@ -1332,7 +1322,7 @@ void Aggregator::executeAggregateInstructions(
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
-    AggregateDataPtr * places,
+    const std::unique_ptr<AggregateDataPtr[]> &places,
     size_t key_start,
     bool has_only_one_value_since_last_reset,
     bool all_keys_are_const,
@@ -1366,7 +1356,7 @@ void Aggregator::executeAggregateInstructions(
         else
         {
             auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
-            add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places);
+            add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places.get());
         }
     }
 #endif
@@ -1388,7 +1378,7 @@ void Aggregator::executeAggregateInstructions(
         }
         else
         {
-            addBatch(row_begin, row_end, inst, places, aggregates_pool);
+            addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
         }
     }
 
@@ -1772,7 +1762,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
     {
         std::lock_guard lk(tmp_files_mutex);
-        return tmp_files.emplace_back(std::make_shared<const Block>(getHeader(false)), tmp_data.get(), max_temp_file_size);
+        return tmp_files.emplace_back(std::make_shared<const Block>(getHeader(false)), tmp_data, max_temp_file_size);
     }();
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);

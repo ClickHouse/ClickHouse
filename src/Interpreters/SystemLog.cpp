@@ -32,7 +32,6 @@
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/DeadLetterQueue.h>
@@ -143,7 +142,6 @@ namespace
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -319,6 +317,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
         }
     }
+
     return std::make_shared<TSystemLog>(context, log_settings);
 
 }
@@ -407,13 +406,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         CrashLog::initialize(crash_log);
     }
-
-    if (aggregated_zookeeper_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
-                                                                DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        aggregated_zookeeper_log->startCollect("AggregatedZooKeeperLog", collect_interval_milliseconds);
-    }
 }
 
 std::vector<ISystemLog *> SystemLogs::getAllLogs() const
@@ -467,8 +459,6 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
 
         for (auto * log : getAllLogs())
         {
-            log->flushBufferToLog(std::chrono::system_clock::now());
-
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, log->getLastLogIndex()});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
@@ -501,16 +491,12 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
 
-            auto * log = it->second;
-
-            if (log == text_log.get())
+            if (it->second == text_log.get())
                 BaseDaemon::instance().flushTextLogs();
 
-            log->flushBufferToLog(std::chrono::system_clock::now());
-
-            const auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, last_log_index});
-            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
+            auto last_log_index = it->second->getLastLogIndex();
+            logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
+            it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
 

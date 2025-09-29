@@ -17,7 +17,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -25,8 +24,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ArrowFlight/ArrowFlightConnection.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <arrow/array.h>
 #include <arrow/buffer.h>
 #include <arrow/builder.h>
@@ -35,7 +32,6 @@
 #include <arrow/type.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 const int ARROWFLIGHT_DEFAULT_PORT = 8815;
 
@@ -44,98 +40,47 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-    extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
-    extern const int ARROWFLIGHT_WRITE_ERROR;
-}
-
-StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_)
-{
-    StorageArrowFlight::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_))
-    {
-        configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
-    }
-    else
-    {
-        if (!(args.size() == 2 || args.size() == 4))
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ArrowFlight requires 2 or 4 parameters: "
-                            "ArrowFlight('host:port', 'dataset' [, 'user', 'password']).");
-
-        for (auto & arg : args)
-            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
-
-        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(args[0], "host:port"), ARROWFLIGHT_DEFAULT_PORT);
-        configuration.host = parsed_host_port.first;
-        configuration.port = parsed_host_port.second;
-
-        configuration.dataset_name = checkAndGetLiteralArgument<String>(args[1], "dataset_name");
-
-        configuration.use_basic_authentication = (args.size() == 4);
-        if (configuration.use_basic_authentication)
-        {
-            configuration.username = checkAndGetLiteralArgument<String>(args[2], "username");
-            configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
-        }
-    }
-    return configuration;
-}
-
-StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResult(const NamedCollection & named_collection)
-{
-    StorageArrowFlight::Configuration configuration;
-
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {
-        "host", "hostname", "dataset", "use_basic_authentication", "user", "username", "password",
-        "enable_ssl", "ssl_ca", "ssl_override_hostname"
-    };
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"port"};
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
-
-    configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
-    configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
-
-    configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
-    bool is_username_set = named_collection.has("username") || named_collection.has("user");
-    if (configuration.use_basic_authentication && !is_username_set)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Basic authentication requires the 'username' to be specified in named collection");
-    if (!configuration.use_basic_authentication && is_username_set)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'username' is specified however the basic authentication is disabled in named collection");
-
-    if (is_username_set)
-    {
-        configuration.username = named_collection.getAny<String>({"username", "user"});
-        configuration.password = named_collection.getOrDefault<String>("password", "");
-    }
-
-    configuration.enable_ssl = named_collection.getOrDefault<bool>("enable_ssl", false);
-    if (configuration.enable_ssl)
-    {
-        configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
-        configuration.ssl_override_hostname = named_collection.getOrDefault<String>("ssl_override_hostname", "");
-    }
-
-    return configuration;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int BAD_ARGUMENTS;
+extern const int ARROWFLIGHT_CONNECTION_FAILURE;
+extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
+extern const int ARROWFLIGHT_WRITE_ERROR;
 }
 
 StorageArrowFlight::StorageArrowFlight(
     const StorageID & table_id_,
-    std::shared_ptr<ArrowFlightConnection> connection_,
+    const String & host_,
+    const int port_,
     const String & dataset_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , connection(connection_)
-    , dataset_name(dataset_name_)
     , log(&Poco::Logger::get("StorageArrowFlight (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+    config.host = host_;
+    config.port = port_;
+    config.dataset_name = dataset_name_;
+
+    arrow::flight::Location location;
+    auto location_result = arrow::flight::Location::ForGrpcTcp(host_, port_);
+    if (!location_result.ok())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Arrow Flight endpoint specified: {}", location_result.status().ToString());
+    }
+    location = std::move(location_result).ValueOrDie();
+    auto client_result = arrow::flight::FlightClient::Connect(location);
+    if (!client_result.ok())
+    {
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to connect to Arrow Flight server: {}", client_result.status().ToString());
+    }
+    client = std::move(client_result).ValueOrDie();
 }
 
 std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
@@ -160,11 +105,8 @@ std::string buildArrowFlightQueryString(const std::vector<std::string> & column_
 
 Names StorageArrowFlight::getColumnNames()
 {
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
-
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
-    auto status = client->GetSchema(*options, descriptor);
+    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({config.dataset_name});
+    auto status = client->GetSchema(descriptor);
     if (!status.ok())
     {
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", status.status().ToString());
@@ -199,19 +141,21 @@ Pipe StorageArrowFlight::read(
     }
 
     return Pipe(std::make_shared<ArrowFlightSource>(
-        connection, buildArrowFlightQueryString(column_names, dataset_name), sample_block, column_names, max_block_size));
+        client, buildArrowFlightQueryString(column_names, config.dataset_name), sample_block, column_names, max_block_size));
 }
 
 class ArrowFlightSink : public SinkToStorage
 {
 public:
+    using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
+
     explicit ArrowFlightSink(
         const StorageMetadataPtr & metadata_snapshot_,
-        std::shared_ptr<ArrowFlightConnection> connection_,
+        const FlightClientPtr & client_,
         const String & dataset_name_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
-        , connection(connection_)
+        , client(client_)
         , dataset_name(dataset_name_)
     {
     }
@@ -220,9 +164,6 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        auto client = connection->getClient();
-        auto options = connection->getOptions();
-
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
@@ -262,7 +203,7 @@ public:
 
             if (first_batch)
             {
-                auto write_result = client->DoPut(*options, descriptor, batch->schema());
+                auto write_result = client->DoPut(descriptor, batch->schema());
                 if (!write_result.ok())
                 {
                     throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "DoPut failed: {}", write_result.status().ToString());
@@ -298,14 +239,14 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<ArrowFlightConnection> connection;
+    FlightClientPtr client;
     String dataset_name;
 };
 
 SinkToStoragePtr
 StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool /*async_write*/)
 {
-    return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name);
+    return std::make_shared<ArrowFlightSink>(metadata_snapshot, client, config.dataset_name);
 }
 
 void registerStorageArrowFlight(StorageFactory & factory)
@@ -315,13 +256,29 @@ void registerStorageArrowFlight(StorageFactory & factory)
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto config = StorageArrowFlight::getConfiguration(engine_args, args.getLocalContext());
-            auto connection = std::make_shared<ArrowFlightConnection>(config);
+
+            if (engine_args.size() != 2)
+            {
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Arrow Flight storage requires 2 arguments: flight endpoint, dataset name");
+            }
+
+            for (auto & engine_arg : engine_args)
+            {
+                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+            }
+
+            const auto flight_endpoint = checkAndGetLiteralArgument<String>(engine_args[0], "flight_endpoint");
+            const auto dataset_name = checkAndGetLiteralArgument<String>(engine_args[1], "dataset_name");
+
+            auto parsed_host_port = parseAddress(flight_endpoint, ARROWFLIGHT_DEFAULT_PORT);
 
             return std::make_shared<StorageArrowFlight>(
                 args.table_id,
-                connection,
-                config.dataset_name,
+                parsed_host_port.first,
+                parsed_host_port.second,
+                dataset_name,
                 args.columns,
                 args.constraints,
                 args.getContext());

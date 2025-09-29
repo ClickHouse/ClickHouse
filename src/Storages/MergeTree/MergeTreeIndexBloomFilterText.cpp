@@ -168,6 +168,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     rpn = std::move(builder).extractRPN();
 }
 
+/// Keep in-sync with MergeTreeConditionGinFilter::alwaysUnknownOrTrue
 bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(

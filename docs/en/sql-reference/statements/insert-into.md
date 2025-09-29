@@ -4,7 +4,6 @@ sidebar_label: 'INSERT INTO'
 sidebar_position: 33
 slug: /sql-reference/statements/insert-into
 title: 'INSERT INTO Statement'
-doc_type: 'reference'
 ---
 
 # INSERT INTO Statement

@@ -92,10 +92,10 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter->resize(bytes_size);
-        if constexpr (std::endian::native == std::endian::big)
-            read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+    if constexpr (std::endian::native == std::endian::big)
+        read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+    else
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
 

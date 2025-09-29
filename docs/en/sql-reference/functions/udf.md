@@ -3,7 +3,6 @@ description: 'Documentation for UDFs User Defined Functions'
 sidebar_label: 'UDF'
 slug: /sql-reference/functions/udf
 title: 'UDFs User Defined Functions'
-doc_type: 'reference'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
