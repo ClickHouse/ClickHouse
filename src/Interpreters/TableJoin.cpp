@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 
@@ -61,6 +62,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace ErrorCodes
@@ -70,6 +72,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -153,6 +156,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
+    , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -177,6 +181,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
     , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
+    , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -814,6 +819,21 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         }
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
+
+        if (!allow_dynamic_type_in_join_keys)
+        {
+            bool is_left_key_dynamic = hasDynamicType(ltype);
+            bool is_right_key_dynamic = hasDynamicType(rtype);
+
+            if (is_left_key_dynamic || is_right_key_dynamic)
+            {
+                throw DB::Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                    is_left_key_dynamic ? left_key_name : right_key_name,
+                    is_left_key_dynamic ? ltype->getName() : rtype->getName());
+            }
+        }
 
         bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
         if (type_equals)
