@@ -888,11 +888,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (total_granules > ranges.ranges.getNumberOfMarks())
                     {
-                        if (auto query_context = context->getQueryContext())
+                        if (ContextMutablePtr query_context = context->getQueryContext())
                         {
+                            // I need to lock the query context before changing anything
+                            // because the query will be executing in many threads while
+                            // sharing the same query context
+                            QueryAccessInfo & ctx = query_context->getQueryAccessInfo();
                             std::lock_guard lock(query_context->getQueryAccessInfo().mutex);
-                            // query_context->getQueryAccessInfo().skip_indexes.insert(std::string(index_and_condition.index->index.name));
-                            auto ctx = query_context->getQueryAccessInfo();
                             ctx.skip_indexes.insert(index_and_condition.index->index.name);
                         }
                     }
