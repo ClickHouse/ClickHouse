@@ -213,62 +213,6 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test dictionary_block_frontcoding_compression argument.';
-
-SELECT '-- dictionary_block_frontcoding_compression must be an integer.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1024.0)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- dictionary_block_frontcoding_compression must be 0 or 1.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 2)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = -1)
-)
-ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 0)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
 SELECT 'Test max_cardinality_for_embedded_postings argument.';
 
 SELECT '-- max_cardinality_for_embedded_postings must be an integer.';

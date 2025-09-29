@@ -393,8 +393,4 @@ void registerObjectStorages()
     registerLocalObjectStorage(factory);
 }
 
-void ObjectStorageFactory::clearRegistry()
-{
-    registry.clear();
-}
 }

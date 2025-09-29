@@ -1971,7 +1971,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateVirtualColumns(*res);
 
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumnsDeprecated())
+    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1979,7 +1979,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->getName());
     }
 
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumns())
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "

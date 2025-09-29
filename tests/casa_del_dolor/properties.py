@@ -8,6 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import minio_secret_key
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -201,7 +202,6 @@ possible_properties = {
     # "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
-    "max_named_collection_num_to_throw": threshold_generator(0.2, 0.2, 0, 1000),
     # "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000), not worth to mess around
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_size": threshold_generator(0.2, 0.2, 700, 10000),
@@ -215,9 +215,6 @@ possible_properties = {
     ),
     "mlock_executable": true_false_lambda,
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
-    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(0.2, 0.2, -20, 19),
-    "os_threads_nice_value_merge_mutate": threshold_generator(0.2, 0.2, -20, 19),
-    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(0.2, 0.2, -20, 19),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
@@ -253,10 +250,10 @@ possible_properties = {
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
+    "storage_metadata_write_full_object_key": true_false_lambda,
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
-    "temporary_data_in_distributed_cache": true_false_lambda,
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -608,7 +605,7 @@ def add_single_disk(
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = cluster.minio_secret_key
+            secret_access_key_xml.text = minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
@@ -699,7 +696,6 @@ class DiskPropertiesGroup(PropertiesGroup):
     ):
         disk_element = ET.SubElement(property_element, "disks")
         backups_element = ET.SubElement(top_root, "backups")
-        disks_table_engines = ET.SubElement(top_root, "allowed_disks_for_table_engines")
         lower_bound, upper_bound = args.number_disks
         number_disks = random.randint(lower_bound, upper_bound)
         number_policies = 0
@@ -728,10 +724,6 @@ class DiskPropertiesGroup(PropertiesGroup):
             created_disks_types.append(next_created_disk_pair)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
-        # Allow any disk in any table engine
-        disks_table_engines.text = ",".join(
-            ["default"] + [f"disk{i}" for i in range(0, number_disks)]
-        )
         # Add policies sometimes
         if random.randint(1, 100) <= args.add_policy_settings_prob:
             j = 0
@@ -1056,7 +1048,7 @@ def modify_server_settings(
             access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
-            secret_access_key_xml.text = cluster.minio_secret_key
+            secret_access_key_xml.text = minio_secret_key
         if args.with_azurite:
             azure_xml = ET.SubElement(named_collections_xml, "azure")
             account_name_xml = ET.SubElement(azure_xml, "account_name")
@@ -1099,7 +1091,6 @@ def modify_server_settings(
     if (
         root.find("storage_configuration") is None
         and root.find("backups") is None
-        and root.find("allowed_disks_for_table_engines") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         selected_properties["storage_configuration"] = DiskPropertiesGroup()

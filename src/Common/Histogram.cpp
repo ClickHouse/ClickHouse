@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <mutex>
-#include <shared_mutex>
 
 namespace DB::Histogram
 {

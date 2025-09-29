@@ -98,7 +98,6 @@ class ClickHouseProc:
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
-        self.log_export_host, self.log_export_password = None, None
 
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
@@ -321,7 +320,7 @@ profiles:
         for command in commands:
             res = res and Shell.check(command, verbose=True)
 
-        with open(f"{temp_dir}/config.xml", "a") as config_file:
+        with open(f"{temp_dir}/config.xml", 'a') as config_file:
             config_file.write(c1)
         return res
 
@@ -359,11 +358,7 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
-        if self.log_export_host:
-            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
-            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
-            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
-            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
+        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"

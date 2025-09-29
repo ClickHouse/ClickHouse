@@ -155,6 +155,11 @@
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
 
+    https://github.com/ClickHouse/clickhouse-private/issues/14844
+02367_analyzer_table_alias_columns
+02989_join_using_parent_scope
+02514_if_with_lazy_low_cardinality
+
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
 
@@ -481,8 +486,6 @@
 01480_binary_operator_monotonicity
     max rows: 10.00, current rows: 100.00
 01801_approx_total_rows_mergetree_reverse
-    max rows: 1.00, current rows: 2.00
-03628_named_tuple_element_in_order_by_key
 
 00955_test_final_mark_use
 01624_soft_constraints
