@@ -74,8 +74,8 @@ Also `john` has the `GRANT OPTION` privilege, so it can grant other users with p
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
-:::note ClickHouse Cloud
-New ClickHouse Cloud users are not able to access system tables by default without grants.
+:::note
+While there are manu system tables which new users can access by default, they  may not be able to access every system table by default without grants.
 Additionally, access to certain system tables such as `system.zookeeper` is restricted for Cloud users for security reasons.
 :::
 
