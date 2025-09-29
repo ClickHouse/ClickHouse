@@ -90,7 +90,8 @@ def test_psql_client(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
+    # -F same as --field-separator
+    cmd_prefix += ["--no-align", "-F", " "]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -173,7 +174,8 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
+    # -F same as --field-separator
+    cmd_prefix += ["--no-align", "-F", " "]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -188,7 +190,8 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
+    # -F same as --field-separator
+    cmd_prefix += ["--no-align", "-F", " "]
 
     code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
     logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
