@@ -1477,6 +1477,8 @@ void JoinStepLogical::buildPhysicalJoin(
         std::move(logical_join_info)
     );
 
+    new_node.cost_estimation = node.cost_estimation;
+
     node = std::move(new_node);
 }
 

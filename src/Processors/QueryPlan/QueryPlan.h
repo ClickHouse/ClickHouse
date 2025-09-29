@@ -11,6 +11,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
@@ -73,11 +74,19 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Show estimates
+    bool estimates = false;
 
 
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
+};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -166,6 +175,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;
