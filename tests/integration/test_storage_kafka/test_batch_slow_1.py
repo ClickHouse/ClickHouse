@@ -109,8 +109,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
 
     instance.wait_for_log_line(f"{kafka_table}.*Committed offset 20000")
 
-    logging.debug(f"Timestamps: {instance.query(f"SELECT max(consume_ts), min(consume_ts) FROM test.{kafka_table}_destination")}")
-
+    logging.debug("Timestamps: %s", instance.query(f"SELECT max(consume_ts), min(consume_ts) FROM test.{kafka_table}_destination"))
     assert int(instance.query(f"SELECT max(consume_ts) - min(consume_ts) FROM test.{kafka_table}_destination")) < 8
 
 
