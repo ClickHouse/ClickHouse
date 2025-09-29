@@ -119,9 +119,7 @@ using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<Funct
 REGISTER_FUNCTION(DetectProgrammingLanguage)
 {
     FunctionDocumentation::Description description = R"(
-Determines the programming language from the source code.
-Calculates all the unigrams and bigrams of commands in the source code.
-Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
+Determines the programming language from a given source code snippet.
 )";
     FunctionDocumentation::Syntax syntax = "detectProgrammingLanguage('source_code')";
     FunctionDocumentation::Arguments arguments = {

@@ -238,7 +238,7 @@ REGISTER_FUNCTION(DetectLanguage)
 Detects the language of the UTF8-encoded input string.
 The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
 
-The `detectLanguage` function works best when providing over 200 characters in the input string.
+The longer the input, the more precise the language detection will be.
 )";
     FunctionDocumentation::Syntax syntax_detect = "detectLanguage(s)";
     FunctionDocumentation::Arguments arguments_detect = {

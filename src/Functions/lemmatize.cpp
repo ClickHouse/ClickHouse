@@ -132,7 +132,7 @@ REGISTER_FUNCTION(Lemmatize)
 {
     FunctionDocumentation::Description description = R"(
 Performs lemmatization on a given word.
-Needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models). For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/dictionaries#local-file).
 )";
     FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
     FunctionDocumentation::Arguments arguments = {

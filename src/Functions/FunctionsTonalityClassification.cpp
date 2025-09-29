@@ -87,8 +87,6 @@ REGISTER_FUNCTION(DetectTonality)
 {
     FunctionDocumentation::Description description = R"(
 Determines the sentiment of the provided text data.
-Uses a marked-up sentiment dictionary, in which each word has a tonality ranging from -12 to 6.
-For each piece of text, it calculates the average sentiment value of its words and returns it in the range [-1, 1].
 
 :::note Limitation
 This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
@@ -104,9 +102,9 @@ This function is limited in its current form in that it makes use of the embedde
         "Russian sentiment analysis",
         R"(
 SELECT
-detectTonality('Шарик - хороший пёс'),
-detectTonality('Шарик - пёс'),
-detectTonality('Шарик - плохой пёс')
+    detectTonality('Шарик - хороший пёс'),
+    detectTonality('Шарик - пёс'),
+    detectTonality('Шарик - плохой пёс')
         )",
         "0.44445, 0, -0.3"
     }
