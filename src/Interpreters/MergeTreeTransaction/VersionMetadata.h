@@ -65,7 +65,14 @@ public:
     void appendRemovalCSNToStoredMetadata();
 
     /**
-    * @brief Appends a removal ID to the stored data.
+    * @brief Set a removal ID.
+    *
+    * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back.
+    */
+    void setRemovalTID(const TransactionID & tid);
+
+    /**
+    * @brief Appends removal_tid to the stored data.
     *
     * This function appends a removal transaction ID to the metadata being persisted.
     * The removal ID can be either `removal_tid` or `Tx::EmptyTID`.
@@ -77,10 +84,8 @@ public:
     *
     * In such cases, the function will first persist the data to storage,
     * then append the removal ID.
-    *
-    * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back.
     */
-    void appendRemovalTIDToStoredMetadata(const TransactionID & tid);
+    void appendRemovalTIDToStoredMetadata();
 
     TransactionID getRemovalTID() const { return removal_tid; }
     TransactionID getRemovalTIDForLogging() const;
@@ -114,6 +119,8 @@ public:
     * @param logger For trace logging
     */
     void loadAndVerifyMetadata(LoggerPtr logger);
+
+    bool wasInvolvedInTransaction() const;
 
     /**
     * @brief Validate if the info stored on persistent storage matches the info stored in this object.
@@ -239,10 +246,10 @@ protected:
     virtual void appendRemovalCSNToStoredMetadataImpl() = 0;
 
     /**
-    * @brief The implementation to append a removal ID to the stored data.. Called by `appendRemovalTIDToStoredMetadata`.
+    * @brief The implementation to append a removal ID to the stored data. Called by `appendRemovalTIDToStoredMetadata`.
     *
     */
-    virtual void appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid) = 0;
+    virtual void appendRemovalTIDToStoredMetadataImpl() = 0;
 
     /**
     * @brief Read info from the stored metadata
