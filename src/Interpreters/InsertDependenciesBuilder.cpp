@@ -133,6 +133,7 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool use_async_executor_for_materialized_views;
     extern const SettingsBool materialized_views_ignore_errors;
+    extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
 }
 
@@ -775,6 +776,9 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     deduplicate_blocks_in_dependent_materialized_views = settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
+    /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
+    /// if deduplication for MVs is enabled
+    squash_parallel_inserts = !deduplicate_blocks_in_dependent_materialized_views && settings[Setting::materialized_views_squash_parallel_inserts];
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
@@ -812,16 +816,14 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
 
     insert_chains.reserve(sink_stream_size);
 
-    /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
-    /// if deduplication for MVs is enabled
-    if (!deduplicate_blocks_in_dependent_materialized_views)
+    if (squash_parallel_inserts)
         squashing_processor_maps.reserve(sink_stream_size);
 
     bool has_squashing_transforms = false;
     for (size_t i = 0; i < sink_stream_size; ++i)
     {
         insert_chains.emplace_back(createChainWithDependencies());
-        if (!deduplicate_blocks_in_dependent_materialized_views)
+        if (squash_parallel_inserts)
         {
             /// Collect total amount of squashing transforms for each destination table so we can create
             /// shrink/expand processors with enough input/output ports.
@@ -835,7 +837,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
         }
     }
 
-    if (deduplicate_blocks_in_dependent_materialized_views || !has_squashing_transforms)
+    if (!squash_parallel_inserts || !has_squashing_transforms)
         return insert_chains;
 
     /// We need to extract processors from chain and modify it.
@@ -1352,7 +1354,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     {
         result.addSource(std::make_shared<ApplySquashingTransform>(output_header));
 
-        if (deduplicate_blocks_in_dependent_materialized_views)
+        if (!squash_parallel_inserts)
         {
             bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
