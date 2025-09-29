@@ -26,10 +26,10 @@
         <!-- Startup level is used to set the root logger level at server startup.
              It is useful for debugging startup issues.
              The root logger level will be reset to the default level after the server is fully initialized -->
-        <!-- <startupLevel>trace</startupLevel> -->
+        <!-- <startup_level>trace</startup_level> -->
        <!-- Shutdown level is used to set the root logger level at server Shutdown.
              It is useful for debugging shutdown issues -->
-        <!-- <shutdownLevel>trace</shutdownLevel> -->
+        <!-- <shutdown_level>trace</shutdown_level> -->
 
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
