@@ -253,12 +253,10 @@ REGISTER_FUNCTION(SearchAny)
     FunctionDocumentation::Description description_searchAny = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
-:::note
-This function can only be used if setting `allow_experimental_full_text_index` is enabled.
-:::
-
-The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+The `input` column should have a text index defined for optimal performance. Otherwise the function will perform a full column scan which is
+expected to be orders of magnitude slower. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+If the column lacks a text index, the default tokenizer is used instead.
 
 **Example**
 
@@ -325,12 +323,10 @@ REGISTER_FUNCTION(SearchAll)
     FunctionDocumentation::Description description_searchAll = R"(
 Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
-:::note
-This function can only be used if setting `allow_experimental_full_text_index` is enabled.
-:::
-
-The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+The `input` column should have a text index defined for optimal performance. Otherwise the function will perform a full column scan which is
+expected to be orders of magnitude slower. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+If the column lacks a text index, the default tokenizer is used instead.
 
 **Example**
 

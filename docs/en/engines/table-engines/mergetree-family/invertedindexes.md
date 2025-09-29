@@ -237,6 +237,11 @@ SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
 ```
 
+All the functions `hasToken`, `searchAny` and `searchAll` implement compatibility code for columns without a defined text index. In that
+case they perform a full column scan which produce correct results but is intended to be some orders of magnitude slower than using the text
+index.
+
+
 ## Implementation {#implementation}
 
 ### Index layout {#index-layout}
