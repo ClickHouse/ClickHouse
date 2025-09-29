@@ -3548,7 +3548,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + 1))
     {
-        const auto u = st->mutable_dictionaries();
+        auto * const u = st->mutable_dictionaries();
         UNUSED(u);
     }
     else if (
