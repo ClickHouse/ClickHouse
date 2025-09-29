@@ -102,6 +102,7 @@ ObjectIterator HudiMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
+    StorageMetadataPtr /* storage_metadata_snapshot*/,
     ContextPtr /* context  */) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);

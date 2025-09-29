@@ -55,6 +55,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
+    , datalake_table_state(other.datalake_table_state)
 {
 }
 
@@ -87,6 +88,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
+    datalake_table_state = other.datalake_table_state;
+
     return *this;
 }
 
@@ -217,6 +220,11 @@ void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
 {
     metadata_version = metadata_version_;
+}
+
+void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
+{
+    datalake_table_state = datalake_table_state_;
 }
 
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
