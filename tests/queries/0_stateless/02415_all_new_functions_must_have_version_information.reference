@@ -54,7 +54,6 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-asin
 blockSerializedSize
 caseWithExpression
 catboostEvaluate
@@ -147,7 +146,6 @@ extractKeyValuePairsWithEscaping
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
-factorial
 filesystemAvailable
 filesystemCapacity
 filesystemUnreserved
@@ -485,6 +483,5 @@ tupleNames
 validateNestedArraySizes
 variantElement
 variantType
-widthBucket
 windowID
 wkt
