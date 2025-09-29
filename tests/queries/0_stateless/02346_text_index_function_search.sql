@@ -40,16 +40,32 @@ SELECT id FROM tab WHERE searchAll(message, materialize(['b'])); -- { serverErro
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
 
-SELECT 'Positive tests without index';
--- search over columns without text index
+SELECT 'Test what happens searchAny/All are called on columns without index';
+-- It is expected that the default tokenizer is used
+-- { echoOn }
+SELECT searchAny('a b', ['b']);
+SELECT searchAny('a b', ['c']);
+SELECT searchAny(materialize('a b'), ['b']);
+SELECT searchAny(materialize('a b'), ['c']);
+--
+SELECT searchAll('a b', ['a', 'b']);
+SELECT searchAll('a b', ['a', 'c']);
+SELECT searchAll(materialize('a b'), ['a', 'b']);
+SELECT searchAll(materialize('a b'), ['a', 'c']);
+-- { echoOff }
+
+-- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
+-- We keep this test because the direct read optimization substituted Search{Any,All} only
+-- when they are in the filterStep, and we want to detect any variation eagerly.
 SELECT id FROM tab WHERE searchAny('a b', ['b']);
 SELECT id FROM tab WHERE searchAny('a b', ['c']);
 SELECT id FROM tab WHERE searchAny(col_str, ['b']);
 SELECT id FROM tab WHERE searchAny(col_str, ['c']);
-SELECT id FROM tab WHERE searchAll('a b', ['b']);
-SELECT id FROM tab WHERE searchAll('a b', ['c']);
-SELECT id FROM tab WHERE searchAll(col_str, ['b']);
-SELECT id FROM tab WHERE searchAll(col_str, ['c']);
+
+SELECT id FROM tab WHERE searchAll('a b', ['a b']);
+SELECT id FROM tab WHERE searchAll('a b', ['a c']);
+SELECT id FROM tab WHERE searchAll(col_str, ['a b']);
+SELECT id FROM tab WHERE searchAll(col_str, ['a c']);
 
 
 DROP TABLE tab;
