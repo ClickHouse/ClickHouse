@@ -859,33 +859,46 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
     k.kafka_check_result(result, True)
 
+
+def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     instance.query(
         """
-    CREATE TABLE test.kafka_writer (key UInt64, value String)
-        ENGINE = Kafka
-        SETTINGS kafka_broker_list = 'kafka1:19092',
-                    kafka_topic_list = 'pb_no_delimiter',
-                    kafka_group_name = 'pb_no_delimiter',
-                    kafka_format = 'ProtobufSingle',
-                    kafka_commit_on_select = 1,
-                    kafka_schema = 'kafka.proto:KeyValuePair';
-    """
+        CREATE TABLE test.kafka (
+                date String,
+                buy_payment_cash_value Float64,
+                buy_payment_card_value Float64,
+                buy_vendor_name String,
+                buy_items_bought Int32,
+                sell_payment_cash_value Float64,
+                sell_payment_card_value Float64,
+                sell_customer_name String,
+                sell_items_sold Int32,
+                payment_details Enum8('omitted' = 0, 'buy' = 2, 'sell' = 3),
+                buy_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+                sell_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+            )
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'pb_transaction_oneof',
+                     kafka_group_name = 'pb_transaction_oneof',
+                     kafka_format = 'Protobuf',
+                     kafka_commit_on_select = 1,
+                     kafka_schema = 'oneof_transaction.proto:Transaction';
+        """
     )
 
-    instance.query(
-        "INSERT INTO test.kafka_writer VALUES (13,'Friday'),(42,'Answer to the Ultimate Question of Life, the Universe, and Everything'), (110, 'just a number')"
+    k.kafka_produce_protobuf_transaction_oneof(
+        kafka_cluster, "pb_transaction_oneof", 0, 1
     )
 
-    time.sleep(1)
+    expected="1000000	10	0	dell	1	0	0		0	buy	cash_value	omitted\n"
+    result = ""
+    while True:
+        result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
+        if k.kafka_check_result(result,  ref_string=expected):
+            break
 
-    result = instance.query("SELECT * FROM test.kafka ORDER BY key", ignore_error=True)
-
-    expected = """\
-13	Friday
-42	Answer to the Ultimate Question of Life, the Universe, and Everything
-110	just a number
-"""
-    assert TSV(result) == TSV(expected)
+    k.kafka_check_result(result, True,  ref_string=expected)
 
 
 @pytest.mark.parametrize(
@@ -1368,7 +1381,7 @@ def test_kafka_virtual_columns_with_materialized_view(
                 ENGINE = MergeTree()
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
+                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
         """
         )
 
@@ -1741,18 +1754,21 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 def test_kafka_producer_consumer_separate_settings(
     kafka_cluster, create_query_generator, do_direct_read
 ):
+    table_name = "test_kafka"
     instance.rotate_logs()
     instance.query(
         create_query_generator(
-            "test_kafka",
+            table_name,
             "key UInt64",
             topic_list="separate_settings",
             consumer_group="test",
         )
     )
 
-    if do_direct_read:
-        instance.query("SELECT * FROM test.test_kafka")
+    # Let's create an mv to initialize the librdkafka consumers
+    instance.query(f"CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{table_name};")
+    instance.wait_for_log_line("Created #0 consumer")
+    instance.query("DROP TABLE test.view")
     instance.query("INSERT INTO test.test_kafka VALUES (1)")
 
     assert instance.contains_in_log("Kafka producer created")
@@ -1760,7 +1776,7 @@ def test_kafka_producer_consumer_separate_settings(
 
     kafka_conf_warnings = instance.grep_in_log("rdk:CONFWARN")
 
-    assert kafka_conf_warnings is not None
+    assert kafka_conf_warnings.strip() != ''
 
     for warn in kafka_conf_warnings.strip().split("\n"):
         # this setting was applied via old syntax and applied on both consumer
@@ -3082,70 +3098,82 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
             ["40", "400"],
         ]
 
-
-def test_system_kafka_consumers(kafka_cluster):
+@pytest.mark.parametrize(
+    "create_query_generator, consumer_id_length, num_rebalance_assignments",
+    [(k.generate_old_create_table_query, 67, 1), (k.generate_new_create_table_query, 0, 0)],
+)
+def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_id_length, num_rebalance_assignments):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    topic = "system_kafka_cons"
-    k.kafka_create_topic(admin_client, topic)
+    topic_name = "system_kafka_cons" + k.get_topic_postfix(create_query_generator)
+    table_name = "kafka"
 
-    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
-    k.kafka_produce(
-        kafka_cluster,
-        topic,
-        ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
-    )
+    with k.kafka_topic(admin_client, topic_name):
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.kafka;
+        # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+        k.kafka_produce(
+            kafka_cluster,
+            topic_name,
+            ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+        )
 
-        CREATE TABLE test.kafka (a UInt64, b String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = '{topic}',
-                     kafka_group_name = '{topic}',
-                     kafka_commit_on_select = 1,
-                     kafka_format = 'CSV',
-                     kafka_row_delimiter = '\\n',
-                     format_csv_delimiter = '|';
-        """
-    )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka SYNC;
+            DROP TABLE IF EXISTS test.view SYNC;
 
-    result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
+            {create_query_generator(
+                "kafka",
+                "a UInt64, b String",
+                topic_list=topic_name,
+                consumer_group=topic_name,
+                format="CSV",
+                settings={
+                    "format_csv_delimiter":"|",
+                    "kafka_commit_on_select": 1
+                }
+            )};
 
-    check_query = """
-        create or replace function stable_timestamp as
-          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{table_name};
+            """
+        )
+        instance.query_with_retry("SELECT count() FROM test.view", check_callback=lambda res: int(res) == 4)
 
-        -- check last_used stores microseconds correctly
-        create or replace function check_last_used as
-          (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
+        instance.query_with_retry("DROP TABLE test.view SYNC")
 
-        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
-          assignments.current_offset,
-          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
-          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
-          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
-          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
-          num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
-          check_last_used(last_used) as last_used_,
-          if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
-          FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
-        """
-    assert_eq_with_retry(
-        instance,
-        check_query,
-        """Row 1:
+        check_query = """
+            create or replace function stable_timestamp as
+            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+
+            -- check last_used stores microseconds correctly
+            create or replace function check_last_used as
+            (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
+
+            SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+            assignments.current_offset, assignments.intent_size,
+            if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+            if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+            stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+            num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+            num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
+            check_last_used(last_used) as last_used_,
+            if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
+            FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
+            """
+        assert_eq_with_retry(
+            instance,
+            check_query,
+            f"""Row 1:
 ──────
 database:                     test
 table:                        kafka
-length(consumer_id):          67
-assignments.topic:            ['system_kafka_cons']
+length(consumer_id):          {consumer_id_length}
+assignments.topic:            ['{topic_name}']
 assignments.partition_id:     [0]
 assignments.current_offset:   [4]
+assignments.intent_size:      [NULL]
 last_exception_time_:         never
 last_exception_:              no exception
 last_poll_time_:              now
@@ -3154,15 +3182,14 @@ last_commit_time_:            now
 num_commits:                  1
 last_rebalance_time_:         never
 num_rebalance_revocations:    0
-num_rebalance_assignments:    1
+num_rebalance_assignments:    {num_rebalance_assignments}
 is_currently_used:            0
 last_used_:                   microseconds
 last_used_and_last_poll_time: equal
 """,
-    )
+        )
 
-    instance.query("DROP TABLE test.kafka")
-    k.kafka_delete_topic(admin_client, topic)
+        instance.query("DROP TABLE test.kafka")
 
 
 def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
@@ -3567,6 +3594,58 @@ def test_kafka_json_type(kafka_cluster):
 2
 """
     assert TSV(result) == TSV(expected)
+
+
+def test_kafka_assigned_partitions(kafka_cluster):
+    admin_client = k.get_admin_client(kafka_cluster)
+    topic_name = "assigned_partitions"
+    num_partitions = 4
+    k.kafka_create_topic(admin_client, topic_name, num_partitions=num_partitions)
+
+    metrics_before = instance.query(
+            f"""
+            SELECT
+                anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
+                anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
+            FROM system.metrics;
+            """
+        )
+    metrics_before_numeric = [int(x) for x in metrics_before.strip().split('\t')]
+
+    instance.query(
+        f"""
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic_name}',
+                     kafka_group_name = '{topic_name}',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8;
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        """
+    )
+
+    assert_eq_with_retry(
+        instance,
+        "SELECT value FROM system.metrics WHERE metric = 'KafkaAssignedPartitions'",
+        str(metrics_before_numeric[0] + num_partitions),
+    )
+
+    instance.query("DROP TABLE test.consumer SYNC")
+    instance.query("DROP TABLE test.view SYNC")
+    instance.query("DROP TABLE test.kafka SYNC")
+
+    assert_eq_with_retry(
+        instance,
+        """
+            SELECT
+                anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
+                anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
+            FROM system.metrics
+        """,
+        metrics_before,
+    )
 
 
 if __name__ == "__main__":

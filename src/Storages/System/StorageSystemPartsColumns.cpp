@@ -1,4 +1,4 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -77,6 +77,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the compressed data for each subcolumn, in bytes"},
         {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the decompressed data for each subcolumn, in bytes"},
         {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the marks for each subcolumn of a column, in bytes"},
+        {"statistics",                                 std::make_shared<DataTypeString>(), "Description of statistics in this part"},
     }
     )
 {
@@ -126,6 +127,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
+        auto stats = part->loadStatistics();
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
         {
@@ -135,7 +137,6 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
-
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -268,14 +269,27 @@ void StorageSystemPartsColumns::processNextStorage(
             Array substreams;
             Array filenames;
 
-            serialization->enumerateStreams([&](const auto & subpath)
+            if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
             {
-                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
+                for (const auto & substream : column_substreams)
+                {
+                    substreams.push_back(substream);
+                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, part->checksums);
+                    filenames.push_back(filename.value_or(""));
+                }
+            }
+            else
+            {
+                serialization->enumerateStreams([&](const auto & subpath)
+                {
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath);
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
 
-                substreams.push_back(std::move(substream));
-                filenames.push_back(filename.value_or(""));
-            });
+                    substreams.push_back(std::move(substream));
+                    filenames.push_back(filename.value_or(""));
+                });
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(substreams);
@@ -340,6 +354,19 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(subcolumn_data_uncompressed_bytes);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_marks_bytes);
+            if (columns_mask[src_index++])
+            {
+                String stats_desc;
+                for (const auto & column_stats : stats)
+                {
+                    if (column_stats->columnName() == column.name)
+                    {
+                        stats_desc = column_stats->getNameForLogs();
+                        break;
+                    }
+                }
+                columns[res_index++]->insert(stats_desc);
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

@@ -44,18 +44,6 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
-std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
-{
-    try
-    {
-        return getObjectMetadata(path);
-    }
-    catch (...)
-    {
-        return {};
-    }
-}
-
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
@@ -95,6 +83,13 @@ ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) c
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
     return write_settings;
+}
+
+std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
+{
+    if (isArchive())
+        return getPathToArchive();
+    return getPath();
 }
 
 }

@@ -1,4 +1,4 @@
-#include "hasAllAny.h"
+#include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
@@ -25,15 +25,15 @@ Checks whether one array is a subset of another.
 )";
     FunctionDocumentation::Syntax syntax = "hasAll(set, subset)";
     FunctionDocumentation::Arguments arguments = {
-        {"set", "Array of any type with a set of elements. [`Array`](/sql-reference/data-types/array)."},
-        {"subset", "Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`. [`Array`](/sql-reference/data-types/array)."},
+        {"set", "Array of any type with a set of elements.", {"Array(T)"}},
+        {"subset", "Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 - `1`, if `set` contains all of the elements from `subset`.
 - `0`, otherwise.
 
 Raises a `NO_COMMON_TYPE` exception if the set and subset elements do not share a common supertype.
-)";
+)"};
     FunctionDocumentation::Examples examples = {
         {"Empty arrays", "SELECT hasAll([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasAll([1, Null], [Null])", "1"},

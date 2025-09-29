@@ -4,6 +4,7 @@ sidebar_label: 'EXPLAIN'
 sidebar_position: 39
 slug: /sql-reference/statements/explain
 title: 'EXPLAIN Statement'
+doc_type: 'reference'
 ---
 
 Shows the execution plan of a statement.
@@ -100,28 +101,46 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
-Returns query after syntax optimizations.
+Shows the Abstract Syntax Tree (AST) of a query after syntax analysis.
 
-Example:
+It's done by parsing the query, constructing query AST and query tree, optionally running query analyzer and optimization passes, and then converting the query tree back to the query AST.
+
+Settings:
+
+- `oneline` – Print the query in one line. Default: `0`.
+- `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
+- `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
+
+Examples:
 
 ```sql
-EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c;
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
+
+Output:
+
+```sql
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+With `run_query_tree_passes`:
+
+```sql
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+Output:
 
 ```sql
 SELECT
-    `--a.number` AS `a.number`,
-    `--b.number` AS `b.number`,
-    number AS `c.number`
-FROM
-(
-    SELECT
-        number AS `--a.number`,
-        b.number AS `--b.number`
-    FROM system.numbers AS a
-    CROSS JOIN system.numbers AS b
-) AS `--.s`
-CROSS JOIN system.numbers AS c
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
 ### EXPLAIN QUERY TREE {#explain-query-tree}
@@ -131,6 +150,8 @@ Settings:
 - `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
 - `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
 - `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+- `dump_tree` — Display the query tree. Default: `1`.
+- `dump_ast` — Display the query AST generated from the query tree. Default: `0`.
 
 Example:
 ```sql
@@ -181,7 +202,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -282,8 +303,9 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
 - `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts before/after the index is applied.
-- `Granules` — The number of granules before/after the index is applied.
+- `Parts` — The number of parts after/before the index is applied.
+- `Granules` — The number of granules after/before the index is applied.
+- `Ranges` — The number of granules ranges after the index is applied.
 
 Example:
 
@@ -294,37 +316,37 @@ Example:
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Parts": 5/4,
-    "Granules": 12/11
+    "Parts": 4/5,
+    "Granules": 11/12
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Parts": 4/3,
-    "Granules": 11/10
+    "Parts": 3/4,
+    "Granules": 10/11
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Parts": 3/2,
-    "Granules": 10/6,
+    "Parts": 2/3,
+    "Granules": 6/10,
     "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Parts": 2/1,
-    "Granules": 6/2
+    "Parts": 1/2,
+    "Granules": 2/6
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
     "": 1/1,
-    "Granules": 2/1
+    "Granules": 1/2
   }
 ]
 ```
@@ -517,6 +539,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::

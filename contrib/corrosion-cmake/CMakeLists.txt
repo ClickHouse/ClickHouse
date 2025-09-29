@@ -35,7 +35,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2024-12-01")
+set(Rust_TOOLCHAIN "nightly-2025-07-07")
 
 macro(find_rust)
     set_rust_target()
@@ -134,7 +134,24 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
+elseif (SANITIZE STREQUAL "address")
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
+
+# Set metadata flag to force different hashes for different sanitizers
+if (SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
+endif()
+
+list(APPEND RUSTFLAGS
+    # Suppress warnings in delta-kernel-rs
+    "-Adead_code"
+    # Suppress warnings in skim
+    "-Amismatched_lifetime_syntaxes"
+)
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)
 
@@ -147,7 +164,7 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
-set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
+set(RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
 set(RUST_CFLAGS ${RUST_CFLAGS} CACHE INTERNAL "Rust config")
 set(RUST_CXXFLAGS ${RUST_CXXFLAGS} CACHE INTERNAL "Rust config")
 set(RUSTFLAGS "${RUSTFLAGS}" CACHE INTERNAL "Rust config")

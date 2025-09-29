@@ -69,6 +69,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Time64:
+            return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -85,6 +87,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicTypeSecondArg<DateTime64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Time64:
+            return callOnBasicTypeSecondArg<Time64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -277,8 +281,8 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
-                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset - 1), 0);
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset), 0);
 
             prev_a_offset = a_offsets[i];
             prev_b_offset = b_offsets[i];
@@ -296,7 +300,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data() + i * b_n, b_n), 0);
 
             prev_a_offset = a_offsets[i];
@@ -314,7 +318,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data(), b_size), 0);
 
             prev_a_offset = a_offsets[i];
@@ -434,8 +438,8 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
-            auto b_size = b_offsets[i] - prev_b_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
+            auto b_size = b_offsets[i] - prev_b_offset;
 
             c[i] = positive == memequalSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -456,7 +460,7 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
 
             c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -484,7 +488,7 @@ struct StringEqualsImpl
              */
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 if (a_size == 0)
                     c[i] = positive;
@@ -498,7 +502,7 @@ struct StringEqualsImpl
         {
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 c[i] = positive == memequalSmallAllowOverflow15(
                     a_data.data() + prev_a_offset, a_size,
@@ -1324,8 +1328,8 @@ public:
                 assert_cast<const DataTypeFixedString &>(*left_type).getN() :
                 (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
-            && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
+        bool date_and_time_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isTime() || which_left.isTime64() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDate32() || which_right.isTime() || which_right.isTime64() || which_right.isDateTime() || which_right.isDateTime64());
 
         /// Interval data types can be compared only when having equal units.
         bool left_is_interval = which_left.isInterval();
@@ -1334,7 +1338,7 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_datetime
+        if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
@@ -1384,7 +1388,7 @@ public:
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1394,7 +1398,7 @@ public:
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_time_datetime)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "No operation {} between {} and {}",
@@ -1415,7 +1419,7 @@ public:
             }
             return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, params.check_decimal_overflow);
         }
-        if (date_and_datetime)
+        if (date_and_time_datetime)
         {
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);

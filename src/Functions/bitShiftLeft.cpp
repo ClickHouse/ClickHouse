@@ -51,8 +51,7 @@ struct BitShiftLeftImpl
             if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
             {
                 // insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 
@@ -68,9 +67,8 @@ struct BitShiftLeftImpl
             else
                 length = end + shift_left_bytes - begin;
 
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             UInt8 * op_pointer = const_cast<UInt8 *>(begin);
             UInt8 * out = out_vec.data() + old_size;
@@ -183,10 +181,10 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 )";
     FunctionDocumentation::Syntax syntax = "bitShiftLeft(a, N)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "A value to shift. [`(U)Int*`](../data-types/int-uint.md)/[`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."},
-        {"N", "The number of positions to shift. [`UInt8/16/32/64`](../data-types/int-uint.md)."}
+        {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
+        {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the shifted value with type equal to that of `a`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`."};
     FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
         R"(
 SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);

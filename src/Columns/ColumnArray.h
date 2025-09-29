@@ -45,11 +45,11 @@ private:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
 public:
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
-
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
         return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
@@ -79,8 +79,11 @@ public:
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;

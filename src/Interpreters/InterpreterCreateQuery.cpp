@@ -56,7 +56,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
@@ -113,9 +112,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
-    extern const SettingsBool allow_experimental_inverted_index;
     extern const SettingsBool allow_experimental_statistics;
-    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -350,7 +347,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+        IAST::FormatSettings format_settings(/*one_line=*/false);
         create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
@@ -377,6 +374,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
+        if (need_write_metadata)
+        {
+            /// Prevents from overwriting metadata of detached database
+            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
+            renamed = true;
+        }
+
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
@@ -387,14 +391,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-        }
-
-
-        if (need_write_metadata)
-        {
-            /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
-            renamed = true;
         }
     }
     catch (...)
@@ -731,9 +727,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
-
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
+
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     return res;
 }
@@ -794,18 +792,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental full-text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
-                /// ---
-                /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
-                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
-                if (index_desc.type == INVERTED_INDEX_NAME && !settings[Setting::allow_experimental_inverted_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
-                if (index_desc.type == GIN_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
-                /// ---
-                if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_vector_similarity_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental vector similarity index feature is disabled. Enable the setting 'allow_experimental_vector_similarity_index' to use it");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -955,7 +942,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -966,7 +953,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1103,7 +1090,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    Block input_block;
+    SharedHeader input_block;
 
     if (check_columns)
     {
@@ -1139,7 +1126,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         ColumnsWithTypeAndName input_columns;
         ColumnsWithTypeAndName output_columns;
-        for (const auto & input_column : input_block)
+        for (const auto & input_column : *input_block)
         {
             auto it = output_types.find(input_column.name);
             if (it != output_types.end())
@@ -1320,7 +1307,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /// Null table engine.
         else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
         {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
             {
                 setNullTableEngine(*create.storage);
             }
@@ -1517,8 +1504,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
-                        "Temporary tables cannot be inside a database. "
-                        "You should not specify a database for a temporary table.");
+                        "Temporary objects (tables/views) cannot be inside a database. "
+                        "You should not specify a database for a temporary objects.");
+
+    if (create.temporary && !create.cluster.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -1768,6 +1760,30 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+
+void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
+{
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumnsDeprecated())
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            storage.getName());
+    }
+
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Dynamic or JSON, "
+            "because storage {} doesn't support dynamic subcolumns",
+            storage.getName());
+    }
+}
+
+}
+
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
@@ -1782,7 +1798,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
         {
-            return StorageFactory::instance().get(create,
+            auto res = StorageFactory::instance().get(create,
                 database->getTableDataPath(table_id.getTableName()),
                 getContext(),
                 getContext()->getGlobalContext(),
@@ -1790,6 +1806,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
+            validateVirtualColumns(*res);
+            checkForUnsupportedColumns(*res, mode);
+            return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1978,22 +1997,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     validateVirtualColumns(*res);
-
-    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
-
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
+    checkForUnsupportedColumns(*res, mode);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2105,10 +2109,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(table_to_replace_name);
     }
 
     {
-        const String name_hash = getHexUIntLowercase(sipHash64(create.getDatabase() + create.getTable()));
+        const String name_hash = TemporaryReplaceTableName::calculateHash(create.getDatabase(), create.getTable());
         const String random_suffix = [&]()
         {
             if (auto txn = current_context->getZooKeeperMetadataTransaction())
@@ -2390,9 +2397,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
     else if (create.isView())
     {
-        assert(!create.temporary);
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
+        else if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }
@@ -2463,7 +2471,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -2504,12 +2512,23 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !sql_security.is_definer_current_user && !skip_check_permissions)
+    if (sql_security.definer && !skip_check_permissions)
     {
-        const auto definer_name = sql_security.definer->toString();
+        auto definer_name = sql_security.definer->toString();
+        auto & access_control = context_->getAccessControl();
 
-        /// Validate that the user exists.
-        context_->getAccessControl().getID<User>(definer_name);
+        const auto user = access_control.read<User>(definer_name);
+        if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
+        {
+            definer_name = user->getName() + ":definer";
+            sql_security.definer = std::make_shared<ASTUserNameWithHost>(definer_name);
+            auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
+            new_user->setName(definer_name);
+            new_user->authentication_methods.clear();
+            new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
+            access_control.insertOrReplace(new_user);
+        }
+
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }

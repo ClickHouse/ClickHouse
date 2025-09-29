@@ -15,7 +15,7 @@ services:
       - kafka_kerberos
     security_opt:
       - label:disable
-
+    stop_grace_period: 5s
   kerberized_kafka1:
     image: confluentinc/cp-kafka:5.2.0
     # restart: always
@@ -48,7 +48,7 @@ services:
       - label:disable
     sysctls:
       net.ipv4.ip_local_port_range: '55000 65535'
-
+    stop_grace_period: 5s
   kafka_kerberos:
     image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: kafka_kerberos
@@ -57,3 +57,4 @@ services:
       - ${KERBERIZED_KAFKA_DIR}/../../kerberos_image_config.sh:/config.sh
       - /dev/urandom:/dev/random
     ports: [88, 749]
+    stop_grace_period: 5s

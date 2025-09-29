@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 class FunctionTokens : public IFunction
@@ -22,6 +23,7 @@ class FunctionTokens : public IFunction
     static constexpr size_t arg_value = 0;
     static constexpr size_t arg_tokenizer = 1;
     static constexpr size_t arg_ngrams = 2;
+    static constexpr size_t arg_separators = 2;
 
 public:
     static constexpr auto name = "tokens";
@@ -52,7 +54,9 @@ public:
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
 
                 if (tokenizer == NgramTokenExtractor::getExternalName())
-                    optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                else if (tokenizer == SplitTokenExtractor::getExternalName())
+                    optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
         }
 
@@ -72,17 +76,51 @@ public:
 
         std::unique_ptr<ITokenExtractor> token_extractor;
 
-        const auto tokenizer_arg = arguments.size() < 2 ? SplitTokenExtractor::getExternalName()
+        const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
                                                         : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
-        if (tokenizer_arg == SplitTokenExtractor::getExternalName())
-            token_extractor = std::make_unique<SplitTokenExtractor>();
+        if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
+        {
+            token_extractor = std::make_unique<DefaultTokenExtractor>();
+        }
+        else if (tokenizer_arg == SplitTokenExtractor::getExternalName())
+        {
+            std::vector<String> separators;
+            if (arguments.size() < 3)
+                separators = {" "};
+            else
+            {
+                const ColumnArray * col_separators_non_const = checkAndGetColumn<ColumnArray>(arguments[arg_separators].column.get());
+                const ColumnConst * col_separators_const = checkAndGetColumnConst<ColumnArray>(arguments[arg_separators].column.get());
+
+                if (col_separators_const)
+                {
+                    const Array & separators_array = col_separators_const->getValue<Array>();
+                    for (const auto & separator : separators_array)
+                        separators.emplace_back(separator.safeGet<String>());
+                }
+                else if (col_separators_non_const)
+                {
+                    Field separator_field;
+                    col_separators_non_const->get(0, separator_field);
+                    Array & separator_array = separator_field.safeGet<Array>();
+                    for (const auto & separator : separator_array)
+                        separators.emplace_back(separator.safeGet<String>());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
+                }
+            }
+            token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+        }
         else if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
+        {
             token_extractor = std::make_unique<NoOpTokenExtractor>();
+        }
         else if (tokenizer_arg == NgramTokenExtractor::getExternalName())
         {
-            auto ngrams = arguments.size() < 3 ? 3
-                                               : arguments[arg_ngrams].column->getUInt(0);
+            auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
             if (ngrams < 2 || ngrams > 8)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
             token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
@@ -91,7 +129,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'default', 'ngram', and 'noop'", name);
+                "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
@@ -108,18 +146,18 @@ private:
         std::unique_ptr<ITokenExtractor> token_extractor,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
-        size_t rows_count_input,
+        size_t input_rows_count,
         ColumnString & column_result) const
     {
         auto & offsets_data = column_offsets_input.getData();
-        offsets_data.resize(rows_count_input);
+        offsets_data.resize(input_rows_count);
 
-        std::vector<String> tokens;
+        std::vector<std::string_view> tokens;
         size_t tokens_count = 0;
-        for (size_t i = 0; i < rows_count_input; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i).toView();
-            tokens = token_extractor->getTokens(input.data(), input.size());
+            tokens = token_extractor->getTokensView(input.data(), input.size());
             tokens_count += tokens.size();
 
             for (const auto & token : tokens)
@@ -133,8 +171,42 @@ private:
 
 REGISTER_FUNCTION(Tokens)
 {
-    factory.registerFunction<FunctionTokens>(FunctionDocumentation{
-        .description = "Splits the text into tokens by a given tokenizer.",
-        .category = FunctionDocumentation::Category::StringSplitting});
+    FunctionDocumentation::Description description = R"(
+Splits a string into tokens using the given tokenizer.
+The default tokenizer uses non-alphanumeric ASCII characters as separators.
+
+In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+To do so, pass the separators in order of descending length.
+For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
+)";
+    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"value", "The input string.", {"String", "FixedString"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
+        {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Default tokenizer",
+        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
+        R"(
+['test1','test2','test3','test4']
+        )"
+    },
+    {
+        "Ngram tokenizer",
+        "SELECT tokens('abc def', 'ngram', 3) AS tokens;",
+        R"(
+['abc','bc ','c d',' de','def']
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTokens>(documentation);
 }
 }

@@ -48,6 +48,7 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const final { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
@@ -121,7 +122,7 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
+    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
@@ -150,6 +151,8 @@ public:
             return scale == rhs_concrete->scale;
         return false;
     }
+
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 
@@ -201,6 +204,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

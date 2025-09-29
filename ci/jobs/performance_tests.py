@@ -278,8 +278,8 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_custom_data("previous_commits_sha") or []
-
+    commits = info.get_kv_data("previous_commits_sha") or []
+    assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
         if Shell.check(f"curl -sfI {link} > /dev/null"):
@@ -288,19 +288,29 @@ def find_prev_build(info, build_type):
     return None
 
 
+def find_base_release_build(info, build_type):
+    commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
+    assert commits, "No commits found to fetch reference build"
+    for sha in commits:
+        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        if Shell.check(f"curl -sfI {link} > /dev/null"):
+            return link
+    return None
+
+
 def main():
 
     args = parse_args()
-    test_options = args.test_options.split(",")
+    test_options = [to.strip() for to in args.test_options.split(",")]
     batch_num, total_batches = 1, 1
     compare_against_master = False
     compare_against_release = False
     for test_option in test_options:
         if "/" in test_option:
             batch_num, total_batches = map(int, test_option.split("/"))
-        if test_option == "master_head":
+        if "master_head" in test_option:
             compare_against_master = True
-        elif test_option == "prev_release":
+        elif "release_base" in test_option:
             compare_against_release = True
 
     batch_num -= 1
@@ -308,7 +318,7 @@ def main():
 
     assert (
         compare_against_master or compare_against_release
-    ), "test option: head_master or prev_release must be selected"
+    ), "test option: head_master or release_base must be selected"
 
     # release_version = CHVersion.get_release_version_as_dict()
     info = Info()
@@ -321,9 +331,8 @@ def main():
             else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
-            # TODO:
-            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_arm_release/clickhouse"
-            assert False
+            link_for_ref_ch = find_base_release_build(info, "build_arm_release")
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         else:
             assert False
     elif Utils.is_amd():
@@ -334,13 +343,28 @@ def main():
             else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
-            # TODO:
-            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_amd_release/clickhouse"
-            assert False
+            link_for_ref_ch = find_base_release_build(info, "build_amd_release")
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         else:
             assert False
     else:
         Utils.raise_with_error(f"Unknown processor architecture")
+
+    if compare_against_release:
+        print("It's a comparison against latest release baseline")
+        print(
+            "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
+        )
+        reference_sha = info.get_kv_data("release_branch_base_sha_with_predecessors")[0]
+        Shell.check(
+            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
+            verbose=True,
+        )
+        Shell.check(
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
+            verbose=True,
+            strict=True,
+        )
 
     test_keyword = args.test
 
@@ -452,7 +476,7 @@ def main():
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
         if not Path(f"{db_path}/.done").is_file():
-            Shell.check(f"mkdir -p {db_path}", verbose=True)
+            Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
@@ -492,6 +516,10 @@ def main():
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
+            # May slow down the server
+            f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
+            f"rm {perf_right_config}/config.d/serverwide_trace_collector.xml ||:",
+            f"rm {perf_right_config}/config.d/jemalloc_flush_profile.yaml ||:",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
@@ -636,7 +664,7 @@ def main():
 
         res = results[-1].is_ok()
 
-    if res and not info.is_local_run:
+    if res and not info.is_local_run and not compare_against_release:
 
         def insert_historical_data():
             cidb = CIDBCluster()

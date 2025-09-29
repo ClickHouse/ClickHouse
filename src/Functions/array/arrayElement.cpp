@@ -681,7 +681,6 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -710,9 +709,6 @@ struct ArrayElementStringImpl
             }
             else
             {
-                /// Insert an empty row.
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
                 builder.update();
             }
@@ -744,7 +740,6 @@ struct ArrayElementStringImpl
         size_t size = offsets.size();
         result_offsets.resize(size);
 
-        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
@@ -779,11 +774,7 @@ struct ArrayElementStringImpl
             }
             else
             {
-                /// Insert empty string
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
-
                 builder.update();
             }
 
@@ -2220,7 +2211,7 @@ Operator `[n]` provides the same functionality.
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -2245,9 +2236,9 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."}
+        {"arrays", "Arbitrary number of array arguments.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = "Returns a single combined array from the provided array arguments.";
+    FunctionDocumentation::ReturnedValue returned_value_null = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},

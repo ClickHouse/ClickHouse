@@ -39,7 +39,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -269,7 +268,7 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -1346,11 +1345,11 @@ SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)
 )";
     FunctionDocumentation::Syntax syntax = "if(cond, then, else)";
     FunctionDocumentation::Arguments arguments = {
-        {"cond", "The evaluated condition. [`UInt8`](/sql-reference/data-types/int-uint), `Nullable(UInt8)` or `NULL`."},
-        {"then", "The expression returned if `cond` is true."},
-        {"else", "The expression returned if `cond` is false or `NULL`."}
+        {"cond", "The evaluated condition.", {"UInt8", "Nullable(UInt8)", "NULL"}},
+        {"then", "The expression returned if `cond` is true.", {}},
+        {"else", "The expression returned if `cond` is false or `NULL`.", {}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "The result of either the `then` or `else` expressions, depending on condition `cond`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"The result of either the `then` or `else` expressions, depending on condition `cond`."};
     FunctionDocumentation::Examples examples = {
         {"Example usage", R"(
 SELECT if(1, 2 + 2, 2 + 6) AS res;
@@ -1368,9 +1367,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
 }
 
 }

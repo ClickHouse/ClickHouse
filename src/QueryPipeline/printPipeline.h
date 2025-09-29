@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
 #include <IO/Operators.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
@@ -11,18 +11,19 @@ namespace DB
   *  dot -T png < pipeline.dot > pipeline.png
   */
 template <typename Processors, typename Statuses>
-void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out)
+void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out, bool with_profile = false)
 {
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
     std::unordered_map<const void *, std::size_t> pointer_to_id;
-    auto get_proc_id = [&](const IProcessor & proc) -> std::size_t
+    auto get_proc_id = [&pointer_to_id](const IProcessor & proc) -> std::size_t
     {
         auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
         return it->second;
     };
+
 
     auto statuses_iter = statuses.begin();
 
@@ -30,7 +31,8 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     for (const auto & processor : processors)
     {
         const auto & description = processor->getDescription();
-        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID() << (description.empty() ? "" : ":") << description;
+        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID() << (description.empty() ? "" : ":")
+            << description;
 
         if (statuses_iter != statuses.end())
         {
@@ -38,7 +40,40 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
             ++statuses_iter;
         }
 
+        if (with_profile)
+        {
+            out << "\\nExecution time: " << processor->getElapsedNs()/1000.0 << " us"
+                << "\\nInput wait time: " << processor->getInputWaitElapsedNs()/1000.0 << " us"
+                << "\\nOutput wait time: " << processor->getOutputWaitElapsedNs()/1000.0 << " us"
+                << "\\nInput rows: " << processor->getProcessorDataStats().input_rows
+                << "\\nInput bytes: " << processor->getProcessorDataStats().input_bytes
+                << "\\nOutput rows: " << processor->getProcessorDataStats().output_rows
+                << "\\nOutput bytes: " << processor->getProcessorDataStats().output_bytes;
+        }
+
         out << "\"];\n";
+    }
+
+    /// Print the outputs which are not in `processors`
+    for (const auto & proc : processors)
+    {
+        for (const auto & port : proc->getOutputs())
+        {
+            if (!port.isConnected())
+                continue;
+            const IProcessor & next = port.getInputPort().getProcessor();
+            auto [it, inserted] = pointer_to_id.try_emplace(&next, pointer_to_id.size());
+            if (!inserted)
+                continue;
+
+            auto next_proc_id = it->second;
+            const auto & description = next.getDescription();
+            out << "    n" << next_proc_id ///
+                << "[label=\"" << next.getUniqID() ///
+                << ":(output)" ///
+                << (description.empty() ? "" : ":") << description ///
+                << "\"];\n";
+        }
     }
 
     out << "  }\n";
@@ -46,24 +81,23 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     /// Edges
     for (const auto & processor : processors)
     {
+        auto current_proc_id = get_proc_id(*processor);
         for (const auto & port : processor->getOutputs())
         {
             if (!port.isConnected())
                 continue;
 
-            const IProcessor & curr = *processor;
             const IProcessor & next = port.getInputPort().getProcessor();
-
-            out << "  n" << get_proc_id(curr) << " -> n" << get_proc_id(next) << ";\n";
+            out << "  n" << current_proc_id << " -> n" << get_proc_id(next) << ";\n";
         }
     }
     out << "}\n";
 }
 
 template <typename Processors>
-void printPipeline(const Processors & processors, WriteBuffer & out)
+void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
 {
-    printPipeline(processors, std::vector<IProcessor::Status>(), out);
+    printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
 }
 
 /// Prints pipeline in compact representation.

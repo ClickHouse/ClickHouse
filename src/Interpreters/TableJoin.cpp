@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 
@@ -55,11 +56,13 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace ErrorCodes
@@ -68,6 +71,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -141,6 +146,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
+    , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
@@ -150,6 +156,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
+    , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -164,6 +171,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
@@ -173,6 +181,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
     , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
+    , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -194,36 +203,36 @@ TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStric
 
 JoinKind TableJoin::kind() const
 {
-    if (join_info)
-        return join_info->kind;
+    if (join_operator)
+        return join_operator->kind;
     return table_join.kind;
 }
 
 void TableJoin::setKind(JoinKind kind)
 {
-    if (join_info)
-        join_info->kind = kind;
+    if (join_operator)
+        join_operator->kind = kind;
     table_join.kind = kind;
 }
 
 JoinStrictness TableJoin::strictness() const
 {
-    if (join_info)
-        return join_info->strictness;
+    if (join_operator)
+        return join_operator->strictness;
     return table_join.strictness;
 }
 
 bool TableJoin::hasUsing() const
 {
-    if (join_info)
-        return join_info->expression.is_using;
+    if (join_operator)
+        return false;
     return table_join.using_expression_list != nullptr;
 }
 
 bool TableJoin::hasOn() const
 {
-    if (join_info)
-        return !join_info->expression.is_using;
+    if (join_operator)
+        return true;
     return table_join.on_expression != nullptr;
 }
 
@@ -292,7 +301,7 @@ void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndT
     columns_from_joined_table = std::move(right_output_columns);
 }
 
-const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
         return result_columns_from_left_table;
@@ -576,7 +585,7 @@ bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_
 
 bool TableJoin::oneDisjunct() const
 {
-    return clauses.size() == 1;
+    return clauses.size() == 1 && !clauses.front().isEmpty();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -739,6 +748,9 @@ TableJoin::createConvertingActions(
       * This will be semantically transformed to:
       *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
       */
+    if (isSpecialStorage() && std::ranges::any_of(clauses, [](const auto & clause) { return !clause.nullsafe_compare_key_indexes.empty(); }))
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Null-safe comparison is not supported for StorageJoin");
+
     auto [left_keys_nullsafe_comparison, right_keys_nullsafe_comparison] = getKeysForNullSafeComparion(
         left_dag ? left_dag->getResultColumns() : left_sample_columns,
         right_dag ? right_dag->getResultColumns() : right_sample_columns);
@@ -807,6 +819,21 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         }
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
+
+        if (!allow_dynamic_type_in_join_keys)
+        {
+            bool is_left_key_dynamic = hasDynamicType(ltype);
+            bool is_right_key_dynamic = hasDynamicType(rtype);
+
+            if (is_left_key_dynamic || is_right_key_dynamic)
+            {
+                throw DB::Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                    is_left_key_dynamic ? left_key_name : right_key_name,
+                    is_left_key_dynamic ? ltype->getName() : rtype->getName());
+            }
+        }
 
         bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
         if (type_equals)
