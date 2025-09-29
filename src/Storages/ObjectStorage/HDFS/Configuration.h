@@ -53,7 +53,7 @@ public:
     String getDataSourceDescription() const override { return url; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    void check(ContextPtr context) const override;
+    void check(ContextPtr context) override;
     ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
