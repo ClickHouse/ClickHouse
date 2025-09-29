@@ -405,8 +405,70 @@ using FunctionTranslateUTF8 = FunctionTranslate<TranslateUTF8Impl, NameTranslate
 
 REGISTER_FUNCTION(Translate)
 {
-    factory.registerFunction<FunctionTranslateASCII>();
-    factory.registerFunction<FunctionTranslateUTF8>();
+    FunctionDocumentation::Description translate_description = R"(
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings.
+`from` and `to` must be constant ASCII strings.
+If `from` and `to` have equal sizes, each occurrence of the first character of `first` in `s` is replaced by the first character of `to`, the second character of `first` in `s` is replaced by the second character of `to`, etc.
+If `from` contains more characters than `to`, all occurrences of the characters at the end of `from` that have no corresponding character in `to` are deleted from `s`.
+Non-ASCII characters in `s` are not modified by the function.
+)";
+    FunctionDocumentation::Syntax translate_syntax = "translate(s, from, to)";
+    FunctionDocumentation::Arguments translate_arguments = {
+        {"s", "The input string to translate.", {"String"}},
+        {"from", "A constant ASCII string containing characters to replace.", {"const String"}},
+        {"to", "A constant ASCII string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue translate_returned_value = {"Returns a string with character translations applied.", {"String"}};
+    FunctionDocumentation::Examples translate_examples = {
+    {
+        "Character mapping",
+        "SELECT translate('Hello, World!', 'delor', 'DELOR') AS res",
+        R"(
+┌─res───────────┐
+│ HELLO, WORLD! │
+└───────────────┘
+        )"
+    },
+    {
+        "Different lengths",
+        "SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res",
+        R"(
+┌─res───┐
+│ CLICK │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn translate_introduced_in = {22, 7};
+    FunctionDocumentation::Category translate_category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
+
+    FunctionDocumentation::Description utf8_description = R"(
+Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+)";
+    FunctionDocumentation::Syntax utf8_syntax = "translateUTF8(s, from, to)";
+    FunctionDocumentation::Arguments utf8_arguments = {
+        {"s", "UTF-8 input string to translate.", {"String"}},
+        {"from", "A constant UTF-8 string containing characters to replace.", {"const String"}},
+        {"to", "A constant UTF-8 string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue utf8_returned_value = {"Returns a `String` data type value.", {"String"}};
+    FunctionDocumentation::Examples utf8_examples = {
+    {
+        "UTF-8 character translation",
+        "SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;",
+        R"(
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateUTF8>(utf8_documentation);
 }
 
 }

@@ -23,7 +23,7 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"""cd /unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
+            f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
 
@@ -92,7 +92,7 @@ def execute_spark_query(node, query_text):
         print("STDERR:\n", stderr)
 
         try:
-            logs = node.exec_in_container(["tail", "-n", "50", "/unitycatalog/uc.log"])
+            logs = node.exec_in_container(["tail", "-n", "50", "/var/lib/clickhouse/user_files/unitycatalog/uc.log"])
             print("Last 50 lines of UC log:\n", logs)
         except subprocess.CalledProcessError as log_e:
             print(f"Cannot read log file: {str(log_e)}")
@@ -166,7 +166,7 @@ def test_multiple_schemes_tables(started_cluster):
     execute_multiple_spark_queries(
         node1,
         [
-            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'"
+            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'"
             for i in range(10)
         ],
     )
@@ -180,7 +180,7 @@ def test_multiple_schemes_tables(started_cluster):
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
     multi_schema_tables = list(
         sorted(
@@ -211,7 +211,7 @@ def test_complex_table_schema(started_cluster, use_delta_kernel):
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
     execute_spark_query(node1, create_query)
     execute_spark_query(
         node1,
@@ -225,7 +225,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     complex_schema_tables = list(
@@ -271,7 +271,7 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
     execute_spark_query(node1, create_query)
     execute_spark_query(
         node1,
@@ -285,7 +285,7 @@ create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     ntz_tables = list(
@@ -343,8 +343,8 @@ def test_no_permission_and_list_tables(started_cluster):
     table_name_1 = f"table_granted"
     table_name_2 = f"table_not_granted"
 
-    create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/tmp/{schema_name}/{table_name_1}'"
-    create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/tmp/{schema_name}/{table_name_2}'"
+    create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_1}'"
+    create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_2}'"
 
     execute_multiple_spark_queries(node1, [create_query_2, create_query_1])
 
@@ -360,7 +360,7 @@ create database {schema_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     # This query will fail if bug exists
@@ -383,7 +383,7 @@ def test_view_with_void(started_cluster, use_delta_kernel):
     table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     view_name = f"test_view_{table_name}"
     schema = "event_date DATE, event_time TIMESTAMP"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
     execute_spark_query(node1, create_query)
     execute_spark_query(
         node1,

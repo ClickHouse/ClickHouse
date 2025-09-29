@@ -6,6 +6,7 @@ sidebar_label: 'JSON'
 sidebar_position: 63
 slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
+doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
@@ -25,12 +26,6 @@ import Link from '@docusaurus/Link'
 <br/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
-
-If you want to use the `JSON` type, and for the examples on this page, please use:
-
-```sql
-SET enable_json_type = 1
-```
 
 :::note
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
@@ -124,7 +119,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 #### CAST from `Map` to `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
-SET enable_variant_type=1, use_variant_as_common_type=1;
+SET use_variant_as_common_type=1;
 SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
@@ -301,6 +296,10 @@ Probably the passed UUID is unquoted:
 while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CAST(__table1.json.a.g, 'UUID'_String) UUID : 0'. 
 (NOT_IMPLEMENTED)
 ```
+
+:::note
+To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](../../operations/settings/merge-tree-settings.md#write_marks_for_substreams_in_compact_parts) is enabled.
+:::
 
 ## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
 
@@ -673,7 +672,7 @@ By default, this limit is `1024`, but you can change it in the type declaration 
 
 When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure. 
 It's still possible to read such paths as sub-columns, 
-but it will require reading the entire shared data structure to extract the values of this path. 
+but it might be less efficient ([see section about shared data](#shared-data-structure)). 
 This limit is needed to avoid having an enormous number of different sub-columns that can make the table unusable.
 
 Let's see what happens when the limit is reached in a few different scenarios.
@@ -771,15 +770,72 @@ ORDER BY _part ASC
 
 As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and moved paths `d` and `e` to a shared data structure.
 
+## Shared data structure {#shared-data-structure}
+
+As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
+In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
+
+### Shared data structure in memory {#shared-data-structure-in-memory}
+
+In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
+To extract a path subcolumn from it, we just iterate over all rows in this `Map` column and try to find the requested path and its values.
+
+### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
+
+In [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
+Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
+and `advanced`.
+
+The serialization version is controlled by MergeTree
+settings [object_shared_data_serialization_version](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version)
+and [object_shared_data_serialization_version_for_zero_level_parts](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version_for_zero_level_parts) 
+(zero level part is the part created during inserting data into the table, during merges parts have higher level).
+
+Note: changing shared data structure serialization is supported only
+for `v3` [object serialization version](../../operations/settings/merge-tree-settings.md#object_serialization_version)
+
+#### Map {#shared-data-map}
+
+In `map` serialization version shared data is serialized as a single column with type `Map(String, String)` the same as it's stored in
+memory. To read path sub-column from this type of serialization ClickHouse reads the whole `Map` column and
+extracts the requested path in memory.
+
+This serialization is efficient for writing data and reading the whole `JSON` column, but it's not efficient for reading paths sub-columns.
+
+#### Map with buckets {#shared-data-map-with-buckets} 
+
+In `map_with_buckets` serialization version shared data is serialized as `N` columns ("buckets") with type `Map(String, String)`.
+Each such bucket contains only subset of paths. To read path sub-column from this type of serialization ClickHouse
+reads the whole `Map` column from a single bucket and extracts the requested path in memory.
+
+This serialization is less efficient for writing data and reading the whole `JSON` column, but it's more efficient for reading paths sub-columns
+because it reads data only from required buckets.
+
+Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](
+../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_compact_part) (8 by default)
+and [object_shared_data_buckets_for_wide_part](
+../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_wide_part) (32 by default).
+
+#### Advanced {#shared-data-advanced}
+
+In `advanced` serialization version shared data is serialized in a special data structure that maximizes the performance
+of paths sub-columns reading by storing some additional information that allows to read only the data of requested paths.
+This serialization also supports buckets, so each bucket contains only sub-set of paths.
+
+This serialization is quite inefficient for writing data (so it's not recommended to use this serialization for zero-level parts), reading the whole `JSON` column is slightly less efficient compared to `map` serialization, but it's very efficient for reading paths sub-columns.
+
+Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
+`map` and `map_with_buckets` serializations.
+
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
-- [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
-- [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
-- [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
-- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
-- [`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
-- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
+- [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
+- [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
+- [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
+- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
+- [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
+- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
 - [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
 - [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 
@@ -975,7 +1031,7 @@ Before creating `JSON` column and loading data into it, consider the following t
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient. 
-  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` > 10 000.
+  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
 
 ## Further Reading {#further-reading}
 

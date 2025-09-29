@@ -412,6 +412,15 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
               << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
               << backQuoteIfNeed(to_table_id.table_name);
     }
+    else if (targets && targets->hasTableASTWithQueryParams(ViewTarget::To))
+    {
+        auto to_table_ast = targets->getTableASTWithQueryParams(ViewTarget::To);
+
+        chassert(to_table_ast);
+
+        ostr << " " << toStringView(Keyword::TO) << " ";
+        to_table_ast->format(ostr, settings, state, frame);
+    }
 
     if (auto to_inner_uuid = getTargetInnerUUID(ViewTarget::To); to_inner_uuid != UUIDHelpers::Nil)
     {

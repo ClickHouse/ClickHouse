@@ -5,7 +5,7 @@ Actions: INPUT : 0 -> __table1.id Int32 : 0
 Positions: 1
   CreatingSets (Create sets before main query execution)
   Header: __table1.id Int32
-    Filter (( + Change column names to column identifiers))
+    Filter (( + ( + Change column names to column identifiers)))
     Header: __table1.id Int32
     Filter column: in(__table1.id, set column) (removed)
     Actions: INPUT : 0 -> id Int32 : 0
@@ -23,10 +23,10 @@ Positions: 1
 333	333
 Expression ((Project names + Projection))
   CreatingSets (Create sets before main query execution)
-    Expression ((WHERE + ( + (Join filter + Change column names to column identifiers))))
+    Expression ((WHERE + (( + ) + (Join filter + Change column names to column identifiers))))
       ReadFromMergeTree (system.query_log)
     CreatingSet (Create set for subquery)
-      Expression ((JOIN keys + Change column names to column identifiers))
+      Expression ((JOIN keys + ( + Change column names to column identifiers)))
         ReadFromSystemOneBlock
 0
 1	1

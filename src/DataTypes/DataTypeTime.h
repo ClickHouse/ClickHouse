@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/TimezoneMixin.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {
@@ -29,11 +29,14 @@ namespace DB
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-class DataTypeTime final : public DataTypeNumberBase<Int32>, public TimezoneMixin
+class DataTypeTime final : public DataTypeNumberBase<Int32>
 {
 public:
-    explicit DataTypeTime(std::string_view time_zone_name = "");
-    explicit DataTypeTime(const TimezoneMixin & time_zone);
+    explicit DataTypeTime() = default;
+
+    bool hasExplicitTimeZone() const { return false; }
+    const DateLUTImpl & getTimeZone() const;
+    String getTimeZoneID() const { return {}; }
 
     static constexpr auto family_name = "Time";
 

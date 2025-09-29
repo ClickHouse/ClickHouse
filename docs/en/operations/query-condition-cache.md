@@ -4,12 +4,13 @@ sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
 title: 'Query condition cache'
+doc_type: 'guide'
 ---
 
 # Query condition cache
 
 :::note
-The query condition cache only works when [allow_experimental_analyzer](https://clickhouse.com/docs/operations/settings/settings#allow_experimental_analyzer) is set to true, which is the default value.
+The query condition cache only works when [enable_analyzer](https://clickhouse.com/docs/operations/settings/settings#enable_analyzer) is set to true, which is the default value.
 :::
 
 Many real-world workloads involve repeated queries against the same or almost the same data (for instance, previously existing data plus new data).

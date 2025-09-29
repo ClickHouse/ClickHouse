@@ -341,14 +341,34 @@ private:
 
 REGISTER_FUNCTION(Printf)
 {
-    factory.registerFunction<FunctionPrintf>(
-        FunctionDocumentation{.description=R"(
+    FunctionDocumentation::Description description = R"(
 The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .category = FunctionDocumentation::Category::StringReplacement
-});
+Literal `%` character can be escaped by `%%`.
+)";
+    FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"format", "The format string with `%` specifiers.", {"String"}},
+        {"sub1, sub2, ...", "Optional. Zero or more values to substitute into the format string.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a formatted string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "C++-style formatting",
+        "SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);",
+        R"(
+┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
+│ %Hello World 2024                            │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
+    factory.registerFunction<FunctionPrintf>(documentation);
 }
 
 }

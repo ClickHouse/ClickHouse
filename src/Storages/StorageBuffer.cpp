@@ -1089,18 +1089,13 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
 void StorageBuffer::backgroundFlush()
 {
+    try
     {
-        auto thread_group = ThreadGroup::createForBackgroundProcess(getContext());
-        ThreadGroupSwitcher group_switcher(thread_group, "BufferBgrFlush");
-
-        try
-        {
-            flushAllBuffers(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        flushAllBuffers(true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     reschedule();
@@ -1198,7 +1193,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }
 

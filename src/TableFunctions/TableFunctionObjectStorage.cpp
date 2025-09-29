@@ -1,3 +1,4 @@
+#include <string_view>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -25,7 +26,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-
+#include <Storages/HivePartitioningUtils.h>
 
 namespace DB
 {
@@ -40,7 +41,13 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsString disk;
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
@@ -52,12 +59,73 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_l
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration(ContextPtr context) const
 {
     if (!configuration)
     {
         if constexpr (is_data_lake)
-            configuration = std::make_shared<Configuration>(settings);
+        {
+            const auto disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+                ? (*settings)[DataLakeStorageSetting::disk].value
+                : "";
+            if (!disk_name.empty())
+            {
+                auto disk = context->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+#if USE_AWS_S3 && USE_AVRO
+                case ObjectStorageType::S3:
+                    if (Definition::object_storage_type != "s3")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+#if USE_PARQUET
+                    else
+                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+#endif
+                    break;
+#endif
+#if USE_AZURE_BLOB_STORAGE && USE_AVRO
+                case ObjectStorageType::Azure:
+                    if (Definition::name != "iceberg" &&
+                        Definition::name != "icebergCluster" &&
+                        Definition::name != "deltaLake" &&
+                        Definition::name != "deltaLakeCluster" &&
+                        Definition::object_storage_type != "azure")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+#if USE_PARQUET
+                    else
+                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+#endif
+                    break;
+#endif
+#if USE_AVRO
+                case ObjectStorageType::Local:
+                    if (Definition::name != "iceberg" &&
+                        Definition::name != "icebergCluster" &&
+                        Definition::name != "deltaLake" &&
+                        Definition::name != "deltaLakeCluster" &&
+                        Definition::object_storage_type != "local")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+#if USE_PARQUET
+                    else
+                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+#endif
+                    break;
+#endif
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<Configuration>(settings);
+        }
         else
             configuration = std::make_shared<Configuration>();
     }
@@ -148,6 +216,14 @@ ColumnsDescription TableFunctionObjectStorage<
             sample_path,
             context);
 
+        HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+            columns,
+            configuration,
+            sample_path,
+            /* inferred_schema */ true,
+            /* format_settings */ std::nullopt,
+            context);
+
         return columns;
     }
     return parseColumnsListFromString(configuration->structure, context);
@@ -203,9 +279,23 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         client_info.collaborate_with_initiator &&
         context->hasClusterFunctionReadTaskCallback();
 
+    std::string disk_name;
+    if constexpr (is_data_lake)
+    {
+        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+            ? (*settings)[DataLakeStorageSetting::disk].value
+            : "";
+    }
+
+    ObjectStoragePtr current_object_storage;
+    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
+        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
+    else
+        current_object_storage = getObjectStorage(context, !is_insert_query);
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !is_insert_query),
+        current_object_storage,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -328,6 +418,7 @@ template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConf
 
 #if USE_AVRO && USE_AWS_S3
 template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
@@ -340,6 +431,11 @@ template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageH
 
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+#endif
+
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
 #if USE_AWS_S3

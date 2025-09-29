@@ -25,14 +25,14 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
 {
     String client_hostname = "localhost";
     String server_hostname = "localhost";
-    String endpoint = "test";
+    String path;
     String region = default_region;
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
-           {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
+           {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
@@ -47,7 +47,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, endpoint, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -68,6 +68,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> glue_catalog;
     std::optional<Catalog> hive_catalog;
     std::optional<Catalog> rest_catalog;
+    std::optional<Catalog> unity_catalog;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
@@ -84,7 +85,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
            {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
            {"hive", [&](const JSONObjectType & value) { hive_catalog = loadCatalog(value, "", 9083); }},
-           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }}};
+           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }},
+           {"unity", [&](const JSONObjectType & value) { unity_catalog = loadCatalog(value, "", 8181); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
@@ -112,7 +114,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
         query_log_file,
         glue_catalog,
         hive_catalog,
-        rest_catalog));
+        rest_catalog,
+        unity_catalog));
 }
 
 static PerformanceMetric
@@ -151,9 +154,9 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         String input = String(value.getString());
         std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
-        for (const auto word : std::views::split(input, delim))
+        for (auto word : std::views::split(input, delim))
         {
-            const auto & entry = std::string_view(word);
+            const std::string_view entry(word.begin(), word.end());
 
             if (entries.find(entry) == entries.end())
             {
@@ -182,11 +185,11 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
         using std::operator""sv;
         constexpr auto delim{","sv};
 
-        for (const auto word : std::views::split(String(value.getString()), delim))
+        for (auto word : std::views::split(String(value.getString()), delim))
         {
             uint32_t result;
-            const auto & sv = std::string_view(word);
-            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+            const std::string_view sv(word.begin(), word.end());
+            const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
             if (ec == std::errc::invalid_argument)
             {
@@ -231,7 +234,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"int16", allow_int16},
            {"int64", allow_int64},
            {"int128", allow_int128},
-           {"float", allow_floating_points},
+           {"bfloat16", allow_bfloat16},
+           {"float32", allow_float32},
+           {"float64", allow_float64},
            {"date", allow_dates},
            {"date32", allow_date32},
            {"time", allow_time},
@@ -300,7 +305,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"replicated", allow_replicated},
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
-           {"arrowflight", allow_arrowflight}};
+           {"arrowflight", allow_arrowflight},
+           {"alias", allow_alias}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -315,6 +321,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
              server_file_path = std::filesystem::path(String(value.getString()));
              fuzz_server_out = client_file_path / "fuzz.data";
          }},
+        {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
@@ -370,6 +377,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
+        {"dolor", [&](const JSONObjectType & value) { dolor_server = loadServerCredentials(value, "dolor", 8080); }},
         {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
         {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},
         {"http_servers", [&](const JSONObjectType & value) { http_servers = loadArray(value); }},
@@ -497,18 +505,19 @@ String FuzzConfig::getHTTPURL(const bool secure) const
     return fmt::format("http{}://{}:{}", secure ? "s" : "", this->host, secure ? this->http_secure_port : this->http_port);
 }
 
-void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
+void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
 {
     String buf;
+    String current_schema;
     String current_table;
     DB::Strings next_cols;
 
+    tables.clear();
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
-                "c.database = 'system' INTO OUTFILE "
-                "'{}' TRUNCATE FORMAT TabSeparated;",
+                "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
+                "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
@@ -518,18 +527,21 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
             {
                 buf.pop_back();
             }
-            const auto tabchar = buf.find('\t');
-            const auto ntable = buf.substr(0, tabchar);
-            const auto ncol = buf.substr(tabchar + 1);
+            const size_t pos1 = buf.find('\t');
+            const String nschema = buf.substr(0, pos1);
+            const size_t pos2 = buf.find('\t', pos1 + 1);
+            const String ntable = buf.substr(pos1 + 1, pos2 - pos1 - 1);
+            const String ncol = buf.substr(pos2 + 1);
 
-            if (ntable != current_table && !next_cols.empty())
+            if (nschema != current_schema || ntable != current_table)
             {
-                if (current_table != "stack_trace"
+                if (!next_cols.empty() && current_table != "stack_trace"
                     && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
                 {
-                    tables[current_table] = next_cols;
+                    tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
                 next_cols.clear();
+                current_schema = nschema;
                 current_table = ntable;
             }
             next_cols.emplace_back(ncol);

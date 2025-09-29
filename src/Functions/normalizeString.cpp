@@ -171,10 +171,116 @@ using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<Norma
 
 REGISTER_FUNCTION(NormalizeUTF8)
 {
-    factory.registerFunction<FunctionNormalizeUTF8NFC>();
-    factory.registerFunction<FunctionNormalizeUTF8NFD>();
-    factory.registerFunction<FunctionNormalizeUTF8NFKC>();
-    factory.registerFunction<FunctionNormalizeUTF8NFKD>();
+    FunctionDocumentation::Description description_nfc = R"(
+Normalizes a UTF-8 string according to the [NFC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+)";
+    FunctionDocumentation::Syntax syntax_nfc = "normalizeUTF8NFC(str)";
+    FunctionDocumentation::Arguments arguments_nfc = {
+        {"str", "UTF-8 encoded input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nfc = {"Returns the NFC normalized form of the UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples_nfc = {
+    {
+        "Usage example",
+        R"(
+SELECT
+'é' AS original, -- e + combining acute accent (U+0065 + U+0301)
+length(original),
+normalizeUTF8NFC('é') AS nfc_normalized, -- é (U+00E9)
+length(nfc_normalized);
+        )",
+        R"(
+┌─original─┬─length(original)─┬─nfc_normalized─┬─length(nfc_normalized)─┐
+│ é        │                2 │ é              │                      2 │
+└──────────┴──────────────────┴────────────────┴────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
+
+    FunctionDocumentation::Description description_nfd = R"(
+Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+)";
+    FunctionDocumentation::Syntax syntax_nfd = "normalizeUTF8NFD(str)";
+    FunctionDocumentation::Arguments arguments_nfd = {
+        {"str", "UTF-8 encoded input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nfd = {"Returns the NFD normalized form of the UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples_nfd = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    'é' AS original, -- é (U+00E9)
+    length(original),
+    normalizeUTF8NFD('é') AS nfd_normalized, -- e + combining acute (U+0065 + U+0301)
+    length(nfd_normalized);
+        )",
+        R"(
+┌─original─┬─length(original)─┬─nfd_normalized─┬─length(nfd_normalized)─┐
+│ é        │                2 │ é              │                      3 │
+└──────────┴──────────────────┴────────────────┴────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, returned_value_nfd, examples_nfd, introduced_in, category};
+
+    FunctionDocumentation::Description description_nfkc = R"(
+Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+)";
+    FunctionDocumentation::Syntax syntax_nfkc = "normalizeUTF8NFKC(str)";
+    FunctionDocumentation::Arguments arguments_nfkc = {
+        {"str", "UTF-8 encoded input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nfkc = {"Returns the NFKC normalized form of the UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples_nfkc = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    '① ② ③' AS original,                            -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    )",
+        R"(
+┌─original─┬─nfkc_normalized─┐
+│ ① ② ③  │ 1 2 3           │
+└──────────┴─────────────────┘
+    )"
+    }
+    };
+    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, returned_value_nfkc, examples_nfkc, introduced_in, category};
+
+    FunctionDocumentation::Description description_nfkd = R"(
+Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+)";
+    FunctionDocumentation::Syntax syntax_nfkd = "normalizeUTF8NFKD(str)";
+    FunctionDocumentation::Arguments arguments_nfkd = {
+        {"str", "UTF-8 encoded input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nfkd = {"Returns the NFKD normalized form of the UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples_nfkd = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+        )",
+        R"(
+┌─original─┬─nfkd_normalized─┐
+│ H₂O²     │ H2O2            │
+└──────────┴─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, returned_value_nfkd, examples_nfkd, introduced_in, category};
+
+    factory.registerFunction<FunctionNormalizeUTF8NFC>(documentation_nfc);
+    factory.registerFunction<FunctionNormalizeUTF8NFD>(documentation_nfd);
+    factory.registerFunction<FunctionNormalizeUTF8NFKC>(documentation_nfkc);
+    factory.registerFunction<FunctionNormalizeUTF8NFKD>(documentation_nfkd);
 }
 
 }
