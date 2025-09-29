@@ -148,10 +148,12 @@ public:
     virtual void truncateFile(const std::string & src_path, size_t target_size) = 0;
 
     virtual std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction( /// NOLINT
+
+    // return nullptr if file content is not known in transaction
+    virtual std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint) const = 0;
 
     virtual bool isTransactional() const = 0;
 

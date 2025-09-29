@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <IO/ReadBufferFromFileBase.h>
 #include <config.h>
 
@@ -266,6 +267,13 @@ public:
         return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
     }
 
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const override;
+
+    bool isTransactional() const override
+    {
+        return delegate_transaction->isTransactional();
+    }
+
     void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
     {
         auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
@@ -275,11 +283,6 @@ public:
         delegate_transaction->validateTransaction(std::move(wrapped));
     }
 
-    bool isTransactional() const override
-    {
-        return delegate_transaction->isTransactional();
-    }
-
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
         bool autocommit,
@@ -287,15 +290,6 @@ private:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings);
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint);
-    }
 
     String wrappedPath(const String & path) const
     {
