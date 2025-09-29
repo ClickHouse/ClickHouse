@@ -1318,7 +1318,7 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, /* if_not_updated_before */ true);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());

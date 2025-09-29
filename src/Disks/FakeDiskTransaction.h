@@ -45,11 +45,6 @@ public:
         disk.createFile(path);
     }
 
-    void clearDirectory(const std::string & path) override
-    {
-        disk.createDirectory(path);
-    }
-
     void moveDirectory(const std::string & from_path, const std::string & to_path) override
     {
         disk.moveDirectory(from_path, to_path);

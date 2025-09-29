@@ -58,9 +58,6 @@ public:
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const std::string & path) = 0;
 
-    /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const std::string & path) = 0;
-
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
 

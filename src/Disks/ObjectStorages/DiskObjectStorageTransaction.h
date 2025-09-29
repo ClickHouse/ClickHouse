@@ -88,8 +88,6 @@ public:
 
     void createDirectories(const std::string & path) override;
 
-    void clearDirectory(const std::string & path) override;
-
     void moveDirectory(const std::string & from_path, const std::string & to_path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;

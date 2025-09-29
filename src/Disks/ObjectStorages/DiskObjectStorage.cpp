@@ -392,15 +392,6 @@ void DiskObjectStorage::createDirectories(const String & path)
     }
 }
 
-
-void DiskObjectStorage::clearDirectory(const String & path)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->clearDirectory(path);
-    transaction->commit();
-}
-
-
 void DiskObjectStorage::removeDirectory(const String & path)
 {
     if (!isDirectoryEmpty(path))
