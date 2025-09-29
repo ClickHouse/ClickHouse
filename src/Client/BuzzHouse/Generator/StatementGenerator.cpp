@@ -3691,7 +3691,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + 1))
+               + show_quota + show_access + 1))
     {
         st->set_access(rg.nextBool());
     }
@@ -3701,7 +3701,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + 1))
+               + show_quota + show_access + show_cluster + 1))
     {
         st->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
     }
@@ -3711,7 +3711,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + 1))
+               + show_quota + show_access + show_cluster + show_clusters + 1))
     {
         st->set_clusters(rg.nextBool());
     }
@@ -3721,7 +3721,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + show_settings + 1))
+               + show_quota + show_access + show_cluster + show_clusters + show_settings + 1))
     {
         st->set_settings(rg.nextBool());
     }
@@ -3731,7 +3731,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + 1))
+               + show_quota + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + 1))
     {
         st->set_filesystem_caches(rg.nextBool());
     }
@@ -3741,7 +3741,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines + 1))
+               + show_quota + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines + 1))
     {
         st->set_engines(rg.nextBool());
     }
@@ -3751,7 +3751,8 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines + show_functions + 1))
+               + show_quota + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines
+               + show_functions + 1))
     {
         st->set_functions(rg.nextBool());
     }
@@ -3761,8 +3762,8 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
             < (show_table + show_system_table + show_view + show_dictionary + show_database + show_databases + show_database_dictionaries
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + show_policies
                + show_policies_system_table + show_processlist + show_grants + show_users + show_roles + show_profiles + show_quotas
-               + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines + show_functions
-               + show_merges + 1))
+               + show_quota + show_access + show_cluster + show_clusters + show_settings + show_filesystem_caches + show_engines
+               + show_functions + show_merges + 1))
     {
         st->set_merges(rg.nextBool());
     }
