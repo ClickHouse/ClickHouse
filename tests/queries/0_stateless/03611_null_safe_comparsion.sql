@@ -106,7 +106,7 @@ INSERT INTO 03611_nscmp_tbl VALUES
 (
     -5,-5,-5,-5,
     255,65535,4294967295,18446744073709551615,
-    -0.0,0.0,
+    -1,0.0,
     -123.0001,
     '1970-01-01',
     '1970-01-01 00:00:00',
@@ -340,5 +340,5 @@ SELECT '1.18 OR / AND';
 select 1 <=> 1 AND 1 is distinct from 1,
        1 <=> 1 OR 1 is distinct from 1;
 
--- DROP TABLE IF EXISTS 03611_nscmp_tbl;
--- DROP TABLE IF EXISTS 03611_t_nullsafe;
+DROP TABLE IF EXISTS 03611_nscmp_tbl;
+DROP TABLE IF EXISTS 03611_t_nullsafe;

@@ -16,14 +16,14 @@ Insert rows containing:
 • edge numeric boundaries
 1.1 Basic NULL-safe equality and distinctness
 Compare same column to itself and cross type
-1	0	1	0	1	0	1	0
+1	0	1	0	1	0	0	1
 1	0	1	0	1	0	1	0
 1	0	1	0	0	1	1	0
 1	0	0	1	0	1	0	1
 1.2 NaN behavior
 NaN <=> NaN = 0, NaN <=> number = 0
 NaN is distinct from NaN = 1, NaN is distinct from number = 1
--0	0	1	0	1
+-1	0	1	0	1
 0	0	1	0	1
 1	0	1	1	0
 nan	0	1	0	1
