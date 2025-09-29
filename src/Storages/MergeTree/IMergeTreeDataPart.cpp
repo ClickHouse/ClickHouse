@@ -1277,6 +1277,9 @@ void IMergeTreeDataPart::writeMetadataVersion(ContextPtr context, int32_t metada
 {
     getDataPartStorage().beginTransaction();
     {
+        // we remove old file first to avoid changing it context in the hardlinked files
+        getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
+
         auto out_metadata = getDataPartStorage().writeFile(METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         writeText(metadata_version_, *out_metadata);
         out_metadata->finalize();
