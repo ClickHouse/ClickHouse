@@ -14,7 +14,6 @@ public:
         RangesInDataParts parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
-        const IndexReadTasks & index_read_tasks_,
         bool has_limit_below_one_block_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,

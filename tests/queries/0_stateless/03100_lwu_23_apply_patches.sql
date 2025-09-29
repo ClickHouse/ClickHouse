@@ -4,7 +4,7 @@
 DROP TABLE IF EXISTS t_apply_patches SYNC;
 DROP TABLE IF EXISTS t_apply_patches_smt SYNC;
 
-SET enable_lightweight_update = 1;
+SET allow_experimental_lightweight_update = 1;
 
 CREATE TABLE t_apply_patches (a UInt64, b UInt64, c UInt64, d UInt64)
 ENGINE = MergeTree

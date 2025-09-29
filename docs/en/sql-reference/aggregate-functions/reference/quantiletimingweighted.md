@@ -4,7 +4,6 @@ description: 'With the determined precision computes the quantile of a numeric d
 sidebar_position: 181
 slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
 title: 'quantileTimingWeighted'
-doc_type: 'reference'
 ---
 
 # quantileTimingWeighted
@@ -89,6 +88,7 @@ Result:
 # quantilesTimingWeighted
 
 Same as `quantileTimingWeighted`, but accept multiple parameters with quantile levels and return an Array filled with many values of that quantiles.
+
 
 **Example**
 

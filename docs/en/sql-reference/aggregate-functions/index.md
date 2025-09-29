@@ -4,7 +4,6 @@ sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
 slug: /sql-reference/aggregate-functions/
 title: 'Aggregate Functions'
-doc_type: 'reference'
 ---
 
 # Aggregate functions
@@ -15,6 +14,7 @@ ClickHouse also supports:
 
 - [Parametric aggregate functions](/sql-reference/aggregate-functions/parametric-functions), which accept other parameters in addition to columns.
 - [Combinators](/sql-reference/aggregate-functions/combinators), which change the behavior of aggregate functions.
+
 
 ## NULL processing {#null-processing}
 

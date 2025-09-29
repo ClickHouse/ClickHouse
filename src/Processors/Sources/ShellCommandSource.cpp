@@ -2,7 +2,6 @@
 
 #include <poll.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -160,8 +159,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (num_events <= 0)
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;
@@ -374,16 +373,12 @@ namespace
             context_for_reading->setSetting("input_format_custom_detect_header", false);
             context = context_for_reading;
 
-            auto thread_group = CurrentThread::getGroup();
-
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
-
                         try
                         {
                             task();
@@ -392,15 +387,11 @@ namespace
                         {
                             std::lock_guard lock(send_data_lock);
                             exception_during_send_data = std::current_exception();
-                        }
 
-                        // In case of exception, the task should be reset in thread
-                        // worker function or else it breaks d'tor invariants such
-                        // as in ~WriteBuffer.
-                        //
-                        // For completed execution, the task reset allows to account
-                        // memory deallocation in sending data thread group.
-                        task = {};
+                            /// task should be reset inside catch block or else it breaks d'tor
+                            /// invariants such as in ~WriteBuffer.
+                            task = {};
+                        }
                     });
                 }
                 size_t max_block_size = configuration.max_block_size;

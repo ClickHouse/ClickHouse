@@ -3,7 +3,6 @@ description: 'Computes an approximate quantile of a numeric data sequence.'
 sidebar_position: 172
 slug: /sql-reference/aggregate-functions/reference/quantiledeterministic
 title: 'quantileDeterministic'
-doc_type: 'reference'
 ---
 
 # quantileDeterministic

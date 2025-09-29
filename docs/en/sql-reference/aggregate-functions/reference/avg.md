@@ -3,7 +3,6 @@ description: 'Calculates the arithmetic mean.'
 sidebar_position: 112
 slug: /sql-reference/aggregate-functions/reference/avg
 title: 'avg'
-doc_type: 'reference'
 ---
 
 # avg

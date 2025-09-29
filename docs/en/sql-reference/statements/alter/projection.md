@@ -4,7 +4,6 @@ sidebar_label: 'PROJECTION'
 sidebar_position: 49
 slug: /sql-reference/statements/alter/projection
 title: 'Projections'
-doc_type: 'reference'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
@@ -201,6 +200,7 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 ## CLEAR PROJECTION {#clear-projection}
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 

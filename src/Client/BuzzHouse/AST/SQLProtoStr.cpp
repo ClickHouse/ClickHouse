@@ -77,11 +77,9 @@ CONV_FN(Database, db)
     ret += db.database();
 }
 
-void TableToString(String & ret, const bool quote, const Table & tab)
+CONV_FN(Table, tab)
 {
-    ret += quote ? "`" : "";
     ret += tab.table();
-    ret += quote ? "`" : "";
 }
 
 CONV_FN(Function, func)
@@ -195,7 +193,7 @@ CONV_FN(ExprSchemaTable, st)
         DatabaseToString(ret, st.database());
         ret += ".";
     }
-    TableToString(ret, true, st.table());
+    TableToString(ret, st.table());
 }
 
 CONV_FN_QUOTE(TypeName, top);
@@ -296,7 +294,7 @@ CONV_FN(ExprSchemaTableColumn, stc)
     }
     if (stc.has_table())
     {
-        TableToString(ret, true, stc.table());
+        TableToString(ret, stc.table());
         ret += ".";
     }
     ExprColumnToString(ret, stc.col());
@@ -1672,11 +1670,8 @@ CONV_FN(ComplicatedExpr, expr)
             ret += ")";
             break;
         case ExprType::kTable:
-            TableToString(ret, true, expr.table());
+            TableToString(ret, expr.table());
             ret += ".*";
-            break;
-        case ExprType::kLambda:
-            LambdaExprToString(ret, expr.lambda());
             break;
         default:
             ret += "1";
@@ -1753,23 +1748,17 @@ CONV_FN(JoinConstraint, jc)
 CONV_FN(JoinCore, jcc)
 {
     const bool has_cross_or_paste = jcc.join_op() > JoinType::J_FULL;
-    const bool has_join_const = !has_cross_or_paste && jcc.has_join_const();
 
     if (jcc.global())
     {
         ret += " GLOBAL";
     }
-    if (has_join_const && !jcc.const_on_right())
-    {
-        ret += " ";
-        ret += JoinConst_Name(jcc.join_const()).substr(2);
-    }
-    if (jcc.has_join_op())
+    if (jcc.join_op() != JoinType::J_INNER || !jcc.has_join_const() || jcc.join_const() < JoinConst::J_SEMI)
     {
         ret += " ";
         ret += JoinType_Name(jcc.join_op()).substr(2);
     }
-    if (has_join_const && jcc.const_on_right())
+    if (!has_cross_or_paste && jcc.has_join_const())
     {
         ret += " ";
         ret += JoinConst_Name(jcc.join_const()).substr(2);
@@ -1818,31 +1807,6 @@ CONV_FN(JoinClause, jc)
     }
 }
 
-CONV_FN(KeyValuePair, kvp)
-{
-    ret += kvp.key();
-    ret += " = '";
-    ret += kvp.value();
-    ret += "'";
-}
-
-CONV_FN(SetValue, setv)
-{
-    ret += setv.property();
-    ret += " = ";
-    ret += setv.value();
-}
-
-CONV_FN(SettingValues, setv)
-{
-    SetValueToString(ret, setv.set_value());
-    for (int i = 0; i < setv.other_values_size(); i++)
-    {
-        ret += ", ";
-        SetValueToString(ret, setv.other_values(i));
-    }
-}
-
 CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
@@ -1854,25 +1818,20 @@ CONV_FN(FileFunc, ff)
     }
     ret += "'";
     ret += ff.path();
-    ret += "'";
+    ret += "', '";
     if (ff.has_informat())
     {
-        ret += ", '";
         ret += InFormat_Name(ff.informat()).substr(3);
-        ret += "'";
     }
     else if (ff.has_outformat())
     {
-        ret += ", '";
         ret += OutFormat_Name(ff.outformat()).substr(4);
-        ret += "'";
     }
-    else if (ff.has_inoutformat())
+    else
     {
-        ret += ", '";
-        ret += InOutFormat_Name(ff.inoutformat()).substr(6);
-        ret += "'";
+        ret += "CSV";
     }
+    ret += "'";
     if (ff.has_structure())
     {
         ret += ", ";
@@ -1881,7 +1840,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_fcomp())
     {
         ret += ", '";
-        ret += ff.fcomp();
+        ret += FileCompression_Name(ff.fcomp()).substr(4);
         ret += "'";
     }
     ret += ")";
@@ -1931,7 +1890,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
         ret += "default";
     }
     ret += separator;
-    TableToString(ret, false, est.table());
+    TableToString(ret, est.table());
     ret += "'";
 }
 
@@ -1975,22 +1934,20 @@ CONV_FN(RemoteFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
-    if (rfunc.has_user())
+    if (tof.has_est())
     {
-        ret += ", '";
-        ret += rfunc.user();
-        ret += "'";
-    }
-    if (rfunc.has_password())
-    {
-        ret += ", '";
-        ret += rfunc.password();
-        ret += "'";
-    }
-    if (rfunc.has_sharding_key())
-    {
-        ret += ", ";
-        ExprToString(ret, rfunc.sharding_key());
+        if (rfunc.has_user() && !rfunc.user().empty())
+        {
+            ret += ", '";
+            ret += rfunc.user();
+            ret += "'";
+        }
+        if (rfunc.has_password())
+        {
+            ret += ", '";
+            ret += rfunc.password();
+            ret += "'";
+        }
     }
     ret += ")";
 }
@@ -2041,76 +1998,30 @@ CONV_FN(SQLiteFunc, sfunc)
     ret += "')";
 }
 
-CONV_FN(RedisFunc, rfunc)
-{
-    ret += "redis('";
-    ret += rfunc.address();
-    ret += "', ";
-    ExprToString(ret, rfunc.key());
-    if (rfunc.has_structure())
-    {
-        ret += ", ";
-        ExprToString(ret, rfunc.structure());
-    }
-    if (rfunc.has_db_index())
-    {
-        ret += ", ";
-        ret += std::to_string(rfunc.db_index());
-    }
-    if (rfunc.has_password())
-    {
-        ret += ", '";
-        ret += rfunc.password();
-        ret += "'";
-    }
-    if (rfunc.has_pool_size())
-    {
-        ret += ", ";
-        ret += std::to_string(rfunc.pool_size());
-    }
-    ret += ")";
-}
-
-CONV_FN(MongoDBFunc, mfunc)
-{
-    ret += "mongodb('";
-    ret += mfunc.address();
-    ret += "', '";
-    ret += mfunc.database();
-    ret += "', '";
-    ret += mfunc.collection();
-    ret += "', '";
-    ret += mfunc.user();
-    ret += "', '";
-    ret += mfunc.password();
-    ret += "'";
-    if (mfunc.has_structure())
-    {
-        ret += ", ";
-        ExprToString(ret, mfunc.structure());
-    }
-    ret += ")";
-}
-
 CONV_FN(S3Func, sfunc)
 {
     ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
+    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
     {
         ClusterToString(ret, false, sfunc.cluster());
         ret += ", ";
     }
-    ret += sfunc.credential();
-    for (int i = 0; i < sfunc.params_size(); i++)
+    ret += "'";
+    ret += sfunc.resource();
+    ret += "', '";
+    ret += sfunc.user();
+    ret += "', '";
+    ret += sfunc.password();
+    ret += "', '";
+    ret += InOutFormat_Name(sfunc.format()).substr(6);
+    ret += "', ";
+    ExprToString(ret, sfunc.structure());
+    if (sfunc.has_fcomp())
     {
-        ret += ", ";
-        KeyValuePairToString(ret, sfunc.params(i));
-    }
-    if (sfunc.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, sfunc.setting_values());
+        ret += ", '";
+        ret += sfunc.fcomp();
+        ret += "'";
     }
     ret += ")";
 }
@@ -2119,39 +2030,46 @@ CONV_FN(AzureBlobStorageFunc, azure)
 {
     ret += AzureBlobStorageFunc_FName_Name(azure.fname());
     ret += "(";
-    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
+    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
     {
         ClusterToString(ret, false, azure.cluster());
         ret += ", ";
     }
-    ret += azure.credential();
-    for (int i = 0; i < azure.params_size(); i++)
+    ret += "'";
+    ret += azure.connection_string();
+    ret += "', '";
+    ret += azure.container();
+    ret += "', '";
+    ret += azure.blobpath();
+    ret += "'";
+    if (azure.has_user())
+    {
+        ret += ", '";
+        ret += azure.user();
+        ret += "'";
+    }
+    if (azure.has_password())
+    {
+        ret += ", '";
+        ret += azure.password();
+        ret += "'";
+    }
+    if (azure.has_format())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(azure.format()).substr(6);
+        ret += "'";
+    }
+    if (azure.has_fcomp())
+    {
+        ret += ", '";
+        ret += azure.fcomp();
+        ret += "'";
+    }
+    if (azure.has_structure())
     {
         ret += ", ";
-        KeyValuePairToString(ret, azure.params(i));
-    }
-    if (azure.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, azure.setting_values());
-    }
-    ret += ")";
-}
-
-CONV_FN(LocalFunc, local)
-{
-    ret += LocalFunc_FName_Name(local.fname());
-    ret += "(";
-    ret += local.credential();
-    for (int i = 0; i < local.params_size(); i++)
-    {
-        ret += ", ";
-        KeyValuePairToString(ret, local.params(i));
-    }
-    if (local.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, local.setting_values());
+        ExprToString(ret, azure.structure());
     }
     ret += ")";
 }
@@ -2249,10 +2167,11 @@ CONV_FN(ClusterFunc, cluster)
     ClusterToString(ret, false, cluster.cluster());
     ret += ", ";
     TableOrFunctionToString(ret, true, tof);
-    if (cluster.has_sharding_key())
+    if (tof.has_est() && cluster.has_sharding_key())
     {
-        ret += ", ";
-        ExprToString(ret, cluster.sharding_key());
+        ret += ", '";
+        ret += cluster.sharding_key();
+        ret += "'";
     }
     ret += ")";
 }
@@ -2266,21 +2185,7 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
         ret += ", with_marks = ";
         ret += mfunc.with_marks() ? "true" : "false";
     }
-    if (mfunc.has_with_minmax())
-    {
-        ret += ", with_minmax = ";
-        ret += mfunc.with_minmax() ? "true" : "false";
-    }
     ret += ")";
-}
-
-CONV_FN(MergeTreeProjectionFunc, mfunc)
-{
-    ret += "mergeTreeProjection(";
-    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    ret += ", '";
-    ProjectionToString(ret, mfunc.proj());
-    ret += "')";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2319,15 +2224,6 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
         ret += ")";
     }
     ret += tudf ? ")" : "";
-}
-
-CONV_FN(ArrowFlightFunc, afunc)
-{
-    ret += "arrowFlight('";
-    ret += afunc.address();
-    ret += "', '";
-    ret += afunc.dataset();
-    ret += "')";
 }
 
 CONV_FN(TableFunction, tf)
@@ -2390,28 +2286,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kAzure:
             AzureBlobStorageFuncToString(ret, tf.azure());
             break;
-        case TableFunctionType::kLocal:
-            LocalFuncToString(ret, tf.local());
-            break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
-            break;
-        case TableFunctionType::kRedis:
-            RedisFuncToString(ret, tf.redis());
-            break;
-        case TableFunctionType::kMongodb:
-            MongoDBFuncToString(ret, tf.mongodb());
-            break;
-        case TableFunctionType::kMtproj:
-            MergeTreeProjectionFuncToString(ret, tf.mtproj());
-            break;
-        case TableFunctionType::kNullf:
-            ret += "`null`(";
-            ExprToString(ret, tf.nullf());
-            ret += ")";
-            break;
-        case TableFunctionType::kFlight:
-            ArrowFlightFuncToString(ret, tf.flight());
             break;
         default:
             ret += "numbers(10)";
@@ -2426,7 +2302,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
     if (jtf.has_table_alias())
     {
         ret += " AS ";
-        TableToString(ret, false, jtf.table_alias());
+        TableToString(ret, jtf.table_alias());
     }
     if (jtf.col_aliases_size())
     {
@@ -2743,11 +2619,7 @@ CONV_FN(SetQuery, setq)
 
 CONV_FN(CTEquery, cteq)
 {
-    if (cteq.recursive())
-    {
-        ret += "RECURSIVE ";
-    }
-    TableToString(ret, false, cteq.table());
+    TableToString(ret, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());
     ret += ")";
@@ -2787,6 +2659,23 @@ CONV_FN(CTEs, cteq)
         SingleCTEToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
+}
+
+CONV_FN(SetValue, setv)
+{
+    ret += setv.property();
+    ret += " = ";
+    ret += setv.value();
+}
+
+CONV_FN(SettingValues, setv)
+{
+    SetValueToString(ret, setv.set_value());
+    for (int i = 0; i < setv.other_values_size(); i++)
+    {
+        ret += ", ";
+        SetValueToString(ret, setv.other_values(i));
+    }
 }
 
 CONV_FN(Select, select)
@@ -2925,15 +2814,15 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, create_database.setting_values());
-    }
     if (create_database.has_comment())
     {
         ret += " COMMENT ";
         ret += create_database.comment();
+    }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
     }
 }
 
@@ -3089,20 +2978,13 @@ CONV_FN(TableDefItem, tdef)
     }
 }
 
-CONV_FN(TableDef, tdef)
+CONV_FN(TableDef, ct)
 {
-    if (tdef.table_defs_size() > 0)
+    ColumnDefToString(ret, ct.col_def());
+    for (int i = 0; i < ct.other_defs_size(); i++)
     {
-        ret += " (";
-        for (int i = 0; i < tdef.table_defs_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            TableDefItemToString(ret, tdef.table_defs(i));
-        }
-        ret += ")";
+        ret += ", ";
+        TableDefItemToString(ret, ct.other_defs(i));
     }
 }
 
@@ -3164,7 +3046,7 @@ CONV_FN(TableEngineParam, tep)
             DatabaseToString(ret, tep.database());
             break;
         case TableEngineParamType::kTable:
-            TableToString(ret, true, tep.table());
+            TableToString(ret, tep.table());
             break;
         case TableEngineParamType::kNum:
             ret += std::to_string(tep.num());
@@ -3189,12 +3071,6 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
-            break;
-        case TableEngineParamType::kKvalue:
-            KeyValuePairToString(ret, tep.kvalue());
-            break;
-        case TableEngineParamType::kRvalue:
-            ret += tep.rvalue();
             break;
         default:
             ret += "c0";
@@ -3255,14 +3131,13 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 CONV_FN(TTLEntry, ttl_entry)
 {
     ExprToString(ret, ttl_entry.time_expr());
+    ret += " ";
     if (ttl_entry.has_update())
     {
-        ret += " ";
         TTLUpdateToString(ret, ttl_entry.update());
     }
     else if (ttl_entry.has_group_by())
     {
-        ret += " ";
         TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }
@@ -3337,7 +3212,6 @@ CONV_FN(TableEngine, te)
 
 CONV_FN(CreateTableAs, create_table)
 {
-    ret += " ";
     if (create_table.clone())
     {
         ret += "CLONE ";
@@ -3392,9 +3266,12 @@ CONV_FN(CreateTable, create_table)
     {
         ClusterToString(ret, true, create_table.cluster());
     }
+    ret += " ";
     if (create_table.has_table_def())
     {
+        ret += "(";
         TableDefToString(ret, create_table.table_def());
+        ret += ")";
     }
     else if (create_table.has_table_as())
     {
@@ -3441,7 +3318,7 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
-    if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
+    if (is_table && dt.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3533,7 +3410,7 @@ CONV_FN(Insert, insert)
         if (insert_file.has_fcomp())
         {
             ret += " COMPRESSION '";
-            ret += insert_file.fcomp();
+            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
             ret += "'";
         }
         if (insert.has_setting_values())
@@ -3721,8 +3598,8 @@ CONV_FN(DescribeStatement, ds)
     using DescType = DescribeStatement::DescOneofCase;
     switch (ds.desc_oneof_case())
     {
-        case DescType::kTof:
-            TableOrFunctionToString(ret, false, ds.tof());
+        case DescType::kEst:
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
@@ -3868,10 +3745,6 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
-    {
-        ret += "TEMPORARY ";
-    }
     if (replace)
     {
         ret += "TABLE";
@@ -4494,8 +4367,10 @@ CONV_FN(AlterItem, alter)
 
 CONV_FN(Alter, alter)
 {
+    const bool is_table = alter.sobject() == SQLObject::TABLE;
+
     ret += "ALTER ";
-    if ((alter.sobject() == SQLObject::TABLE || alter.sobject() == SQLObject::VIEW) && alter.is_temp())
+    if (is_table && alter.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4585,7 +4460,7 @@ CONV_FN(SelectIntoFile, intofile)
     if (intofile.has_compression())
     {
         ret += " COMPRESSION '";
-        ret += intofile.compression();
+        ret += FileCompression_Name(intofile.compression()).substr(4);
         ret += "'";
         if (intofile.has_level())
         {
@@ -4890,10 +4765,6 @@ CONV_FN(SystemCommand, cmd)
             ret += "DISABLE FAILPOINT ";
             ret += FailPoint_Name(cmd.disable_failpoint());
             break;
-        case CmdType::kIcebergMetadataCache:
-            ret += "DROP ICEBERG METADATA CACHE";
-            can_set_cluster = true;
-            break;
         default:
             ret += "FLUSH LOGS";
     }
@@ -4907,7 +4778,7 @@ CONV_FN(BackupRestoreObject, bobject)
 {
     const bool is_table = bobject.sobject() == SQLObject::TABLE;
 
-    if ((is_table || bobject.sobject() == SQLObject::VIEW) && bobject.is_temp())
+    if (is_table && bobject.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4961,38 +4832,6 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
-CONV_FN(BackupParam, bp)
-{
-    using BackupParamType = BackupParam::BackupParamOneofCase;
-    switch (bp.backup_param_oneof_case())
-    {
-        case BackupParamType::kSvalue:
-            ret += "'";
-            ret += bp.svalue();
-            ret += "'";
-            break;
-        case BackupParamType::kRvalue:
-            ret += bp.rvalue();
-            break;
-        default:
-            ret += "backup.data";
-    }
-}
-
-CONV_FN(BackupParams, bparams)
-{
-    ret += "(";
-    for (int i = 0; i < bparams.out_params_size(); i++)
-    {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        BackupParamToString(ret, bparams.out_params(i));
-    }
-    ret += ")";
-}
-
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
@@ -5016,7 +4855,18 @@ CONV_FN(BackupRestore, backup)
     ret += BackupRestore_BackupOutput_Name(output);
     if (output != BackupRestore_BackupOutput_Null)
     {
-        BackupParamsToString(ret, backup.params());
+        ret += "(";
+        for (int i = 0; i < backup.out_params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += backup.out_params(i);
+            ret += "'";
+        }
+        ret += ")";
     }
     if (backup.has_setting_values())
     {
