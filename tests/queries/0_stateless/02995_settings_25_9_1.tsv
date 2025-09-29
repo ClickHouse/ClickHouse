@@ -1276,7 +1276,7 @@ schema_inference_use_cache_for_file	1
 schema_inference_use_cache_for_hdfs	1
 schema_inference_use_cache_for_s3	1
 schema_inference_use_cache_for_url	1
-secondary_indices_enable_bulk_filtering	1
+secondary_indices_enable_bulk_filtering	0
 select_sequential_consistency	0
 send_logs_level	fatal
 send_logs_source_regexp	
