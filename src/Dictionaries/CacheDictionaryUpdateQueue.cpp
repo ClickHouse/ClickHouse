@@ -1,3 +1,5 @@
+#include "CacheDictionaryUpdateQueue.h"
+
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 #include <Common/CurrentMetrics.h>

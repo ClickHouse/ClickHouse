@@ -18,7 +18,6 @@
 #define JSON_Object_INCLUDED
 
 
-#include <atomic>
 #include <deque>
 #include <iostream>
 #include <map>
@@ -293,7 +292,7 @@ namespace JSON
         //  The reason for this flag (rather than as argument to stringify()) is
         //  because Object can be returned stringified from Dynamic::Var::toString(),
         //  so it must know whether to escape unicode or not.
-        std::atomic<bool> _escapeUnicode;
+        bool _escapeUnicode;
         mutable StructPtr _pStruct;
         mutable bool _modified;
     };
