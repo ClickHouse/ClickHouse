@@ -35,6 +35,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool kill_throw_if_noop;
 }
 
 namespace ErrorCodes
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_QUERY_TO_KILL;
 }
 
 
@@ -206,7 +208,7 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
-
+    const auto & kill_throw_if_noop = getContext()->getSettingsRef()[Setting::kill_throw_if_noop];
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -221,7 +223,11 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         Block processes_block = getSelectResult("query_id, user, query", "system.processes");
         if (processes_block.empty())
+        {
+            if (kill_throw_if_noop)
+                throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
             return res_io;
+        }
 
         ProcessList & process_list = getContext()->getProcessList();
         QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
@@ -254,7 +260,11 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
         if (mutations_block.empty())
+        {
+            if (kill_throw_if_noop)
+                throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
             return res_io;
+        }
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("database").column);
         const ColumnString & table_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("table").column);
