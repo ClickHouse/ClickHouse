@@ -110,7 +110,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
-            {"output_format_parquet_date_as_uint16", true, false, "(Actually added in 25.8 and backported into here.)"},
+            {"output_format_parquet_date_as_uint16", false, false, "(Actually added in 25.8 and backported into here.)"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
