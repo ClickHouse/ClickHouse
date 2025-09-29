@@ -71,7 +71,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     if (read_result.num_rows != 0)
     {
-        first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
@@ -190,7 +189,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         for (const auto & col : result.additional_columns)
             additional_columns.insert(col);
 
-        addDummyColumnWithRowCount(additional_columns, result.num_rows);
+        MergeTreeRangeReader::addDummyColumnWithRowCount(additional_columns, result.num_rows);
         merge_tree_reader->evaluateMissingDefaults(additional_columns, read_columns);
     }
 
@@ -245,6 +244,11 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
+    if (patches_results.empty())
+        return;
+
+    auto result_block = result_header.cloneWithColumns(read_result.columns);
+
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
@@ -255,9 +259,10 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
             patch_results.pop_front();
         }
 
-        const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
-        patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
+        while (!patch_ranges[i].empty() && (patch_results.empty() || patch_readers[i]->needNewPatch(read_result, *patch_results.back())))
+        {
+            patch_results.emplace_back(patch_readers[i]->readPatch(patch_ranges[i]));
+        }
     }
 }
 
@@ -410,13 +415,10 @@ void MergeTreeReadersChain::applyPatches(
         for (const auto & patch_result : patch_results)
         {
             /// TODO: build indices once and filter them in MergeTreeRangeReader.
-            auto patches = patch_readers[i]->applyPatch(result_block, *patch_result);
+            auto patch_to_apply = patch_readers[i]->applyPatch(result_block, *patch_result);
 
-            for (auto & patch_to_apply : patches)
-            {
-                if (!patch_to_apply->empty())
-                    patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
-            }
+            if (!patch_to_apply->empty())
+                patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
         }
     }
 

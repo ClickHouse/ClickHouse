@@ -202,8 +202,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;
         auto idx_resultset_by_name = [&](const String & partName)

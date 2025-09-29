@@ -2,35 +2,25 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenExtractor.h>
-#include <absl/container/flat_hash_map.h>
+#include <Interpreters/GinFilter.h>
 
 namespace DB
 {
-
-enum class SearchAnyAllMode : uint8_t
-{
-    Any,
-    All
-};
 
 namespace traits
 {
 struct SearchAnyTraits
 {
     static constexpr String name = "searchAny";
-    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::Any;
+    static constexpr GinSearchMode search_mode = GinSearchMode::Any;
 };
 
 struct SearchAllTraits
 {
     static constexpr String name = "searchAll";
-    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::All;
+    static constexpr GinSearchMode search_mode = GinSearchMode::All;
 };
 }
-
-/// Map needle into a position (for bitmap operations).
-using FunctionSearchNeedles = absl::flat_hash_map<String, UInt64>;
 
 template <class SearchTraits>
 class FunctionSearchImpl : public IFunction
@@ -46,15 +36,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_);
-    void setSearchTokens(const std::vector<String> & tokens);
+    void setGinFilterParameters(const GinFilterParameters & params);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     const bool allow_experimental_full_text_index;
-    std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<FunctionSearchNeedles> needles;
+    std::optional<GinFilterParameters> parameters;
 };
 }

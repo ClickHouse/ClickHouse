@@ -371,14 +371,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            if (!parseDatabaseAsAST(pos, expected, res->database))
-                return false;
-            break;
-        }
 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
@@ -624,6 +616,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
             }
+            else
+                return false;
 
             break;
         }
@@ -743,27 +737,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-#if USE_JEMALLOC
-        case Type::JEMALLOC_FLUSH_PROFILE:
-        {
-            Pos prev_token = pos;
-            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
-            {
-                pos = prev_token;
-                if (!parseQueryWithOnCluster(res, pos, expected))
-                    return false;
-            }
-
-            if (ParserKeyword{Keyword::TO}.ignore(pos, expected))
-            {
-                ASTPtr ast;
-                if (ParserStringLiteral{}.parse(pos, ast, expected))
-                    res->jemalloc_profile_path = ast->as<ASTLiteral &>().value.safeGet<String>();
-            }
-
-            break;
-        }
-#endif
 
         default:
         {

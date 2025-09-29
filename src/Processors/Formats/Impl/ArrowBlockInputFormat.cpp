@@ -175,7 +175,6 @@ void ArrowBlockInputFormat::prepareReader()
         "Arrow",
         format_settings,
         std::nullopt,
-        std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,

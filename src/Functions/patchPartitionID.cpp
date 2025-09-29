@@ -85,6 +85,7 @@ public:
                 memcpySmallAllowReadWriteOverflow15(out_chars.data() + old_size + patch_prefix.size(), ref.data, bytes_to_copy);
             }
 
+            out_chars.push_back('\0');
             out_offsets.push_back(out_chars.size());
         }
 

@@ -4,7 +4,6 @@ description: 'System table containing information about the number of events tha
 keywords: ['system table', 'events']
 slug: /operations/system-tables/events
 title: 'system.events'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

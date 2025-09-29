@@ -1,4 +1,3 @@
-#include <optional>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -27,7 +26,8 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
     LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
-    header = join->joinBlock(std::move(header))->next().block;
+    ExtraBlockPtr tmp;
+    join->joinBlock(header, tmp);
     materializeBlockInplace(header);
     LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
@@ -83,10 +83,11 @@ IProcessor::Status JoiningTransform::prepare()
     }
 
     /// Output if has data.
-    if (output_chunk)
+    if (has_output)
     {
-        output.push(std::move(*(output_chunk)));
-        output_chunk.reset();
+        output.push(std::move(output_chunks.front()));
+        output_chunks.pop_front();
+        has_output = !output_chunks.empty();
 
         return Status::PortFull;
     }
@@ -132,9 +133,10 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
-        chassert(!output_chunk.has_value());
+        chassert(output_chunks.empty());
         transform(input_chunk);
-        has_input = join_result != nullptr;
+        has_input = not_processed != nullptr;
+        has_output = !output_chunks.empty();
     }
     else
     {
@@ -165,7 +167,8 @@ void JoiningTransform::work()
         if (block.rows())
         {
             ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunk = Chunk(block.getColumns(), block.rows());
+            output_chunks.emplace_back(block.getColumns(), block.rows());
+            has_output = true;
         }
     }
 }
@@ -184,7 +187,7 @@ void JoiningTransform::transform(Chunk & chunk)
         }
     }
 
-    Block res;
+    Blocks res;
     if (on_totals)
     {
         const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -195,35 +198,71 @@ void JoiningTransform::transform(Chunk & chunk)
         if (default_totals && right_totals.empty())
             return;
 
-        res = outputs.front().getHeader().cloneEmpty();
-        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res);
+        res.emplace_back();
+        res.back() = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
     }
     else
     {
         res = readExecute(chunk);
     }
 
-    if (res.rows())
+    for (const auto & block : res)
     {
-        ProfileEvents::increment(ProfileEvents::JoinResultRowCount, res.rows());
-        output_chunk = Chunk(res.getColumns(), res.rows());
+        if (block.rows())
+        {
+            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
+            output_chunks.emplace_back(block.getColumns(), block.rows());
+        }
     }
 }
 
-Block JoiningTransform::readExecute(Chunk & chunk)
+Blocks JoiningTransform::readExecute(Chunk & chunk)
 {
-    if (!join_result)
+    Blocks res;
+    Block block;
+
+    auto join_block = [&]()
     {
-        Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        join_result = join->joinBlock(std::move(block));
+        if (join->isScatteredJoin())
+        {
+            join->joinBlock(block, remaining_blocks, res);
+            if (remaining_blocks.rows())
+                not_processed = std::make_shared<ExtraBlock>();
+            else
+                not_processed.reset();
+        }
+        else
+        {
+            join->joinBlock(block, not_processed);
+            res.push_back(std::move(block));
+        }
+    };
+
+    if (!not_processed)
+    {
+        if (chunk.hasColumns())
+            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+
+        if (!block.empty())
+            join_block();
+    }
+    else if (not_processed->empty()) /// There's not processed data inside expression.
+    {
+        if (chunk.hasColumns())
+            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+
+        not_processed.reset();
+        join_block();
+    }
+    else
+    {
+        block = std::move(not_processed->block);
+        join_block();
     }
 
-    auto data = join_result->next();
-    if (data.is_last)
-        join_result.reset();
-
-    return std::move(data.block);
+    return res;
 }
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)

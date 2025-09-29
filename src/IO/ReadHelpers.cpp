@@ -13,7 +13,6 @@
 #include <cstdlib>
 #include <bit>
 #include <utility>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <base/simd.h>
 
@@ -60,7 +59,7 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
@@ -1303,7 +1302,6 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -2352,14 +2350,5 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
     readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
-String escapeDotInJSONKey(const String & key)
-{
-    return boost::replace_all_copy(key, ".", "%2E");
-}
-
-String unescapeDotInJSONKey(const String & key)
-{
-    return boost::replace_all_copy(key, "%2E", ".");
-}
 
 }

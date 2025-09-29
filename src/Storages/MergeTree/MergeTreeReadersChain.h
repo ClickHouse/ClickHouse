@@ -77,6 +77,8 @@ private:
         const std::set<ColumnForPatch::Order> & suitable_orders,
         const Block & additional_columns) const;
 
+    using PatchReadResultPtr = MergeTreePatchReader::PatchReadResultPtr;
+
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;

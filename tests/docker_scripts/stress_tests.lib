@@ -225,7 +225,7 @@ function stop_server()
       # - server may do some work at shutdown
       # - main use case it not to mark failure as hung check when server exits abnormally with sanitizer/crash
       kill -s CONT "$pid" ||:
-      kill -s 0 "$pid" && sleep 60
+      kill -s 0 "$pid" && sleep 60 
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
       kill -s 0 "$pid" || return
@@ -299,10 +299,9 @@ function check_logs_for_critical_errors()
     # ignore:
     #  - a.myext which is used in 02724_database_s3.sh and does not exist
     #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" because they happen inside distributed cache server
-    #  - "ReadBuffer is canceled by the exception" -- this is a normal situation when the buffer is canceled, the message neded for debug purposes
     #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer", "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage"
     #    exceptions printed internally by a buffer, exception will be rethrown and handled correctly
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 

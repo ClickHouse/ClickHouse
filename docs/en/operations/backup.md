@@ -4,7 +4,6 @@ sidebar_label: 'Backup and restore'
 sidebar_position: 10
 slug: /operations/backup
 title: 'Backup and restore'
-doc_type: 'guide'
 ---
 
 # Backup and restore
@@ -83,18 +82,17 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
-  - `id`: the identifier of a backup or restore operation. If it's unset or empty then a randomly generated UUID will be used.
-  If it's explicitly set to a nonempty string then it should be different each time. This `id` is used to find rows in table `system.backups` related to a specific backup or restore operation.
-  - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
-  - `password` for the file on disk
-  - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
-  - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
-  - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
-  - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
-  - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
-  - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
-  - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
-  - [core settings](/operations/settings/settings) can be used here too
+    - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+    - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
+    - `password` for the file on disk
+    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
+    - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+    - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
+    - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
+    - [core settings](/operations/settings/settings) can be used here too
 
 ### Usage examples {#usage-examples}
 
@@ -196,6 +194,7 @@ BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
 ```
 
 The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
+
 
 ### Check the status of backups {#check-the-status-of-backups}
 

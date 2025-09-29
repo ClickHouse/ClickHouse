@@ -47,8 +47,6 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
-    if (s == 1)
-        return data;
     return data->replicate(Offsets(1, s));
 }
 

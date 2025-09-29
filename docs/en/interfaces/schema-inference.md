@@ -3,7 +3,6 @@ description: 'Page describing automatic schema inference from input data in Clic
 sidebar_label: 'Schema inference'
 slug: /interfaces/schema-inference
 title: 'Automatic schema inference from input data'
-doc_type: 'reference'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
@@ -391,18 +390,6 @@ DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-If an array contains values of different types and setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is enabled (it is enabled by default), then it will have type `Array(Dynamic)`:
-```sql
-SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
-DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
-```
-
-```response
-┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ arr  │ Array(Dynamic) │              │                    │         │                  │                │
-└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
 Named tuples:
 
 When setting `input_format_json_try_infer_named_tuples_from_objects` is enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
@@ -421,9 +408,8 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Unnamed Tuples:
 
-If setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is disabled, we treat Arrays with elements of different types as Unnamed Tuples in JSON formats.
+In JSON formats we treat Arrays with elements of different types as Unnamed Tuples.
 ```sql
-SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
 ```response
@@ -434,7 +420,6 @@ DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 
 If some values are `null` or empty, we use types of corresponding values from the other rows:
 ```sql
-SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
@@ -628,6 +613,7 @@ DESC format(JSONEachRow, $$
 │ obj  │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
+
 
 ##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
@@ -2099,6 +2085,7 @@ Note:
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
+
 
 ## Automatic format detection {#automatic-format-detection}
 

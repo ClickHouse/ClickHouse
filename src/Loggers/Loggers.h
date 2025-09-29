@@ -9,10 +9,7 @@
 
 namespace DB
 {
-class OwnSplitChannelBase;
-
-using AsyncLogQueueSize = std::pair<std::string, size_t>;
-using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
+    class OwnSplitChannelBase;
 }
 
 namespace Poco::Util
@@ -30,7 +27,6 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
-    DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
     void flushTextLogs();
 
     virtual ~Loggers() = default;
