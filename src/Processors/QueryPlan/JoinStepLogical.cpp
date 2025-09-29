@@ -1129,6 +1129,8 @@ void JoinStepLogical::buildPhysicalJoin(
         optimization_settings,
         nodes);
 
+    new_node.cost_estimation = node.cost_estimation;
+
     node = std::move(new_node);
 }
 

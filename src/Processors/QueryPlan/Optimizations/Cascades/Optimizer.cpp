@@ -42,7 +42,7 @@ namespace Setting
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
-    query_plan.explainPlan(out, {});
+    query_plan.explainPlan(out, {.estimates = true});
     return out.str();
 }
 
@@ -477,6 +477,12 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, con
         united_plan->unitePlans(std::move(step), std::move(input_plans));
         plan_for_group = std::move(united_plan);
     }
+
+    plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo
+        {
+            .cost = group_best_expression->cost->subtree_cost,
+            .rows = group_best_expression->statistics->estimated_row_count
+        };
 
     LOG_TRACE(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));
 
