@@ -284,8 +284,7 @@ SELECT
     r.b
 FROM 03611_t_nullsafe AS l
 INNER JOIN 03611_t_nullsafe AS r ON l.a <=> r.b
-
-UNION ALL
+ORDER BY join_type, lid, rid;
 
 SELECT
     'IS DISTINCT FROM JOIN' as join_type,
