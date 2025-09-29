@@ -29,6 +29,7 @@ using JSONParserImpl = DB::DummyJSONParser;
 }
 #endif
 
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -230,6 +231,12 @@ public:
     SystemTable(SystemTable && c) = default;
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
+
+    void setName(ExprSchemaTable * est) const
+    {
+        est->mutable_database()->set_database(schema_name);
+        est->mutable_table()->set_table(table_name);
+    }
 };
 
 class FuzzConfig

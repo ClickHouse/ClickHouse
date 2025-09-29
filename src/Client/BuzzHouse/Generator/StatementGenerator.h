@@ -378,6 +378,7 @@ private:
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
     void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
+    void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
