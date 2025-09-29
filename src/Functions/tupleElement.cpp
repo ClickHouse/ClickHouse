@@ -160,56 +160,7 @@ private:
 
 REGISTER_FUNCTION(TupleElement)
 {
-    FunctionDocumentation::Description description = R"(
-Extracts an element from a tuple by index or name.
-
-For access by index, an 1-based numeric index is expected.
-For access by name, the element name can be provided as a string (works only for named tuples).
-
-An optional third argument specifies a default value which is returned instead of throwing an exception when the accessed element does not exist.
-All arguments must be constants.
-
-This function has zero runtime cost and implements the operators `x.index` and `x.name`.
-)";
-    FunctionDocumentation::Syntax syntax = "tupleElement(tuple, index|name[, default_value])";
-    FunctionDocumentation::Arguments arguments = {
-        {"tuple", "A tuple or array of tuples.", {"Tuple(T)", "Array(Tuple(T))"}},
-        {"index", "Column index, starting from 1.", {"const UInt8/16/32/64"}},
-        {"name", "Name of the element.", {"const String"}},
-        {"default_value", "Default value returned when index is out of bounds or element doesn't exist.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the element at the specified index or name.", {"Any"}};
-    FunctionDocumentation::Examples examples = {
-    {
-         "Index access",
-         "SELECT tupleElement((1, 'hello'), 2)",
-         "hello"
-    },
-    {
-        "Named tuple with table",
-         R"(
-CREATE TABLE example (values Tuple(name String, age UInt32)) ENGINE = Memory;
-INSERT INTO example VALUES (('Alice', 30));
-SELECT tupleElement(values, 'name') FROM example;
-         )",
-         "Alice"
-    },
-    {
-        "With default value",
-        "SELECT tupleElement((1, 2), 5, 'not_found')",
-        "not_found"
-    },
-    {
-        "Operator syntax",
-        "SELECT (1, 'hello').2",
-        "hello"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionTupleElement>(documentation);
+    factory.registerFunction<FunctionTupleElement>();
 }
 
 }

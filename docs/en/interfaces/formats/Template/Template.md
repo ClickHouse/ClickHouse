@@ -6,7 +6,6 @@ keywords: ['Template']
 output_format: true
 slug: /interfaces/formats/Template
 title: 'Template'
-doc_type: 'guide'
 ---
 
 | Input | Output | Alias |
@@ -238,3 +237,5 @@ Look at that! We've saved ourselves the trouble of having to manually add all th
 |`DWARF`|
 |`Avro`|
 ```
+
+

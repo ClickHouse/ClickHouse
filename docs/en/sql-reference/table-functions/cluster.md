@@ -5,7 +5,6 @@ sidebar_label: 'cluster'
 sidebar_position: 30
 slug: /sql-reference/table-functions/cluster
 title: 'clusterAllReplicas'
-doc_type: 'reference'
 ---
 
 # clusterAllReplicas Table Function

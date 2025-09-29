@@ -2,7 +2,6 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -21,12 +20,10 @@ struct FakeDiskTransaction final : public IDiskTransaction
 public:
     explicit FakeDiskTransaction(IDisk & disk_)
         : disk(disk_)
-    {
-        LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
-    }
+    {}
 
-    void commit(const TransactionCommitOptionsVariant &) override {}
-    void undo() noexcept override {}
+    void commit() override {}
+    void undo() override {}
 
     void createDirectory(const std::string & path) override
     {
@@ -68,20 +65,12 @@ public:
         disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
+    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override
-    {
-        return disk.writeFile(path, buf_size, mode, settings);
-    }
-
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {},
+        bool /*autocommit */ = true) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
     }
@@ -151,7 +140,7 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
-    void truncateFile(const std::string & /* src_path */, size_t) override
+    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }

@@ -39,11 +39,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
             if (!isTTLExpired(cur_ttl) || !where_filter_passed)
             {
-                /// Update ttl info only if row passes the filter.
-                /// Rows that don't pass the filter should not affect TTL.
-                if (where_filter_passed)
-                    new_ttl_info.update(cur_ttl);
-
+                new_ttl_info.update(cur_ttl);
                 result_column->insertFrom(*values_column, i);
             }
             else if (it == column_names.begin())

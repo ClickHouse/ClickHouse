@@ -18,30 +18,15 @@ using FunctionBase64Encode = FunctionBaseXXConversion<Base64EncodeImpl>;
 
 REGISTER_FUNCTION(Base64URLEncode)
 {
-    FunctionDocumentation::Description description = R"(
-Encodes a string using [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) representation using URL-safe alphabet.
-)";
-    FunctionDocumentation::Syntax syntax = "base64URLEncode(plaintext)";
-    FunctionDocumentation::Arguments arguments = {
-        {"plaintext", "Plaintext column or constant to encode.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the encoded value of the argument.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT base64URLEncode('https://clickhouse.com')",
-        R"(
-┌─base64URLEncode('https://clickhouse.com')─┐
-│ aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ            │
-└───────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Description description = R"(Encodes an URL (String or FixedString) as base64 with URL-specific modifications, according to RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648#section-5).)";
+    FunctionDocumentation::Syntax syntax = "base64URLEncode(url)";
+    FunctionDocumentation::Arguments arguments = {{"url", "String column or constant."}};
+    FunctionDocumentation::ReturnedValue returned_value = {"A string containing the encoded value of the argument.", {"String"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT base64URLEncode('https://clickhouse.com')", "aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
 
-    factory.registerFunction<FunctionBase64Encode>(documentation);
+    factory.registerFunction<FunctionBase64Encode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

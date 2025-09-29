@@ -69,7 +69,7 @@ public:
             Field field;
             arguments[0].column->get(i, field);
             std::string serialized = transform->dumpObject(field);
-            res_column->insertData(serialized.data(), serialized.size());
+            res_column->insertData(serialized.c_str(), serialized.size());
         }
 
         return res_column;

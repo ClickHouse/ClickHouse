@@ -98,8 +98,7 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     factory.registerOutputFormat("SQLInsert", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<SQLInsertRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

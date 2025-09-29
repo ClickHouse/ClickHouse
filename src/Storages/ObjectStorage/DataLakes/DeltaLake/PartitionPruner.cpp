@@ -99,22 +99,21 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
     if (!object_info.data_lake_metadata->transform)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
 
-    auto partition_values = DeltaLake::getConstValuesFromExpression(
+    const auto partition_values = DeltaLake::getConstValuesFromExpression(
         physical_partition_columns,
         *object_info.data_lake_metadata->transform);
 
-    if (partition_values.empty())
-        return false;
+    LOG_TEST(getLogger("DeltaLakePartitionPruner"), "Partition values: {}", partition_values.size());
 
     DB::Row partition_key_values;
     partition_key_values.reserve(partition_values.size());
 
-    for (auto && value : partition_values)
+    for (const auto & value : partition_values)
     {
         if (value.isNull())
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST
         else
-            partition_key_values.push_back(std::move(value));
+            partition_key_values.push_back(value);
     }
 
     std::vector<DB::FieldRef> partition_key_values_ref(partition_key_values.begin(), partition_key_values.end());

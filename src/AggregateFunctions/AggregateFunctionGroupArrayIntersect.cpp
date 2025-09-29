@@ -235,7 +235,7 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
@@ -255,7 +255,7 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
@@ -344,7 +344,7 @@ public:
             if constexpr (is_plain_column)
                 data_to.insertData(elem.getValue().data, elem.getValue().size);
             else
-                std::ignore = data_to.deserializeAndInsertAggregationStateValueFromArena(elem.getValue().data);
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
         }
     }
 };

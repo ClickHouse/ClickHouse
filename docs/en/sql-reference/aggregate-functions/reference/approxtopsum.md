@@ -4,7 +4,6 @@ description: 'Returns an array of the approximately most frequent values and the
 sidebar_position: 108
 slug: /sql-reference/aggregate-functions/reference/approxtopsum
 title: 'approx_top_sum'
-doc_type: 'reference'
 ---
 
 # approx_top_sum
@@ -29,6 +28,7 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 - `column` — The value to calculate frequency.
 - `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
+
 
 **Example**
 
