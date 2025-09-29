@@ -271,9 +271,9 @@ SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text
 
 See the following examples for the usage of `Array(T)` and `Map(K, V)` with the text index.
 
-### Examples for the text index `Array` and `Map` support.
+### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
 
-#### Indexing Array(String)
+#### Indexing Array(String) {#text-indexi-example-array}
 
 In a simple blogging platform, authors assign keywords to their posts to categorize content.
 A common feature allows users to discover related content by clicking on keywords or searching for topics.
@@ -313,7 +313,7 @@ ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
 ```
 :::
 
-#### Indexing Map
+#### Indexing Map {#text-index-example-map}
 
 In a logging system, server requests often store metadata in key-value pairs. Operations teams need to efficiently search through logs for debugging, security incidents, and monitoring.
 

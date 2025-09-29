@@ -2,6 +2,7 @@
 
 -- Tests that text indexes can be build on and used with Array columns.
 
+SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
