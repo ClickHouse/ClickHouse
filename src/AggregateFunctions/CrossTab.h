@@ -91,7 +91,7 @@ struct CrossTabData
       * Then divide by the second term for normalization: (count_a * count_b / count)
       * We get:
       *   χ² = Σ_{a,b} (count_ab - (count_a * count_b) / count)² / ((count_a * count_b) / count).
-      * 
+      *
       * However, iterating over all possible pairs (a, b) is not feasible: in the worst case it is quadratic, O(|A||B|)
       * if all entries may have count_ab = 0.
       * Instead, we can rewrite the formula into a sparse form that runs in O(N), where N is the number of
@@ -116,11 +116,11 @@ struct CrossTabData
       *
       * Divide by count to obtain φ² = χ² / count:
       *   φ² = Σ_{a,b} (count_ab²) / (count_a * count_b) - 1.
-      * 
+      *
       * Note that in this formulation we iterate only over observed pairs (count_ab > 0),
       * because terms with count_ab = 0 contribute 0 to the sum; thus the computation is linear
       * in the number of observed pairs (O(N), where N = |count_ab|).
-      * 
+      *
       * This will be the χ² statistics.
       * This statistic is used as a base for many other statistics.
       */
