@@ -1137,6 +1137,52 @@ VariantType::~VariantType()
     }
 }
 
+String QBitType::typeName(const bool escape, const bool simplified) const
+{
+    return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
+}
+
+String QBitType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String QBitType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String QBitType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+SQLType * QBitType::typeDeepCopy() const
+{
+    return new QBitType(subtype->typeDeepCopy(), dimension);
+}
+
+String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
+{
+    /// This is a hot loop, so fmt::format may not be desirable
+    String ret = "[";
+    for (uint64_t i = 0; i < dimension; i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += subtype->appendRandomRawValue(rg, gen);
+    }
+    ret += "]";
+    return ret;
+}
+
+QBitType::~QBitType()
+{
+    delete subtype;
+}
+
 String NestedType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
@@ -1420,21 +1466,23 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
 {
     SQLType * res = nullptr;
 
+    const bool allow_floats = (allowed_types & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     const uint32_t int_type = 40;
-    const uint32_t floating_point_type = 10
-        * static_cast<uint32_t>((allowed_types & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points);
+    const uint32_t floating_point_type = 10 * static_cast<uint32_t>(allow_floats);
     const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
     const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
     const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
     const uint32_t decimal_type = 20 * static_cast<uint32_t>((allowed_types & allow_decimals) != 0);
     const uint32_t bool_type = 20 * static_cast<uint32_t>((allowed_types & allow_bool) != 0);
-    const uint32_t enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0);
+    const uint32_t enum_type = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0);
     const uint32_t uuid_type = 10 * static_cast<uint32_t>((allowed_types & allow_uuid) != 0);
     const uint32_t ipv4_type = 5 * static_cast<uint32_t>((allowed_types & allow_ipv4) != 0);
     const uint32_t ipv6_type = 5 * static_cast<uint32_t>((allowed_types & allow_ipv6) != 0);
     const uint32_t j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0);
     const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
     const uint32_t time_type = 15 * static_cast<uint32_t>((allowed_types & allow_time) != 0);
+    const uint32_t qbit_type
+        = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats && supports_cloud_features);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
         + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -1706,6 +1754,26 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         TimeTp * tt = tp ? tp->mutable_times() : nullptr;
 
         res = randomTimeType(rg, low_card ? (allowed_types & ~(allow_time64)) : allowed_types, tt);
+    }
+    else if (
+        qbit_type
+        && nopt
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + 1))
+    {
+        SQLType * sub;
+        FloatingPoints nflo;
+        QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
+        const uint32_t dimension
+            = this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
+
+        std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+        if (tp)
+        {
+            qbit->set_subtype(nflo);
+            qbit->set_dimension(dimension);
+        }
+        res = new QBitType(sub, dimension);
     }
     else
     {

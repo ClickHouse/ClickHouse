@@ -261,7 +261,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings}};
+           {"fixedstring", allow_fixed_strings},
+           {"qbit", allow_qbit}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},

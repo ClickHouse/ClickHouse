@@ -143,6 +143,20 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
+    else if (tp && tp->getTypeClass() == SQLTypeClass::QBIT)
+    {
+        QBitType * qbit = dynamic_cast<QBitType *>(tp);
+        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
+        static const std::unordered_map<uint32_t, DB::Strings> & qentries
+            = {{16, {"1", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
+
+        for (const auto & entry : qentries.at(fp->size))
+        {
+            next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
+    }
     /// Remove the last element from the path
     next.path.pop_back();
 }
@@ -1514,13 +1528,13 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
-            | set_no_decimal_limit);
+            | set_no_decimal_limit | allow_qbit);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo);
+            | allow_geo | allow_qbit);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
@@ -1531,7 +1545,7 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
-            | allow_nested | allow_geo);
+            | allow_nested | allow_geo | allow_qbit);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
@@ -1541,7 +1555,7 @@ void StatementGenerator::addTableColumn(
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_qbit);
     }
     if (t.hasDatabasePeer())
     {

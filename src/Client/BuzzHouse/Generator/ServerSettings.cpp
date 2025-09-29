@@ -1411,7 +1411,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 }
 
-std::unique_ptr<SQLType> size_tp, null_tp;
+std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
 
 std::vector<SystemTable> systemTables;
 
@@ -1419,6 +1419,7 @@ void loadSystemTables(FuzzConfig & fc)
 {
     size_tp = std::make_unique<IntType>(64, true);
     null_tp = std::make_unique<BoolType>();
+    string_tp = std::make_unique<StringType>(1);
 
     fc.loadSystemTables(systemTables);
 }

@@ -2977,6 +2977,11 @@ message Dynamic {
     optional uint32 ntypes = 1;
 }
 
+message QBit {
+    required FloatingPoints subtype = 1;
+    required uint32 dimension = 2;
+}
+
 message BottomTypeName {
     oneof bottom_one_of {
         Integers integers = 1;
@@ -2994,6 +2999,7 @@ message BottomTypeName {
         EnumDef enum_def = 13;
         bool IPv4 = 14;
         bool IPv6 = 15;
+        QBit qbit = 16;
     }
 }
 

@@ -34,7 +34,8 @@ enum class SQLTypeClass
     MAP = 19,
     TUPLE = 20,
     VARIANT = 21,
-    NESTED = 22
+    QBIT = 22,
+    NESTED = 23
 };
 
 class SQLType
@@ -540,6 +541,30 @@ public:
         , subtype(s)
     {
     }
+};
+
+class QBitType : public SQLType
+{
+public:
+    SQLType * subtype;
+    const uint32_t dimension;
+
+    QBitType(SQLType * s, const uint32_t d)
+        : subtype(s)
+        , dimension(d)
+    {
+    }
+
+    String typeName(bool, bool) const override;
+    String MySQLtypeName(RandomGenerator &, bool) const override;
+    String PostgreSQLtypeName(RandomGenerator &, bool) const override;
+    String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::QBIT; }
+
+    ~QBitType() override;
 };
 
 class NestedType : public SQLType

@@ -900,6 +900,16 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             }
         }
         break;
+        case BottomTypeNameType::kQbit: {
+            const QBit & qq = btn.qbit();
+
+            ret += "QBit(";
+            ret += FloatingPoints_Name(qq.subtype());
+            ret += ", ";
+            ret += std::to_string(qq.dimension());
+            ret += ")";
+        }
+        break;
         default: {
             if (lcard)
             {
