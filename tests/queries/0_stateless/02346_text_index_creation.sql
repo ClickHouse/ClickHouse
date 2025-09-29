@@ -420,6 +420,8 @@ DROP TABLE tab;
 
 SELECT 'Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.';
 
+SELECT '-- Negative tests';
+
 CREATE TABLE tab
 (
     key UInt64,
@@ -520,3 +522,79 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+SELECT '-- Positive tests';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    str_fixed FixedString(3),
+    INDEX idx str TYPE text(tokenizer = 'default'),
+    INDEX idx_fixed str_fixed TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, 'foo', toFixedString('foo', 3)), (2, 'bar', toFixedString('bar', 3)), (3, 'baz', toFixedString('baz', 3));
+
+SELECT count() FROM tab WHERE str = 'foo' SETTINGS force_data_skipping_indices='idx';
+SELECT count() FROM tab WHERE str_fixed = toFixedString('foo', 3) SETTINGS force_data_skipping_indices='idx_fixed';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    key UInt64,
+    lc LowCardinality(String),
+    lc_fixed LowCardinality(FixedString(3)),
+    INDEX idx lc TYPE text(tokenizer = 'default'),
+    INDEX idx_fixed lc_fixed TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, 'foo', toFixedString('foo', 3)), (2, 'bar', toFixedString('bar', 3)), (3, 'baz', toFixedString('baz', 3));
+
+SELECT count() FROM tab WHERE lc = 'foo' SETTINGS force_data_skipping_indices='idx';
+SELECT count() FROM tab WHERE lc_fixed = toFixedString('foo', 3) SETTINGS force_data_skipping_indices='idx_fixed';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    key UInt64,
+    arr Array(String),
+    arr_fixed Array(FixedString(3)),
+    INDEX idx arr TYPE text(tokenizer = 'default'),
+    INDEX idx_fixed arr_fixed TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, ['foo'], [toFixedString('foo', 3)]), (2, ['bar'], [toFixedString('bar', 3)]), (3, ['baz'], [toFixedString('baz', 3)]);
+
+SELECT count() FROM tab WHERE has(arr, 'foo') SETTINGS force_data_skipping_indices='idx';
+SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_fixed';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    key UInt64,
+    map Map(String, String),
+    map_fixed Map(FixedString(3), FixedString(3)),
+    INDEX idx_keys mapKeys(map) TYPE text(tokenizer = 'default'),
+    INDEX idx_keys_fixed mapKeys(map_fixed) TYPE text(tokenizer = 'default'),
+    INDEX idx_values mapValues(map) TYPE text(tokenizer = 'default'),
+    INDEX idx_values_fixed mapValues(map_fixed) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, {'foo' : 'foo'}, {'foo' : 'foo'}), (2, {'bar' : 'bar'}, {'bar' : 'bar'});
+
+SELECT count() FROM tab WHERE mapContainsKey(map, 'foo') SETTINGS force_data_skipping_indices='idx_keys';
+SELECT count() FROM tab WHERE mapContainsKey(map_fixed, toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_keys_fixed';
+SELECT count() FROM tab WHERE has(mapValues(map), 'foo') SETTINGS force_data_skipping_indices='idx_values';
+SELECT count() FROM tab WHERE has(mapValues(map_fixed), toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_values_fixed';
+
+DROP TABLE tab;
