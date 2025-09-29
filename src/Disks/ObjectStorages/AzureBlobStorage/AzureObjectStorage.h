@@ -74,6 +74,8 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+
     ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
@@ -107,6 +109,11 @@ public:
     bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
+
+    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
+    {
+        return connection_params;
+    }
 
 private:
     void removeObjectImpl(

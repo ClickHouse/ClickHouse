@@ -3,6 +3,7 @@ description: 'System table containing information about Refreshable Materialized
 keywords: ['system table', 'view_refreshes']
 slug: /operations/system-tables/view_refreshes
 title: 'system.view_refreshes'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -576,14 +576,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->updateExternalDynamicMetadataIfExists(context))
-        {
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
-        }
-
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
+        storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
@@ -809,7 +805,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
-                    metadata_snapshot,
+                    storage_snapshot,
                     storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,

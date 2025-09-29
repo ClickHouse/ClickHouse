@@ -53,7 +53,6 @@ namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
 
@@ -72,6 +71,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
+        nullptr, // storage_metadata
         local_distributed_processing,
         context,
         {}, // predicate
@@ -129,14 +129,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         configuration->create(
-            object_storage,
-            context,
-            columns_in_table_or_function_definition,
-            partition_by_,
-            if_not_exists_,
-            catalog,
-            storage_id
-        );
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -147,8 +140,7 @@ StorageObjectStorage::StorageObjectStorage(
             configuration->update(
                 object_storage,
                 context,
-                /* if_not_updated_before */is_table_function,
-                /* check_consistent_with_previous_metadata */true);
+                /* if_not_updated_before */ is_table_function);
             updated_configuration = true;
         }
     }
@@ -228,6 +220,15 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
+
+    /// This will update metadata for table function which contains specific information about table
+    /// state (e.g. for Iceberg). It is done because select queries for table functions are executed
+    /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
+    if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 String StorageObjectStorage::getName() const
@@ -275,51 +276,31 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false);
+        /* if_not_updated_before */ false);
 
     return configuration->getExternalMetadata();
 }
 
-bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    bool updated = configuration->update(
+    configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */false);
-
-    if (!configuration->hasExternalDynamicMetadata())
-        return false;
-
-    if (!updated)
+        /* if_not_updated_before */ true);
+    if (configuration->needsUpdateForSchemaConsistency())
     {
-        /// Force the update.
-        configuration->update(
-            object_storage,
-            query_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */false);
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        setInMemoryMetadata(metadata_snapshot);
     }
-
-    auto columns = configuration->tryGetTableStructureFromMetadata();
-    if (!columns.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(std::move(columns.value()));
-    setInMemoryMetadata(metadata);
-    return true;
 }
+
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
@@ -328,9 +309,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -351,8 +330,7 @@ void StorageObjectStorage::read(
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ false);
     }
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
@@ -411,8 +389,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ false);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
@@ -529,11 +506,12 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        nullptr, /* storage_metadata */
+        false, /* distributed_processing */
         context,
-        {}/* predicate */,
+        {}, /* predicate*/
         {},
-        {}/* virtual_columns */,
+        {}, /* virtual_columns */
         {}, /* hive_columns */
         &read_keys);
 
@@ -640,7 +618,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     configuration->alter(params, context);
 
-    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    DatabaseCatalog::instance()
+        .getDatabase(storage_id.database_name)
+        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 

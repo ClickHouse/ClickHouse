@@ -4,6 +4,7 @@ description: 'System table containing metrics which can be calculated instantly,
 keywords: ['system table', 'metrics']
 slug: /operations/system-tables/metrics
 title: 'system.metrics'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -414,7 +414,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        const std::unique_ptr<AggregateDataPtr[]> & places,
+        AggregateDataPtr * places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,

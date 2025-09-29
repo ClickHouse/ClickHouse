@@ -469,7 +469,7 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, true, R"(
+    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, false, R"(
 When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
 after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
 When set to `false`, each thread handles s3 request backoff independently of the others.
@@ -1502,7 +1502,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
 Enable using data skipping indexes during data reading.
 
 When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
@@ -1514,6 +1514,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+)", 0) \
+    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
+For testing purposes, enables or disables usage of bloom filter in text index.
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
@@ -1643,12 +1646,14 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 )", 0) \
     \
     DECLARE(String, network_compression_method, "LZ4", R"(
-Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+The codec for compressing the client/server and server/server communication.
 
 Possible values:
 
-- `LZ4` — sets LZ4 compression method.
-- `ZSTD` — sets ZSTD compression method.
+- `NONE` — no compression.
+- `LZ4` — use the LZ4 codec.
+- `LZ4HC` — use the LZ4HC codec.
+- `ZSTD` — use the ZSTD codec.
 
 **See Also**
 
@@ -4878,6 +4883,9 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
+    DECLARE(Bool, delta_lake_log_metadata, false, R"(
+Enables logging delta lake metadata files into system table.
+)", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.
@@ -5435,6 +5443,9 @@ Possible values:
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \
+    DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
+Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
+)", 0) \
     DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0) \
@@ -5562,6 +5573,9 @@ Serialize query plan for distributed processing
 )", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
+    DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
+Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
@@ -6077,6 +6091,9 @@ Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distrib
     DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
 Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
 )", 0) \
+    DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
+Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6374,6 +6391,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
@@ -6486,9 +6506,6 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(String, datalake_disk_name, "", R"(
-Which disk to use for data lake table engines.
-)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -6504,7 +6521,7 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
-    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 100000, R"(
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 1000000, R"(
 Defines a rows limit for a single inserted data file in delta lake.
 )", 0) \
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
@@ -6772,6 +6789,12 @@ Populate constant comparison in AND chains to enhance filtering ability. Support
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    DECLARE(Bool, use_join_disjunctions_push_down, false, R"(
+Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
+This allows storage engines to filter earlier, which can reduce data read.
+The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
+predicate for the target side.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
@@ -6826,10 +6849,10 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(UInt64, max_iceberg_data_file_rows, 1000, R"(
+    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
@@ -6881,18 +6904,20 @@ Possible values:
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
-Enable jemalloc profiler.
-    )", 0) \
+Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
+Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
+Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
+See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
-Collect jemalloc profile samples in trace log.
+Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
-    DECLARE(Int32, os_threads_nice_value_query, 0, R"(
+    DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
-    )", 0) \
+    )", 0, os_thread_priority) \
     DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
 Linux nice value for materialized view threads. Lower values mean higher CPU priority.
 
@@ -6966,6 +6991,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
+Allow to perform full text search filtering using only the inverted index in query plan.
+)", 0) \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
@@ -7000,6 +7028,10 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, allow_experimental_qbit_type, false, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
@@ -7072,6 +7104,15 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
+Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
@@ -7138,7 +7179,6 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
-    MAKE_OBSOLETE(M, Int64, os_thread_priority, 0) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
