@@ -1148,7 +1148,6 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -6895,16 +6894,6 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
-}
-
-void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
-{
-    storage_alias_behaviour = storage_alias_behaviour_;
-}
-
-uint8_t Context::getStorageAliasBehaviour() const
-{
-    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const
