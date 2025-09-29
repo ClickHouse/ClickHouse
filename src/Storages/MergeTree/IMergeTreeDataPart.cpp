@@ -45,6 +45,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <exception>
 #include <optional>
@@ -384,8 +385,22 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part_name(parent_part ? parent_part->name : "")
     , mutable_name(name_)
 {
+    bool support_writing_with_append = true;
+    auto disk_name = getDataPartStorage().getDiskName();
+    auto disks = storage.getStoragePolicy()->getVolumeByDiskName(disk_name)->getDisks();
+    for (auto & disk : disks)
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            {
+                support_writing_with_append = false;
+                break;
+            }
+        }
+    }
 
-    version = std::make_unique<VersionMetadataOnDisk>(this);
+    version = std::make_unique<VersionMetadataOnDisk>(this, support_writing_with_append);
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix

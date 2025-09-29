@@ -326,6 +326,9 @@ public:
         const std::string & /* config_prefix */,
         ContextPtr /* context */) {}
 
+    /// Only support writing with Append if MetadataTransactionPtr created by `createTransaction` has `supportAddingBlobToMetadata`
+    virtual bool supportWritingWithAppend() const { return false; }
+
 protected:
     [[noreturn]] static void throwNotImplemented()
     {
