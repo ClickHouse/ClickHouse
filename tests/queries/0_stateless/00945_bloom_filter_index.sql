@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
 SET use_skip_indexes_on_data_read = 0;
 SET allow_suspicious_low_cardinality_types = 1;
