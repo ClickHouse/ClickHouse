@@ -7,12 +7,10 @@ namespace DB
 
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
-    /// Holds the deserialized data:
-    /// - when need_string_data = true, this is a String column with full string values
-    /// - when need_string_data = false, this is a UInt64 column with string sizes only
+    /// Holds full string values when `need_string_data` is true
     ColumnPtr column;
 
-    /// Whether full string data is required during deserialization    bool need_string_data = false;
+    /// Whether full string data is required during deserialization
     bool need_string_data = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
