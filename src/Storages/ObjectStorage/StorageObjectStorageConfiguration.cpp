@@ -72,7 +72,7 @@ void StorageObjectStorageConfiguration::initialize(
     configuration_to_initialize.initialized = true;
 }
 
-void StorageObjectStorageConfiguration::check(ContextPtr) const
+void StorageObjectStorageConfiguration::check(ContextPtr)
 {
     FormatFactory::instance().checkFormatName(format);
 }
