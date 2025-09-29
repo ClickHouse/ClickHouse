@@ -4403,7 +4403,7 @@ Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality
 **Syntax**
 
 ```sql
-lowCardinalityIndices(col)
+lowCardinalityKeys(col)
 ```
 
 **Arguments**

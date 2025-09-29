@@ -5,12 +5,12 @@
 #include <Processors/Chunk.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 #include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
-#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -223,7 +223,7 @@ private:
         void updateWithCurrentTime();
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         TimePoints time_points;
     };
 

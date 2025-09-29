@@ -667,7 +667,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data.get());
+            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data);
 
         chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
