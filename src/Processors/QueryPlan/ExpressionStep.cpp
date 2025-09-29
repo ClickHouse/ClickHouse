@@ -50,6 +50,8 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addSimpleTransform([&](const SharedHeader & header)
                                 { return std::make_shared<ExpressionTransform>(header, expression, updater); });
 
+    updater->setHeader(pipeline.getHeader());
+
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(

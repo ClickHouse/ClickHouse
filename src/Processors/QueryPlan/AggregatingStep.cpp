@@ -518,6 +518,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     updater);
             });
 
+        updater->setHeader(pipeline.getHeader());
+
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(0);

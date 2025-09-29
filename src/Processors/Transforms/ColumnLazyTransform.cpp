@@ -47,7 +47,7 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     if (updater)
     {
         for (auto & column_with_type_and_name : res_columns)
-            updater->addInputBytes(column_with_type_and_name.column->byteSize());
+            updater->addInputBytes(column_with_type_and_name);
     }
 
     for (auto & column_with_type_and_name : res_columns)
@@ -59,6 +59,6 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), rows_size);
 
     if (updater)
-        updater->addOutputBytes(chunk.bytes());
+        updater->addOutputBytes(chunk);
 }
 }

@@ -41,6 +41,8 @@ void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
                                 { return std::make_shared<ColumnLazyTransform>(header, std::move(lazy_column_reader), updater); });
+
+    updater->setHeader(pipeline.getHeader());
 }
 
 void LazilyReadStep::describeActions(FormatSettings & settings) const

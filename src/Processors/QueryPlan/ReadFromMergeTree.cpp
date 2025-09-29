@@ -578,6 +578,7 @@ Pipe ReadFromMergeTree::readFromPool(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+    updater->setHeader(pipe.getHeader());
     if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
         pipe.resize(output_streams_limit);
     return pipe;
@@ -723,6 +724,7 @@ Pipe ReadFromMergeTree::readInOrder(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+    updater->setHeader(pipe.getHeader());
 
     if (read_type == ReadType::InReverseOrder)
     {

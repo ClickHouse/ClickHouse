@@ -185,7 +185,7 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
 
     if (updater)
-        updater->addInputBytes(chunk.num_read_bytes);
+        updater->addInputBytes(chunk.chunk);
 
     finished = chunk.is_finished;
 
