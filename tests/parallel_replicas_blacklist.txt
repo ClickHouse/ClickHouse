@@ -423,6 +423,8 @@
 01576_alias_column_rewrite
     max rows: 4.00, current rows: 10.00
 01585_use_index_for_global_in
+    max rows: 20.00, current rows: 100.00
+02465_limit_trivial_max_rows_to_read
     max rows: 5.00, current rows: 20.00
 00926_adaptive_index_granularity_pk
     max rows: 12.00, current rows: 20.00
