@@ -35,7 +35,7 @@ TEST(ColumnUnique, InsertRange)
         indexes[i]= ref_map[str];
     }
 
-    auto idx = column_unique->uniqueInsertRangeFrom(*column_string, 0, num_values);
+    auto idx = column_unique->uniqueInsertRangeFrom(*column_string, 0, num_values, false);
     ASSERT_EQ(idx->size(), num_values);
 
     for (size_t i = 0; i < num_values; ++i)
@@ -112,7 +112,7 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         Arena arena;
         auto column_unique_pattern = ColumnUnique<ColumnString>::create(data_type);
         auto column_unique = ColumnUnique<ColumnString>::create(data_type);
-        auto idx = column_unique_pattern->uniqueInsertRangeFrom(column, 0, num_values);
+        auto idx = column_unique_pattern->uniqueInsertRangeFrom(column, 0, num_values, false);
 
         const char * pos = nullptr;
         for (size_t i = 0; i < num_values; ++i)
@@ -134,7 +134,7 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         Arena arena_string;
         Arena arena_lc;
         auto column_unique = ColumnUnique<ColumnString>::create(data_type);
-        auto idx = column_unique->uniqueInsertRangeFrom(column, 0, num_values);
+        auto idx = column_unique->uniqueInsertRangeFrom(column, 0, num_values, false);
 
         const char * pos_string = nullptr;
         const char * pos_lc = nullptr;
