@@ -12,7 +12,6 @@ class SinkToStorage : public ExceptionKeepingTransform
 {
 /// PartitionedSink owns nested sinks.
 friend class PartitionedSink;
-friend class DeltaLakePartitionedSink;
 
 public:
     explicit SinkToStorage(SharedHeader header);

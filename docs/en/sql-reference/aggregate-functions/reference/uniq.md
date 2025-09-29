@@ -3,7 +3,6 @@ description: 'Calculates the approximate number of different values of the argum
 sidebar_position: 204
 slug: /sql-reference/aggregate-functions/reference/uniq
 title: 'uniq'
-doc_type: 'reference'
 ---
 
 # uniq
@@ -41,3 +40,4 @@ We recommend using this function in almost all scenarios.
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
 - [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+

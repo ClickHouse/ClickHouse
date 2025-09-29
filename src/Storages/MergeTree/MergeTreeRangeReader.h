@@ -24,12 +24,11 @@ struct PrewhereExprStep
 {
     enum Type
     {
-        None,
         Filter,
         Expression,
     };
 
-    Type type = Type::None;
+    Type type = Type::Filter;
     ExpressionActionsPtr actions;
     String filter_column_name;
 
@@ -75,19 +74,10 @@ public:
         return performance_counters[step];
     }
 
-    ReadStepPerformanceCountersPtr getCounterForIndexStep()
-    {
-        if (!index_performance_counter)
-            index_performance_counter = std::make_shared<ReadStepPerformanceCounters>();
-        return index_performance_counter;
-    }
-
     const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-    const ReadStepPerformanceCountersPtr & getIndexCounter() const { return index_performance_counter; }
 
 private:
     std::vector<ReadStepPerformanceCountersPtr> performance_counters;
-    ReadStepPerformanceCountersPtr index_performance_counter;
 };
 
 class FilterWithCachedCount
@@ -394,6 +384,7 @@ public:
 
     static void filterColumns(Columns & columns, const FilterWithCachedCount & filter);
     static void filterBlock(Block & block, const FilterWithCachedCount & filter);
+    static String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 private:
     void fillVirtualColumns(Columns & columns, ReadResult & result);
@@ -401,9 +392,6 @@ private:
     ColumnPtr createPartGranuleOffsetColumn(ReadResult & result);
 
     void updatePerformanceCounters(size_t num_rows_read);
-
-    /// Special logic for vector search: fills a virtual column "_distance" and fills a filter on part offsets returned by vector index
-    void fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -413,8 +401,6 @@ private:
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
     Block result_sample_block;  /// Block with columns that are returned by this step.
-
-    FilterWithCachedCount part_offsets_filter_for_vector_search;
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps

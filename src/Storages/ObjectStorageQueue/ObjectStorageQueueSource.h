@@ -154,7 +154,7 @@ public:
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatParserGroupPtr parser_group_,
         const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
@@ -172,7 +172,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override { parser_group->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -213,7 +213,7 @@ private:
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatParserGroupPtr parser_group;
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;

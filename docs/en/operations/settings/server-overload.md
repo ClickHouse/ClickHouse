@@ -3,7 +3,6 @@ description: 'Controlling behavior on server CPU overload.'
 sidebar_label: 'Server overload'
 slug: /operations/settings/server-overload
 title: 'Server overload'
-doc_type: 'reference'
 ---
 
 # Server overload
@@ -34,22 +33,3 @@ Dropping connections is controlled by server-level settings `min_os_cpu_wait_tim
 `max_os_cpu_wait_time_ratio_to_drop_connection`. Those settings can be changed without server restart. The idea behind
 those settings is similar to the one with rejecting queries. The only difference in this case is if the server is overloaded,
 the connection attempt will be rejected from the server side.
-
-## Resource overload warnings {#resource-overload-warnings}
-
-ClickHouse also logs CPU and Memory overload warnings to `system.warnings` table when the server is overloaded. You can
-customize these thresholds through server configuration.
-
-**Example**
-
-```xml
-
-<resource_overload_warnings>
-    <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
-    <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
-    <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
-    <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
-    <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
-    <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
-</resource_overload_warnings>
-```

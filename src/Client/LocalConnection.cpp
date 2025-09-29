@@ -16,7 +16,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -24,7 +23,6 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
-#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace DB
 {
@@ -41,9 +39,6 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsString promql_database;
-    extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -205,9 +200,8 @@ void LocalConnection::sendQuery(
         if (dialect == Dialect::kusto)
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            parser
+                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -733,15 +727,11 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
+    const ConnectionTimeouts & /* timeouts */, String & /* name */,
+    UInt64 & /* version_major */, UInt64 & /* version_minor */,
+    UInt64 & /* version_patch */, UInt64 & /* revision */)
 {
-    name = std::string(VERSION_NAME);
-    version_major = VERSION_MAJOR;
-    version_minor = VERSION_MINOR;
-    version_patch = VERSION_PATCH;
-    revision = DBMS_TCP_PROTOCOL_VERSION;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

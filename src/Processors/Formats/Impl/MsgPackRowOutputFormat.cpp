@@ -304,8 +304,7 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

@@ -525,24 +525,3 @@ TEST(AccessRights, Iterator)
     ASSERT_EQ(res[2], "toast");
     ASSERT_EQ(res[3], "toaster");
 }
-
-TEST(AccessRights, Filter)
-{
-    AccessRights root;
-    root.grant(AccessType::READ, "S3", "s3://url1.*");
-    root.grant(AccessType::READ, "S3", "s3://url2.*");
-    root.grant(AccessType::READ, "URL", "https://url3.*");
-
-    auto res = root.getFilters("S3");
-    ASSERT_EQ(res.size(), 2);
-    ASSERT_EQ(res[0].path, "s3://url1.*");
-    ASSERT_EQ(res[1].path, "s3://url2.*");
-
-    res = root.getFilters("URL");
-    ASSERT_EQ(res.size(), 1);
-    ASSERT_EQ(res[0].path, "https://url3.*");
-
-    root.revoke(AccessType::READ, "URL");
-    res = root.getFilters("URL");
-    ASSERT_EQ(res.size(), 0);
-}

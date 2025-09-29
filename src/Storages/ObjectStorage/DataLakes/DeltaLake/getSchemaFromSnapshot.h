@@ -25,8 +25,6 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(f
 /// Represents read schema based on data files.
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan);
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context);
-
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,
 /// therefore partition columns are passed separately.

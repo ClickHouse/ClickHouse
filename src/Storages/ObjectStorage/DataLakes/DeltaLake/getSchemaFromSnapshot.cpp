@@ -88,11 +88,7 @@ public:
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
-    struct Field;
-    DB::NamesAndTypesList getNamesAndTypesFromList(
-        size_t list_idx,
-        const Field * parent,
-        DB::NameToNameMap & physical_names_map);
+    DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
 
     struct Field
     {
@@ -167,16 +163,6 @@ public:
         SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::scan_physical_schema(scan));
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-    }
-
-    static void visitWriteSchema(
-        ffi::SharedWriteContext * write_context,
-        SchemaVisitorData & data)
-    {
-        KernelSharedSchema schema(ffi::get_write_schema(write_context));
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
@@ -380,44 +366,61 @@ private:
 
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
+    const auto types = getDataTypesFromTypeList(0);
+    chassert(types.size() == type_lists[0]->size());
+
+    std::list<DB::NameAndTypePair> names_and_types;
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, nullptr, result.physical_names_map);
-    chassert(result.names_and_types.size() == type_lists[0]->size());
+    for (size_t i = 0; i < types.size(); ++i)
+    {
+        const auto & field = (*type_lists[0])[i];
+        names_and_types.emplace_back(field.name, types[i]);
+        if (!field.physical_name.empty())
+        {
+            [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
+            chassert(inserted);
+        }
+    }
+    result.names_and_types = DB::NamesAndTypesList(names_and_types.begin(), names_and_types.end());
     return result;
 }
 
-DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
-    size_t list_idx,
-    const Field * parent,
-    DB::NameToNameMap & physical_names_map)
+DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 {
-    DB::NamesAndTypesList names_and_types;
+    DB::DataTypes types;
     for (const auto & field : *type_lists[list_idx])
     {
-        DB::DataTypePtr type;
         if (field.is_bool)
         {
-            type = DB::DataTypeFactory::instance().get("Bool");
+            auto type = DB::DataTypeFactory::instance().get("Bool");
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::Decimal32)
         {
-            type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
+            auto type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::DateTime64)
         {
-            type = std::make_shared<DB::DataTypeDateTime64>(6);
+            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (DB::isSimpleDataType(field.type))
         {
-            type = DB::getSimpleDataTypeFromTypeIndex(field.type);
+            auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else
         {
@@ -431,12 +434,12 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             DB::WhichDataType which(field.type);
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
-                type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
+                types.push_back(std::make_shared<DB::DataTypeTuple>(child_types));
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -445,12 +448,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
                         child_types.size());
                 }
 
-                type = std::make_shared<DB::DataTypeArray>(child_types.getTypes()[0]);
+                types.push_back(std::make_shared<DB::DataTypeArray>(child_types[0]));
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
-                auto child_types = child_names_and_types.getTypes();
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 2)
                 {
                     throw DB::Exception(
@@ -458,7 +460,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
                         "Unexpected number of types in array: {}",
                         child_types.size());
                 }
-                type = std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]);
+                types.push_back(std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]));
             }
             else
             {
@@ -467,24 +469,8 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
                     "Column {} has unsupported complex data type: {}", field.name, field.type);
             }
         }
-        chassert(type);
-        if (!field.physical_name.empty())
-        {
-            if (parent)
-            {
-                chassert(!parent->physical_name.empty());
-                physical_names_map.emplace(
-                    fmt::format("{}.{}", parent->name, field.name),
-                    fmt::format("{}.{}", parent->physical_name, field.physical_name));
-            }
-            else
-            {
-                physical_names_map.emplace(field.name, field.physical_name);
-            }
-        }
-        names_and_types.emplace_back(field.name, type);
     }
-    return names_and_types;
+    return types;
 }
 
 std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
@@ -499,13 +485,6 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
 {
     SchemaVisitorData data;
     SchemaVisitor::visitReadSchema(scan, data);
-    return data.getSchemaResult().names_and_types;
-}
-
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
-{
-    SchemaVisitorData data;
-    SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
 

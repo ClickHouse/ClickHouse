@@ -3,12 +3,12 @@ description: 'Calculates the sum of the numbers with Kahan compensated summation
 sidebar_position: 197
 slug: /sql-reference/aggregate-functions/reference/sumkahan
 title: 'sumKahan'
-doc_type: 'reference'
 ---
 
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm)
 Slower than [sum](./sum.md) function.
 The compensation works only for [Float](../../../sql-reference/data-types/float.md) types.
+
 
 **Syntax**
 

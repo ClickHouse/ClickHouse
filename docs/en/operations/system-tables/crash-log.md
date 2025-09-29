@@ -3,7 +3,6 @@ description: 'System table containing information about stack traces for fatal e
 keywords: ['system table', 'crash_log']
 slug: /operations/system-tables/crash-log
 title: 'system.crash_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

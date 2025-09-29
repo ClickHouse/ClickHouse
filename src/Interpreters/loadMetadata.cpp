@@ -182,19 +182,6 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
             backQuote(actual_name));
     }
 }
-void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
-{
-    for (const auto & restoring_database_name : restoring_database_names)
-    {
-        auto drop_context = Context::createCopy(context);
-        String name_quoted = backQuoteIfNeed(restoring_database_name);
-        String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
-        drop_context->setSetting("force_remove_data_recursively_on_drop", false);
-        auto res = executeQuery(drop_query, context, QueryFlags{.internal = true}).second;
-        executeTrivialBlockIO(res, drop_context);
-        res = {};
-    }
-}
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
@@ -282,23 +269,17 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         databases.emplace(default_database_name, metadata_dir_path / escapeForFileName(default_database_name));
     }
 
-
     TablesLoader::Databases loaded_databases;
-    std::unordered_set<String> restoring_database_for_table_dropping_names;
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
-            restoring_database_for_table_dropping_names.insert(name);
     }
 
     for (const auto & [name, db_path] : orphan_directories_and_symlinks)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
-            restoring_database_for_table_dropping_names.insert(name);
     }
 
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false);
@@ -328,7 +309,6 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
     LOG_INFO(log, "Start synchronous startup of databases");
     waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-    dropRestoringDatabasesForTableDropping(context, restoring_database_for_table_dropping_names);
     return {};
 }
 

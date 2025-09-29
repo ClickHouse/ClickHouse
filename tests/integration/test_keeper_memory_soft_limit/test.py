@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import random
+import string
+
 import pytest
 from kazoo.client import KazooClient
 from helpers.cluster import ClickHouseCluster
@@ -13,6 +16,10 @@ node = cluster.add_instance(
     with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
     main_configs=["configs/setting.xml"],
 )
+
+
+def random_string(length):
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 
 def get_connection_zk(nodename, timeout=30.0):
@@ -57,8 +64,7 @@ def test_soft_limit_create(started_cluster):
 
         txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
         txn.commit()
-        node.query("system flush logs metric_log")
-        assert int(node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log").strip()) > 0
+        assert "0\n"  == node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log")
         return
 
     raise Exception("all records are inserted but no error occurs")

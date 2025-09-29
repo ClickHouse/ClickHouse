@@ -976,9 +976,8 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_column = assert_cast<const ColumnArray *>(column.get())->getDataPtr();
-            bool is_item_nullable = false;
-            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, &is_item_nullable);
-            return arrow::list(std::make_shared<arrow::Field>("item", nested_arrow_type, is_item_nullable));
+            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable);
+            return arrow::list(nested_arrow_type);
         }
 
         if (isTuple(column_type))
@@ -990,9 +989,8 @@ namespace DB
             std::vector<std::shared_ptr<arrow::Field>> nested_fields;
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
-                bool is_field_nullable = false;
-                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, &is_field_nullable);
-                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, is_field_nullable));
+                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, out_is_column_nullable);
+                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, *out_is_column_nullable));
             }
             return arrow::struct_(nested_fields);
         }
@@ -1013,16 +1011,11 @@ namespace DB
             const auto * map_type = assert_cast<const DataTypeMap *>(column_type.get());
             const auto & key_type = map_type->getKeyType();
             const auto & val_type = map_type->getValueType();
+
             const auto & columns =  assert_cast<const ColumnMap *>(column.get())->getNestedData().getColumns();
-
-            bool _is_key_nullable = false;
-            auto key_arrow_type = getArrowType(key_type, columns[0], column_name, format_name, settings, &_is_key_nullable);
-            bool is_val_nullable = false;
-            auto val_arrow_type = getArrowType(val_type, columns[1], column_name, format_name, settings, &is_val_nullable);
-
             return arrow::map(
-                key_arrow_type,
-                std::make_shared<arrow::Field>("value", val_arrow_type, is_val_nullable));
+                getArrowType(key_type, columns[0], column_name, format_name, settings, out_is_column_nullable),
+                getArrowType(val_type, columns[1], column_name, format_name, settings, out_is_column_nullable));
         }
 
         if (isDateTime64(column_type))
@@ -1084,8 +1077,7 @@ namespace DB
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
         const std::vector<Chunk> & chunks,
-        size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
+        size_t columns_num)
     {
         std::shared_ptr<arrow::Schema> arrow_schema;
         std::vector<arrow::ArrayVector> table_data(columns_num);
@@ -1111,15 +1103,7 @@ namespace DB
                         format_name,
                         settings,
                         &is_column_nullable);
-                    if (column_to_field_id && column_to_field_id->contains(header_column.name))
-                    {
-                        Int64 field_id = column_to_field_id->at(header_column.name);
-                        auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
-                                  {std::to_string(field_id)});
-                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
-                    }
-                    else
-                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
+                    arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
                 }
 
                 arrow::MemoryPool * pool = ArrowMemoryPool::instance();

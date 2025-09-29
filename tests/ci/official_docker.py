@@ -40,7 +40,6 @@ DOCKER_LIBRARY_NAME = {"server": "clickhouse"}
 MAINTAINERS_HEADER = (
     "Maintainers: Misha f. Shiryaev <felixoid@clickhouse.com> (@Felixoid),\n"
     "             Max Kainov <max.kainov@clickhouse.com> (@mkaynov),\n"
-    "             Alexander Tokmakov <tavplubix@clickhouse.com> (@tavplubix),\n"
     "             Alexander Sapin <alesapin@clickhouse.com> (@alesapin)"
 )
 

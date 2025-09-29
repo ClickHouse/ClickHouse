@@ -4,7 +4,6 @@ sidebar_label: 'View all formats...'
 sidebar_position: 21
 slug: /interfaces/formats
 title: 'Formats for input and output data'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -82,7 +81,7 @@ The supported formats are:
 | [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔   | ✔     |
 | [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔   | ✔     |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔   | ✔     |
-| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗   | ✔     |
+| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗    | ✔     |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔   | ✔     |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔   | ✔     |
@@ -105,7 +104,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
-| [ProtobufList](#protobuflist)                                                             | ✔   | ✔     |
+| [ProtobufList](#protobuflist)                                                                                     | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |
@@ -121,7 +120,6 @@ The supported formats are:
 | [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔   | ✗     |
 | [Native](#native)                                                                         | ✔   | ✔     |
 | [Null](#null)                                                                             | ✗   | ✔     |
-| [Hash](#hash)                                                                             | ✗   | ✔     |
 | [XML](#xml)                                                                               | ✗   | ✔     |
 | [CapnProto](#capnproto)                                                                   | ✔   | ✔     |
 | [LineAsString](#lineasstring)                                                             | ✔   | ✔     |
@@ -132,6 +130,7 @@ The supported formats are:
 | [DWARF](#dwarf)                                                                           | ✔   | ✗     |
 | [Markdown](#markdown)                                                                     | ✗   | ✔     |
 | [Form](#form)                                                                             | ✔   | ✗     |
+
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/operations/settings/settings-formats.md) section.
 
@@ -302,10 +301,6 @@ See [Native](/interfaces/formats/Native)
 ### Null {#null}
 
 See [Null](/interfaces/formats/Null)
-
-### Hash {#hash}
-
-See [Hash](/interfaces/formats/Hash)
 
 ### Pretty {#pretty}
 
