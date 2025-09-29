@@ -14,7 +14,6 @@ public:
     ~StatisticsUniq() override;
 
     void build(const ColumnPtr & column) override;
-    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;

@@ -157,7 +157,7 @@ const ActionsDAG::Node & addCast(
         const ActionsDAG::Node & node_to_cast,
         const DataTypePtr & to_type)
 {
-    if (!node_to_cast.result_type->equals(*to_type))
+    if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     const auto & new_node = dag->addCast(node_to_cast, to_type, {});
@@ -349,7 +349,6 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
-                .mutation_version = std::nullopt,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

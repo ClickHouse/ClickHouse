@@ -1,4 +1,0 @@
-Expect a single entry in the cache
-1
-Expect empty cache after DROP CACHE
-0
