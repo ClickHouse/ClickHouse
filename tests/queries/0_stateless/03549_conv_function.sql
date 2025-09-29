@@ -37,6 +37,9 @@ SELECT conv('18446744073709551615', 10, 16);  -- Max UInt64
 SELECT conv('FFFFFFFFFFFFFFFF', 16, 10);      -- Max UInt64 in hex -- 18446744073709551615
 SELECT conv('999999999999999999999', 10, 16); -- Overflow case -- FFFFFFFFFFFFFFFF
 
+-- Only whitespace test
+SELECT conv(' ', 16, 10); -- 0
+
 -- Numeric input types
 SELECT conv(255, 10, 16); -- FF
 SELECT conv(1010, 2, 10); -- 10
@@ -48,6 +51,8 @@ SELECT conv(number, 10, 2) FROM system.numbers WHERE number < 8;
 
 -- Const column optimization test
 SELECT conv('FF', 16, 10) FROM system.numbers LIMIT 3; -- 255 255 255
+
+
 
 -- Mixed scenarios
 SELECT conv(toString(number), 10, 36), conv(toString(number), 10, 2)

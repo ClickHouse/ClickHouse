@@ -113,7 +113,7 @@ private:
             clean_number.erase(clean_number.find_last_not_of(" \t\n\r\f\v") + 1);
         }
         if (clean_number.empty())
-            return "";
+            return "0";
 
         if (clean_number[0] == '-')
         {
@@ -126,7 +126,7 @@ private:
         }
 
         if (clean_number.empty())
-            return "";
+            return "0";
 
         try
         {
