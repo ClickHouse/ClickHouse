@@ -69,6 +69,7 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version);
 
 }

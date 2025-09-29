@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 namespace ProfileEvents
 {
@@ -205,7 +206,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches, const Block & result_block)
+Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
     std::vector<Block> headers;
 
@@ -215,9 +216,8 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
 
         for (const auto & column : patch->patch_block)
         {
-            /// System columns may differ because we allow to apply combined patches with different modes.
-            /// Ignore columns that are not present in result block.
-            if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
+            /// Ignore columns that are not updated.
+            if (!updated_columns.contains(column.name))
                 header.erase(column.name);
         }
 
@@ -232,6 +232,7 @@ void applyPatchesToBlockRaw(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Block & updated_header,
     UInt64 source_data_version)
 {
     if (patches.empty())
@@ -239,10 +240,7 @@ void applyPatchesToBlockRaw(
 
     for (auto & result_column : result_block)
     {
-        if (!patches[0]->patch_block.has(result_column.name))
-            continue;
-
-        if (isPatchPartSystemColumn(result_column.name))
+        if (!updated_header.has(result_column.name))
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
@@ -277,6 +275,7 @@ void applyPatchesToBlockCombined(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Block & updated_header,
     UInt64 source_data_version)
 {
     if (patches.empty())
@@ -286,10 +285,7 @@ void applyPatchesToBlockCombined(
 
     for (auto & result_column : result_block)
     {
-        if (!patches[0]->patch_block.has(result_column.name))
-            continue;
-
-        if (isPatchPartSystemColumn(result_column.name))
+        if (!updated_header.has(result_column.name))
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
@@ -494,16 +490,15 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version)
 {
     if (patches.empty())
         return;
 
-    Stopwatch watch;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    assertPatchesBlockStructure(patches, result_block);
-#endif
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
+    NameSet updated_columns_set(updated_columns.begin(), updated_columns.end());
+    auto updated_header = getUpdatedHeader(patches, updated_columns_set);
 
     bool can_apply_all_inplace = true;
     const auto & patch_header = patches[0]->patch_block;
@@ -518,12 +513,9 @@ void applyPatchesToBlock(
     }
 
     if (patches.size() == 1 || can_apply_all_inplace)
-        applyPatchesToBlockRaw(result_block, versions_block, patches, source_data_version);
+        applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);
     else
-        applyPatchesToBlockCombined(result_block, versions_block, patches, source_data_version);
-
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::ApplyPatchesMicroseconds, elapsed);
+        applyPatchesToBlockCombined(result_block, versions_block, patches, updated_header, source_data_version);
 }
 
 }
