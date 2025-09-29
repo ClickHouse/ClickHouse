@@ -149,7 +149,6 @@ void waitUntilCompressionIsDone(
 void scheduleCompactionJob(
     const Iceberg::IcebergHistory & snapshots_info,
     const Iceberg::PersistentTableComponents & persistent_components,
-    CompressionMethod metadata_compression_method,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
@@ -171,7 +170,6 @@ void scheduleCompactionJob(
                 format_settings,
                 sample_block,
                 context,
-                metadata_compression_method,
                 true);
         }
         catch (Exception & ex)
@@ -205,7 +203,6 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
 StorageObjectStorageConfigurationPtr IcebergMetadata::getConfiguration() const
 {
     auto configuration_ptr = configuration.lock();
-    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
 
     if (!configuration_ptr)
         throw Exception(
@@ -394,6 +391,7 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         auto configuration_ptr = getConfiguration();
+        waitUntilCompressionIsDone(configuration_ptr, object_storage, context);
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
         compactIcebergTable(
@@ -404,7 +402,6 @@ bool IcebergMetadata::optimize(
             format_settings,
             sample_block,
             context,
-            persistent_components.metadata_compression_method,
             true
         );
         return true;
@@ -420,6 +417,7 @@ std::pair<IcebergDataSnapshotPtr, Int32>
 IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
 {
     auto configuration_ptr = getConfiguration();
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
 
     std::optional<String> manifest_list_file;
 
@@ -559,6 +557,7 @@ void IcebergMetadata::mutate(
     }
 
     auto configuration_ptr = getConfiguration();
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, context);
 
     DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
@@ -570,7 +569,6 @@ void IcebergMetadata::mutate(
             scheduleCompactionJob(
                 snapshots_info,
                 persistent_components,
-                metadata_compression_method,
                 object_storage,
                 configuration_ptr,
                 format_settings,

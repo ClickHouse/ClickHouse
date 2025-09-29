@@ -540,11 +540,10 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    CompressionMethod compression_method_,
     bool wait_concurrent_compaction)
 {
     auto plan
-        = getPlan(std::move(snapshots_info), persistent_table_components, object_storage_, configuration_, context_, compression_method_);
+        = getPlan(std::move(snapshots_info), persistent_table_components, object_storage_, configuration_, context_, persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
         bool need_merge = true;
