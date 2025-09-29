@@ -2078,14 +2078,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 is_parallel_reading_from_replicas_);
         };
 
-        if (!settings[Setting::distributed_index_analysis])
+        bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
+        /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
+        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
+
+        if (!distributed_index_analysis_enabled)
         {
             result.parts_with_ranges = analyze_index(std::move(parts), result.index_stats);
 
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
 
-            if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-                && settings[Setting::use_skip_indexes_if_final_exact_mode])
+            if (final_second_pass)
             {
                 result.parts_with_ranges
                     = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
@@ -2185,14 +2188,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.parts_with_ranges = std::move(result_parts_ranges);
 
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
-
-            if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-                && settings[Setting::use_skip_indexes_if_final_exact_mode])
-            {
-                result.parts_with_ranges
-                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
-                add_index_stat_row_for_pk_expand = true;
-            }
         }
     }
 
