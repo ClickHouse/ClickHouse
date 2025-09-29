@@ -36,7 +36,7 @@ namespace ErrorCodes
 }
 
 std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
-WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const
+WebObjectStorage::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
 {
     std::vector<fs::path> loaded_files;
     auto full_url = fs::path(url) / path;
@@ -279,6 +279,11 @@ void WebObjectStorage::startup()
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+}
+
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & /* path */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }

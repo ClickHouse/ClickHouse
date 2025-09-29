@@ -5044,9 +5044,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
-Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
-)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -5576,6 +5573,9 @@ Serialize query plan for distributed processing
 )", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
+    DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
+Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
@@ -6391,6 +6391,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
@@ -6901,18 +6904,20 @@ Possible values:
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
-Enable jemalloc profiler.
-    )", 0) \
+Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
+Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
+Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
+See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
-Collect jemalloc profile samples in trace log.
+Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
-    DECLARE(Int32, os_threads_nice_value_query, 0, R"(
+    DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
-    )", 0) \
+    )", 0, os_thread_priority) \
     DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
 Linux nice value for materialized view threads. Lower values mean higher CPU priority.
 
@@ -7023,6 +7028,10 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, allow_experimental_qbit_type, false, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
@@ -7173,7 +7182,6 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
-    MAKE_OBSOLETE(M, Int64, os_thread_priority, 0) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
