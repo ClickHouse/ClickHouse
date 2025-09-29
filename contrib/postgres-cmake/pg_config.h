@@ -151,9 +151,7 @@
 #define HAVE_EXECINFO_H 1
 
 /* Define to 1 if you have the `explicit_bzero' function. */
-#if (!OS_DARWIN && !ARCH_PPC64LE)
-#define HAVE_EXPLICIT_BZERO 1
-#endif
+/* #define HAVE_EXPLICIT_BZERO */
 
 /* Define to 1 if fseeko (and presumably ftello) exists and is declared. */
 #define HAVE_FSEEKO 1
