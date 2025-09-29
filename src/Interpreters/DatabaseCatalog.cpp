@@ -1,43 +1,45 @@
-#include <algorithm>
-#include <string>
-#include <mutex>
-#include <utility>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/loadMetadata.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Storages/IStorage.h>
-#include <Databases/IDatabase.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseOnDisk.h>
-#include <Disks/IDisk.h>
-#include <Storages/MemorySettings.h>
-#include <Storages/StorageMemory.h>
-#include <Storages/StorageAlias.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Access/ContextAccess.h>
+
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <IO/ReadHelpers.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/TableNameHints.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
-#include <Common/assert_cast.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/noexcept_scope.h>
-#include <Common/checkStackSize.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <base/scope_guard.h>
+#include <Poco/DirectoryIterator.h>
+#include <Storages/IStorage.h>
+#include <Storages/MemorySettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMemory.h>
+
+#include <algorithm>
+#include <mutex>
+#include <string>
+#include <utility>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
@@ -78,7 +80,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int UNSUPPORTED_METHOD;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
@@ -97,18 +98,31 @@ namespace MergeTreeSetting
 class DatabaseNameHints : public IHints<>
 {
 public:
-    explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
+    explicit DatabaseNameHints(
+        const DatabaseCatalog & database_catalog_
+    )
         : database_catalog(database_catalog_)
-    {
-    }
+    {}
+
     Names getAllRegisteredNames() const override
     {
+        auto context = CurrentThread::getQueryContext();
+        if (!context)
+            return {};
+
+        const auto access = context->getAccess();
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+
         Names result;
         auto databases_list = database_catalog.getDatabases();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
+            if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+                continue;
+
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue;
+
             result.emplace_back(database_name);
         }
         return result;
@@ -350,33 +364,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-DatabaseAndTable DatabaseCatalog::getByUUID(const UUID & uuid) const
-{
-    auto res = tryGetByUUID(uuid);
-    if (!res.first || !res.second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", toString(uuid));
-    return res;
-}
-
-DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
-    const StorageID & table_id,
-    ContextPtr context_,
-    std::optional<Exception> * exception) const
-{
-    auto database_and_table = getTableImpl(table_id, context_, exception);
-    auto & table = database_and_table.second;
-    if (table)
-    {
-        if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        {
-            if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ORIGINAL_TABLE))
-                database_and_table.second = alias_storage->getReferenceTable(context_);
-            else if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Storage Alias is unsupported in this query");
-        }
-    }
-    return database_and_table;
-}
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
@@ -401,7 +388,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 if (names.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
@@ -501,7 +488,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     if (!table && exception && !exception->has_value())
     {
-        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
@@ -1053,7 +1040,7 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -1061,13 +1048,13 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr).second;
+    return getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1075,7 +1062,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr);
+    return getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -1545,14 +1532,13 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    UniqueLock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    /// TSA doesn't support unique_lock
-    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
+    const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)

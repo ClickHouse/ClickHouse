@@ -4,6 +4,7 @@ sidebar_label: 'lag'
 sidebar_position: 9
 slug: /sql-reference/window-functions/lag
 title: 'lag'
+doc_type: 'reference'
 ---
 
 # lag

@@ -101,6 +101,17 @@ static Block getNonVirtualColumns(const Block & block)
     return Block(columns);
 }
 
+static std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
+getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chunk_partitioner)
+{
+    if (chunk_partitioner.has_value())
+        return chunk_partitioner->partitionChunk(chunk);
+    auto unpartitioned_result = std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>{};
+    unpartitioned_result.emplace_back(ChunkPartitioner::PartitionKey{}, chunk.clone());
+    return unpartitioned_result;
+}
+
+
 std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
@@ -110,7 +121,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
     StorageObjectStorageConfigurationPtr configuration,
     FileNamesGenerator & generator,
     const std::optional<FormatSettings> & format_settings,
-    ChunkPartitioner & chunk_partitioner,
+    std::optional<ChunkPartitioner> & chunk_partitioner,
     Poco::JSON::Object::Ptr data_schema)
 {
     chassert(commands.size() == 1);
@@ -147,7 +158,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
-            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
+
 
             auto col_data_filename = block.getByName(block_datafile_path);
             auto col_position = block.getByName(block_row_number);
@@ -252,7 +264,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             auto data_block = getNonVirtualColumns(block);
             Chunk chunk(data_block.getColumns(), data_block.rows());
-            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
@@ -316,7 +328,7 @@ WriteMetadataResult writeMetadataFiles(
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
-    ChunkPartitioner & chunk_partitioner,
+    std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
     SharedHeader sample_block)
 {
@@ -412,9 +424,9 @@ WriteMetadataResult writeMetadataFiles(
             {
                 generateManifestFile(
                     metadata,
-                    chunk_partitioner.getColumns(),
+                    chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
                     partition_key,
-                    chunk_partitioner.getResultTypes(),
+                    chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     {delete_filename.path.path_in_metadata},
                     delete_filenames.delete_statistic.at(partition_key),
                     sample_block,
@@ -522,7 +534,7 @@ void mutate(
     auto common_path = configuration->getRawPath().path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
-    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None);
+    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
 
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
@@ -557,7 +569,9 @@ void mutate(
     }
 
     const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
-    auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
+    std::optional<ChunkPartitioner> chunk_partitioner;
+    if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
+        chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
 
     if (mutation_files)
@@ -594,7 +608,7 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());

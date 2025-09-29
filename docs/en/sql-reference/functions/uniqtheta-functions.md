@@ -3,6 +3,7 @@ description: 'Documentation for uniqTheta Functions'
 sidebar_label: 'uniqTheta'
 slug: /sql-reference/functions/uniqtheta-functions
 title: 'uniqTheta Functions'
+doc_type: 'reference'
 ---
 
 # uniqTheta functions
