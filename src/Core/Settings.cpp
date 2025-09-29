@@ -6934,10 +6934,12 @@ Possible values:
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
-Enable jemalloc profiler.
-    )", 0) \
+Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
+Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
+Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
+See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
-Collect jemalloc profile samples in trace log.
+Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
