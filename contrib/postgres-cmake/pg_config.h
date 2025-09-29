@@ -568,10 +568,10 @@
 /* #undef HAVE__CPUIDEX */
 
 /* Define to 1 if you have __get_cpuid. */
-#define HAVE__GET_CPUID 1
+/* #undef HAVE__GET_CPUID */
 
 /* Define to 1 if you have __get_cpuid_count. */
-#define HAVE__GET_CPUID_COUNT 1
+/* #undef HAVE__GET_CPUID_COUNT */
 
 /* Define to 1 if your compiler understands _Static_assert. */
 #define HAVE__STATIC_ASSERT 1
