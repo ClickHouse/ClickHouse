@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -31,6 +32,8 @@ namespace ErrorCodes
 /// It takes 2 variables of variant type as input and checks if they are the same type and value
 static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
 {
+    Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+    tokenRequestContext.Scopes = {"https://storage.azure.com/.default"};
     const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);
     const auto * conn_string_b = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_b);
 
@@ -54,7 +57,8 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
 
         if (workload_identity_a && workload_identity_b)
         {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            LOG_INFO(getLogger("compareAuthMethod"), "Using workload identity authentication");
+
             return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
         }
 
@@ -63,7 +67,6 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
 
         if (managed_identity_a && managed_identity_b)
         {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
             return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
         }
 
@@ -72,7 +75,6 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
 
         if (static_credential_a && static_credential_b)
         {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
             auto az_context = Azure::Core::Context();
             return static_credential_a->get()->GetToken(tokenRequestContext, az_context).Token == static_credential_b->get()->GetToken(tokenRequestContext, az_context).Token;
         }
@@ -234,7 +236,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
         /// In this case we can't use the native copy.
         if (auto src_blob_path = src_disk->getBlobPath(src_path); src_blob_path.size() == 2)
         {
-            LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorag", src_path, src_disk->getName());
+            LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorage", src_path, src_disk->getName());
             copyAzureBlobStorageFile(
                 src_disk->getObjectStorage()->getAzureBlobStorageClient(),
                 client,
