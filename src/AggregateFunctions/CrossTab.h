@@ -87,7 +87,7 @@ struct CrossTabData
       * Let's calculate the difference between the values that are supposed to be equal if there is no association between a and b:
       * count_ab - count_a * count_b / count
       *
-      * Let's sum the squares of the differences across all (a, b) pairs including the pairs that were not observed (count_ab = 0):
+      * Let's sum the squares of the differences across all (a, b) pairs, including unobserved pairs (count_ab = 0):
       * Then divide by the second term for normalization: (count_a * count_b / count)
       * We get:
       *   χ² = Σ_{a,b} (count_ab - (count_a * count_b) / count)² / ((count_a * count_b) / count).
@@ -121,7 +121,7 @@ struct CrossTabData
       * because terms with count_ab = 0 contribute 0 to the sum; thus the computation is linear
       * in the number of observed pairs (O(N), where N = |count_ab|).
       *
-      * This will be the χ² statistics.
+      * This will be the χ² statistic.
       * This statistic is used as a base for many other statistics.
       */
     Float64 getPhiSquared() const
