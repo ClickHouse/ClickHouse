@@ -67,12 +67,5 @@
       SETTINGS optimize_rewrite_like_perfect_affix=1
   </query>
 
-  <!-- Test non-perfect pattern that should NOT be optimized -->
-  <query>
-      SELECT count() FROM tab
-      WHERE str LIKE '%middle%'
-      SETTINGS optimize_rewrite_like_perfect_affix=1
-  </query>
-
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

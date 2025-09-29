@@ -93,11 +93,8 @@ public:
 
         auto affix_constant = std::make_shared<ConstantNode>(std::move(affix));
 
-        auto column_node = args[0]; /// The column being compared
-        chassert(column_node != nullptr, "Column node should be non-null");
-
         /// Create startsWith/endsWith function
-        FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", column_node, affix_constant);
+        FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", args[0], affix_constant);
         if (is_not_like)
             new_node = operation("not", new_node);
 
