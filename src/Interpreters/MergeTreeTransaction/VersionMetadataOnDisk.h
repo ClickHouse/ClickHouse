@@ -28,13 +28,15 @@ protected:
     void setRemovalTIDLock(TIDHash removal_tid_hash) override;
     void appendCreationCSNToStoredMetadataImpl() override;
     void appendRemovalCSNToStoredMetadataImpl() override;
-    void appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid) override;
+    void appendRemovalTIDToStoredMetadataImpl() override;
     Info readStoredMetadata(String & content) const override;
 
 private:
     /// Hash of removal_tid, used to lock the object for removal
     std::atomic<TIDHash> removal_tid_lock = 0;
     const bool support_writing_with_append;
+    const bool can_write_metadata;
+    bool pending_store_metadata{false};
 };
 
 }

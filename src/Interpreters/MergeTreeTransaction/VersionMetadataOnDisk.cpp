@@ -40,6 +40,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartSto
 VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, bool support_writing_with_append_)
     : VersionMetadata(merge_tree_data_part_)
     , support_writing_with_append(support_writing_with_append_)
+    , can_write_metadata(merge_tree_data_part->storage.supportsTransactions() && !merge_tree_data_part->getDataPartStorage().isReadonly())
 {
     log = ::getLogger("VersionMetadataOnDisk");
     LOG_DEBUG(log, "Object {}, support writing with append {}", getObjectName(), support_writing_with_append);
@@ -48,7 +49,7 @@ VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_dat
 void VersionMetadataOnDisk::loadMetadata()
 try
 {
-    auto & data_part_storage = const_cast<IDataPartStorage &>(merge_tree_data_part->getDataPartStorage());
+    auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
     const auto & storage = merge_tree_data_part->storage;
 
     auto remove_tmp_file = [&]()
@@ -122,6 +123,19 @@ catch (Exception & e)
 
 void VersionMetadataOnDisk::storeMetadata(bool)
 {
+    LOG_TEST(log, "Object {}, store metadata", getObjectName());
+    if (!can_write_metadata)
+        return;
+
+    if (!wasInvolvedInTransaction())
+    {
+        LOG_TEST(log, "Object {}, pending store metadata", getObjectName());
+        pending_store_metadata = true;
+        return;
+    }
+
+    pending_store_metadata = false;
+
     const auto & storage = merge_tree_data_part->storage;
     LOG_TEST(
         storage.log,
@@ -133,7 +147,7 @@ void VersionMetadataOnDisk::storeMetadata(bool)
 
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
-    auto & data_part_storage = const_cast<IDataPartStorage &>(merge_tree_data_part->getDataPartStorage());
+    auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
 
     try
     {
@@ -232,6 +246,9 @@ bool VersionMetadataOnDisk::isRemovalTIDLocked() const
 
 bool VersionMetadataOnDisk::hasStoredMetadata() const
 {
+    if (pending_store_metadata)
+        return true;
+
     return merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
 }
 
@@ -287,6 +304,12 @@ void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
         getObjectName(),
         getCreationCSN());
 
+    if (!can_write_metadata)
+        return;
+
+    if (!wasInvolvedInTransaction())
+        return;
+
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append creation CSN to non-existing metadata");
 
@@ -303,6 +326,12 @@ void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
         getObjectName(),
         getRemovalCSN());
 
+    if (!can_write_metadata)
+        return;
+
+    if (!wasInvolvedInTransaction())
+        return;
+
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal CSN to non-existing metadata");
 
@@ -311,22 +340,29 @@ void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
         TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, false);
 }
 
-void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid)
+void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl()
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
         "Appending removal TID for {} (creation: {}, removal {})",
         merge_tree_data_part->name,
         creation_tid,
-        tid);
+        removal_tid);
+
+    assert(removal_tid.isEmpty() || removal_tid.getHash() == getRemovalTIDLock());
+
+    if (!wasInvolvedInTransaction())
+        return;
 
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal TID to non-existing metadata");
 
+    if (!can_write_metadata)
+        return;
 
-    auto write_func = [this, tid](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, tid); };
+    auto write_func = [this](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, removal_tid); };
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    auto sync = tid != Tx::EmptyTID;
+    auto sync = removal_tid != Tx::EmptyTID;
     appendToMetadataHelper(
         TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, sync);
 }

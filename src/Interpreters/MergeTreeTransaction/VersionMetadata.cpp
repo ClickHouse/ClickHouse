@@ -124,7 +124,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 
 void VersionMetadata::setRemovalCSN(CSN csn)
 {
-    LOG_TEST(log, "Object {}, setRemovalCSN {}", getObjectName(), getRemovalCSN());
+    LOG_TEST(log, "Object {}, setRemovalCSN {}", getObjectName(), csn);
     chassert(!getRemovalTID().isEmpty());
     removal_csn.store(csn);
 }
@@ -148,13 +148,20 @@ void VersionMetadata::appendRemovalCSNToStoredMetadata()
     appendRemovalCSNToStoredMetadataImpl();
 }
 
-void VersionMetadata::appendRemovalTIDToStoredMetadata(const TransactionID & tid)
+void VersionMetadata::setRemovalTID(const TransactionID & tid)
 {
-    LOG_TEST(log, "Object {}, appendRemovalTIDToStoredMetadata {}, removal_csn {}", getObjectName(), tid, getRemovalCSN());
-    chassert(!creation_tid.isEmpty());
-    chassert(removal_csn == 0 || (removal_csn == Tx::PrehistoricCSN && tid.isPrehistoric()));
+    LOG_TEST(log, "Object {}, setRemovalTID {}", getObjectName(), tid);
+    chassert(tid.isEmpty() || tid.getHash() == getRemovalTIDLock());
+    removal_tid = tid;
+}
 
-    if (creation_tid.isPrehistoric() && tid != Tx::EmptyTID)
+void VersionMetadata::appendRemovalTIDToStoredMetadata()
+{
+    LOG_TEST(log, "Object {}, appendRemovalTIDToStoredMetadata {}, removal_csn {}", getObjectName(), removal_tid, getRemovalCSN());
+    chassert(!creation_tid.isEmpty());
+    chassert(removal_csn == 0 || (removal_csn == Tx::PrehistoricCSN && removal_tid.isPrehistoric()));
+
+    if (creation_tid.isPrehistoric() && removal_tid != Tx::EmptyTID)
     {
         /// Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
 
@@ -163,23 +170,11 @@ void VersionMetadata::appendRemovalTIDToStoredMetadata(const TransactionID & tid
         assert(creation_csn == Tx::UnknownCSN || creation_csn == Tx::PrehistoricCSN);
         creation_csn.store(Tx::PrehistoricCSN);
 
-        // Must update `removal_tid` first before storing
-        auto prev_removal_tid = removal_tid;
-        removal_tid = tid;
-        try
-        {
-            storeMetadata(false);
-        }
-        catch (...)
-        {
-            removal_tid = prev_removal_tid;
-            throw;
-        }
+        storeMetadata(false);
         return;
     }
 
-    appendRemovalTIDToStoredMetadataImpl(tid);
-    removal_tid = tid;
+    appendRemovalTIDToStoredMetadataImpl();
 }
 
 /// It can be used for introspection purposes only
@@ -539,6 +534,14 @@ void VersionMetadata::loadAndVerifyMetadata(LoggerPtr logger)
         setRemovalTIDLock(0);
 }
 
+bool VersionMetadata::wasInvolvedInTransaction() const
+{
+    auto removal = getRemovalCSN();
+    bool created_by_transaction = !getCreationTID().isPrehistoric();
+    bool removed_by_transaction = (removal != Tx::PrehistoricCSN)
+        && ((removal != 0) || (isRemovalTIDLocked() && getRemovalTIDLock() != Tx::PrehistoricTID.getHash()));
+    return created_by_transaction || removed_by_transaction;
+}
 
 bool VersionMetadata::assertHasValidMetadata() const
 {
