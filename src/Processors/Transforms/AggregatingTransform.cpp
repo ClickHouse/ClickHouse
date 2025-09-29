@@ -358,12 +358,13 @@ public:
             if (inputs.empty())
                 createSources();
         }
-
-        else if (num_threads > 1 &&  (
-            data->at(0)->type == AggregatedDataVariants::Type::key8  ||
-            data->at(0)->type == AggregatedDataVariants::Type::key16))
+        else if (parallelize_single_level_merge || worthParallelMergeSingleLevel())
         {
-            parallelize_single_level_merge = true;
+            if (!parallelize_single_level_merge)
+            {
+                parallelize_single_level_merge = true;
+                LOG_TRACE(getLogger("AggregatingTransform"), "Use parallel merge for single level fixed hash map.");
+            }
             if (inputs.empty())
                 createSourcesForFixedHashMap();
             else
@@ -438,6 +439,19 @@ public:
     }
 
 private:
+    bool worthParallelMergeSingleLevel()
+    {
+        if (num_threads <= 1)
+            return false;
+
+        auto & first = data->at(0);
+        if (first->type != AggregatedDataVariants::Type::key8 &&
+            first->type != AggregatedDataVariants::Type::key16)
+            return false;
+
+        return params->aggregator.hasFunctionsBenefitFromParallelMerge();
+    }
+
     IProcessor::Status prepareParallelizeSingleLevel()
     {
         for (auto & input : inputs)

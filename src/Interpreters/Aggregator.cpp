@@ -2080,6 +2080,19 @@ void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
 
+bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
+{
+    for (const auto & aggregate_function : aggregate_functions)
+    {
+        const String & function_name = aggregate_function->getName();
+        if (function_name == "uniq" || function_name == "uniqCombined" ||
+            function_name == "groupArray" || function_name == "topK" ||
+            function_name == "histogram")
+            return true;
+    }
+    return false;
+}
+
 
 template <typename Method, typename Table>
 Aggregator::ConvertToBlockResVariant

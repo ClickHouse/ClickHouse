@@ -637,6 +637,9 @@ private:
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
+    /// Check if aggregation uses computationally expensive functions that benefit from parallel merge.
+    bool hasFunctionsBenefitFromParallelMerge() const;
+
     void prepareAggregateInstructions(
         Columns columns,
         AggregateColumns & aggregate_columns,
