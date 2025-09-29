@@ -101,6 +101,15 @@ static Block getNonVirtualColumns(const Block & block)
     return Block(columns);
 }
 
+static std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chunk_partitioner) {
+    if (chunk_partitioner.has_value())
+        return chunk_partitioner->partitionChunk(chunk);
+    auto unpartitioned_result = std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>{};
+    unpartitioned_result.emplace_back(ChunkPartitioner::PartitionKey{}, chunk.clone());
+    return unpartitioned_result;
+}
+
+
 std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
@@ -147,9 +156,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
-            std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> unpartititoned_result;
-            unpartititoned_result.push_back({{}, chunk.clone()});
-            auto partition_result = chunk_partitioner ? chunk_partitioner->partitionChunk(chunk) : std::move(unpartititoned_result);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
+
 
             auto col_data_filename = block.getByName(block_datafile_path);
             auto col_position = block.getByName(block_row_number);
@@ -254,9 +262,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             auto data_block = getNonVirtualColumns(block);
             Chunk chunk(data_block.getColumns(), data_block.rows());
-            std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> unpartititoned_result;
-            unpartititoned_result.push_back({{}, chunk.clone()});
-            auto partition_result = chunk_partitioner ? chunk_partitioner->partitionChunk(chunk) : std::move(unpartititoned_result);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
