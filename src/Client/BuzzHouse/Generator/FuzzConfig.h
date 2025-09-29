@@ -74,7 +74,7 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, path, region;
+    String client_hostname, server_hostname, path, region, warehouse;
     uint32_t port;
 
     Catalog()
@@ -82,6 +82,7 @@ public:
         , server_hostname("localhost")
         , path()
         , region()
+        , warehouse()
         , port(0)
     {
     }
@@ -91,11 +92,13 @@ public:
         const String & server_hostname_,
         const String & path_,
         const String & region_,
+        const String & warehouse_,
         const uint32_t port_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , path(path_)
         , region(region_)
+        , warehouse(warehouse_)
         , port(port_)
     {
     }
@@ -257,7 +260,7 @@ public:
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
-                          lakes_path = std::filesystem::temp_directory_path() / "lakes";
+                          lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()
         : cb(nullptr)

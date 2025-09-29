@@ -5,6 +5,7 @@ sidebar_label: 'Backup'
 sidebar_position: 60
 slug: /engines/database-engines/backup
 title: 'Backup'
+doc_type: 'reference'
 ---
 
 # Backup

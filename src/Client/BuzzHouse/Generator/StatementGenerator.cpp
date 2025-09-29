@@ -690,6 +690,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
 bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, TableOrFunction * tof)
 {
     bool is_url = false;
+    bool cluster_or_remote = false;
     const std::optional<String> & cluster = t.getCluster();
     const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
     const uint32_t remote_func = 5;
@@ -709,10 +710,12 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, t, tof->mutable_tfunc());
         tof = isCluster ? const_cast<ClusterFunc &>(tof->tfunc().cluster()).mutable_tof()
                         : const_cast<RemoteFunc &>(tof->tfunc().remote()).mutable_tof();
+        cluster_or_remote = true;
     }
 
-    const uint32_t engine_func = 10 * static_cast<uint32_t>(t.isEngineReplaceable());
-    const uint32_t url_func = 5;
+    /// Only schema, table declarations are allowed inside cluster and remote functions
+    const uint32_t engine_func = 10 * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+    const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);

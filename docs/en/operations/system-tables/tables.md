@@ -4,6 +4,7 @@ description: 'System table containing metadata of each table that the server kno
 keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
 title: 'system.tables'
+doc_type: 'reference'
 ---
 
 # system.tables

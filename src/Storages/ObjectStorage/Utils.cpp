@@ -82,7 +82,7 @@ void resolveSchemaAndFormat(
     {
         if (configuration->isDataLakeConfiguration())
         {
-            auto table_structure = configuration->tryGetTableStructureFromMetadata();
+            auto table_structure = configuration->tryGetTableStructureFromMetadata(context);
             if (table_structure)
                 columns = table_structure.value();
         }

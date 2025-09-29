@@ -1303,7 +1303,8 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
+    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1342,7 +1343,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster);
+        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1469,7 +1470,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     checkAlterIsPossible(params, local_context);
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 

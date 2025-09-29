@@ -1506,7 +1506,7 @@ SELECT toIPv6('127.0.0.1');
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6 = {20, 1};
-    FunctionDocumentation::Category category_toIPv6 = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toIPv6 = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv6 = {description_toIPv6, syntax_toIPv6, arguments_toIPv6, returned_value_toIPv6, examples_toIPv6, introduced_in_toIPv6, category_toIPv6};
 
     factory.registerFunction<detail::FunctionToIPv6>(documentation_toIPv6);
@@ -2721,7 +2721,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv4OrZero = {23, 1};
-    FunctionDocumentation::Category category_toIPv4OrZero = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toIPv4OrZero = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv4OrZero = {description_toIPv4OrZero, syntax_toIPv4OrZero, arguments_toIPv4OrZero, returned_value_toIPv4OrZero, examples_toIPv4OrZero,introduced_in_toIPv4OrZero, category_toIPv4OrZero};
 
     factory.registerFunction<detail::FunctionToIPv4OrZero>(documentation_toIPv4OrZero);
@@ -2763,7 +2763,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6OrZero = {23, 1};
-    FunctionDocumentation::Category category_toIPv6OrZero = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toIPv6OrZero = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, returned_value_toIPv6OrZero, examples_toIPv6OrZero, introduced_in_toIPv6OrZero, category_toIPv6OrZero};
 
     factory.registerFunction<detail::FunctionToIPv6OrZero>(documentation_toIPv6OrZero);

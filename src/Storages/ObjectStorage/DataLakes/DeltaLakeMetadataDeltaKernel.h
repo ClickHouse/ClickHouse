@@ -25,6 +25,8 @@ class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 public:
     static constexpr auto name = "DeltaLake";
 
+    const char * getName() const override { return name; }
+
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -34,9 +36,9 @@ public:
 
     bool supportsWrites() const override { return true; }
 
-    bool update(const ContextPtr & context) override;
+    void update(const ContextPtr & context) override;
 
-    NamesAndTypesList getTableSchema() const override;
+    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
@@ -62,6 +64,8 @@ public:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
+        StorageMetadataPtr storage_metadata_snapshot,
+
         ContextPtr context) const override;
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
@@ -80,6 +84,9 @@ private:
     const DeltaLake::KernelHelperPtr kernel_helper;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     mutable std::mutex table_snapshot_mutex;
+
+    ObjectStoragePtr object_storage_common;
+    void logMetadataFiles(ContextPtr context) const;
 };
 
 }

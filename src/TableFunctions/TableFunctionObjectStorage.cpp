@@ -45,6 +45,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsString disk;
+}
+
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
@@ -60,9 +65,12 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
     {
         if constexpr (is_data_lake)
         {
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
+            const auto disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+                ? (*settings)[DataLakeStorageSetting::disk].value
+                : "";
+            if (!disk_name.empty())
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                auto disk = context->getDisk(disk_name);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO
@@ -194,8 +202,7 @@ ColumnsDescription TableFunctionObjectStorage<
         configuration->update(
             object_storage,
             context,
-            /* if_not_updated_before */true,
-            /* check_consistent_with_previous_metadata */true);
+            /* if_not_updated_before */ true);
 
         std::string sample_path;
         ColumnsDescription columns;
@@ -271,15 +278,23 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         client_info.collaborate_with_initiator &&
         context->hasClusterFunctionReadTaskCallback();
 
-    ObjectStoragePtr object_storage_;
-    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
-        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
+    std::string disk_name;
+    if constexpr (is_data_lake)
+    {
+        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+            ? (*settings)[DataLakeStorageSetting::disk].value
+            : "";
+    }
+
+    ObjectStoragePtr current_object_storage;
+    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
+        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
     else
-        object_storage_ = getObjectStorage(context, !is_insert_query);
+        current_object_storage = getObjectStorage(context, !is_insert_query);
 
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        object_storage_,
+        current_object_storage,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -415,6 +430,11 @@ template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageH
 
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+#endif
+
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
 #if USE_AWS_S3

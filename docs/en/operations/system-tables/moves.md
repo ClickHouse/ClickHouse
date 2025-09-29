@@ -4,6 +4,7 @@ description: 'System table containing information about in-progress data part mo
 keywords: ['system table', 'moves']
 slug: /operations/system-tables/moves
 title: 'system.moves'
+doc_type: 'reference'
 ---
 
 # system.moves

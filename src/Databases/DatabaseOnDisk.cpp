@@ -137,7 +137,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     /// those query settings
     /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
     auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
-    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+    auto set_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(ast, set_context);
 
     return {
         ast->getTable(),
@@ -595,7 +596,10 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    {
+        std::lock_guard lock(mutex);
+        assert(tables.empty());
+    }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);

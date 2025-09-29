@@ -4,6 +4,7 @@ sidebar_label: 'Date'
 sidebar_position: 12
 slug: /sql-reference/data-types/date
 title: 'Date'
+doc_type: 'reference'
 ---
 
 # Date

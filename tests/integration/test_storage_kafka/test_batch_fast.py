@@ -1381,7 +1381,7 @@ def test_kafka_virtual_columns_with_materialized_view(
                 ENGINE = MergeTree()
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
+                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
         """
         )
 

@@ -3,6 +3,7 @@ description: 'Documentation for NumericIndexedVector and Its Functions'
 sidebar_label: 'NumericIndexedVector'
 slug: /sql-reference/functions/numeric-indexed-vector-functions
 title: 'NumericIndexedVector Functions'
+doc_type: 'reference'
 ---
 
 # NumericIndexedVector

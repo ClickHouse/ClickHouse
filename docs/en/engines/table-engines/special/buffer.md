@@ -6,6 +6,7 @@ sidebar_label: 'Buffer'
 sidebar_position: 120
 slug: /engines/table-engines/special/buffer
 title: 'Buffer Table Engine'
+doc_type: 'reference'
 ---
 
 # Buffer table engine

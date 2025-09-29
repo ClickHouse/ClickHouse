@@ -11,3 +11,6 @@ ${CLICKHOUSE_CLIENT} --query="drop table if exists 02845_parquet_odd_decimals"
 ${CLICKHOUSE_CLIENT} --query="create table 02845_parquet_odd_decimals (\`col-1de12c05-5dd5-4fa7-9f93-33c43c9a4028\` Decimal(20, 0), \`col-5e1b97f1-dade-4c7d-b71b-e31d789e01a4\` String) engine Memory"
 ${CLICKHOUSE_CLIENT} --query="insert into 02845_parquet_odd_decimals from infile '$CUR_DIR/data_parquet/nine_byte_decimals_from_spark.parquet'"
 ${CLICKHOUSE_CLIENT} --query="select count() from 02845_parquet_odd_decimals"
+
+${CLICKHOUSE_LOCAL} --query="desc file('$CUR_DIR/data_parquet/nine_byte_decimals_from_spark.parquet') settings schema_inference_make_columns_nullable=0, input_format_parquet_use_native_reader_v3=0"
+${CLICKHOUSE_LOCAL} --query="desc file('$CUR_DIR/data_parquet/nine_byte_decimals_from_spark.parquet') settings schema_inference_make_columns_nullable=0, input_format_parquet_use_native_reader_v3=1"

@@ -29,9 +29,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -790,18 +788,11 @@ static NameSet collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
-        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
-        files_to_skip.insert(index->getFileName() + mrk_extension);
-
-        // Skip all text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
+        auto index_substreams = index->getSubstreams();
+        for (const auto & index_substream : index_substreams)
         {
-            auto index_filename = index->getFileName();
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
         }
     }
 
@@ -880,14 +871,6 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 5> gin_suffixes = {
-                GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE,
-                GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE,
-                GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE,
-                GinIndexStore::GIN_DICTIONARY_FILE_TYPE,
-                GinIndexStore::GIN_POSTINGS_FILE_TYPE,
-            };
-
             for (const auto & suffix : suffixes)
             {
                 const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
@@ -898,12 +881,6 @@ static NameToNameVector collectFilesForRenames(
                     add_rename(filename, "");
                     add_rename(filename_mrk, "");
                 }
-            }
-            for (const auto & gin_suffix : gin_suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
-                if (source_part->checksums.has(filename))
-                    add_rename(filename, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)

@@ -181,9 +181,25 @@ struct IcebergHDFSClusterDefinition
 struct DeltaLakeClusterDefinition
 {
     static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_engine_name = "DeltaLakeS3Cluster";
+    static constexpr auto storage_engine_name = "DeltaLakeCluster";
     static constexpr auto non_clustered_storage_engine_name = DeltaLakeDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+};
+
+struct DeltaLakeS3ClusterDefinition
+{
+    static constexpr auto name = "deltaLakeS3Cluster";
+    static constexpr auto storage_engine_name = "DeltaLakeS3Cluster";
+    static constexpr auto non_clustered_storage_engine_name = DeltaLakeS3Definition::storage_engine_name;
+    static constexpr auto object_storage_type = "s3";
+};
+
+struct DeltaLakeAzureClusterDefinition
+{
+    static constexpr auto name = "deltaLakeAzureCluster";
+    static constexpr auto storage_engine_name = "DeltaLakeAzureCluster";
+    static constexpr auto non_clustered_storage_engine_name = DeltaLakeAzureDefinition::storage_engine_name;
+    static constexpr auto object_storage_type = "azure";
 };
 
 struct HudiClusterDefinition

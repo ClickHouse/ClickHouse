@@ -25,9 +25,17 @@ struct IYTsaurusQuery
     virtual ~IYTsaurusQuery() = default;
     /// Follows: https://ytsaurus.tech/docs/en/user-guide/proxy/http-reference#http_method
     virtual String getHTTPMethod() const = 0;
+    virtual bool isHeavyQuery() { return false; }
 };
 
-struct YTsaurusReadTableQuery : public IYTsaurusQuery
+// Follow up: https://ytsaurus.tech/docs/en/api/commands
+struct IYTsaurusHeavyQuery : public IYTsaurusQuery
+{
+    bool isHeavyQuery() override { return true; }
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#read_table
+struct YTsaurusReadTableQuery : public IYTsaurusHeavyQuery
 {
     explicit YTsaurusReadTableQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
 
@@ -48,7 +56,7 @@ struct YTsaurusReadTableQuery : public IYTsaurusQuery
     String cypress_path;
 };
 
-
+// https://ytsaurus.tech/docs/en/api/commands#get
 struct YTsaurusGetQuery : public IYTsaurusQuery
 {
     explicit YTsaurusGetQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
@@ -70,8 +78,8 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
     String cypress_path;
 };
 
-
-struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
+// https://ytsaurus.tech/docs/en/api/commands#select_rows
+struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
 {
     explicit YTsaurusSelectRowsQuery(const String & table_path_) : table_path(table_path_) {}
 
@@ -97,7 +105,8 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
     String table_path;
 };
 
-struct YTsaurusLookupRows : public IYTsaurusQuery
+// https://ytsaurus.tech/docs/en/api/commands#lookup_rows
+struct YTsaurusLookupRows : public IYTsaurusHeavyQuery
 {
     explicit YTsaurusLookupRows(const String & cypress_path_) : cypress_path(cypress_path_) {}
 
@@ -117,6 +126,7 @@ struct YTsaurusLookupRows : public IYTsaurusQuery
     }
     String cypress_path;
 };
+
 
 using YTsaurusQueryPtr = std::shared_ptr<IYTsaurusQuery>;
 

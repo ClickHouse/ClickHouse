@@ -246,7 +246,7 @@ jobs:
           fi
 
   fast_test:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
@@ -284,7 +284,7 @@ jobs:
           fi
 
   build_arm_tidy:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
     name: "Build (arm_tidy)"
@@ -322,7 +322,7 @@ jobs:
           fi
 
   build_amd_debug:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
@@ -359,46 +359,8 @@ jobs:
             python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_amd_release:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
-    name: "Build (amd_release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_amd_asan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
     name: "Build (amd_asan)"
@@ -436,7 +398,7 @@ jobs:
           fi
 
   build_amd_tsan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
@@ -474,7 +436,7 @@ jobs:
           fi
 
   build_amd_msan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
     name: "Build (amd_msan)"
@@ -512,7 +474,7 @@ jobs:
           fi
 
   build_amd_ubsan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF91YnNhbik=') }}
     name: "Build (amd_ubsan)"
@@ -550,7 +512,7 @@ jobs:
           fi
 
   build_amd_binary:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
@@ -587,46 +549,8 @@ jobs:
             python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_arm_release:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
-    name: "Build (arm_release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_arm_asan:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9hc2FuKQ==') }}
     name: "Build (arm_asan)"
@@ -664,7 +588,7 @@ jobs:
           fi
 
   build_arm_coverage:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9jb3ZlcmFnZSk=') }}
     name: "Build (arm_coverage)"
@@ -702,7 +626,7 @@ jobs:
           fi
 
   build_arm_binary:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9iaW5hcnkp') }}
     name: "Build (arm_binary)"
@@ -739,9 +663,85 @@ jobs:
             python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
+  build_amd_release:
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
+    name: "Build (amd_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  build_arm_release:
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
+    name: "Build (arm_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
   build_amd_darwin:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kYXJ3aW4p') }}
     name: "Build (amd_darwin)"
     outputs:
@@ -778,8 +778,8 @@ jobs:
           fi
 
   build_arm_darwin:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
     outputs:
@@ -816,8 +816,8 @@ jobs:
           fi
 
   build_arm_v80compat:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV92ODBjb21wYXQp') }}
     name: "Build (arm_v80compat)"
     outputs:
@@ -854,8 +854,8 @@ jobs:
           fi
 
   build_amd_freebsd:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9mcmVlYnNkKQ==') }}
     name: "Build (amd_freebsd)"
     outputs:
@@ -892,8 +892,8 @@ jobs:
           fi
 
   build_ppc64le:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHBwYzY0bGUp') }}
     name: "Build (ppc64le)"
     outputs:
@@ -930,8 +930,8 @@ jobs:
           fi
 
   build_amd_compat:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
     outputs:
@@ -968,8 +968,8 @@ jobs:
           fi
 
   build_amd_musl:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tdXNsKQ==') }}
     name: "Build (amd_musl)"
     outputs:
@@ -1006,8 +1006,8 @@ jobs:
           fi
 
   build_riscv64:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHJpc2N2NjQp') }}
     name: "Build (riscv64)"
     outputs:
@@ -1044,8 +1044,8 @@ jobs:
           fi
 
   build_s390x:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, amd-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHMzOTB4KQ==') }}
     name: "Build (s390x)"
     outputs:
@@ -1082,8 +1082,8 @@ jobs:
           fi
 
   build_loongarch64:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxvb25nYXJjaDY0KQ==') }}
     name: "Build (loongarch64)"
     outputs:
@@ -1120,8 +1120,8 @@ jobs:
           fi
 
   build_fuzzers:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary]
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
     name: "Build (fuzzers)"
     outputs:
@@ -1158,7 +1158,7 @@ jobs:
           fi
 
   unit_tests_asan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_asan]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbik=') }}
     name: "Unit tests (asan)"
@@ -1196,7 +1196,7 @@ jobs:
           fi
 
   unit_tests_tsan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_tsan]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
     name: "Unit tests (tsan)"
@@ -1234,7 +1234,7 @@ jobs:
           fi
 
   unit_tests_msan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_msan]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
     name: "Unit tests (msan)"
@@ -1272,7 +1272,7 @@ jobs:
           fi
 
   unit_tests_ubsan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_ubsan]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodWJzYW4p') }}
     name: "Unit tests (ubsan)"
@@ -3325,7 +3325,7 @@ jobs:
 
   docker_server_image:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
     name: "Docker server image"
     outputs:
@@ -3363,7 +3363,7 @@ jobs:
 
   docker_keeper_image:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
     name: "Docker keeper image"
     outputs:
@@ -3439,7 +3439,7 @@ jobs:
 
   compatibility_check_amd_release:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
     name: "Compatibility check (amd_release)"
     outputs:
@@ -3477,7 +3477,7 @@ jobs:
 
   compatibility_check_arm_release:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYXJtX3JlbGVhc2Up') }}
     name: "Compatibility check (arm_release)"
     outputs:
@@ -4275,7 +4275,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_1_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 1/3)"
     outputs:
@@ -4313,7 +4313,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_2_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 2/3)"
     outputs:
@@ -4351,7 +4351,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_3_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 3/3)"
     outputs:
@@ -4389,7 +4389,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_1_3:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 1/3)"
     outputs:
@@ -4427,7 +4427,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_2_3:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 2/3)"
     outputs:
@@ -4465,7 +4465,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_3_3:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_release, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 3/3)"
     outputs:
@@ -4503,7 +4503,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, docs_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, bugfix_validation_integration_tests, bugfix_validation_functional_tests, stateless_tests_amd_asan_flaky_check, integration_tests_amd_asan_old_analyzer_1_6, integration_tests_amd_asan_old_analyzer_2_6, integration_tests_amd_asan_old_analyzer_3_6, integration_tests_amd_asan_old_analyzer_4_6, integration_tests_amd_asan_old_analyzer_5_6, integration_tests_amd_asan_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_amd_asan_flaky_check, docker_server_image, docker_keeper_image, install_packages_amd_debug, compatibility_check_amd_release, compatibility_check_arm_release, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_amd_asan, upgrade_check_amd_tsan, upgrade_check_amd_msan, upgrade_check_amd_debug, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_3, performance_comparison_amd_release_master_head_2_3, performance_comparison_amd_release_master_head_3_3, performance_comparison_arm_release_master_head_1_3, performance_comparison_arm_release_master_head_2_3, performance_comparison_arm_release_master_head_3_3]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, docs_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_asan, build_arm_coverage, build_arm_binary, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, bugfix_validation_integration_tests, bugfix_validation_functional_tests, stateless_tests_amd_asan_flaky_check, integration_tests_amd_asan_old_analyzer_1_6, integration_tests_amd_asan_old_analyzer_2_6, integration_tests_amd_asan_old_analyzer_3_6, integration_tests_amd_asan_old_analyzer_4_6, integration_tests_amd_asan_old_analyzer_5_6, integration_tests_amd_asan_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_amd_asan_flaky_check, docker_server_image, docker_keeper_image, install_packages_amd_debug, compatibility_check_amd_release, compatibility_check_arm_release, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_amd_asan, upgrade_check_amd_tsan, upgrade_check_amd_msan, upgrade_check_amd_debug, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_3, performance_comparison_amd_release_master_head_2_3, performance_comparison_amd_release_master_head_3_3, performance_comparison_arm_release_master_head_1_3, performance_comparison_arm_release_master_head_2_3, performance_comparison_arm_release_master_head_3_3]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

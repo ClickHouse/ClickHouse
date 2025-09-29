@@ -3987,8 +3987,9 @@ message SystemCommand {
         bool drop_query_condition_cache = 67;
         FailPoint enable_failpoint = 68;
         FailPoint disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
     }
-    optional Cluster cluster = 70;
+    optional Cluster cluster = 71;
 }
 
 message BackupRestoreObject {

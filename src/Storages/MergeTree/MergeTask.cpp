@@ -181,7 +181,7 @@ public:
         if (tmp_data_buffer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file was already requested for writing, there musto be only one writer");
 
-        tmp_data_buffer = std::make_unique<TemporaryDataBuffer>(temporary_data_on_disk.get());
+        tmp_data_buffer = std::make_unique<TemporaryDataBuffer>(temporary_data_on_disk);
         return *tmp_data_buffer;
     }
 

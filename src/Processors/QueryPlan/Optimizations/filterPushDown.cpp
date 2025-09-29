@@ -234,6 +234,13 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
+std::optional<ActionsDAG> tryToExtractPartialPredicate(
+    const ActionsDAG & original_dag,
+    const std::string & filter_name,
+    const Names & available_columns);
+
+void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
+
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
 {
     auto & parent = parent_node->step;
@@ -482,11 +489,58 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            filter = nullptr;
         }
         else
         {
             filter->updateInputHeader(child->getOutputHeader());
         }
+    }
+
+    const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
+    if (filter && disj_pushdown_enabled)
+    {
+        if ((join && join->isDisjunctionsOptimizationApplied()) ||
+            (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
+            (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
+        {
+            return updated_steps;
+        }
+
+        {
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
+            if (left_partial_filter_dag.has_value())
+            {
+                const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
+                ++updated_steps;
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+                    "Pushed down partial filter {} to the {} side of join",
+                    partial_predicate_column_name,
+                    JoinKind::Left);
+            }
+        }
+
+        {
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
+            if (right_partial_filter_dag.has_value())
+            {
+                const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
+                ++updated_steps;
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+                    "Pushed down partial filter {} to the {} side of join",
+                    partial_predicate_column_name,
+                    JoinKind::Right);
+            }
+        }
+
+        if (join)
+            join->setDisjunctionsOptimizationApplied(true);
+        if (logical_join)
+            logical_join->setDisjunctionsOptimizationApplied(true);
+        if (filled_join)
+            filled_join->setDisjunctionsOptimizationApplied(true);
     }
 
     return updated_steps;

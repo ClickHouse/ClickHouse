@@ -1,12 +1,17 @@
-import json
+#!/usr/bin/env python3
 
 import pyarrow as pa
 import pyarrow.flight as fl
+import argparse
+import base64
+import json
 
 
 class FlightServer(fl.FlightServerBase):
-    def __init__(self, location):
-        super().__init__(location)
+    def __init__(self, location, auth_handler, middleware):
+        super().__init__(
+            location=location, auth_handler=auth_handler, middleware=middleware
+        )
         self._location = location
         self._schema = pa.schema([("column1", pa.string()), ("column2", pa.string())])
         self._tables = dict()
@@ -48,7 +53,70 @@ class FlightServer(fl.FlightServerBase):
         return fl.FlightInfo(self._schema, descriptor, endpoints)
 
 
+class NoOpAuthHandler(fl.ServerAuthHandler):
+    def authenticate(self, outgoing, incoming):
+        pass
+
+    def is_valid(self, token):
+        return ""
+
+
+class BasicAuthServerMiddlewareFactory(fl.ServerMiddlewareFactory):
+    def __init__(self, creds):
+        self.creds = creds
+
+    def start_call(self, info, headers):
+        auth_header = None
+        for header in headers:
+            if header.lower() == "authorization":
+                auth_header = headers[header]
+                break
+
+        if not auth_header:
+            raise fl.FlightUnauthenticatedError("No credentials supplied")
+
+        if not auth_header[0].startswith("Basic ") and not auth_header[0].startswith(
+            "Bearer "
+        ):
+            raise fl.FlightUnauthenticatedError("No credentials supplied")
+
+        token = auth_header[0].split(" ", 1)[1]
+        decoded = base64.b64decode(token)
+        pair = decoded.decode("utf-8").split(":")
+        if pair[0] not in self.creds:
+            raise fl.FlightUnauthenticatedError("Unknown user")
+        if pair[1] != self.creds[pair[0]]:
+            raise fl.FlightUnauthenticatedError("Wrong password")
+        return BasicAuthServerMiddleware(token)
+
+
+class BasicAuthServerMiddleware(fl.ServerMiddleware):
+    def __init__(self, token):
+        self.token = token
+
+    def sending_headers(self):
+        return {"authorization": f"Bearer {self.token}"}
+
+
 if __name__ == "__main__":
-    location = "grpc+tcp://0.0.0.0:5005"
-    flight_server = FlightServer(location)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", help="Port to serve.", type=int, required=True)
+    parser.add_argument("--username", help="Specifies username.", type=str, default="")
+    parser.add_argument("--password", help="Specifies password.", type=str, default="")
+    args = parser.parse_args()
+
+    location = f"grpc+tcp://0.0.0.0:{args.port}"
+    auth_handler = None
+    middleware = None
+    use_basic_authentication = args.username != ""
+
+    if use_basic_authentication:
+        auth_handler = NoOpAuthHandler()
+        middleware = {
+            "basic": BasicAuthServerMiddlewareFactory({args.username: args.password})
+        }
+
+    flight_server = FlightServer(
+        location=location, auth_handler=auth_handler, middleware=middleware
+    )
     flight_server.serve()

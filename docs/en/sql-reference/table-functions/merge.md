@@ -4,6 +4,7 @@ sidebar_label: 'merge'
 sidebar_position: 130
 slug: /sql-reference/table-functions/merge
 title: 'merge'
+doc_type: 'reference'
 ---
 
 # merge Table Function

@@ -314,10 +314,157 @@ public:
 
 REGISTER_FUNCTION(LegacySnowflakeConversion)
 {
-    factory.registerFunction<FunctionSnowflakeToDateTime>();
-    factory.registerFunction<FunctionSnowflakeToDateTime64>();
-    factory.registerFunction<FunctionDateTimeToSnowflake>();
-    factory.registerFunction<FunctionDateTime64ToSnowflake>();
+    /// snowflakeToDateTime documentation
+    FunctionDocumentation::Description description_snowflakeToDateTime = R"(
+<DeprecatedBadge/>
+
+:::warning
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+
+Please use function [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) instead.
+:::
+
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
+    )";
+    FunctionDocumentation::Syntax syntax_snowflakeToDateTime = "snowflakeToDateTime(value[, time_zone])";
+    FunctionDocumentation::Arguments arguments_snowflakeToDateTime = {
+        {"value", "Snowflake ID.", {"Int64"}},
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_snowflakeToDateTime = {"Returns the timestamp component of `value`.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_snowflakeToDateTime = {
+    {
+        "Usage example",
+        R"(
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+        )",
+        R"(
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_snowflakeToDateTime = {21, 10};
+    FunctionDocumentation::Category category_snowflakeToDateTime = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_snowflakeToDateTime = {description_snowflakeToDateTime, syntax_snowflakeToDateTime, arguments_snowflakeToDateTime, returned_value_snowflakeToDateTime, examples_snowflakeToDateTime, introduced_in_snowflakeToDateTime, category_snowflakeToDateTime};
+
+    factory.registerFunction<FunctionSnowflakeToDateTime>(documentation_snowflakeToDateTime);
+
+    /// snowflakeToDateTime64 documentation
+    FunctionDocumentation::Description description_snowflakeToDateTime64 = R"(
+<DeprecatedBadge/>
+
+:::warning
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+
+Please use function [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) instead.
+:::
+
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](../data-types/datetime64.md) format.
+
+    )";
+    FunctionDocumentation::Syntax syntax_snowflakeToDateTime64 = "snowflakeToDateTime64(value[, time_zone])";
+    FunctionDocumentation::Arguments arguments_snowflakeToDateTime64 = {
+        {"value", "Snowflake ID.", {"Int64"}},
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_snowflakeToDateTime64 = {"Returns the timestamp component of `value`.", {"DateTime64(3)"}};
+    FunctionDocumentation::Examples examples_snowflakeToDateTime64 = {
+    {
+        "Usage example",
+        R"(
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+        )",
+        R"(
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_snowflakeToDateTime64 = {21, 10};
+    FunctionDocumentation::Category category_snowflakeToDateTime64 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_snowflakeToDateTime64 = {description_snowflakeToDateTime64, syntax_snowflakeToDateTime64, arguments_snowflakeToDateTime64, returned_value_snowflakeToDateTime64, examples_snowflakeToDateTime64, introduced_in_snowflakeToDateTime64, category_snowflakeToDateTime64};
+
+    factory.registerFunction<FunctionSnowflakeToDateTime64>(documentation_snowflakeToDateTime64);
+
+    /// dateTimeToSnowflake documentation
+    FunctionDocumentation::Description description_dateTimeToSnowflake = R"(
+
+<DeprecatedBadge/>
+
+:::warning
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+
+Please use function [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) instead.
+:::
+
+Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+    )";
+    FunctionDocumentation::Syntax syntax_dateTimeToSnowflake = "dateTimeToSnowflake(value)";
+    FunctionDocumentation::Arguments arguments_dateTimeToSnowflake = {
+        {"value", "Date with time.", {"DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflake = {"Returns the input value as the first Snowflake ID at that time.", {"Int64"}};
+    FunctionDocumentation::Examples examples_dateTimeToSnowflake = {
+    {
+        "Usage example",
+        R"(
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
+        )",
+        R"(
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTimeToSnowflake = {21, 10};
+    FunctionDocumentation::Category category_dateTimeToSnowflake = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTimeToSnowflake = {description_dateTimeToSnowflake, syntax_dateTimeToSnowflake, arguments_dateTimeToSnowflake, returned_value_dateTimeToSnowflake, examples_dateTimeToSnowflake, introduced_in_dateTimeToSnowflake, category_dateTimeToSnowflake};
+
+    factory.registerFunction<FunctionDateTimeToSnowflake>(documentation_dateTimeToSnowflake);
+
+    /// dateTime64ToSnowflake documentation
+    FunctionDocumentation::Description description_dateTime64ToSnowflake = R"(
+<DeprecatedBadge/>
+
+:::warning
+This function is deprecated and can only be used if setting [`allow_deprecated_snowflake_conversion_functions`](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+
+Please use function [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) instead.
+:::
+
+Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+    )";
+    FunctionDocumentation::Syntax syntax_dateTime64ToSnowflake = "dateTime64ToSnowflake(value)";
+    FunctionDocumentation::Arguments arguments_dateTime64ToSnowflake = {
+        {"value", "Date with time.", {"DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflake = {"Returns the input value converted as the first Snowflake ID at that time.", {"Int64"}};
+    FunctionDocumentation::Examples examples_dateTime64ToSnowflake = {
+    {
+        "Usage example",
+        R"(
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
+        )",
+        R"(
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTime64ToSnowflake = {21, 10};
+    FunctionDocumentation::Category category_dateTime64ToSnowflake = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTime64ToSnowflake = {description_dateTime64ToSnowflake, syntax_dateTime64ToSnowflake, arguments_dateTime64ToSnowflake, returned_value_dateTime64ToSnowflake, examples_dateTime64ToSnowflake, introduced_in_dateTime64ToSnowflake, category_dateTime64ToSnowflake};
+
+    factory.registerFunction<FunctionDateTime64ToSnowflake>(documentation_dateTime64ToSnowflake);
 }
 
 }

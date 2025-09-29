@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-
-#include <shared_mutex>
 
 namespace DB
 {
@@ -100,7 +99,7 @@ private:
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;
-    std::shared_mutex index_read_result_registry_mutex;
+    SharedMutex index_read_result_registry_mutex;
 };
 
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;

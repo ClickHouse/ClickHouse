@@ -928,6 +928,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
+            if (command.statistics_columns.empty())
+            {
+                for (const auto & column_desc : columns_desc)
+                {
+                    if (!column_desc.statistics.empty())
+                    {
+                        dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
+                        materialized_statistics.emplace(column_desc.name);
+                    }
+                }
+            }
             for (const auto & stat_column_name: command.statistics_columns)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())

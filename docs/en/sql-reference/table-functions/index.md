@@ -4,6 +4,7 @@ sidebar_label: 'Table Functions'
 sidebar_position: 1
 slug: /sql-reference/table-functions/
 title: 'Table Functions'
+doc_type: 'reference'
 ---
 
 # Table Functions
