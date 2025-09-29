@@ -198,7 +198,7 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
     return path.substr(0, end_of_path_without_globs);
 }
 
-void StorageObjectStorageConfiguration::check(ContextPtr) const
+void StorageObjectStorageConfiguration::check(ContextPtr)
 {
     FormatFactory::instance().checkFormatName(format);
 }
