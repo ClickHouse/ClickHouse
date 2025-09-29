@@ -1290,9 +1290,7 @@ void HashJoin::updateNonJoinedRowsStatus() const
     bool found_non_joined = false;
 
     if (!empty() && used_flags)
-    {
-        found_non_joined = true;
-    }
+        found_non_joined = used_flags->hasUnused();
 
     has_non_joined_rows.store(found_non_joined, std::memory_order_release);
     has_non_joined_rows_checked.store(true, std::memory_order_release);
@@ -1461,31 +1459,18 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                // size_t rows = mapped_block.columns.at(0)->size();
+                size_t rows = mapped_block.columns.at(0)->size();
 
-                const auto & sel = mapped_block.selector;
-                auto try_emit = [&](size_t row)
+                for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                        {
                             columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
+                        }
+
                         ++rows_added;
-                    }
-                };
-                if (sel.isContinuousRange())
-                {
-                    auto [range_beg, range_end] = sel.getRange();
-                    for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
-                        try_emit(row);
-                }
-                else
-                {
-                    const auto & idxs = sel.getIndexes().getData();
-                    for (size_t row : idxs)
-                    {
-                        if (rows_added >= max_block_size) break;
-                        try_emit(row);
                     }
                 }
             }
@@ -1536,31 +1521,14 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            const auto & sel = columns->selector;
-            auto consume_row = [&](size_t row)
+            size_t rows = columns->columns.at(0)->size();
+            for (size_t row = 0; row < rows; ++row)
             {
-                if (!nullmap || !(*nullmap)[row])
-                    return;
-                for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                if (nullmap && (*nullmap)[row])
                 {
-                    if (col < columns->columns.size())
+                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                }
-                ++rows_added;
-            };
-            if (sel.isContinuousRange())
-            {
-                auto [range_beg, range_end] = sel.getRange();
-                for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
-                    consume_row(row);
-            }
-            else
-            {
-                const auto & idxs = sel.getIndexes().getData();
-                for (size_t row : idxs)
-                {
-                    if (rows_added >= max_block_size) break;
-                    consume_row(row);
+                    ++rows_added;
                 }
             }
         }
