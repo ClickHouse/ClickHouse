@@ -87,7 +87,7 @@ enum class TargetArch : UInt32
     AMXBF16 = (1 << 8),
     AMXTILE = (1 << 9),
     AMXINT8 = (1 << 10),
-    SVE    = (1 << 11),
+    GenuineIntel = (1 << 11), /// Not an instruction set, but a CPU vendor.
 };
 
 /// Runtime detection.
@@ -396,46 +396,6 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     \
     name \
     FUNCTION_BODY \
-
-#endif
-
-/// SVE enablement code
-#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
-
-    #ifndef USE_MULTITARGET_CODE
-        #  define USE_MULTITARGET_CODE 1
-    #endif
-
-    #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sve")))
-
-    #   define BEGIN_SVE_SPECIFIC_CODE \
-            _Pragma("clang attribute push(__attribute__((target(\"sve\"))),apply_to=function)")
-    #   define END_TARGET_SPECIFIC_CODE \
-            _Pragma("clang attribute pop")
-
-    /* Clang shows warning when there aren't any objects to apply pragma.
-    * To prevent this warning we define this function inside every macros with pragmas.
-    */
-    #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
-
-    #define DECLARE_SVE_SPECIFIC_CODE(...) \
-    BEGIN_SVE_SPECIFIC_CODE \
-    namespace TargetSpecific::SVE { \
-        DUMMY_FUNCTION_DEFINITION \
-        using namespace DB::TargetSpecific::SVE; \
-        __VA_ARGS__ \
-    } \
-    END_TARGET_SPECIFIC_CODE
-
-    DECLARE_SVE_SPECIFIC_CODE(
-        constexpr auto BuildArch = TargetArch::SVE;
-    )
-
-#else
-
-#ifndef USE_MULTITARGET_CODE
-    #define USE_MULTITARGET_CODE 0
-#endif
 
 #endif
 

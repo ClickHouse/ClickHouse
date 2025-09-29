@@ -8,10 +8,6 @@
 
 #include <cstring>
 
-#if defined(__aarch64__) && defined(__linux__)
-#include <sys/auxv.h>
-#include <asm/hwcap.h>
-#endif
 
 namespace DB
 {
@@ -309,63 +305,67 @@ inline bool haveAMXINT8() noexcept
             && ((CPUInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
-inline bool haveSVE() noexcept
+inline bool haveGenuineIntel() noexcept
 {
-#if defined(__aarch64__) && defined(__linux__)
-    /** "Support for the execution of SVE instructions in userspace can also be detected by reading the CPU ID register ID_AA64PFR0_EL1
-      *  using an MRS instruction, and checking that the value of the SVE field is nonzero. It does not guarantee the presence of the system
-      *  interfaces described in the following sections: software that needs to verify that those interfaces are present must check for
-      *  HWCAP_SVE instead." (c) https://www.kernel.org/doc/Documentation/arm64/sve.txt
-      */
-    const UInt64 hwcap = getauxval(AT_HWCAP);
-    return (hwcap & HWCAP_SVE) != 0;
+#if defined(__x86_64__)
+    unsigned eax = 0;
+    unsigned ebx = 0;
+    unsigned ecx = 0;
+    unsigned edx = 0;
+    __asm__("movq\t%%rbx, %%rsi\n\t"
+            "cpuid\n\t"
+            "xchgq\t%%rbx, %%rsi\n\t"
+            : "=a"(eax), "=S"(ebx), "=c"(ecx), "=d"(edx)
+            : "a"(0));
+
+    return (ebx == 0x756e6547 && edx == 0x49656e69 && ecx == 0x6c65746e);
 #else
     return false;
 #endif
 }
 
 #define CPU_ID_ENUMERATE(OP) \
-    OP(SSE)                  \
-    OP(SSE2)                 \
-    OP(SSE3)                 \
-    OP(SSSE3)                \
-    OP(SSE41)                \
-    OP(SSE42)                \
-    OP(F16C)                 \
-    OP(POPCNT)               \
-    OP(BMI1)                 \
-    OP(BMI2)                 \
-    OP(PCLMUL)               \
-    OP(AES)                  \
-    OP(AVX)                  \
-    OP(FMA)                  \
-    OP(AVX2)                 \
-    OP(AVX512F)              \
-    OP(AVX512DQ)             \
-    OP(AVX512IFMA)           \
-    OP(AVX512PF)             \
-    OP(AVX512ER)             \
-    OP(AVX512CD)             \
-    OP(AVX512BW)             \
-    OP(AVX512VL)             \
-    OP(AVX512VBMI)           \
-    OP(AVX512VBMI2)          \
-    OP(AVX512BF16)           \
-    OP(PREFETCHWT1)          \
-    OP(SHA)                  \
-    OP(ADX)                  \
-    OP(RDRAND)               \
-    OP(RDSEED)               \
-    OP(PCOMMIT)              \
-    OP(RDTSCP)               \
-    OP(CLFLUSHOPT)           \
-    OP(CLWB)                 \
-    OP(XSAVE)                \
-    OP(OSXSAVE)              \
-    OP(AMXBF16)              \
-    OP(AMXTILE)              \
-    OP(AMXINT8)              \
-    OP(SVE)
+    OP(SSE) \
+    OP(SSE2) \
+    OP(SSE3) \
+    OP(SSSE3) \
+    OP(SSE41) \
+    OP(SSE42) \
+    OP(F16C) \
+    OP(POPCNT) \
+    OP(BMI1) \
+    OP(BMI2) \
+    OP(PCLMUL) \
+    OP(AES) \
+    OP(AVX) \
+    OP(FMA) \
+    OP(AVX2) \
+    OP(AVX512F) \
+    OP(AVX512DQ) \
+    OP(AVX512IFMA) \
+    OP(AVX512PF) \
+    OP(AVX512ER) \
+    OP(AVX512CD) \
+    OP(AVX512BW) \
+    OP(AVX512VL) \
+    OP(AVX512VBMI) \
+    OP(AVX512VBMI2) \
+    OP(AVX512BF16) \
+    OP(PREFETCHWT1) \
+    OP(SHA) \
+    OP(ADX) \
+    OP(RDRAND) \
+    OP(RDSEED) \
+    OP(PCOMMIT) \
+    OP(RDTSCP) \
+    OP(CLFLUSHOPT) \
+    OP(CLWB) \
+    OP(XSAVE) \
+    OP(OSXSAVE) \
+    OP(AMXBF16) \
+    OP(AMXTILE) \
+    OP(AMXINT8) \
+    OP(GenuineIntel)
 
 struct CPUFlagsCache
 {
