@@ -1,3 +1,4 @@
+#include <functional>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -36,10 +37,12 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartSto
     return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size);
 }
 
-VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_)
+VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, bool support_writing_with_append_)
     : VersionMetadata(merge_tree_data_part_)
+    , support_writing_with_append(support_writing_with_append_)
 {
     log = ::getLogger("VersionMetadataOnDisk");
+    LOG_DEBUG(log, "Object {}, support writing with append {}", getObjectName(), support_writing_with_append);
 }
 
 void VersionMetadataOnDisk::loadMetadata()
@@ -242,6 +245,40 @@ void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_hash)
     removal_tid_lock = removal_tid_hash;
 }
 
+void appendToMetadataHelper(
+    const String & metadata_file,
+    IDataPartStorage & storage,
+    bool support_writing_with_append,
+    std::function<void(WriteBuffer & buf)> write_func,
+    bool sync)
+{
+    if (support_writing_with_append)
+    {
+        auto out = storage.writeTransactionFile(metadata_file, WriteMode::Append);
+        write_func(*out);
+        out->finalize();
+        if (sync)
+            out->sync();
+        return;
+    }
+
+    String content;
+    {
+        auto read_buf = openForReading(storage, metadata_file);
+        readStringUntilEOF(content, *read_buf);
+    }
+
+    WriteBufferFromString write_buf(content, AppendModeTag{});
+    write_func(write_buf);
+    write_buf.finalize();
+
+    auto out = storage.writeTransactionFile(metadata_file, WriteMode::Rewrite);
+    out->write(content.data(), content.size());
+    out->finalize();
+    if (sync)
+        out->sync();
+}
+
 void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
 {
     LOG_TEST(
@@ -253,9 +290,9 @@ void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append creation CSN to non-existing metadata");
 
-    auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
-    writeCreationCSNToBuffer(*out);
-    out->finalize();
+    auto write_func = [this](WriteBuffer & buf) { writeCreationCSNToBuffer(buf); };
+    appendToMetadataHelper(
+        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, false);
 }
 
 void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
@@ -269,9 +306,9 @@ void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal CSN to non-existing metadata");
 
-    auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
-    writeRemovalCSNToBuffer(*out);
-    out->finalize();
+    auto write_func = [this](WriteBuffer & buf) { writeRemovalCSNToBuffer(buf); };
+    appendToMetadataHelper(
+        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, false);
 }
 
 void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(const TransactionID & tid)
@@ -286,13 +323,12 @@ void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl(const Transacti
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal TID to non-existing metadata");
 
-    auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
-    writeRemovalTIDToBuffer(*out, tid);
-    out->finalize();
 
+    auto write_func = [this, tid](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, tid); };
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (tid != Tx::EmptyTID)
-        out->sync();
+    auto sync = tid != Tx::EmptyTID;
+    appendToMetadataHelper(
+        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, sync);
 }
 
 

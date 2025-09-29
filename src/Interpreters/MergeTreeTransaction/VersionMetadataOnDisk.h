@@ -10,7 +10,7 @@ namespace DB
 class VersionMetadataOnDisk : public VersionMetadata
 {
 public:
-    explicit VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_);
+    explicit VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, bool support_writing_with_append_);
 
     void loadMetadata() override;
     void storeMetadata(bool force) override;
@@ -34,6 +34,7 @@ protected:
 private:
     /// Hash of removal_tid, used to lock the object for removal
     std::atomic<TIDHash> removal_tid_lock = 0;
+    const bool support_writing_with_append;
 };
 
 }
