@@ -23,6 +23,7 @@
 
 
     <query tag='IPv4InRange'>SELECT count() FROM ips_v4 WHERE isIPAddressInRange(ip, '116.0.0.0/8') SETTINGS max_threads=1</query>
+    <query tag='IPv4InIPv6Range'>SELECT count() FROM ips_v4 WHERE isIPAddressInRange(ip, '::ffff:192.168.0.4/128') SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE IF EXISTS ips_v4</drop_query>
 </test>
