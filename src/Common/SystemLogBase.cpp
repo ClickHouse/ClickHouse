@@ -24,6 +24,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
