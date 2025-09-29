@@ -219,7 +219,7 @@ def test_lwu_on_cluster(started_cluster):
         == "15000\n"
     )
     node1.query(
-        "UPDATE t_lwu_on_cluster ON CLUSTER test_cluster SET value = 'updated' WHERE id >= 2000 AND id < 3000"
+        "UPDATE t_lwu_on_cluster ON CLUSTER test_cluster SET value = 'updated' WHERE id >= 2000 AND id < 3000 SETTINGS allow_experimental_lightweight_update = 1"
     )
     assert (
         node1.query(
