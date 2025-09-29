@@ -1887,7 +1887,6 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     std::atomic<bool> & is_cancelled) const
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
-    bool no_more_keys = false;
     ParallelMergeWorker parallel_param{worker_id, total_worker};
 
     /// We merge all aggregation results to the first.
@@ -1895,47 +1894,25 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     {
         AggregatedDataVariants & current = *non_empty_data[result_num];
 
-        if (!no_more_keys)
-        {
 #if USE_EMBEDDED_COMPILER
-            if (compiled_aggregate_functions_holder)
-            {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                     getDataVariant<Method>(current).data,
-                     arena, true,
-                     false, /*prefetch*/
-                    is_cancelled, &parallel_param);
-            }
-            else
-#endif
-            {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                     getDataVariant<Method>(current).data,
-                     arena, false,
-                      false, /*prefetch*/
-                    is_cancelled, &parallel_param);
-            }
-        }
-        else if (res->without_key)
+        if (compiled_aggregate_functions_holder)
         {
-            /// Ensure only thread 0 is working on these merges, because currently mergeDataNoMoreKeysImpl and
-            //  mergeDataOnlyExistingKeysImpl uses mergeToViaFind which does not support filter based on worker id as mergeToViaIndexFilter.
-            if (worker_id == 0)
-                mergeDataNoMoreKeysImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                    res->without_key,
+            mergeDataImpl<Method>(
+                getDataVariant<Method>(*res).data,
                     getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                    arena, true,
+                    false, /*prefetch*/
+                is_cancelled, &parallel_param);
         }
         else
+#endif
         {
-            if (worker_id == 0)
-                mergeDataOnlyExistingKeysImpl<Method>(
-                    getDataVariant<Method>(*res).data,
+            mergeDataImpl<Method>(
+                getDataVariant<Method>(*res).data,
                     getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                    arena, false,
+                    false, /*prefetch*/
+                is_cancelled, &parallel_param);
         }
     }
 }
@@ -2652,9 +2629,7 @@ Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     ConvertToBlockResVariant res_variant;
-
     const size_t rows = data_variants.sizeWithoutOverflowRow();
-
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
     { \

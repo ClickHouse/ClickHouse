@@ -450,6 +450,7 @@ private:
             Table & table_src,
             Arena * arena) const;
 
+    /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
