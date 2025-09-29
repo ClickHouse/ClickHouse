@@ -101,7 +101,9 @@ static Block getNonVirtualColumns(const Block & block)
     return Block(columns);
 }
 
-static std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chunk_partitioner) {
+static std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
+getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chunk_partitioner)
+{
     if (chunk_partitioner.has_value())
         return chunk_partitioner->partitionChunk(chunk);
     auto unpartitioned_result = std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>{};
