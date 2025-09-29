@@ -2409,13 +2409,16 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
     instance.query(new_create_query)
 
     cancel.set()
-    instance.wait_for_log_line(f"{kafka_table}.*Stalled", repetitions=5)
 
     # kafka_cluster.open_bash_shell('instance')
     # SELECT key, _timestamp, _offset FROM test.{kafka_table}_destination where runningDifference(key) <> 1 ORDER BY key;
 
-    result = instance.query(f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_destination")
-    logging.debug(result)
+    result = instance.query_with_retry(
+        f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_destination",
+        sleep_time=1,
+        retry_count=30,
+        check_callback=lambda result: TSV(result) == TSV("{0}\t{0}\t{0}".format(i[0] - 1)),
+    )
 
     instance.query(f"""
         DROP TABLE test.{kafka_table}_consumer SYNC;
