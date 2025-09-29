@@ -5,11 +5,15 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnDecimal.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionsRound.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
-#include <Core/DecimalFunctions.h>
 
 #include "config.h"
 
@@ -128,11 +132,45 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
-                this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
-        else
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
+        const auto compute_avg = [&]() -> Float64
+        {
+            if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
+                return this->data(place).divideIfAnyDecimal(num_scale, denom_scale);
+            else
+                return this->data(place).divide();
+        };
+
+        const auto & res_type = this->getResultType();
+        WhichDataType result_which(res_type);
+
+        Float64 v = compute_avg();
+
+        /// Processing of results with types DateTime64 or Time64
+        if (callOnBasicType<void, false, false, false, true>(result_which.idx, [&](auto types) -> bool
+        {
+            using ValueType = typename decltype(types)::RightType;
+            using OutColumn = ColumnVectorOrDecimal<ValueType>;
+
+            if constexpr (is_decimal<ValueType>)
+            {
+                auto & col = assert_cast<OutColumn &>(to);
+                const UInt32 scale = col.getScale();
+                const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
+                const Float64 scaled = v * static_cast<Float64>(mult);
+                const auto rounded = roundWithMode(scaled, RoundingMode::Round);
+                col.getData().push_back(ValueType(static_cast<typename ValueType::NativeType>(rounded)));
+            }
+            else
+            {
+                auto & col = assert_cast<OutColumn &>(to);
+                const auto rounded = roundWithMode(v, RoundingMode::Round);
+                col.getData().push_back(static_cast<ValueType>(rounded));
+            }
+            return true;
+        }))
+            return;
+
+        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(v);
     }
 
 
