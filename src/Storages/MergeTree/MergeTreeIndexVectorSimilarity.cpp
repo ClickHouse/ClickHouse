@@ -136,7 +136,7 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
         }
         catch (...)
         {
-            tryLogCurrentException("USearchIndexWithSerialization", "An error while serializing USearch index");
+            tryLogCurrentException("VectorSimilarityIndex", "An error while serializing USearch index");
             return false;
         }
     };
@@ -157,7 +157,7 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         }
         catch (...)
         {
-            tryLogCurrentException("USearchIndexWithSerialization", "An error while deserializing USearch index");
+            tryLogCurrentException("VectorSimilarityIndex", "An error while deserializing USearch index");
             return false;
         }
     };
