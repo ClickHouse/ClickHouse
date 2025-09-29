@@ -637,6 +637,7 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
+            && !select_query->with()
             && !hasAggregateFunctions(select_query));
     }
     return false;
@@ -750,6 +751,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
+        return {};
+
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
@@ -770,9 +774,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
     if (!src_storage_cluster)
-        return {};
-
-    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
     /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
