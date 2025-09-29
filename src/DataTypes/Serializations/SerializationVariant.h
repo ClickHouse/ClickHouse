@@ -75,9 +75,10 @@ public:
     explicit SerializationVariant(
         const VariantSerializations & variants_,
         const std::vector<String> & variant_names_,
+        const DataTypes & variant_types_,
         const std::vector<size_t> & deserialize_text_order_,
         const String & variant_name_)
-        : variants(variants_), variant_names(variant_names_), deserialize_text_order(deserialize_text_order_), variant_name(variant_name_)
+        : variants(variants_), variant_names(variant_names_), variant_types(variant_types_), deserialize_text_order(deserialize_text_order_), variant_name(variant_name_)
     {
     }
 
@@ -224,6 +225,7 @@ private:
 
     VariantSerializations variants;
     std::vector<String> variant_names;
+    DataTypes variant_types;
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;

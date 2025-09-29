@@ -121,6 +121,9 @@ void SerializationVariant::enumerateStreams(
 
     for (size_t i = 0; i < variants.size(); ++i)
     {
+        if (!variant_types[i]->canBeInsideNullable())
+            continue;
+
         settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);
         settings.path.push_back(Substream::VariantElementNullMap);
         settings.path.back().variant_element_name = variant_names[i];
