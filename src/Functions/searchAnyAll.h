@@ -30,7 +30,7 @@ struct SearchAllTraits
 }
 
 /// Map needle into a position (for bitmap operations).
-using FunctionSearchNeedles = absl::flat_hash_map<String, UInt64>;
+using Needles = absl::flat_hash_map<String, UInt64>;
 
 template <class SearchTraits>
 class FunctionSearchImpl : public IFunction
@@ -55,7 +55,7 @@ public:
 private:
     const bool allow_experimental_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<FunctionSearchNeedles> needles;
+    std::optional<Needles> needles;
 
     inline static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
 };

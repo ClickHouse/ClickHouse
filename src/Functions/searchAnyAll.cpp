@@ -57,7 +57,7 @@ void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String>
     if (needles.has_value())
         return;
 
-    needles = FunctionSearchNeedles();
+    needles = Needles();
     for (UInt64 pos = 0; const auto & token : tokens)
         if (auto [_, inserted] = needles->emplace(token, pos); inserted)
             ++pos;
@@ -93,7 +93,7 @@ void executeSearchAny(
     const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     std::vector<std::string_view> tokens;
@@ -119,7 +119,7 @@ void executeSearchAll(
     const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -154,7 +154,7 @@ void execute(
     const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     switch (SearchTraits::mode)
@@ -180,12 +180,12 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    FunctionSearchNeedles needles_tmp;
+    Needles needles_tmp;
 
     col_result->getData().resize(input_rows_count);
 
     const ITokenExtractor * extractor_ptr = nullptr;
-    const FunctionSearchNeedles * needles_ptr = nullptr;
+    const Needles * needles_ptr = nullptr;
 
     // If token_extractor is not set it means that we are using brute force instead of index
     if (token_extractor == nullptr)
