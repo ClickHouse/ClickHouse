@@ -349,7 +349,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_compaction_threadpool_queue_size;
     extern const ServerSettingsUInt64 iceberg_scheduler_compaction_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_scheduler_compaction_threadpool_queue_size;
-    extern const ServerSettingsUInt64 iceberg_schedule_pool_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
