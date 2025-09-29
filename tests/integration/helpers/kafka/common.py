@@ -135,7 +135,7 @@ def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         auto_offset_reset="earliest",
     )
-    consumer.subscribe(topics=(topic))
+    consumer.subscribe(topics=[topic])
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
