@@ -3950,6 +3950,8 @@ services:
         stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
+        {cpu_limit}
+        pids_limit: 200
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -4046,6 +4048,7 @@ class ClickHouseInstance:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
@@ -4064,7 +4067,12 @@ class ClickHouseInstance:
         if mem_limit is not None:
             self.mem_limit = "mem_limit : " + mem_limit
         else:
-            self.mem_limit = ""
+            self.mem_limit = "mem_limit : 6g"
+        if cpu_limit is not None:
+            self.cpu_limit = "cpus : " + cpu_limit
+        else:
+            self.cpu_limit = "cpus : 4"
+
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -5547,6 +5555,7 @@ class ClickHouseInstance:
                     metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
+                    cpu_limit=self.cpu_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),

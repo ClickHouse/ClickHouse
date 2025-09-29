@@ -48,4 +48,8 @@
 
     <jemalloc_flush_profile_interval_bytes>1073741824</jemalloc_flush_profile_interval_bytes>
     <jemalloc_flush_profile_on_memory_exceeded>1</jemalloc_flush_profile_on_memory_exceeded>
+
+    <background_schedule_pool_size>10</background_schedule_pool_size>
+    <max_thread_pool_size>20</max_thread_pool_size>
+<!--    max_thread_pool_size is considerably bigger than background_schedule_pool_size-->
 </clickhouse>

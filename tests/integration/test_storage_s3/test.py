@@ -1259,7 +1259,6 @@ def test_url_reconnect_in_the_middle(started_cluster):
             "protocol": "tcp",
         }
 
-        # Now call the public methods instead of private ones
         pm.add_rule(pm_rule_reject)
 
         def select():

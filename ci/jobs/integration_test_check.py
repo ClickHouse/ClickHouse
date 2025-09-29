@@ -35,7 +35,7 @@ def get_json_params_dict(
         "changed_files": info.get_changed_files() if need_changed_files else [],
         "docker_images_with_versions": {d.name: d.version for d in docker_images},
         "shuffle_test_groups": False,
-        "use_tmpfs": False,
+        "use_tmpfs": True,
         "disable_net_host": False,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
