@@ -3,7 +3,6 @@ description: 'System table containing information about cached DNS records.'
 keywords: ['system table', 'dns_cache']
 slug: /operations/system-tables/dns_cache
 title: 'system.dns_cache'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -17,7 +16,10 @@ Columns:
 - `hostname` ([String](../../sql-reference/data-types/string.md)) — cached hostname
 - `ip_address` ([String](../../sql-reference/data-types/string.md)) — ip address for the hostname
 - `ip_family` ([Enum](../../sql-reference/data-types/enum.md)) — family of the ip address, possible values: 
-  - 'IPv4'   - 'IPv6'  - 'UNIX_LOCAL'- `cached_at` ([DateTime](../../sql-reference/data-types/datetime.md)) - when the record was cached
+   - 'IPv4' 
+   - 'IPv6'
+   - 'UNIX_LOCAL'
+- `cached_at` ([DateTime](../../sql-reference/data-types/datetime.md)) - when the record was cached
 
 **Example**
 

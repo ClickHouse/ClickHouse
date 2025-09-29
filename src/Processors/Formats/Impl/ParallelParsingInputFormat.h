@@ -105,6 +105,8 @@ public:
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
+
+        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -134,14 +136,6 @@ public:
 private:
 
     Chunk read() final;
-
-    void onFinish() final
-    {
-        /// We have to wait for all threads to finish before calling IInputFormat::onFinish()
-        /// because segmentator thread still uses owned buffers.
-        finishAndWait();
-        IInputFormat::onFinish();
-    }
 
     void onCancel() noexcept final
     {

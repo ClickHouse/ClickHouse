@@ -156,8 +156,6 @@ public:
     /// Get function name
     std::string getFunctionName() const;
 
-    FunctionBasePtr getFunctionBase() const;
-
     /// Get function arguments size
     size_t getArgumentsSize() const;
 

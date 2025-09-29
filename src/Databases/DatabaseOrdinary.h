@@ -74,8 +74,7 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        const StorageInMemoryMetadata & metadata) override;
 
     Strings getNamesOfPermanentlyDetachedTables() const override
     {

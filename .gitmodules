@@ -381,6 +381,3 @@
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
 	url = https://github.com/google/crc32c.git
-[submodule "contrib/antlr4-cpp-runtime"]
-	path = contrib/antlr4-cpp-runtime
-	url = https://github.com/antlr/antlr4.git

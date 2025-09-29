@@ -246,7 +246,6 @@ private:
     const String cluster_name;
 
     bool has_sharding_key;
-    ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;

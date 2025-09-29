@@ -17,6 +17,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -30,7 +31,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -183,7 +184,9 @@ private:
             {
                 StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
-                cur_out_offset += ref.size;
+                out_chars[cur_out_offset + ref.size] = 0;
+
+                cur_out_offset += ref.size + 1;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
