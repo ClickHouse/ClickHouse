@@ -3770,6 +3770,10 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     {
         chassert(0);
     }
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+    }
 }
 
 std::optional<String> StatementGenerator::backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
