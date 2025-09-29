@@ -1,17 +1,17 @@
 #pragma once
 
+#include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnLazy.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Common/CacheBase.h>
-#include <Common/CurrentThread.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "Columns/ColumnBLOB.h"
-#include "Core/ColumnWithTypeAndName.h"
 
 #include <cstddef>
 #include <memory>
@@ -27,13 +27,6 @@ namespace DB
 
 struct RuntimeDataflowStatistics
 {
-    RuntimeDataflowStatistics & operator+=(const RuntimeDataflowStatistics & rhs)
-    {
-        input_bytes += rhs.input_bytes;
-        output_bytes += rhs.output_bytes;
-        return *this;
-    }
-
     size_t input_bytes = 0;
     size_t output_bytes = 0;
 };
@@ -82,8 +75,9 @@ inline RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
     return stats_cache;
 }
 
-struct Updater
+class Updater
 {
+public:
     explicit Updater(std::optional<size_t> cache_key_)
         : cache_key(cache_key_)
     {
@@ -115,6 +109,15 @@ struct Updater
         statistics.output_bytes += source_bytes;
         if (first_output && chunk.hasRows())
         {
+            if (chunk.getNumColumns() != header.columns())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Chunk columns number {} doesn't match header columns number {}",
+                    chunk.getNumColumns(),
+                    header.columns());
+            }
+
             size_t compressed_bytes = 0;
             for (size_t i = 0; i < chunk.getNumColumns(); ++i)
                 compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
@@ -130,19 +133,12 @@ struct Updater
         std::lock_guard lock(mutex);
         const auto source_bytes = column.column->byteSize();
         statistics.input_bytes += source_bytes;
-        if (first_input && column.column->size() > 0)
+        if (first_input && !column.column->empty())
         {
             const auto compressed_bytes = compressedColumnSize(column);
             input_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
             first_input = false;
         }
-    }
-
-    size_t compressedColumnSize(const ColumnWithTypeAndName & column)
-    {
-        ColumnBLOB::BLOB blob;
-        ColumnBLOB::toBLOB(blob, column, CompressionCodecFactory::instance().get("LZ4", {}), DBMS_TCP_PROTOCOL_VERSION, std::nullopt);
-        return blob.size();
     }
 
     void addInputBytes(const Chunk & chunk)
@@ -154,12 +150,30 @@ struct Updater
         statistics.input_bytes += source_bytes;
         if (first_input && chunk.hasRows())
         {
+            if (chunk.getNumColumns() != header.columns())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Chunk columns number {} doesn't match header columns number {}",
+                    chunk.getNumColumns(),
+                    header.columns());
+            }
+
             size_t compressed_bytes = 0;
             for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-                compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+                if (typeid_cast<const ColumnLazy *>(chunk.getColumns()[i].get()) == nullptr)
+                    compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
             input_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
             first_input = false;
         }
+    }
+
+private:
+    size_t compressedColumnSize(const ColumnWithTypeAndName & column)
+    {
+        ColumnBLOB::BLOB blob;
+        ColumnBLOB::toBLOB(blob, column, CompressionCodecFactory::instance().get("LZ4", {}), DBMS_TCP_PROTOCOL_VERSION, std::nullopt);
+        return blob.size();
     }
 
     std::mutex mutex;
