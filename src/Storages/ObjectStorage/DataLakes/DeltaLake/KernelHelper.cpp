@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/logger_useful.h>
@@ -120,6 +121,79 @@ private:
     }
 };
 
+/// A helper class to manage Azure storage types.
+class AzureKernelHelper final : public IKernelHelper
+{
+public:
+    AzureKernelHelper(
+        const std::string & url_,
+        const std::string & container_,
+        const std::string & blob_path_,
+        const std::string & storage_account_name_,
+        const std::string & storage_account_key_,
+        const std::string & storage_sas_key_)
+        : url(url_)
+        , container(container_)
+        , blob_path(blob_path_)
+        , storage_account_name(storage_account_name_)
+        , storage_account_key(storage_account_key_)
+        , storage_sas_key(storage_sas_key_)
+        , table_location(url_)
+    {}
+
+    const std::string & getTableLocation() const override { return table_location; }
+
+    const std::string & getDataPath() const override { return blob_path; }
+
+    ffi::EngineBuilder * createBuilder() const override
+    {
+        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ffi::get_engine_builder(
+                KernelUtils::toDeltaString(table_location),
+                &KernelUtils::allocateError),
+            "get_engine_builder");
+
+        auto set_option = [&](const std::string & name, const std::string & value)
+        {
+            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+        };
+
+        /// The delta-kernel-rs integration is currently under experimental flag,
+        /// because we wait for delta-kernel maintainers to provide ffi api
+        /// which will allow us to provide our own s3 client to delta-kernel.
+        /// For now it uses its own client, which would lake all the auth options
+        /// which our own client supports.
+
+        /// Supported options
+        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
+        if (!storage_account_name.empty())
+            set_option("azure_storage_account_name", storage_account_name);
+        if (!storage_account_key.empty())
+            set_option("azure_storage_account_key", storage_account_key);
+        if (!storage_sas_key.empty())
+            set_option("azure_storage_sas_key", storage_sas_key);
+
+        set_option("azure_storage_endpoint", url);
+        set_option("azure_container_name",container);
+
+        LOG_TRACE(
+            getLogger("KernelHelper"),
+            "Using endpoint url: {}",
+            url);
+
+        return builder;
+    }
+
+private:
+    const std::string url; /// endpoint without container & blob_path
+    const std::string container;
+    const std::string blob_path;
+    const std::string storage_account_name;
+    const std::string storage_account_key;
+    const std::string storage_sas_key;
+    const std::string table_location;
+};
+
 /// A helper class to manage local fs storage.
 class LocalKernelHelper final : public IKernelHelper
 {
@@ -175,6 +249,19 @@ DeltaLake::KernelHelperPtr getKernelHelper(
                 s3_conf->url,
                 object_storage->getS3StorageClient(),
                 s3_conf->getAuthSettings());
+        }
+        case DB::ObjectStorageType::Azure:
+        {
+            const auto * azure_conf = dynamic_cast<const DB::StorageAzureConfiguration *>(configuration.get());
+
+            const auto & endpoint = azure_conf->getEndpoint();
+            const auto & container = azure_conf->getContainer();
+            const auto & path = azure_conf->getRawURI();
+            const auto & account_name = azure_conf->getAccountName();
+            const auto & account_key = azure_conf->getAccountKey();
+            const auto & sas_key = azure_conf->getSasKey();
+
+            return std::make_shared<DeltaLake::AzureKernelHelper>(endpoint, container, path, account_name, account_key, sas_key);
         }
         case DB::ObjectStorageType::Local:
         {

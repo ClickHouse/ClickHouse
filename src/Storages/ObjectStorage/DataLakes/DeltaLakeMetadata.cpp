@@ -638,13 +638,11 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     const auto & query_settings_ref = local_context->getSettingsRef();
 
     const auto storage_type = configuration_ptr->getType();
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
 
     bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
     if (supports_delta_kernel && enable_delta_kernel)
-    {
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
-    }
     else
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #else
