@@ -81,7 +81,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -123,6 +124,8 @@ public:
     bool isBroken() const override { return false; }
 
     bool isReadOnly() const override { return true; }
+
+    void startupImpl(ContextPtr context) override;
 
     void shutdown() override;
 

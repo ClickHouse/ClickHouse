@@ -2,8 +2,7 @@
 #include <Common/SipHash.h>
 
 #include <algorithm>
-#include <mutex>
-#include <shared_mutex>
+
 
 namespace DB::Histogram
 {
@@ -54,13 +53,6 @@ namespace DB::Histogram
     Metric & MetricFamily::withLabels(LabelValues label_values)
     {
         assert(label_values.size() == labels.size());
-        {
-            std::shared_lock lock(mutex);
-            if (auto it = metrics.find(label_values); it != metrics.end())
-            {
-                return *it->second;
-            }
-        }
         std::lock_guard lock(mutex);
         auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>(buckets));
         return *it->second;

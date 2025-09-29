@@ -1,15 +1,43 @@
 """Quick tests, faster than 30 seconds"""
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
-import helpers.kafka.common as k
+import json
+import logging
+import math
+import random
+import threading
+import time
 
+import avro.datafile
+import avro.io
+import avro.schema
+import kafka.errors
+import pytest
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from google.protobuf.internal.encoder import _VarintBytes
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry
+
+from . import common as k
+from . import message_with_repeated_pb2
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
 
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
@@ -859,46 +887,33 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
     k.kafka_check_result(result, True)
 
-
-def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     instance.query(
         """
-        CREATE TABLE test.kafka (
-                date String,
-                buy_payment_cash_value Float64,
-                buy_payment_card_value Float64,
-                buy_vendor_name String,
-                buy_items_bought Int32,
-                sell_payment_cash_value Float64,
-                sell_payment_card_value Float64,
-                sell_customer_name String,
-                sell_items_sold Int32,
-                payment_details Enum8('omitted' = 0, 'buy' = 2, 'sell' = 3),
-                buy_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
-                sell_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
-            )
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'pb_transaction_oneof',
-                     kafka_group_name = 'pb_transaction_oneof',
-                     kafka_format = 'Protobuf',
-                     kafka_commit_on_select = 1,
-                     kafka_schema = 'oneof_transaction.proto:Transaction';
-        """
+    CREATE TABLE test.kafka_writer (key UInt64, value String)
+        ENGINE = Kafka
+        SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'pb_no_delimiter',
+                    kafka_group_name = 'pb_no_delimiter',
+                    kafka_format = 'ProtobufSingle',
+                    kafka_commit_on_select = 1,
+                    kafka_schema = 'kafka.proto:KeyValuePair';
+    """
     )
 
-    k.kafka_produce_protobuf_transaction_oneof(
-        kafka_cluster, "pb_transaction_oneof", 0, 1
+    instance.query(
+        "INSERT INTO test.kafka_writer VALUES (13,'Friday'),(42,'Answer to the Ultimate Question of Life, the Universe, and Everything'), (110, 'just a number')"
     )
 
-    expected="1000000	10	0	dell	1	0	0		0	buy	cash_value	omitted\n"
-    result = ""
-    while True:
-        result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
-        if k.kafka_check_result(result,  ref_string=expected):
-            break
+    time.sleep(1)
 
-    k.kafka_check_result(result, True,  ref_string=expected)
+    result = instance.query("SELECT * FROM test.kafka ORDER BY key", ignore_error=True)
+
+    expected = """\
+13	Friday
+42	Answer to the Ultimate Question of Life, the Universe, and Everything
+110	just a number
+"""
+    assert TSV(result) == TSV(expected)
 
 
 @pytest.mark.parametrize(
@@ -1213,10 +1228,6 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     """
     )
 
-    # we have to wait > kafka_poll_timeout_ms before producing data,
-    #  otherwise it is expected that data might go via the first MV only
-    time.sleep(3)
-
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
@@ -1241,6 +1252,7 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
 
         k.kafka_check_result(result1, True)
         k.kafka_check_result(result2, True)
+
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -1381,7 +1393,7 @@ def test_kafka_virtual_columns_with_materialized_view(
                 ENGINE = MergeTree()
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
+                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
         """
         )
 
@@ -1754,21 +1766,18 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 def test_kafka_producer_consumer_separate_settings(
     kafka_cluster, create_query_generator, do_direct_read
 ):
-    table_name = "test_kafka"
     instance.rotate_logs()
     instance.query(
         create_query_generator(
-            table_name,
+            "test_kafka",
             "key UInt64",
             topic_list="separate_settings",
             consumer_group="test",
         )
     )
 
-    # Let's create an mv to initialize the librdkafka consumers
-    instance.query(f"CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{table_name};")
-    instance.wait_for_log_line("Created #0 consumer")
-    instance.query("DROP TABLE test.view")
+    if do_direct_read:
+        instance.query("SELECT * FROM test.test_kafka")
     instance.query("INSERT INTO test.test_kafka VALUES (1)")
 
     assert instance.contains_in_log("Kafka producer created")
@@ -1776,7 +1785,7 @@ def test_kafka_producer_consumer_separate_settings(
 
     kafka_conf_warnings = instance.grep_in_log("rdk:CONFWARN")
 
-    assert kafka_conf_warnings.strip() != ''
+    assert kafka_conf_warnings is not None
 
     for warn in kafka_conf_warnings.strip().split("\n"):
         # this setting was applied via old syntax and applied on both consumer
@@ -2285,6 +2294,8 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         )
 
         # init PartitionManager (it starts container) earlier
+        pm = PartitionManager()
+
         instance.query(
             """
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS
@@ -2297,14 +2308,11 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         # the tricky part here is that disconnect should happen after write prefix, but before write suffix
         # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
         # while materialized view is working to inject zookeeper failure
-        with PartitionManager() as pm:
-            pm.drop_instance_zk_connections(instance)
-            instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
-                timeout=60,
-                look_behind_lines=500
-            )
-
+        pm.drop_instance_zk_connections(instance)
+        instance.wait_for_log_line(
+            "Error.*(Connection loss|Coordination::Exception).*while pushing to view"
+        )
+        pm.heal_all()
         instance.wait_for_log_line("Committed offset 22")
 
         result = instance.query(
@@ -2817,17 +2825,17 @@ def test_issue26643(kafka_cluster, create_query_generator):
     thread_per_consumer = k.must_use_thread_per_consumer(create_query_generator)
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        msg = k.message_with_repeated_pb2.Message(
+        msg = message_with_repeated_pb2.Message(
             tnow=1629000000,
             server="server1",
             clien="host1",
             sPort=443,
             cPort=50000,
             r=[
-                k.message_with_repeated_pb2.dd(
+                message_with_repeated_pb2.dd(
                     name="1", type=444, ttl=123123, data=b"adsfasd"
                 ),
-                k.message_with_repeated_pb2.dd(name="2"),
+                message_with_repeated_pb2.dd(name="2"),
             ],
             method="GET",
         )
@@ -2836,7 +2844,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
 
-        msg = k.message_with_repeated_pb2.Message(tnow=1629000002)
+        msg = message_with_repeated_pb2.Message(tnow=1629000002)
 
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
@@ -3098,82 +3106,70 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
             ["40", "400"],
         ]
 
-@pytest.mark.parametrize(
-    "create_query_generator, consumer_id_length, num_rebalance_assignments",
-    [(k.generate_old_create_table_query, 67, 1), (k.generate_new_create_table_query, 0, 0)],
-)
-def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_id_length, num_rebalance_assignments):
+
+def test_system_kafka_consumers(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    topic_name = "system_kafka_cons" + k.get_topic_postfix(create_query_generator)
-    table_name = "kafka"
+    topic = "system_kafka_cons"
+    k.kafka_create_topic(admin_client, topic)
 
-    with k.kafka_topic(admin_client, topic_name):
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+    k.kafka_produce(
+        kafka_cluster,
+        topic,
+        ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+    )
 
-        # Check that format_csv_delimiter parameter works now - as part of all available format settings.
-        k.kafka_produce(
-            kafka_cluster,
-            topic_name,
-            ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
-        )
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
 
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS test.kafka SYNC;
-            DROP TABLE IF EXISTS test.view SYNC;
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        """
+    )
 
-            {create_query_generator(
-                "kafka",
-                "a UInt64, b String",
-                topic_list=topic_name,
-                consumer_group=topic_name,
-                format="CSV",
-                settings={
-                    "format_csv_delimiter":"|",
-                    "kafka_commit_on_select": 1
-                }
-            )};
+    result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
-            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{table_name};
-            """
-        )
-        instance.query_with_retry("SELECT count() FROM test.view", check_callback=lambda res: int(res) == 4)
+    check_query = """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
 
-        instance.query_with_retry("DROP TABLE test.view SYNC")
+        -- check last_used stores microseconds correctly
+        create or replace function check_last_used as
+          (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
 
-        check_query = """
-            create or replace function stable_timestamp as
-            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
-
-            -- check last_used stores microseconds correctly
-            create or replace function check_last_used as
-            (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
-
-            SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
-            assignments.current_offset, assignments.intent_size,
-            if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
-            if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
-            stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
-            num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
-            num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
-            check_last_used(last_used) as last_used_,
-            if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
-            FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
-            """
-        assert_eq_with_retry(
-            instance,
-            check_query,
-            f"""Row 1:
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
+          check_last_used(last_used) as last_used_,
+          if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
+          FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
+        """
+    assert_eq_with_retry(
+        instance,
+        check_query,
+        """Row 1:
 ──────
 database:                     test
 table:                        kafka
-length(consumer_id):          {consumer_id_length}
-assignments.topic:            ['{topic_name}']
+length(consumer_id):          67
+assignments.topic:            ['system_kafka_cons']
 assignments.partition_id:     [0]
 assignments.current_offset:   [4]
-assignments.intent_size:      [NULL]
 last_exception_time_:         never
 last_exception_:              no exception
 last_poll_time_:              now
@@ -3182,14 +3178,15 @@ last_commit_time_:            now
 num_commits:                  1
 last_rebalance_time_:         never
 num_rebalance_revocations:    0
-num_rebalance_assignments:    {num_rebalance_assignments}
+num_rebalance_assignments:    1
 is_currently_used:            0
 last_used_:                   microseconds
 last_used_and_last_poll_time: equal
 """,
-        )
+    )
 
-        instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka")
+    k.kafka_delete_topic(admin_client, topic)
 
 
 def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):

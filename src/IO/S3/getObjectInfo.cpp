@@ -1,6 +1,4 @@
-#include <optional>
 #include <IO/S3/getObjectInfo.h>
-#include <IO/Expect404ResponseScope.h>
 
 #if USE_AWS_S3
 
@@ -79,8 +77,6 @@ ObjectInfo getObjectInfoIfExists(
     const String & version_id,
     bool with_metadata)
 {
-    Expect404ResponseScope scope; // 404 is not an error
-
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
         return *object_info;
@@ -102,8 +98,6 @@ ObjectInfo getObjectInfo(
     const String & version_id,
     bool with_metadata)
 {
-    Expect404ResponseScope scope; // 404 is not an error
-
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
         return *object_info;
@@ -130,8 +124,6 @@ bool objectExists(
     const String & key,
     const String & version_id)
 {
-    Expect404ResponseScope scope; // 404 is not an error
-
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
     if (object_info)
         return true;

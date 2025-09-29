@@ -8,14 +8,12 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/ObjectStorages/Web/WebObjectStorageConnectionInfo.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -36,7 +34,7 @@ namespace ErrorCodes
 }
 
 std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
-WebObjectStorage::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
+WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const
 {
     std::vector<fs::path> loaded_files;
     auto full_url = fs::path(url) / path;
@@ -230,6 +228,7 @@ WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & pa
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     return std::make_unique<ReadBufferFromWebServer>(
@@ -283,9 +282,12 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path *
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
-ObjectStorageConnectionInfoPtr WebObjectStorage::getConnectionInfo() const
+std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
+    const std::string & /* new_namespace */,
+    const Poco::Util::AbstractConfiguration & /* config */,
+    const std::string & /* config_prefix */, ContextPtr /* context */)
 {
-    return getWebObjectStorageConnectionInfo(url);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for WebObjectStorage");
 }
 
 }
