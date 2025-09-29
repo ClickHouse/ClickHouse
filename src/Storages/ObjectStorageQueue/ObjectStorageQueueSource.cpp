@@ -1122,6 +1122,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             const auto & file_path = file_metadata->getPath();
             const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
 
+            if (processed_files[i].state != FileState::Processed)
+                continue;
+
             auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
             if (!inserted
                 && file_path > processed_files[it->second].metadata->getPath())

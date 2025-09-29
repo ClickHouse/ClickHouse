@@ -374,6 +374,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
 void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
 {
+    LOG_TEST(log, "Resetting processing for {}", path);
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
