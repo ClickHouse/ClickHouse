@@ -107,7 +107,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> List[Re
                 except ValueError:
                     pass
 
-            result = Result(name=name, status=status, start_time=time)
+            result = Result(name=name, status=status, duration=time)
             if len(line) == 4 and line[3]:
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
@@ -232,7 +232,7 @@ def main():
             link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         if not info.is_local_run or not (temp_path / "clickhouse").exists():
             print(
-                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
+                f"NOTE: ClickHouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
             )
             if info.is_local_run:
                 time.sleep(10)

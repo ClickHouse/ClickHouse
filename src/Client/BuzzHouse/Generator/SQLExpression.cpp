@@ -173,7 +173,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
     const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0);
     const uint32_t str_lit = 50;
-    const uint32_t special_val = 20;
+    const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
@@ -235,7 +235,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (date_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + 1))
@@ -244,7 +244,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
 
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (datetime_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + 1))
@@ -252,7 +252,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))

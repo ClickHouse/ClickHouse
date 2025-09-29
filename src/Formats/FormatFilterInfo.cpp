@@ -73,9 +73,33 @@ void FormatFilterInfo::initKeyCondition(const Block & keys)
     if (!ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
+    if (prewhere_info)
+    {
+        auto add_columns = [&](const ActionsDAG & dag)
+        {
+            for (const auto & col : dag.getRequiredColumns())
+            {
+                if (!keys.has(col.name) && !additional_columns.has(col.name))
+                    additional_columns.insert({col.type->createColumn(), col.type, col.name});
+            }
+        };
+        if (prewhere_info->row_level_filter.has_value())
+            add_columns(prewhere_info->row_level_filter.value());
+        add_columns(prewhere_info->prewhere_actions);
+    }
+
+    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+    for (const auto & col : additional_columns)
+        columns.push_back(col);
+    Names names;
+    names.reserve(columns.size());
+    for (const auto & col : columns)
+        names.push_back(col.name);
+
     ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
     key_condition = std::make_shared<const KeyCondition>(
-        inverted_dag, ctx, keys.getNames(), std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));
+        inverted_dag, ctx, names,
+        std::make_shared<ExpressionActions>(ActionsDAG(columns)));
 }
 
 void FormatFilterInfo::initOnce(std::function<void()> f)
@@ -98,4 +122,5 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
             }
         });
 }
+
 }

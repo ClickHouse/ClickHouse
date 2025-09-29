@@ -151,7 +151,33 @@ using FunctionNetloc = FunctionStringToString<ExtractSubstringImpl<ExtractNetloc
 
 REGISTER_FUNCTION(Netloc)
 {
-    factory.registerFunction<FunctionNetloc>();
+    /// netloc documentation
+    FunctionDocumentation::Description description_netloc = R"(
+Extracts network locality (`username:password@host:port`) from a URL.
+    )";
+    FunctionDocumentation::Syntax syntax_netloc = "netloc(url)";
+    FunctionDocumentation::Arguments arguments_netloc = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_netloc = {"Returns `username:password@host:port` from a given URL.", {"String"}};
+    FunctionDocumentation::Examples examples_netloc = {
+    {
+        "Usage example",
+        R"(
+SELECT netloc('http://paul@www.example.com:80/');
+        )",
+        R"(
+┌─netloc('http⋯e.com:80/')─┐
+│ paul@www.example.com:80  │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_netloc = {20, 5};
+    FunctionDocumentation::Category category_netloc = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_netloc = {description_netloc, syntax_netloc, arguments_netloc, returned_value_netloc, examples_netloc, introduced_in_netloc, category_netloc};
+
+    factory.registerFunction<FunctionNetloc>(documentation_netloc);
 }
 
 }

@@ -3,6 +3,7 @@ description: 'System table which contains properties of configured setting profi
 keywords: ['system table', 'settings_profiles']
 slug: /operations/system-tables/settings_profiles
 title: 'system.settings_profiles'
+doc_type: 'reference'
 ---
 
 # system.settings_profiles

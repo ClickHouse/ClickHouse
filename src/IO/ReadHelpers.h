@@ -150,6 +150,13 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
     buf.readStrict(s.data(), size);
 }
 
+inline void skipStringBinary(ReadBuffer & buf)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+    buf.ignore(size);
+}
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -602,6 +609,15 @@ inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
         date = from;
 }
 
+inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
+{
+    if (unlikely(from < 0 || from > 0xFFFF))
+        return false;
+
+    date = from;
+    return true;
+}
+
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
 {
@@ -610,13 +626,25 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     LocalDate local_date;
 
     if constexpr (throw_exception)
+    {
         readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
-        return false;
+        ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        convertToDayNum(date, ret);
+    }
+    else
+    {
+        if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+            return false;
 
-    ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-    convertToDayNum(date, ret);
-    return ReturnType(true);
+        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        if (!ret)
+            return false;
+
+        if (!tryToConvertToDayNum(date, *ret))
+            return false;
+
+        return true;
+    }
 }
 
 template <typename ReturnType = void>
@@ -727,7 +755,7 @@ inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 {
-    if (parseIPv4(buf.position(), [&buf](){ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
+    if (parseIPv4(buf.position(), [&buf]{ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
@@ -861,10 +889,25 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if (unlikely(year == 0))
-                datetime = 0;
+            if constexpr (throw_exception)
+            {
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
             else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            {
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
+
+                /// For usual DateTime check if value is within supported range
+                if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
+                    return false;
+
+                datetime = *datetime_maybe;
+            }
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;
@@ -2077,6 +2120,9 @@ bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON &
 
 void readTSVField(String & s, ReadBuffer & buf);
 void readTSVFieldCRLF(String & s, ReadBuffer & buf);
+
+String escapeDotInJSONKey(const String & key);
+String unescapeDotInJSONKey(const String & key);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol

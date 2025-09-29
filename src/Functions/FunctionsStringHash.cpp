@@ -320,7 +320,7 @@ struct SimHashImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
-            const size_t data_size = offsets[i] - offsets[i - 1] - 1;
+            const size_t data_size = offsets[i] - offsets[i - 1];
 
             if constexpr (Ngram)
             {
@@ -552,7 +552,7 @@ struct MinHashImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
-            const size_t data_size = offsets[i] - offsets[i - 1] - 1;
+            const size_t data_size = offsets[i] - offsets[i - 1];
 
             min_heap.values.clear();
             max_heap.values.clear();
