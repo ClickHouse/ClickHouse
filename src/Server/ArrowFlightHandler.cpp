@@ -119,9 +119,7 @@ namespace
 
             auto it = headers.find(AUTHORIZATION_HEADER);
             if (it == headers.end())
-            {
                 return arrow::Status::IOError("Missing Authorization header");
-            }
 
             auto auth_header = std::string(it->second);
 
@@ -129,27 +127,19 @@ namespace
 
             const std::string prefix_basic = "Basic ";
             if (auth_header.starts_with(prefix_basic))
-            {
                 token = auth_header.substr(prefix_basic.size());
-            }
 
             const std::string prefix_bearer = "Bearer ";
             if (auth_header.starts_with(prefix_bearer))
-            {
                 token = auth_header.substr(prefix_bearer.size());
-            }
 
             if (token.empty())
-            {
                 return arrow::Status::IOError("Expected Basic auth scheme");
-            }
 
             std::string credentials = DB::base64Decode(token, true);
             auto pos = credentials.find(':');
             if (pos == std::string::npos)
-            {
                 return arrow::Status::IOError("Malformed credentials");
-            }
 
             auto user = credentials.substr(0, pos);
             auto password = credentials.substr(pos + 1);
@@ -193,42 +183,43 @@ namespace
         return std::move(parse_location_status).ValueOrDie();
     }
 
-    [[nodiscard]] arrow::flight::Result<String> convertGetDescriptorToSQL(const arrow::flight::FlightDescriptor & flight_descriptor)
+    [[nodiscard]] arrow::flight::Result<String> convertDescriptorToSQL(const arrow::flight::FlightDescriptor & descriptor, bool for_put_operation)
     {
         switch (flight_descriptor.type)
         {
             case arrow::flight::FlightDescriptor::PATH:
             {
                 const auto & path = flight_descriptor.path;
-                if ((path.size() != 1) || path[0].empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Flight descriptor's path should specify the name of a table");
+                if (path.size() != 1)
+                    return arrow::Status::Invalid("Flight descriptor's path should be one-component (got ", path.size(), " components)");
+                if (path[0].empty())
+                    return arrow::Status::Invalid("Flight descriptor's path should specify the name of a table");
                 const String & table_name = path[0];
-                return "SELECT * FROM " + table_name;
+                if (for_put_operation)
+                    return "INSERT INTO " + backQuoteIfNeed(table_name);
+                else
+                    return "SELECT * FROM " + backQuoteIfNeed(table_name);
             }
             case arrow::flight::FlightDescriptor::CMD:
-                return flight_descriptor.cmd;
+            {
+                const auto & cmd = flight_descriptor.cmd;
+                if (cmd.empty())
+                    return arrow::Status::Invalid("Flight descriptor's command should specify a ClickHouse query");
+                return cmd;
+            }
             default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Flight descriptor has an unknown type: {}", flight_descriptor.type);
+                return arrow::Status::TypeError("Flight descriptor has unknown type ", toString(flight_descriptor.type));
         }
+    }
+
+    [[nodiscard]] arrow::flight::Result<String> convertGetDescriptorToSQL(const arrow::flight::FlightDescriptor & descriptor)
+    {
+        return convertDescriptorToSQL(descriptor, /* for_put_operation = */ false);
     }
 
     [[nodiscard]] arrow::flight::Result<String> convertPutDescriptorToSQL(const arrow::flight::FlightDescriptor & flight_descriptor)
     {
-        switch (flight_descriptor.type)
-        {
-            case arrow::flight::FlightDescriptor::PATH:
-            {
-                const auto & path = flight_descriptor.path;
-                if ((path.size() != 1) || path[0].empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Flight descriptor's path should specify the name of a table");
-                const String & table_name = path[0];
-                return "INSERT INTO " + table_name;
-            }
-            case arrow::flight::FlightDescriptor::CMD:
-                return flight_descriptor.cmd;
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Flight descriptor has an unknown type: {}", flight_descriptor.type);
-        }
+        return convertDescriptorToSQL(descriptor, /* for_put_operation = */ true);
     }
 
     std::shared_ptr<CHColumnToArrowColumn> createCHToArrowConverter(const Block & header)
@@ -259,6 +250,11 @@ namespace
         return ticket.starts_with(TICKET_PREFIX);
     }
 
+    bool hasPollPrefix(const String & ticket)
+    {
+        return ticket.starts_with(POLL_DESCRIPTOR_PREFIX);
+    }
+
     struct TicketInfo : public TicketWithExpirationTime
     {
         ConstBlockPtr block;
@@ -273,31 +269,38 @@ namespace
 
     struct PollDescriptorInfo : public PollDescriptorWithExpirationTime
     {
-        std::shared_ptr<const arrow::Schema> schema;
+        std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter;
         std::shared_ptr<PollDescriptorInfo> previous_info;
         bool evaluating = false;
         bool evaluated = false;
-        /// The following fields are set only if `evaluated == true`.
+        /// The following fields can be set only if `evaluated == true`.
         String ticket;
         size_t rows = 0;
         size_t bytes = 0;
+        String next_descriptor;
+        std::exception_ptr error;
     };
 
     /// Keeps a query context and a pipeline executor for PollFlightInfo.
     class PollSession
     {
     public:
-        PollSession(std::unique_ptr<Session> session_, ContextPtr query_context_, ThreadGroupPtr thread_group_, BlockIO && block_io)
+        PollSession(std::unique_ptr<Session> session_, ContextPtr query_context_, ThreadGroupPtr thread_group_, BlockIO && block_io,
+                    std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter_)
             : session(std::move(session_))
             , query_context(query_context_)
             , thread_group(thread_group_)
             , block_io(std::move(block_io))
             , executor(block_io.pipeline)
+            , ch_to_arrow_converter(ch_to_arrow_converter_)
         {
         }
 
         ~PollSession() = default;
+
         ThreadGroupPtr getThreadGroup() const { return thread_group; }
+        std::shared_ptr<CHColumnToArrowColumn> getCHToArrowConverter() const { return ch_to_arrow_converter; }
+
         bool getNextBlock(Block & block) { return executor->pull(block); }
 
     private:
@@ -306,6 +309,7 @@ namespace
         ThreadGroupPtr thread_group;
         BlockIO io;
         PullingPipelineExecutor executor;
+        std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter;
     };
 }
 
@@ -358,7 +362,7 @@ public:
         std::lock_guard lock{mutex};
         auto it = tickets.find(ticket);
         if (it == tickets.end())
-            return arrow::Status{arrow::StatusCode::KeyError, fmt::format("Ticket {} not found", quoteString(ticket))};
+            return arrow::Status::KeyError("Ticket ", quoteString(ticket), " not found");
         return it->second;
     }
 
@@ -371,7 +375,7 @@ public:
         std::lock_guard lock{mutex};
         auto it = tickets.find(ticket);
         if (it == tickets.end())
-            return arrow::Status{arrow::StatusCode::KeyError, fmt::format("Ticket {} not found", quoteString(ticket))};
+            return arrow::Status::KeyError("Ticket ", quoteString(ticket), " not found");
         auto info = it->second;
         auto old_expiration_time = *info->expiration_time;
         auto new_expiration_time = calculateTicketExpirationTime(current_time);
@@ -402,25 +406,37 @@ public:
     }
 
     /// Adds a poll descriptor.
-    std::shared_ptr<const PollDescriptorInfo> addPollDescriptor(
-        std::shared_ptr<const arrow::Schema> schema,
-        std::shared_ptr<const PollDescriptorInfo> previous_info,
-        std::unique_ptr<PollSession> poll_session)
+    std::shared_ptr<const PollDescriptorInfo>
+    addPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info)
     {
-        String poll_descriptor = generatePollDescriptor();
+        String poll_descriptor;
+        if (previous_info)
+        {
+            if (!previous_info->evaluated)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding a poll descriptor while the previous poll descriptor is not evaluated");
+            if (previous_info->next_poll_descriptor.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding a poll descriptor while the previous poll descriptor is marked as final");
+            poll_descriptor = previous_info->next_poll_descriptor;
+        }
+        else
+        {
+            poll_descriptor = generatePollDescriptor();
+        }
         auto current_time = now();
         auto expiration_time = calculatePollDescriptorExpirationTime(current_time);
-        auto new_info = std::make_shared<PollDescriptorInfo>(PollDescriptorInfo{
-            .poll_descriptor = poll_descriptor, .expiration_time = expiration_time, .schema = schema});
+        auto info = std::make_shared<PollDescriptorInfo>(PollDescriptorInfo{
+            .poll_descriptor = poll_descriptor,
+            .expiration_time = expiration_time,
+            .ch_to_arrow_converter = poll_session->getCHToArrowConverter()});
         std::lock_guard lock{mutex};
-        poll_descriptors[poll_descriptor] = new_info;
-        poll_sessions[poll_descriptor] = poll_session;
+        poll_descriptors[poll_descriptor] = info;
+        poll_sessions[poll_descriptor] = std::move(poll_session);
         if (expiration_time)
         {
             poll_descriptors_by_expiration_time.emplace(expiration_time, poll_descriptor);
             updateNextExpirationTime();
         }
-        return new_info;
+        return info;
     }
 
     /// Returns the information about a poll descriptor.
@@ -429,8 +445,19 @@ public:
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
         if (it == poll_descriptors.end())
-            return arrow::Status{arrow::StatusCode::KeyError, fmt::format("Poll descriptor {} not found", quoteString(poll_descriptor))};
+            return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
         return it->second;
+    }
+
+    PollDescriptorWithExpirationTime getPollDescriptorWithExpirationTime(const String & poll_descriptor) const
+    {
+        if (!poll_lifetime)
+            return PollDescriptorWithExpirationTime{.poll_descriptor = poll_descriptor, .expiration_time = std::nullopt};
+        std::lock_guard lock{mutex};
+        auto it = poll_descriptors.find(poll_descriptor);
+        if (it == poll_descriptors.end())
+            return PollDescriptorWithExpirationTime{.poll_descriptor = poll_descriptor, .expiration_time = ALREADY_EXPIRED};
+        return *it->second;
     }
 
     /// Extends the expiration time of a poll descriptor.
@@ -442,7 +469,7 @@ public:
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
         if (it == poll_descriptors.end())
-            return arrow::Status{arrow::StatusCode::KeyError, fmt::format("Poll descriptor {} not found", quoteString(poll_descriptor))};
+            return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
         auto info = it->second;
         auto old_expiration_time = info->expiration_time;
         auto new_expiration_time = calculatePollDescriptorExpirationTime(current_time);
@@ -452,10 +479,11 @@ public:
         poll_descriptor_by_expiration_time.erase(std::make_pair(*old_expiration_time, poll_descriptor));
         poll_descriptor_by_expiration_time.emplace(*new_expiration_time, poll_descriptor);
         updateNextExpirationTime();
-        return new_info;
+        return arrow::Status::OK();
     }
 
-    /// Starts evaluation for a specified poll descriptor. The function returns nullptr if it's already evaluated.
+    /// Starts evaluation (i.e. getting a block of data) for a specified poll descriptor.
+    /// The function returns nullptr if it's already evaluated.
     /// If it's being evaluated at the moment in another thread the function waits until it finishes and then returns nullptr.
     [[nodiscard]] arrow::Result<std::unique_ptr<PollSession>> tryStartEvaluation(const String & poll_descriptor)
     {
@@ -466,13 +494,7 @@ public:
             auto it = poll_descriptors.find(poll_descriptor);
             if (it == poll_descriptors.end())
             {
-                res = arrow::Status{arrow::StatusCode::KeyError, fmt::format("Poll descriptor {} not found", quoteString(poll_descriptor))};
-                return true;
-            }
-            auto it2 = poll_sessions.find(poll_descriptor);
-            if (it2 == poll_sessions.end())
-            {
-                res = arrow::Status{arrow::StatusCode::KeyError, fmt::format("No session is attached to poll descriptor {}", quoteString(poll_descriptor))};
+                res = arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
                 return true;
             }
             auto info = it->second;
@@ -484,6 +506,8 @@ public:
             if (!info->evaluating)
             {
                 auto it2 = poll_sessions.find(poll_descriptor);
+                if (it2 == poll_sessions.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Session is not attached to non-evaluated poll descriptor {}", poll_descriptor);
                 res = std::move(it2->second);
                 poll_sessions.erase(it2);
                 auto new_info = std::make_shared<PollDescriptorInfo>(*info);
@@ -491,13 +515,13 @@ public:
                 it->second = new_info;
                 return true;
             }
-            return false;
+            return false; /// The poll descriptor is being evaluating in another thread, we need to wait.
         });
         return res;
     }
 
     /// Ends evaluation for a specified poll descriptor.
-    void endEvaluation(const String & poll_descriptor, const String & ticket, UInt64 rows, UInt64 bytes)
+    void endEvaluation(const String & poll_descriptor, const String & ticket, UInt64 rows, UInt64 bytes, bool last)
     {
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
@@ -507,11 +531,13 @@ public:
             if (!info->evaluated)
             {
                 auto new_info = std::make_shared<PollDescriptorInfo>(*info);
+                new_info->evaluating = false;
+                new_info->evaluated = true;
                 new_info->ticket = ticket;
                 new_info->rows = rows;
                 new_info->bytes = bytes;
-                new_info->evaluating = false;
-                new_info->evaluated = true;
+                if (!last)
+                    new_info->next_poll_descriptor = generatePollDescriptor();
                 it->second = new_info;
                 info = new_info;
                 evaluation_ended.notify_all();
@@ -530,9 +556,9 @@ public:
             if (!info->evaluated)
             {
                 auto new_info = std::make_shared<PollDescriptorInfo>(*info);
-                new_info->error = std::move(error);
                 new_info->evaluating = false;
                 new_info->evaluated = true;
+                new_info->error = std::move(error);
                 it->second = new_info;
                 info = new_info;
                 evaluation_ended.notify_all();
@@ -586,13 +612,13 @@ public:
     }
 
     /// Waits until it's time to forget expired tickets or poll descriptors.
-    void waitUntilNextExpirationTime() const
+    void waitUntilExpirationTime() const
     {
         auto current_time = now();
         std::unique_lock lock{mutex};
         auto is_ready = [&]
         {
-            if (should_stop)
+            if (stop_waiting_expiration_time)
                 return true;
             current_time = now();
             return next_expiration_time && (current_time > *next_expiration_time);
@@ -608,10 +634,10 @@ public:
         }
     }
 
-    void stopWaitingUntilNextExpirationTime()
+    void stopWaitingExpirationTime()
     {
         std::lock_guard lock{mutex};
-        should_stop = true;
+        stop_waiting_expiration_time = true;
     }
 
 private:
@@ -665,7 +691,7 @@ private:
     std::set<std::pair<Timestamp, Strings>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
     std::optional<Timestamp> next_expiration_time;
     std::condition_variable next_expiration_time_decreased;
-    bool should_stop = false;
+    bool stop_waiting_expiration_time = false;
 };
 
 
@@ -680,6 +706,7 @@ private:
 
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #if 0
     class PullingSession
     {
@@ -943,7 +970,7 @@ private:
         return createSession(context, flight_descriptor, global_context, sql, /* for_pulling = */ true, start_pulling);
     }
 #endif
-
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 
@@ -1004,6 +1031,23 @@ void ArrowFlightHandler::start()
             tryLogCurrentException(log, "Failed to serve Arrow Flight");
         }
     });
+
+    expiration_thread.emplace([this]
+    {
+        try
+        {
+            setThreadName("ArrowFlightExpr");
+            while (!stopped)
+            {
+                calls_data->waitExpirationTime();
+                calls_data->forgetExpired();
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to forget expired");
+        }
+    });
 }
 
 ArrowFlightHandler::~ArrowFlightHandler() = default;
@@ -1030,6 +1074,13 @@ void ArrowFlightHandler::stop()
             server_thread->join();
             server_thread.reset();
         }
+
+        calls_data->stopWaitingExpirationTime();
+        if (expiration_thread)
+        {
+            expiration_thread->join();
+            expiration_thread.reset();
+        }
     }
 }
 
@@ -1049,7 +1100,7 @@ arrow::Status ArrowFlightHandler::ListFlights(
 
 arrow::Status ArrowFlightHandler::GetFlightInfo(
     const arrow::flight::ServerCallContext & context,
-    const arrow::flight::FlightDescriptor & descriptor,
+    const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::FlightInfo> * res)
 {
     LOG_INFO(getLogger("!!!"), "ArrowFlightHandler::GetFlightInfo");
@@ -1058,57 +1109,145 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
 
     try
     {
-        auto sql_res = convertGetDescriptorToSQL(descriptor);
-        ARROW_RETURN_NOT_OK(sql_res);
-        auto sql = sql_res.ValueOrDie();
-
-        Session session{global_context, ClientInfo::Interface::ARROW_FLIGHT};
-
-        const auto & auth = AuthMiddleware::get(context);
-        session.authenticate(auth.username(), auth.password(), Poco::Net::SocketAddress{context.peer()});
-
-        auto query_context = session.makeQueryContext();
-        query_context.setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
-        CurrentThread::QueryScope query_scope{query_context};
-
-        auto block_io = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete).second;
-        PullingPipelineExecutor executor{block_io.pipeline};
-
-        auto schema = createCHToArrowConverter(executor.getHeader())->getArrowSchema();
-
         std::vector<arrow::flight::FlightEndpoint> endpoints;
         int64_t total_rows = 0;
         int64_t total_bytes = 0;
+        std::shared_ptr<CHColumnToArrowConverter> ch_to_arrow_converter;
 
-        Block block;
-        while (executor.pull(block))
+        if ((request.type == arrow::flight::FlightDescriptor::CMD) && (hasPollDescriptorPrefix(request.cmd)))
         {
-            if (!block.empty())
+            const String & poll_descriptor = request.cmd;
+            ARROW_RETURN_NOT_OK(evaluatePollDescriptor(poll_descriptor));
+            auto poll_info_res = calls_data->tryGetPollDescriptorInfo(poll_descriptor);
+            ARROW_RETURN_NOT_OK(poll_info_res);
+            auto poll_info = poll_info_res.ValueOrDie();
+            ch_to_arrow_converter = poll_info->ch_to_arrow_converter;
+            while (poll_info)
             {
-                total_rows += block->rows();
-                total_bytes += block->bytes();
-                auto info = calls_data->addTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
-                arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = info->ticket, .expiration_time = info->expiration_time};
-                endpoints.emplace_back(endpoint);
+                total_rows += poll_info->rows;
+                total_bytes += poll_info->bytes;
+                if (!poll_info->ticket.empty())
+                {
+                    auto ticket = calls_data->getTicketWithExpirationTime(poll_info->ticket);
+                    arrow::flight::FlightEndpoint endpoint;
+                    endpoint.ticket = arrow::flight::Ticket{.ticket = ticket.ticket, .expiration_time = ticket.expiration_time};
+                    endpoints.emplace_back(endpoint);
+                }
+            }
+            std::reverse(endpoints.begin(), endpoints.end());
+        }
+        else
+        {
+            auto sql_res = convertGetDescriptorToSQL(descriptor);
+            ARROW_RETURN_NOT_OK(sql_res);
+            auto sql = sql_res.ValueOrDie();
+
+            Session session{global_context, ClientInfo::Interface::ARROW_FLIGHT};
+
+            const auto & auth = AuthMiddleware::get(context);
+            session.authenticate(auth.username(), auth.password(), Poco::Net::SocketAddress{context.peer()});
+
+            auto query_context = session.makeQueryContext();
+            query_context.setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+            CurrentThread::QueryScope query_scope{query_context};
+
+            auto block_io = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete).second;
+            PullingPipelineExecutor executor{block_io.pipeline};
+
+            ch_to_arrow_converter = createCHToArrowConverter(executor.getHeader());
+
+            Block block;
+            while (executor.pull(block))
+            {
+                if (!block.empty())
+                {
+                    total_rows += block->rows();
+                    total_bytes += block->bytes();
+                    auto info = calls_data->addTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
+                    arrow::flight::FlightEndpoint endpoint;
+                    endpoint.ticket = arrow::flight::Ticket{.ticket = info->ticket, .expiration_time = info->expiration_time};
+                    endpoints.emplace_back(endpoint);
+                }
             }
         }
 
-        auto info = arrow::flight::FlightInfo::Make(
-            schema,
-            descriptor,
+        auto flight_info_res = arrow::flight::FlightInfo::Make(
+            ch_to_arrow_converter->getArrowSchema(),
+            request,
             endpoints,
             total_rows,
             total_bytes,
             /* ordered = */ true);
 
-        *res = std::make_unique<arrow::flight::FlightInfo>(std::move(info).ValueOrDie());
+        ARROW_RETURN_NOT_OK(flight_info_res);
+        *res = std::make_unique<arrow::flight::FlightInfo>(std::move(flight_info_res).ValueOrDie());
         return arrow::Status::OK();
     }
     catch (const DB::Exception & e)
     {
-        ARROW_RETURN_NOT_OK(arrow::Status::IOError("GetFlightInfo failed: " + e.displayText()));
+        return arrow::Status::ExecutionError("GetFlightInfo failed: ", e.displayText());
     }
+}
+
+arrow::Status ArrowHander::evaluatePollDescriptor(const String & poll_descriptor)
+{
+    auto poll_session_res = calls_data.tryStartEvaluation(poll_descriptor);
+    ARROW_RETURN_NOT_OK(poll_session_res);
+    auto poll_session = poll_session_res.ValueOrDie();
+
+    if (!poll_session)
+    {
+        /// Already evaluated.
+        auto info_res = calls_data.tryGetPollDescriptorInfo(poll_descriptor);
+        ARROW_RETURN_NOT_OK(info_res);
+        auto info = info_res.ValueOrDie();
+        if (!info->evaluated)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Session is not attached to non-evaluated poll descriptor {}", poll_descriptor);
+        if (info->error)
+            return arrow::Status::ExecutionError("PollFlightInfo failed: ", getExceptionMessage(info->error, /* with_stacktrace = */ true));
+        return arrow::Status::OK();
+    }
+
+    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), "ArrowFlight"};
+    std::shared_ptr<CHColumnToArrowConverter> converter = poll_session->getCHToArrowConverter();
+
+    try
+    {
+        String ticket;
+        UInt64 rows = 0;
+        UInt64 bytes = 0;
+        bool last = false;
+        Block block;
+        if (poll_session->getNextBlock(block))
+        {
+            if (!block.empty())
+            {
+                rows = block->rows();
+                bytes = block->bytes();
+                ticket = calls_data->addTicket(std::make_shared<Block>(std::move(block)), converter);
+            }
+        }
+        else
+        {
+            last = true;
+        }
+
+        calls_data.endEvaluation(poll_descriptor, ticket, rows, bytes, last);
+    }
+    catch (...)
+    {
+        calls_data.endEvaluationWithError(poll_descriptor, current_exception());
+        return arrow::Status::ExecutionError("PollFlightInfo failed: ", getCurrentExceptionMessage(/* with_stacktrace = */ true));
+    }
+
+    auto info_res = calls_data.tryGetPollDescriptorInfo(poll_descriptor);
+    ARROW_RETURN_NOT_OK(info_res);
+    auto info = info_res.ValueOrDie();
+
+    if (!last)
+        calls_data.addPollDescriptor(converter->getSchema(), info, std::move(poll_session));
+
+    return arrow::Status::OK();
 }
 
 arrow::Status ArrowFlightHandler::PollFlightInfo(
@@ -1123,77 +1262,80 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
 
     try
     {
-        auto & middleware = SessionsMiddleware::get(context);
-        SessionsMiddleware::SessionPtr session;
-        size_t num_tickets = 0;
+        std::shared_ptr<const PollDescriptorInfo> poll_info;
+        PollDescriptorWithExpirationTime next_descriptor;
 
-        if (request.type == arrow::flight::FlightDescriptor::CMD)
+        if ((request.type == arrow::flight::FlightDescriptor::CMD) && (hasPollDescriptorPrefix(request.cmd)))
         {
-            session = middleware.findSessionByPollDescriptor(request.cmd);
-            if (session)
-                num_tickets = middleware.getNumTicketsByPollDescriptor(session, request.cmd);
+            const String & poll_descriptor = request.cmd;
+            ARROW_RETURN_NOT_OK(evaluatePollDescriptor(poll_descriptor));
+            auto poll_descriptor_info_res = calls_data->tryGetPollDescriptorInfo(poll_descriptor);
+            ARROW_RETURN_NOT_OK(poll_descriptor_info_res);
+            poll_descriptor_info = poll_descriptor_info_res.ValueOrDie();
+            if (!poll_descriptor_info->next_descriptor.empty())
+                next_descriptor = calls_data->getPollDescriptorWithExpirationTime(poll_descriptor_info->next_descriptor);
+        }
+        else
+        {
+            auto sql_res = convertGetDescriptorToSQL(descriptor);
+            ARROW_RETURN_NOT_OK(sql_res);
+            auto sql = sql_res.ValueOrDie();
+
+            auto session = std::make_unique<Session>(global_context, ClientInfo::Interface::ARROW_FLIGHT);
+
+            const auto & auth = AuthMiddleware::get(context);
+            session->authenticate(auth.username(), auth.password(), Poco::Net::SocketAddress{context.peer()});
+
+            auto query_context = session->makeQueryContext();
+            query_context.setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+
+            auto thread_group = ThreadGroup::createForQuery(query_context);
+            CurrentThread::attachToGroup(thread_group);
+
+            auto block_io = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete).second;
+            auto ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
+
+            auto poll_session = std::make_unique<PollSession>(std::move(session), query_context, thread_groip, std::move(block_io),
+                                                              ch_to_arrow_converter);
+
+            next_descriptor = *calls_data->addPollDescriptor(ch_to_arrow_converter->getSchema(), std::move(poll_session), /* previous_info = */ nullptr);
         }
 
-        if (!session)
+        std::vector<arrow::flight::FlightEndpoint> endpoints;
+        int64_t total_rows = 0;
+        int64_t total_bytes = 0;
+
+        while (poll_info)
         {
-            String sql = convertGetDescriptorToSQL(request);
-            session = middleware.findSessionBySQL(sql, /* start_pulling = */ true);
-            if (!session)
-                session = createSessionForPulling(context, request, server.context(), sql, /* start_pulling = */ true);
-            num_tickets = 1;
-        }
-
-        auto & executor = *session->pulling_executor;
-
-        while ((middleware.getNumTickets(session) < num_tickets) && middleware.isOpen(session))
-        {
-            Block block;
-            if (executor.pull(block))
+            total_rows += poll_info->rows;
+            total_bytes += poll_info->bytes;
+            if (!poll_info->ticket.empty())
             {
-                if (!block.empty())
-                {
-                    String ticket = generateTicket();
-                    middleware.addTicket(session, ticket, std::move(block));
-                    String next_descriptor = generatePollDescriptor();
-                    middleware.addPollDescriptor(session, next_descriptor, middleware.getNumTickets(session) + 1);
-                }
-            }
-            else
-            {
-                middleware.close(session);
-            }
-        }
-
-        std::unique_ptr<arrow::flight::FlightInfo> flight_info_res;
-
-        Strings tickets = middleware.getTickets(session, num_tickets);
-        if (!tickets.empty())
-        {
-            std::vector<arrow::flight::FlightEndpoint> endpoints;
-            int64_t total_records = 0;
-            int64_t total_bytes = 0;
-
-            for (const auto & ticket : tickets)
-            {
-                auto block_info = middleware.getBlockInfoByTicket(session, ticket);
-                total_records += block_info.rows;
-                total_bytes += block_info.bytes;
+                auto ticket = calls_data->getTicketWithExpirationTime(poll_info->ticket);
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket};
+                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket.ticket, .expiration_time = ticket.expiration_time};
                 endpoints.emplace_back(endpoint);
             }
+        }
+        std::reverse(endpoints.begin(), endpoints.end());
 
-            auto schema = session->ch_to_arrow_converter->getArrowSchema();
-
-            auto flight_info = arrow::flight::FlightInfo::Make(schema, request, endpoints, total_records, total_bytes, /* ordered = */ true);
-            flight_info_res = std::make_unique<arrow::flight::FlightInfo>(flight_info.ValueOrDie());
+        std::unique_ptr<arrow::flight::FlightInfo> flight_info;
+        if (!endpoints.empty())
+        {
+            auto flight_info_res = arrow::flight::FlightInfo::Make(ch_to_arrow_converter->getArrowSchema(), request, endpoints, total_rows, total_bytes, /* ordered = */ true);
+            ARROW_RETURN_NOT_OK(flight_info_res);
+            flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
         }
 
-        std::optional<arrow::flight::FlightDescriptor> next_descriptor_res;
-        if ((num_tickets < middleware.getNumTickets(session)) || middleware.isOpen(session))
-            next_descriptor_res = arrow::flight::FlightDescriptor::Command(middleware.getPollDescriptorByNumTickets(session, num_tickets + 1));
+        std::optional<arrow::flight::FlightDescriptor> next;
+        std::optional<Timestamp> expiration_time;
+        if (!next_descriptor.poll_descriptor.empty())
+        {
+            next = arrow::flight::FlightDescriptor::Command(next_descriptor.poll_descriptor);
+            expiration_time = next_descriptor.expiration_time;
+        }
 
-        *info = std::make_unique<arrow::flight::PollInfo>(std::move(flight_info_res), std::move(next_descriptor_res), std::nullopt, std::nullopt);
+        *res = std::make_unique<arrow::flight::PollInfo>(std::move(flight_info), std::move(next), std::nullopt, expiration_time);
         return arrow::Status::OK();
     }
     catch (const DB::Exception & e)
