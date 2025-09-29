@@ -117,7 +117,7 @@ public:
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
-    ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
+    explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
