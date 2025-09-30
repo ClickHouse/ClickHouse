@@ -400,7 +400,7 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
 
 
 def random_string(size=8):
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
+    return "".join(random.choices(string.ascii_uppercase, k=size))
 
 
 def gen_normal_json():
