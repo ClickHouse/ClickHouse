@@ -2134,8 +2134,8 @@ struct ConvertImpl
             else
                 col_to = ColVecTo::create();
 
-            const auto & __restrict__ vec_from = col_from->getData();
-            auto & __restrict__ vec_to = col_to->getData();
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
             vec_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;
@@ -2345,28 +2345,22 @@ struct ConvertImpl
                             }
                         }
                     }
-                    else if constexpr(std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, UInt128>)
+                    else if constexpr(std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
                     {
-                        // size_t simd_end = (input_rows_count / 4) * 4;
-                        //
-                        // #pragma clang loop vectorize(enable)
-                        // for (size_t j = i; j < i + simd_end && j < input_rows_count; j += 4) {
-                        //     vec_to[j+0] = vec_from[j+0];
-                        //     vec_to[j+1] = vec_from[j+1];
-                        //     vec_to[j+2] = vec_from[j+2];
-                        //     vec_to[j+3] = vec_from[j+3];
-                        // }
-                        // i += simd_end - 1;  // Adjust loop counter
+                        const UInt64* __restrict s = &vec_from[i];
+                        BFloat16* __restrict d = &vec_to[i];
 
-                        // Force simpler vectorization
-                        const UInt64* __restrict__ s = &vec_from[i];
-                        UInt128* __restrict__ d = &vec_to[i];
+                        size_t remaining = input_rows_count - i;
 
-                        #pragma clang loop vectorize_width(4) interleave_count(1)
-                        for (size_t j = 0; j < std::min(size_t(8), input_rows_count - i); ++j) {
-                            d[j] = s[j];
+                        _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+                        for (size_t j = 0; j < remaining; ++j)
+                        {
+                            double tmp = static_cast<double>(s[j]);
+                            float f = static_cast<float>(tmp);
+                            d[j] = BFloat16(f);
                         }
-                        i += 7; // Adjust loop counter
+
+                        i += remaining - 1;
                     }
                     else
                     {
