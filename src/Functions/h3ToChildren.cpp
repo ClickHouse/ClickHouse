@@ -141,7 +141,33 @@ public:
 
 REGISTER_FUNCTION(H3ToChildren)
 {
-    factory.registerFunction<FunctionH3ToChildren>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of child indexes for the given [H3](#h3-index) index at the specified resolution.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToChildren(index, resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Parent H3 index.", {"UInt64"}},
+        {"resolution", "Resolution of the child indexes with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of child H3 indexes at the specified resolution.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get child indexes at resolution 6",
+            "SELECT h3ToChildren(599405990164561919, 6) AS children",
+            R"(
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToChildren>(documentation);
 }
 
 }

@@ -1,14 +1,16 @@
 
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -19,10 +21,9 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
-#include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
+
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageAlias.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -664,10 +665,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
-                    auto query_context = Context::createCopy(context);
-                    StorageAlias::modifyContextByQueryAST(task.query, query_context);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -794,7 +792,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     String executed_by;
 
-    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr event = std::make_shared<Poco::Event>();
     /// We must use exists request instead of get, because zookeeper will not setup event
     /// for non existing node after get request
     if (zookeeper->exists(is_executed_path, nullptr, event))
@@ -1353,10 +1351,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         try
         {
             HostID host = HostID::fromString(host_id);
-            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-            bool is_local_host = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
-
-            if (is_local_host)
+            if (DDLTask::IsSelfHostID(host, maybe_secure_port, port))
                 local_host_ids.emplace(host_id);
         }
         catch (const Exception & e)
@@ -1370,17 +1365,36 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     {
         auto it = active_node_holders.find(host_id);
         if (it != active_node_holders.end())
-        {
             continue;
-        }
 
         String active_path = fs::path(replicas_dir) / host_id / "active";
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+        if (HostID::fromString(host_id).isLoopbackHost())
+        {
+            String content;
+            Coordination::Stat stat;
+            if (zookeeper->tryGet(active_path, content, &stat))
+            {
+                // For a loopback host, many replicas might try to claim it as their own host.
+                // If the host is claimed by a replica, we skip it.
+                // Loopback host is supposed to be used in test environment.
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", host_id, content);
+                    continue;
+                }
 
-        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
-
+                auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception::fromPath(code, active_path);
+            }
+        }
+        else
+        {
+            zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        }
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
         auto active_node_holder_zookeeper = zookeeper;
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);

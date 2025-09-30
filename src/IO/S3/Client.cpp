@@ -10,6 +10,7 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
+#include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -707,6 +708,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
+        bool inside_retry_loop = false;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
@@ -744,8 +746,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                             ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
+                    inside_retry_loop = true;
                     continue;
                 }
+
+                if (inside_retry_loop)
+                    LOG_TRACE(log, "Request succeeded after {} retries. Max retries: {}", attempt_no, max_attempts);
+
                 return outcome;
             }
             catch (Poco::Net::NetException &)
@@ -767,6 +774,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 updateNextTimeToRetryAfterRetryableError(error, attempt_no);
+                inside_retry_loop = true;
             }
         }
 
@@ -831,7 +839,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TEST(log, "Retry time has passed; proceeding without delay");
+                LOG_TRACE(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;
