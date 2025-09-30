@@ -124,6 +124,7 @@ ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'default');
 ## Using a Text Index {#using-a-text-index}
 
 Using a text index in SELECT queries is straightforward as common string search functions will leverage the index automatically.
+If no index exists, below string search functions will fall back to slow brute-force scans.
 
 ### Supported functions {#functions-support}
 
