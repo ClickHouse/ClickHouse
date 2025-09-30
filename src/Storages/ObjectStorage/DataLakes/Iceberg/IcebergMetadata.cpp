@@ -71,7 +71,9 @@
 
 namespace ProfileEvents
 {
-extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebergIteratorInitializationMicroseconds;
+    extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
 namespace DB
@@ -439,6 +441,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         DB::IcebergMetadataLogLevel::Metadata,
         configuration_ptr->getRawPath().path,
         metadata_path,
+        std::nullopt,
         std::nullopt);
 
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
@@ -829,6 +832,8 @@ ObjectIterator IcebergMetadata::iterate(
             "Can't extract iceberg table state from storage snapshot for table location {}",
             persistent_components.table_location);
     }
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
 
     return std::make_shared<IcebergIterator>(
         object_storage,
