@@ -64,41 +64,52 @@ services:
 
 
   db:
-    image: bitnami/postgresql:16.3.0
+    image: postgres:16
     environment:
-      - POSTGRESQL_USERNAME=postgres
-      - POSTGRESQL_PASSWORD=postgres
-      - POSTGRESQL_DATABASE=postgres
+      - POSTGRES_PASSWORD=postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -p 5432 -d postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -p 5432 -d postgres" ]
       interval: 2s
       timeout: 10s
-      retries: 5
+      retries: 2
       start_period: 10s
 
-  # TODO: can we simply use with_minio=True instead?
   minio:
-    image: bitnami/minio:2025.4.22
+    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
     environment:
       - MINIO_ROOT_USER=minio
       - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
-      - MINIO_API_PORT_NUMBER=9000
-      - MINIO_CONSOLE_PORT_NUMBER=9001
-      - MINIO_SCHEME=http
-      - MINIO_DEFAULT_BUCKETS=warehouse-rest
-    networks: 
+      - MINIO_DOMAIN=minio
+    networks:
       default:
         aliases:
           - warehouse-rest.minio
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - 9001
+      - 9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    stop_grace_period: 5s
     healthcheck:
-      test: ["CMD", "mc", "ls", "local", "|", "grep", "warehouse-rest"]
+      test: [ "CMD", "mc", "ready", "local" ]
       interval: 2s
       timeout: 10s
-      retries: 3
+      retries: 2
       start_period: 15s
-
-
-
+  mc:
+    depends_on:
+      - minio
+    # Stick to version with "mc config"
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse-rest;
+      /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
+      /usr/bin/mc policy set public minio/warehouse-rest;
+      tail -f /dev/null
+      "
+      stop_grace_period: 5s
