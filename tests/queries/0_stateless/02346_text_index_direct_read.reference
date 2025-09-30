@@ -1,0 +1,22 @@
+Test direct read optimization from text log
+Test hasToken
+1
+Added: [__text_index_idx_hasToken_0], Removed: [text]
+Test searchAll
+1
+Added: [__text_index_idx_searchAll_0], Removed: [text]
+Test searchAny
+1
+Added: [__text_index_idx_searchAny_0], Removed: [text]
+Test hasToken + length(text)
+2
+Added: [__text_index_idx_hasToken_0]
+Test select text + hasToken
+Alick a01
+Added: [__text_index_idx_searchAny_0]
+Test hasToken and hasToken
+0
+Added: [__text_index_idx_hasToken_0, __text_index_idx_hasToken_1], Removed: [text]
+Test searchAny or hasToken
+2
+Added: [__text_index_idx_searchAny_0, __text_index_idx_hasToken_0], Removed: [text]

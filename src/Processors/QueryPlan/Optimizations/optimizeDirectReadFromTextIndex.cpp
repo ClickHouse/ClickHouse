@@ -36,6 +36,39 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+String optimizationInfoToString(const IndexReadColumns &added_columns, const Names &removed_columns)
+{
+    chassert(!added_columns.empty());
+
+    String result = "Added: [";
+
+    // This will list the index and the new associated columns
+    size_t idx = 0;
+    for (const auto &[_, name_and_type] : added_columns)
+    {
+        for (const String & column_name : name_and_type.getNames())
+        {
+            if (++idx > 1)
+                result += ", ";
+            result += column_name;
+        }
+    }
+    result += "]";
+
+    if (!removed_columns.empty())
+    {
+        result += ", Removed: [";
+        for (size_t i = 0; i < removed_columns.size(); ++i)
+        {
+            if (i > 0)
+                result += ", ";
+            result += removed_columns[i];
+        }
+        result += "]";
+    }
+    return result;
+}
+
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
@@ -250,6 +283,9 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
 
     if (added_columns.empty())
         return;
+
+    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
 
     read_from_merge_tree_step->replaceColumnsForTextSearch(added_columns, removed_columns);
 
