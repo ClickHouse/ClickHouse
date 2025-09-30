@@ -36,6 +36,7 @@ LRUFileCachePriority::LRUFileCachePriority(
     : IFileCachePriority(max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
+    , eviction_pos(queue.end())
 {
     if (state_)
         state = state_;
@@ -100,6 +101,13 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     return LRUIterator(this, iterator);
 }
 
+void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &)
+{
+    if (eviction_pos == it)
+        eviction_pos = std::next(it);
+    queue.splice(queue.end(), queue, it);
+}
+
 LRUFileCachePriority::LRUQueue::iterator
 LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &)
 {
@@ -115,6 +123,8 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lo
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size.load());
 
+    if (eviction_pos == it)
+        eviction_pos = std::next(it);
     return queue.erase(it);
 }
 
@@ -166,7 +176,16 @@ bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) c
 
 void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::Lock & lock)
 {
-    for (auto it = queue.begin(); it != queue.end();)
+    iterateImpl(queue.begin(), func, lock);
+}
+
+LRUFileCachePriority::LRUQueue::iterator
+LRUFileCachePriority::iterateImpl(LRUQueue::iterator start_pos, IterateFunc func, const CachePriorityGuard::Lock & lock)
+{
+    if (start_pos == queue.end())
+        start_pos = queue.begin();
+
+    for (auto it = start_pos; it != queue.end();)
     {
         const auto & entry = **it;
 
@@ -223,7 +242,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
         {
             case IterationResult::BREAK:
             {
-                return;
+                return it;
             }
             case IterationResult::CONTINUE:
             {
@@ -237,6 +256,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
             }
         }
     }
+    return queue.end();
 }
 
 bool LRUFileCachePriority::canFit( /// NOLINT
@@ -270,6 +290,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
+    bool continue_from_last_eviction_pos,
     const UserID &,
     const CachePriorityGuard::Lock & lock)
 {
@@ -283,7 +304,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
     };
 
-    iterateForEviction(res, stat, can_fit, lock);
+    iterateForEviction(res, stat, can_fit, continue_from_last_eviction_pos, lock);
 
     if (can_fit())
     {
@@ -349,7 +370,7 @@ IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEvic
         }
         return false;
     };
-    iterateForEviction(res, stat, stop_condition, lock);
+    iterateForEviction(res, stat, stop_condition, false, lock);
     chassert(status != CollectStatus::SUCCESS || stop_condition());
     return status;
 }
@@ -358,6 +379,7 @@ void LRUFileCachePriority::iterateForEviction(
     EvictionCandidates & res,
     FileCacheReserveStat & stat,
     StopConditionFunc stop_condition,
+    bool continue_from_last_eviction_pos,
     const CachePriorityGuard::Lock & lock)
 {
     if (stop_condition())
@@ -365,7 +387,7 @@ void LRUFileCachePriority::iterateForEviction(
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
@@ -380,13 +402,15 @@ void LRUFileCachePriority::iterateForEviction(
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
             stat.update(segment_metadata->size(), file_segment->getKind(), false);
         }
-
-        return IterationResult::CONTINUE;
     };
 
-    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto start_eviction_pos = continue_from_last_eviction_pos ? eviction_pos : queue.begin();
+    eviction_pos = iterateImpl(start_eviction_pos, [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
-        return stop_condition() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
+        if (stop_condition())
+            return IterationResult::BREAK;
+        iterate_func(locked_key, segment_metadata);
+        return stop_condition() ? IterationResult::BREAK : IterationResult::CONTINUE;
     }, lock);
 }
 
@@ -415,6 +439,8 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
+    if (other.eviction_pos == it.iterator)
+        other.eviction_pos = std::next(it.iterator);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     updateSize(entry.size);
@@ -534,7 +560,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
-    cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, iterator);
+    cache_priority->increasePriority(iterator, lock);
     cache_priority->check(lock);
     return ++((*iterator)->hits);
 }
@@ -547,6 +573,7 @@ void LRUFileCachePriority::LRUIterator::assertValid() const
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::Lock &)
 {
+    chassert(eviction_pos == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)

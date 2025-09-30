@@ -956,6 +956,11 @@ bool FileCache::tryReserve(
         return false;
     }
 
+    cache_reserve_active_threads += 1;
+    SCOPE_EXIT({
+        cache_reserve_active_threads -= 1;
+    });
+
     auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
     if (!cache_lock)
     {
@@ -1021,7 +1026,14 @@ bool FileCache::tryReserve(
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+                size,
+                required_elements_num,
+                reserve_stat,
+                eviction_candidates,
+                {},
+                /* continue_from_last_eviction_pos */false,
+                user.user_id,
+                cache_lock))
         {
             const auto & stat = reserve_stat.total_stat;
             failure_reason = fmt::format(
@@ -1041,8 +1053,19 @@ bool FileCache::tryReserve(
         reserve_stat.stat_by_kind.clear();
     }
 
+    bool continue_from_last_eviction_pos = cache_reserve_active_threads > 1;
+    if (!continue_from_last_eviction_pos)
+        main_priority->resetEvictionPos(cache_lock);
+
     if (!main_priority->collectCandidatesForEviction(
-            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+            size,
+            required_elements_num,
+            reserve_stat,
+            eviction_candidates,
+            queue_iterator,
+            continue_from_last_eviction_pos,
+            user.user_id,
+            cache_lock))
     {
         const auto & stat = reserve_stat.total_stat;
         failure_reason = fmt::format(
@@ -1130,6 +1153,11 @@ bool FileCache::tryReserve(
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
+    if (cache_reserve_active_threads == 1)
+    {
+        main_priority->resetEvictionPos(cache_lock);
+    }
+
     cache_lock.unlock();
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
     {
@@ -1187,7 +1215,12 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         /// (we use batches to make sure we do not block cache for too long,
         /// by default the batch size is quite small).
         desired_size_status = main_priority->collectCandidatesForEviction(
-            desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
+            desired_size,
+            desired_elements_num,
+            keep_up_free_space_remove_batch,
+            stat,
+            eviction_candidates,
+            lock);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// Let's make sure that we correctly processed the limits.
