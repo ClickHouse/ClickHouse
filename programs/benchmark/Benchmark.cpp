@@ -182,9 +182,24 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        readQueries();
-        runBenchmark();
-        return 0;
+        try
+        {
+            readQueries();
+            runBenchmark();
+            return 0;
+        }
+        catch (Exception & e)
+        {
+            log << getExceptionMessageForLogging(e, print_stacktrace, true) << '\n';
+            auto code = getCurrentExceptionCode();
+            return static_cast<UInt8>(code) ? code : 1;
+        }
+        catch (...)
+        {
+            log << getCurrentExceptionMessage(false) << '\n';
+            auto code = getCurrentExceptionCode();
+            return static_cast<UInt8>(code) ? code : 1;
+        }
     }
 
 private:
@@ -617,8 +632,6 @@ private:
                 size_t info_index = round_robin ? 0 : connection_index;
                 {
                     std::lock_guard lock(mutex);
-                    log << "An error occurred while processing the query " << "'" << query << "'"
-                            << ": " << getCurrentExceptionMessage(false) << '\n';
                     if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
                     {
                         shutdown = true;
@@ -626,7 +639,7 @@ private:
                     }
 
                     log << getCurrentExceptionMessage(print_stacktrace,
-                        true /*check embedded stack trace*/) << '\n' << flush;
+                        true /*check embedded stack trace*/) << "\n\n" << flush;
 
                     ++total_stats[info_index]->errors;
                 }
