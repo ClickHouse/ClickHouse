@@ -2358,7 +2358,7 @@ struct ConvertImpl
                             }
                         }
                     }
-                    else if constexpr(std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
+                    else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
                     {
                         const UInt64* __restrict s = &vec_from[i];
                         BFloat16* __restrict d = &vec_to[i];
