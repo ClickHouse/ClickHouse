@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
+            {"rewrite_in_to_join", false, false, "New experimental setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
