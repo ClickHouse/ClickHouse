@@ -7113,6 +7113,9 @@ Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_run
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
 )", EXPERIMENTAL) \
+    DECLARE(Bool, rewrite_in_to_join, false, R"(
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
+)", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
