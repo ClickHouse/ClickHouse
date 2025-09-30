@@ -487,6 +487,7 @@ if (NOT ENABLE_JEMALLOC)
 endif ()
 
 macro (clickhouse_add_executable target)
+    add_library(${target}_objects OBJECT ${ARGN})
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
@@ -599,9 +600,17 @@ endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
+macro (transfer_links_and_includes target source)
+    get_target_property(includes ${source} INCLUDE_DIRECTORIES)
+    target_include_directories(${target} PRIVATE ${includes})
+    get_target_property(libraries ${source} LINK_LIBRARIES)
+    target_link_libraries(${target} ${libraries})
+endmacro()
+
 if (FUZZER)
     # Bundle fuzzers target
     add_custom_target(fuzzers)
+    add_custom_target(fuzzers_objects)
     # Instrument all targets fuzzer and link with libfuzzer
     get_all_targets(all_targets)
     foreach(target ${all_targets})
@@ -614,8 +623,10 @@ if (FUZZER)
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
+                transfer_links_and_includes(${target}_objects ${target})
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
+                add_dependencies(fuzzers_objects ${target}_objects)
                 get_target_filename(${target} target_bin_name)
                 get_target_property(target_bin_dir ${target} BINARY_DIR)
                 add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
@@ -623,8 +634,10 @@ if (FUZZER)
             if (target STREQUAL "clickhouse")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
+                transfer_links_and_includes(${target}_objects ${target})
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
+                add_dependencies(fuzzers_objects ${target}_objects)
             endif()
         endif()
     endforeach()
