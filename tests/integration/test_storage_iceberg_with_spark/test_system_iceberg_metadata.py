@@ -7,7 +7,9 @@ from helpers.iceberg_utils import (
     default_upload_directory,
     generate_data,
     get_uuid_str,
-    write_iceberg_from_df
+    write_iceberg_from_df,
+    execute_spark_query_general
+
 )
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -24,7 +26,35 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
         + get_uuid_str()
     )
 
-    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            TABLE_NAME,
+            query,
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                a INT,
+                b STRING
+            )
+            USING iceberg
+            PARTITIONED BY (identity(a))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    for i in range(5):
+        spark.sql(
+            f"""
+                INSERT INTO {TABLE_NAME} VALUES
+                ({i}, '{i}');
+            """
+        )
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
@@ -44,17 +74,34 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
     def get_iceberg_metadata_to_dict(query_id: str):
         instance = started_cluster_iceberg_with_spark.instances["node1"]
         result = dict()
-        for name in ['content', 'content_type', 'table_path', 'file_path', 'row_in_file']:
+        for name in ['content', 'content_type', 'table_path', 'file_path', 'row_in_file', 'pruning_status']:
             # We are ok with duplicates in the table itself but for test purposes we want to remove duplicates here
-            select_distinct_expression = f"SELECT DISTINCT(*) FROM (SELECT content, content_type, table_path, file_path, row_in_file FROM system.iceberg_metadata_log WHERE query_id = '{query_id}') ORDER BY ALL"
+            select_distinct_expression = f"SELECT DISTINCT(*) FROM (SELECT content, content_type, table_path, file_path, row_in_file, pruning_status FROM system.iceberg_metadata_log WHERE query_id = '{query_id}') ORDER BY ALL"
             query_result = instance.query(f"SELECT {name} FROM ({select_distinct_expression})")
-            result[name] = query_result.split('\n')
-            result[name] = list(filter(lambda x: len(x) > 0, result[name]))
+            print("Query result for {}: {}".format(name, query_result))
+            result[name] = query_result.split('\n')[:-1]
         result['row_in_file'] = list(map(lambda x : int(x) if x.isdigit() else None, result['row_in_file']))
-        result['pruning_status'] = list(map(lambda x : int(x) if x.isdigit() else None, result['pruning_status']))
+        result['pruning_status'] = list(map(lambda x : x if x != '\\N' else None, result['pruning_status']))
+        print("Result dictionary: {}".format(result))
         return result
     
+    class PrunedInfo:
+        def __init__(self, not_pruned, partition_pruned, min_max_index_pruned):
+            self.not_pruned = not_pruned
+            self.partition_pruned = partition_pruned
+            self.min_max_index_pruned = min_max_index_pruned
+
+        def __repr__(self):
+            return "PrunedInfo(not_pruned={}, partition_pruned={}, min_max_index_pruned={})".format(self.not_pruned, self.partition_pruned, self.min_max_index_pruned)
+        
+        def __eq__(self, other):
+            return (self.not_pruned == other.not_pruned and
+                    self.partition_pruned == other.partition_pruned and
+                    self.min_max_index_pruned == other.min_max_index_pruned)
+
+
     def verify_result_dictionary(diction : dict, allowed_content_types : set):
+        prunned_info = PrunedInfo(0, 0, 0)
         # Expected content_type and only it is present
         if set(diction['content_type']) != allowed_content_types:
             raise ValueError("Content type mismatch. Expected: {}, got: {}".format(allowed_content_types, set(diction['content_type'])))
@@ -93,15 +140,25 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
                         # If row is present the type is entry
                         if diction['content_type'][i] not in ['ManifestFileEntry', 'ManifestListEntry']:
                             raise ValueError("Row should not be specified for an entry {}, file_path: {}".format(diction['content_type'][i], file_path))
-                        number_of_rows += 1
+                        if diction['content'][i] != '':
+                            number_of_rows += 1
 
                         if diction['content_type'][i] == 'ManifestFileEntry':
                             if diction['content'][i] == '':
                                 if diction['pruning_status'][i] is None:
                                     raise ValueError("Pruning status should be specified for this manifest file entry, file_path: {}".format(file_path))
                                 partitioned_rows.add(diction['row_in_file'][i])
+                                if diction['pruning_status'][i] == 'NotPruned':
+                                    prunned_info.not_pruned += 1
+                                elif diction['pruning_status'][i] == 'PartitionPruned':
+                                    prunned_info.partition_pruned += 1
+                                elif diction['pruning_status'][i] == 'MinMaxIndexPruned':
+                                    prunned_info.min_max_index_pruned += 1
+                                else:
+                                    raise ValueError("Unexpected pruning status: {}, file_path: {}".format(diction['pruning_status'][i], file_path))
                             else:
                                 data_object = json.loads(diction['content'][i])
+                                print("Data object: {}".format(data_object))
                                 if data_object['status'] < 2:
                                     not_deleted_files.add(diction['row_in_file'][i])
                     else:
@@ -123,7 +180,7 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
             for i in range(number_of_rows):
                 if not i in row_values:
                     raise ValueError("Missing row value for file path: {}, missing row index: {}".format(file_path, i))
-
+        return prunned_info
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
@@ -136,14 +193,36 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
 
         query_id = TABLE_NAME + "_" + str(i) + "_" + get_uuid_str()
 
-        assert instance.query(f"SELECT * FROM {TABLE_NAME}", query_id = query_id,  settings={"iceberg_metadata_log_level":settings[i]})
+        instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a >= 2", query_id = query_id,  settings={"iceberg_metadata_log_level":settings[i], "use_iceberg_partition_pruning": 1})
 
-        instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
+        instance.query("SYSTEM FLUSH LOGS")
+
+        not_pruned = int(
+            instance.query(
+                f"SELECT ProfileEvents['IcebergMetadataReturnedObjectInfos'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+        partition_pruned = int(
+            instance.query(
+                f"SELECT ProfileEvents['IcebergPartitionPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+        min_max_index_pruned = int(
+            instance.query(
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+        expected_prunned_info = PrunedInfo(not_pruned, partition_pruned, min_max_index_pruned)
 
         diction = get_iceberg_metadata_to_dict(query_id)
 
         try:
-            verify_result_dictionary(diction, allowed_content_types)
+            if settings[i] == 'manifest_file_entry':
+                table_prunned_info = verify_result_dictionary(diction, allowed_content_types)
+                assert table_prunned_info == expected_prunned_info, "Not prunned files count mismatch. Table: {}, ProfileEvents: {}".format(table_prunned_info, expected_prunned_info)
         except:
             print("Dictionary: {}, Allowed Content Types: {}".format(diction, allowed_content_types))
             raise

@@ -58,7 +58,7 @@ namespace ProfileEvents
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
-extern const Event IcebergKeysReturnedFromIterator;
+extern const Event IcebergMetadataReturnedObjectInfos;
 };
 
 
@@ -352,7 +352,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
         object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
 
-        ProfileEvents::increment(ProfileEvents::IcebergKeysReturnedFromIterator);
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
     }
     {
