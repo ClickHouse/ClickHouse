@@ -42,6 +42,8 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
@@ -732,7 +734,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool increment_current_row)
+void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -750,9 +752,6 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool incr
         auto & posting_list_builder = it->getMapped();
         posting_list_builder.add(current_row, posting_lists);
     }
-
-    if (increment_current_row)
-        ++current_row;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -831,12 +830,14 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             size_t element_start_row = column_offsets[current_position + i - 1];
             size_t elements_size = column_offsets[current_position + i] - element_start_row;
+
             for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
             {
                 auto ref = column_data.getDataAt(element_start_row + element_idx);
-                granule_builder.addDocument(
-                    ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
+                granule_builder.addDocument(ref);
             }
+
+            granule_builder.incrementCurrentRow();
         }
     }
     else
@@ -845,6 +846,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             auto ref = index_column->getDataAt(current_position + i);
             granule_builder.addDocument(ref);
+            granule_builder.incrementCurrentRow();
         }
     }
 

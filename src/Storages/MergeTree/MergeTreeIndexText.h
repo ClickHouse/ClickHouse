@@ -77,15 +77,25 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 
+/// A struct for building a posting list with optimization for infrequent tokens.
+/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
+/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
 struct PostingListBuilder
 {
 public:
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
     using PostingListsHolder = std::list<PostingList>;
     using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
 
+    /// sizeof(PostingListWithContext) == 24 bytes
+    /// Use small container with the same size in bytes.
+    static constexpr size_t max_small_size = 6;
+    using SmallContainer = std::array<UInt32, max_small_size>;
+
     PostingListBuilder() : small_size(0) {}
+
+    /// Adds a value to small array or to the large Roaring Bitmap.
+    /// If small array is converted to Roaring Bitmap after adding a value,
+    /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder);
 
     size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
@@ -265,7 +275,9 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(StringRef document, bool increment_current_row = true);
+    void addDocument(StringRef document);
+    void incrementCurrentRow() { ++current_row; }
+
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return current_row == 0; }
     void reset();
