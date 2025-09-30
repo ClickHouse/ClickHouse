@@ -77,7 +77,7 @@ public:
 
     virtual bool supportsWrites() const { return false; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const { }
+    virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }

@@ -1093,12 +1093,7 @@ void JoinStepLogical::buildPhysicalJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
-    UInt64 hash_table_key_hash = 0;
-    if (optimization_settings.collect_hash_table_stats_during_joins)
-    {
-        auto cache_keys = QueryPlanOptimizations::calculateHashTableCacheKeys(node);
-        hash_table_key_hash = cache_keys[node.children.back()];
-    }
+    UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
 
     if (!join_step->join_algorithm_params)
     {

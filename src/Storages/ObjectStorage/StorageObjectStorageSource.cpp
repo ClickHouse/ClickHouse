@@ -657,7 +657,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = object_storage->getConnectionInfo();
+        connection_info = DistributedCache::getConnectionInfo(*object_storage);
         if (connection_info)
             use_distributed_cache = true;
     }
