@@ -102,6 +102,7 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
+    REGULAR(sleep_in_logs_flush) \
 
 
 namespace FailPoints

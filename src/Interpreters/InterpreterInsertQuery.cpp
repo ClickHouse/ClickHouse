@@ -441,15 +441,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert;
     if (should_squash)
     {
-        /// Squashing cannot work with const and non-const blocks
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
-        {
-            /// Sparse columns will be converted to full in the InsertDependenciesBuilder,
-            /// and for squashing we don't need to convert column to full since it will do it by itself
-            bool remove_sparse = false;
-            return std::make_shared<MaterializingTransform>(in_header, remove_sparse);
-        });
-
         pipeline.addSimpleTransform(
             [&](const SharedHeader & in_header) -> ProcessorPtr
             {

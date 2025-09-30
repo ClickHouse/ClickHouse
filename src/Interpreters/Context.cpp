@@ -4865,9 +4865,15 @@ void Context::handleCrash() const
     if (!shared)
         return;
 
-    SharedLockGuard lock2(shared->mutex);
-    if (shared->system_logs)
-        shared->system_logs->handleCrash();
+    std::optional<SystemLogs> system_logs;
+    {
+        SharedLockGuard lock2(shared->mutex);
+        if (!shared->system_logs)
+            return;
+        system_logs.emplace(*shared->system_logs);
+    }
+
+    system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
@@ -6632,14 +6638,15 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
-void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
 {
-    partition_id_to_max_block = std::move(partitions);
+    partition_id_to_max_block[table_uuid] = std::move(partitions);
 }
 
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
 {
-    return partition_id_to_max_block;
+    auto it = partition_id_to_max_block.find(table_uuid);
+    return it != partition_id_to_max_block.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const
