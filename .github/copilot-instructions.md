@@ -1,2 +1,2 @@
 - When performing a code review, ignore changes in workflow files located under `.github/*.yml`.
-- For other changes, suggest a concise changelog entry (max 50 words) that clearly summarizes the purpose and impact of the change.
+- When performing a code review, suggest a concise changelog entry (max 50 words) that clearly summarizes the purpose and impact of the change. print it in the review comment with a title "Suggested changelog entry"
