@@ -72,6 +72,7 @@
 namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
+extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -853,6 +854,7 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
 
 StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
     StorageInMemoryMetadata result;
     result.setColumns(
