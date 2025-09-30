@@ -354,13 +354,10 @@ public:
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        if constexpr (!is_plain_column)
+        if (this->data(place).loaded_from_state)
         {
-            if (this->data(place).loaded_from_state)
-            {
-                offsets_to.push_back(offsets_to.back());
-                return;
-            }
+            offsets_to.push_back(offsets_to.back());
+            return;
         }
 
         const typename State::Set & set = this->data(place).value;
