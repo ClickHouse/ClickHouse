@@ -147,7 +147,13 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
 
         for (size_t i = 0; i < size; ++i)
         {
-            ResultType mask = Decimal64{static_cast<UInt32>(cond[i]) - 1};
+            // produces cmpb + sete
+            // results in less uops than ResultType{static_cast<MaskType>(cond[i]) - 1};
+            uint8_t flag = (cond[i] != 0);
+
+            ResultType mask{};
+            std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
+
             res[i] = (~mask & new_a) | (mask & new_b);
         }
 
