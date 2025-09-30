@@ -70,8 +70,8 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 
     if (serialized_total_size != serialized_objects_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Serialized total bytes size is not equal to real sum of blob sizes ({} != {})",
-            serialized_total_size, serialized_objects_size);
+            "Serialized total bytes size of metadata file '{}' is not equal to real sum of blob sizes ({} != {})",
+            metadata_file_path, serialized_total_size, serialized_objects_size);
 
     readIntText(ref_count, buf);
     assertChar('\n', buf);

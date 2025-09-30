@@ -432,6 +432,8 @@ WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::strin
 void WriteInlineDataOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
+
+    object_metadata.objects.clear();
     object_metadata.inline_data = inline_data;
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);

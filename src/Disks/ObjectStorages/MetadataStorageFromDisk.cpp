@@ -117,7 +117,7 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
     for (const auto & path : file_paths)
     {
         auto metadata = readMetadataUnlocked(path, lock);
-        metadata->ref_count -= 1;
+        metadata->ref_count = 0;
         WriteBufferFromOwnString buf;
         metadata->serialize(buf);
         metadatas[path] = buf.str();
