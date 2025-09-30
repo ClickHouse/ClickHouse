@@ -17,7 +17,7 @@ INSERT INTO t0 (c2, c1, c3, c0) VALUES
     ( 2, '0:00:00', 3, 2);
 
 -- Write to server-side user_files (relative path resolves there)
-INSERT INTO FUNCTION file('table_time_bug.csv', 'CSV',
+INSERT INTO FUNCTION file(currentDatabase() || '_table_time_bug.csv', 'CSV',
     'c3 Int, c2 Int128, c1 Time, c0 Int')
 SELECT c3, c2, c1, c0 FROM t0;
 
@@ -27,5 +27,5 @@ TRUNCATE TABLE t0;
 -- (NOT FROM INFILE, which is client-side)
 INSERT INTO t0 (c0, c1, c2, c3)
 SELECT c0, c1, c2, c3
-FROM file('table_time_bug.csv', 'CSV',
+FROM file(currentDatabase() || '_table_time_bug.csv', 'CSV',
           'c0 Int, c1 Time, c2 Int128, c3 Int');
