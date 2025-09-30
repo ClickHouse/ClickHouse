@@ -41,20 +41,20 @@
 using namespace DB;
 
 #define INVOKE_WITH_MAP(TYPE, maps, f) \
-    case HashJoin::Type::TYPE: \
+    case HashJoin::Type::TYPE:         \
         return f(*(maps).TYPE);
 
 #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-    case HashJoin::Type::TYPE: \
+    case HashJoin::Type::TYPE:                        \
         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
-#define APPLY_TO_MAP(M, type, ...) \
-    switch (type) \
-    { \
+#define APPLY_TO_MAP(M, type, ...)                        \
+    switch (type)                                         \
+    {                                                     \
         APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, __VA_ARGS__) \
-\
-        default: \
-            UNREACHABLE(); \
+                                                          \
+        default:                                          \
+            UNREACHABLE();                                \
     }
 
 namespace ProfileEvents
@@ -79,17 +79,23 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
-    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
+    // TODO
+    // Different shards may legitimately have different sizes.
+    // Use the maximum observed size for reporting instead of enforcing equality.
+    size_t total_ht_size = 0;
+    for (const auto & hash_join : hash_joins)
+    {
+        size_t size = hash_join->data->getTotalRowCount();
+        total_ht_size += size;
+    }
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
+    if (total_ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = total_ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -135,9 +141,7 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
 
 template <typename HashTable>
 concept HasGetBucketFromHashMemberFunc = requires {
-    {
-        std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0))
-    };
+    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
 };
 }
 
@@ -146,8 +150,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 
@@ -308,9 +312,7 @@ class ConcatStreams final : public IBlocksStream
 {
 public:
     explicit ConcatStreams(std::vector<IBlocksStreamPtr> children_)
-        : children(std::move(children_))
-    {
-    }
+        : children(std::move(children_)) {}
 
     Block nextImpl() override
     {
@@ -393,14 +395,13 @@ class ConcurrentHashJoinResult : public IJoinResult
     ScatteredBlocks dispatched_blocks;
     size_t next_block = 0;
     JoinResultPtr current_result;
-
 public:
     explicit ConcurrentHashJoinResult(
-        const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_, ScatteredBlocks && dispatched_blocks_)
+        const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_,
+        ScatteredBlocks && dispatched_blocks_)
         : hash_joins(hash_joins_)
         , dispatched_blocks(std::move(dispatched_blocks_))
-    {
-    }
+    {}
 
     JoinResultBlock next() override
     {
@@ -553,8 +554,7 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
     return hash;
 }
 
-IColumn::Selector selectDispatchBlock(
-    const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block, size_t clause_index)
+IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
     std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
@@ -575,13 +575,14 @@ IColumn::Selector selectDispatchBlock(
 
         switch (join.getJoinedData()->type)
         {
-#define M(TYPE) \
-    case HashJoin::Type::TYPE: \
-        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            *maps.TYPE, key_columns, join.getKeySizes().at(clause_index)); \
-        return hashToSelector(*maps.TYPE, hash, num_shards);
-            APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+        #define M(TYPE)                                                                                                                       \
+            case HashJoin::Type::TYPE:                                                                                                        \
+                hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+                    *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
+                return hashToSelector(*maps.TYPE, hash, num_shards);
+
+                APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
 
             default:
                 UNREACHABLE();
@@ -647,7 +648,7 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         return res;
     }
 
-    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block, 0);
+    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
     /// This is not beneficial when the whole set of columns is e.g. a single small column.
@@ -665,24 +666,6 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
     return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
-
-ScatteredBlocks ConcurrentHashJoin::dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block)
-{
-    const size_t num_shards = hash_joins.size();
-    if (num_shards == 1)
-    {
-        ScatteredBlocks res;
-        res.emplace_back(std::move(from_block));
-        return res;
-    }
-
-    /// use already existing selector: it already has HasGetBucketFromHash -> bucket & (slots-1)
-    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block, 0);
-
-    /// for TwoLevelMap, we don't copy columns
-    return scatterBlocksWithSelector(num_shards, selector, from_block);
-}
-
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
 {
