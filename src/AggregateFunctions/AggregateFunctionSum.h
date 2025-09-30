@@ -161,37 +161,113 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (is_over_big_int<T>)
+        // else if constexpr (std::is_same_v<T, UInt128>)
+        // {
+        //     // /// Use a mask to discard or keep the value to reduce branch miss.
+        //     // /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
+        //     // // using MaskType = Int256;
+        //     // // alignas(64) const MaskType masks[2] = {0, -1};
+        //     //
+        //     // UInt64 hi_sum{};
+        //     // UInt64 lo_sum{};
+        //     //
+        //     // for (size_t i = 0; i < count; ++i)
+        //     // {
+        //     //     auto flag = (!condition_map[i] == add_if_zero);
+        //     //     UInt64 mask{};
+        //     //     std::memset(&mask, flag ? 0xFF : 0x00, sizeof(UInt64));
+        //     //
+        //     //     hi_sum += (ptr[i] & 0xFFFFFFFFFFFFFFFFUL) & mask;
+        //     //     lo_sum += ((ptr[i] >> 64) & 0xFFFFFFFFFFFFFFFUL) & mask;
+        //     // }
+        //     //
+        //     // Impl::add(sum, ((static_cast<UInt128>(hi_sum) << 64) | lo_sum));
+        //     // return;
+        //
+        //     UInt64 hi_sum = 0;
+        //     UInt64 lo_sum = 0;
+        //
+        //     // Process in vectorizable chunks
+        //     const size_t simd_width = 8;
+        //     const size_t vectorized_end = count - (count % simd_width);
+        //     size_t i = 0;
+        //
+        //     // Main vectorized loop
+        //     for (i = 0; i < vectorized_end; i += simd_width) {
+        //         for (size_t j = 0; j < simd_width; ++j) {
+        //             const size_t idx = i + j;
+        //             const bool should_add = (!condition_map[idx] == add_if_zero);
+        //
+        //             // Branchless mask generation (0 or ~0ULL)
+        //             const UInt64 mask = static_cast<UInt64>(0) - static_cast<UInt64>(should_add);
+        //
+        //             // Extract high and low parts correctly
+        //             const UInt128 value = ptr[idx];
+        //             const UInt64 lo_part = static_cast<UInt64>(value);  // Low 64 bits
+        //             const UInt64 hi_part = static_cast<UInt64>(value >> 64);  // High 64 bits
+        //
+        //             // Apply mask and accumulate
+        //             lo_sum += lo_part & mask;
+        //             hi_sum += hi_part & mask;
+        //         }
+        //     }
+        //
+        //     // Handle remaining elements
+        //     for (; i < count; ++i) {
+        //         if (!condition_map[i] == add_if_zero) {
+        //             const UInt128 value = ptr[i];
+        //             lo_sum += static_cast<UInt64>(value);
+        //             hi_sum += static_cast<UInt64>(value >> 64);
+        //         }
+        //     }
+        //
+        //     // Reconstruct the 128-bit result
+        //     const UInt128 result = (static_cast<UInt128>(hi_sum) << 64) | static_cast<UInt128>(lo_sum);
+        //     Impl::add(sum, result);
+        //     return;
+        // }
+        else if constexpr (std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>)
         {
-            /// Use a mask to discard or keep the value to reduce branch miss.
-            using MaskType = Int64;
-            alignas(64) const MaskType masks[2] = {0, -1};
             T local_sum{};
-            while (ptr < end_ptr)
-            {
-                Value v = *ptr;
-                if constexpr (!add_if_zero)
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!!*condition_map];
-                    else
-                        v.value &= masks[!!*condition_map];
-                }
-                else
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!*condition_map];
-                    else
-                        v.value &= masks[!*condition_map];
-                }
 
-                Impl::add(local_sum, v);
-                ++ptr;
-                ++condition_map;
+            _Pragma("clang loop unroll_count(8)")
+            for (size_t i = 0; i < count; ++i) {
+                auto flag = (!condition_map[i] == add_if_zero);
+                Impl::add(local_sum, ptr[i] * flag);
             }
+
             Impl::add(sum, local_sum);
             return;
         }
+        else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Int256>)
+        {
+            T local_sum{};
+
+            _Pragma("clang loop unroll_count(8)")
+            for (size_t i = 0; i < count; ++i) {
+                auto flag = (!condition_map[i] == add_if_zero);
+                Impl::add(local_sum, ptr[i] * flag);
+            }
+
+            Impl::add(sum, local_sum);
+            return;
+        }
+        // else if constexpr (is_over_big_int<T>)
+        // {
+        //     /// Use a mask to discard or keep the value to reduce branch miss.
+        //     T local_sum{};
+        //
+        //     for (size_t i = 0; i < count; ++i)
+        //     {
+        //         auto flag = (!condition_map[i] == add_if_zero);
+        //         T mask{};
+        //         std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+        //         sum += ptr[i] & mask;
+        //     }
+        //
+        //     Impl::add(sum, local_sum);
+        //     return;
+        // }
         else if constexpr (is_floating_point<T> && (sizeof(Value) == 4 || sizeof(Value) == 8))
         {
             /// For floating point we use a similar trick as above, except that now we reinterpret the floating point number as an unsigned

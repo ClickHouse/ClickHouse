@@ -58,6 +58,7 @@ struct ModuloByConstantImpl
         /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
+            _Pragma("clang loop vectorize(enable)")
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
             return;
@@ -67,6 +68,7 @@ struct ModuloByConstantImpl
         if (unlikely(b > std::numeric_limits<A>::max()
             || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
+            _Pragma("clang loop vectorize(enable)")
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
@@ -88,6 +90,8 @@ struct ModuloByConstantImpl
         if (b & (b - 1))
         {
             libdivide::divider<A> divider(static_cast<A>(b));
+
+            _Pragma("clang loop vectorize(enable)")
             for (size_t i = 0; i < size; ++i)
             {
                 /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
@@ -98,6 +102,8 @@ struct ModuloByConstantImpl
         {
             // gcc libdivide doesn't work well for pow2 division
             auto mask = b - 1;
+
+            _Pragma("clang loop vectorize(enable)")
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i] & mask);
         }
