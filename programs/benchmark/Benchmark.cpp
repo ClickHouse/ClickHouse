@@ -58,9 +58,10 @@ static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int CANNOT_BLOCK_SIGNAL;
-extern const int EMPTY_DATA_PASSED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 class Benchmark : public Poco::Util::Application
@@ -837,7 +838,7 @@ public:
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
-    bool print_stacktrace = true;
+    bool print_stacktrace = false;
 
     try
     {
@@ -882,8 +883,20 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         auto options_description_non_verbose = options_description;
         settings.addToProgramOptions(options_description);
 
+        auto parser = po::command_line_parser(argc, argv)
+                          .options(options_description)
+                          .extra_parser(OptionsAliasParser(options_description))
+                          .allow_unregistered();
+        po::parsed_options parsed = parser.run();
+
+        /// Check unrecognized options.
+        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+        if (!unrecognized_options.empty())
+        {
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+        }
+
         po::variables_map options;
-        po::parsed_options parsed = po::parse_command_line(argc, argv, options_description, 0, OptionsAliasParser(options_description));
         po::store(parsed, options);
         po::notify(options);
 
@@ -955,9 +968,21 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::move(settings));
         return benchmark.run();
     }
+    catch (Exception & e)
+    {
+        std::cerr << getExceptionMessageForLogging(e, print_stacktrace, true) << std::endl;
+        auto code = getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
+    }
+    catch (const po::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return ErrorCodes::BAD_ARGUMENTS;
+    }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
-        return getCurrentExceptionCode();
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
+        auto code = getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
