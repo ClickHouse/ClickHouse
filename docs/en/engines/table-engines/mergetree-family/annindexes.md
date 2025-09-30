@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudOnlyBadge from '@theme/badges/CloudOnlyBadge';
 
 # Exact and approximate vector search
 
@@ -710,7 +709,6 @@ Further example datasets that use approximate vector search:
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 <ExperimentalBadge/>
-<CloudOnlyBadge/>
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, the data size is reduced by half, and query runtimes are expected to decrease proportionally.
