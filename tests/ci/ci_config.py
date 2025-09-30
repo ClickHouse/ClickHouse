@@ -150,7 +150,7 @@ class CI:
                 compiler="clang-19",
                 debug_build=True,
                 package_type="deb",
-                sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
+                sparse_checkout=True,  # Check that it works with at least one build
             ),
         ),
         BuildNames.PACKAGE_RELEASE_COVERAGE: CommonJobConfigs.BUILD.with_properties(
