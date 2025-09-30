@@ -185,8 +185,14 @@ LRUFileCachePriority::iterateImpl(LRUQueue::iterator start_pos, IterateFunc func
     if (start_pos == queue.end())
         start_pos = queue.begin();
 
-    for (auto it = start_pos; it != queue.end();)
+    const size_t max_elements_to_iterate = queue.size();
+    auto it = start_pos;
+
+    for (size_t iterated_elements = 0; iterated_elements < max_elements_to_iterate; ++iterated_elements)
     {
+        if (it == queue.end())
+            it = queue.begin();
+
         const auto & entry = **it;
 
         if (entry.size == 0)
