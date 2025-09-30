@@ -404,14 +404,18 @@ void LRUFileCachePriority::iterateForEviction(
         }
     };
 
-    auto start_eviction_pos = continue_from_last_eviction_pos ? eviction_pos : queue.begin();
-    eviction_pos = iterateImpl(start_eviction_pos, [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto iteration_pos = iterateImpl(
+        continue_from_last_eviction_pos ? eviction_pos : queue.begin(),
+        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         if (stop_condition())
             return IterationResult::BREAK;
         iterate_func(locked_key, segment_metadata);
         return stop_condition() ? IterationResult::BREAK : IterationResult::CONTINUE;
     }, lock);
+
+    if (continue_from_last_eviction_pos)
+        eviction_pos = iteration_pos;
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
