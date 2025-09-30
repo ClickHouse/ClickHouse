@@ -1303,7 +1303,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
-                dict_info.dictionary_size = arrow_dict_column->length();
+                dict_info.dictionary_size = dict_info.values->column->size();
+                std::cerr << "Dict size " << dict_info.dictionary_size << "\n";
             }
 
             arrow::ArrayVector indexes_array;
