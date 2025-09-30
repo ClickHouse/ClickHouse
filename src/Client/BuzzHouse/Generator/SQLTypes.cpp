@@ -86,6 +86,11 @@ String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.nextBool() ? "TRUE" : "FALSE";
 }
 
+String BoolType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
+}
+
 String IntType::typeName(const bool, const bool) const
 {
     return fmt::format("{}Int{}", is_unsigned ? "U" : "", size);
@@ -170,6 +175,18 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
     }
 }
 
+String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    if (size > 8 && rg.nextSmallNumber() < 8)
+    {
+        String buf = (!is_unsigned && rg.nextBool()) ? "-" : "";
+
+        buf += "number";
+        return buf;
+    }
+    return appendRandomRawValue(rg, gen);
+}
+
 String FloatType::typeName(const bool, const bool) const
 {
     return fmt::format("{}Float{}", size == 16 ? "B" : "", size);
@@ -200,6 +217,18 @@ String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
     return nextFloatingPoint(rg, true);
 }
 
+String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    if (rg.nextSmallNumber() < 8)
+    {
+        String buf = rg.nextBool() ? "-" : "";
+
+        buf += "number";
+        return buf;
+    }
+    return appendRandomRawValue(rg, gen);
+}
+
 String DateType::typeName(const bool, const bool) const
 {
     return fmt::format("Date{}", extended ? "32" : "");
@@ -228,6 +257,11 @@ SQLType * DateType::typeDeepCopy() const
 String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return "'" + (extended ? rg.nextDate32() : rg.nextDate()) + "'";
+}
+
+String DateType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String TimeType::typeName(const bool, const bool) const
@@ -271,6 +305,11 @@ SQLType * TimeType::typeDeepCopy() const
 String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return "'" + (extended ? rg.nextTime64(precision.has_value()) : rg.nextTime()) + "'";
+}
+
+String TimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String DateTimeType::typeName(const bool escape, const bool simplified) const
@@ -335,6 +374,11 @@ SQLType * DateTimeType::typeDeepCopy() const
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
+}
+
+String DateTimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String DecimalType::typeName(const bool, const bool) const
@@ -408,6 +452,18 @@ String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func
     return appendDecimal(rg, use_func, left, right);
 }
 
+String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    if (rg.nextSmallNumber() < 8)
+    {
+        String buf = rg.nextBool() ? "-" : "";
+
+        buf += "number";
+        return buf;
+    }
+    return appendRandomRawValue(rg, gen);
+}
+
 String DecimalType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return appendDecimalValue(rg, true, this);
@@ -464,6 +520,11 @@ String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator
     return rg.nextString("'", true, precision.value_or(rg.nextStrlen()));
 }
 
+String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &, const uint32_t max_strlen, const uint32_t) const
+{
+    return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
+}
+
 String UUIDType::typeName(const bool, const bool) const
 {
     return "UUID";
@@ -492,6 +553,11 @@ SQLType * UUIDType::typeDeepCopy() const
 String UUIDType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return "'" + rg.nextUUID() + "'";
+}
+
+String UUIDType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String EnumType::typeName(const bool escape, const bool simplified) const
@@ -590,6 +656,11 @@ String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.pickRandomly(values).val;
 }
 
+String EnumType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
+}
+
 String IPv4Type::typeName(const bool, const bool) const
 {
     return "IPv4";
@@ -620,6 +691,11 @@ String IPv4Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + rg.nextIPv4() + "'";
 }
 
+String IPv4Type::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
+}
+
 String IPv6Type::typeName(const bool, const bool) const
 {
     return "IPv6";
@@ -648,6 +724,11 @@ SQLType * IPv6Type::typeDeepCopy() const
 String IPv6Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return "'" + rg.nextIPv6() + "'";
+}
+
+String IPv6Type::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String DynamicType::typeName(const bool, const bool) const
@@ -691,6 +772,18 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
         ret += next->typeName(false, false);
     }
     return ret;
+}
+
+String DynamicType::insertNumberEntry(
+    RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    uint32_t col_counter = 0;
+    const uint64_t type_mask_backup = gen.next_type_mask;
+
+    gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
+    gen.next_type_mask = type_mask_backup;
+    return next->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
 }
 
 String JSONType::typeName(const bool escape, const bool simplified) const
@@ -785,6 +878,11 @@ String JSONType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'";
 }
 
+String JSONType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
+}
+
 JSONType::~JSONType()
 {
     for (const auto & entry : subcols)
@@ -823,6 +921,12 @@ String Nullable::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.nextMediumNumber() < 6 ? "NULL" : subtype->appendRandomRawValue(rg, gen);
 }
 
+String
+Nullable::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    return rg.nextMediumNumber() < 6 ? "NULL" : subtype->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+}
+
 String LowCardinality::typeName(const bool escape, const bool simplified) const
 {
     return fmt::format("LowCardinality({})", subtype->typeName(escape, simplified));
@@ -853,6 +957,12 @@ String LowCardinality::appendRandomRawValue(RandomGenerator & rg, StatementGener
     return subtype->appendRandomRawValue(rg, gen);
 }
 
+String LowCardinality::insertNumberEntry(
+    RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    return subtype->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+}
+
 String GeoType::typeName(const bool, const bool) const
 {
     return GeoTypes_Name(geotype);
@@ -881,6 +991,11 @@ SQLType * GeoType::typeDeepCopy() const
 String GeoType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
     return strAppendGeoValue(rg, geotype);
+}
+
+String GeoType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 String ArrayType::typeName(const bool escape, const bool simplified) const
@@ -957,6 +1072,25 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
     return appendRandomRawValue(rg, gen, subtype, rows_dist(rg.generator));
 }
 
+String ArrayType::insertNumberEntry(
+    RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    String ret = "[";
+    std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, max_nested_rows);
+    const uint32_t limit = rows_dist(rg.generator);
+
+    for (uint64_t i = 0; i < limit; i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += subtype->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+    }
+    ret += "]";
+    return ret;
+}
+
 String MapType::typeName(const bool escape, const bool simplified) const
 {
     return fmt::format("Map({},{})", key->typeName(escape, simplified), value->typeName(escape, simplified));
@@ -997,6 +1131,27 @@ String MapType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & 
         ret += key->appendRandomRawValue(rg, gen);
         ret += ",";
         ret += value->appendRandomRawValue(rg, gen);
+    }
+    ret += ")";
+    return ret;
+}
+
+String
+MapType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    String ret = "map(";
+    std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, max_nested_rows);
+    const uint64_t limit = rows_dist(rg.generator);
+
+    for (uint64_t i = 0; i < limit; i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += key->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+        ret += ",";
+        ret += value->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
     }
     ret += ")";
     return ret;
@@ -1072,6 +1227,19 @@ String TupleType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
     return ret;
 }
 
+String TupleType::insertNumberEntry(
+    RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    String ret = "(";
+    for (const auto & entry : subtypes)
+    {
+        ret += entry.subtype->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+        ret += ", ";
+    }
+    ret += ")";
+    return ret;
+}
+
 TupleType::~TupleType()
 {
     for (const auto & entry : subtypes)
@@ -1129,6 +1297,12 @@ String VariantType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->appendRandomRawValue(rg, gen);
 }
 
+String VariantType::insertNumberEntry(
+    RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+}
+
 VariantType::~VariantType()
 {
     for (const auto & entry : subtypes)
@@ -1173,6 +1347,22 @@ String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
             ret += ", ";
         }
         ret += subtype->appendRandomRawValue(rg, gen);
+    }
+    ret += "]";
+    return ret;
+}
+
+String
+QBitType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
+{
+    String ret = "[";
+    for (uint64_t i = 0; i < dimension; i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += subtype->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
     }
     ret += "]";
     return ret;
@@ -1223,6 +1413,11 @@ String NestedType::SQLitetypeName(RandomGenerator &, const bool) const
 String NestedType::appendRandomRawValue(RandomGenerator &, StatementGenerator &) const
 {
     return "TEXT";
+}
+
+String NestedType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
+{
+    return appendRandomRawValue(rg, gen);
 }
 
 SQLType * NestedType::typeDeepCopy() const

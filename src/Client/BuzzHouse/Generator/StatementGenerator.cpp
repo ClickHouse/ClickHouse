@@ -906,8 +906,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(fc.allow_hardcoded_inserts && !in_parallel);
     const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
     const uint32_t generate_random = 30;
+    const uint32_t number_func = 30;
     const uint32_t insert_select = 10;
-    const uint32_t prob_space = hardcoded_insert + random_values + generate_random + insert_select;
+    const uint32_t prob_space = hardcoded_insert + random_values + generate_random + number_func + insert_select;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
@@ -1046,8 +1047,38 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             grf->set_max_array_length(nested_rows_dist(rg.generator));
             ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
-        else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + insert_select + 1))
+        else if (number_func && nopt < (hardcoded_insert + random_values + generate_random + number_func + 1))
         {
+            /// Use numbers function
+            bool first = true;
+            SelectStatementCore * ssc = sel->mutable_select_core();
+            GenerateSeriesFunc * gsf = ssc->mutable_from()
+                                           ->mutable_tos()
+                                           ->mutable_join_clause()
+                                           ->mutable_tos()
+                                           ->mutable_joined_table()
+                                           ->mutable_tof()
+                                           ->mutable_tfunc()
+                                           ->mutable_gseries();
+            const uint32_t nested_nrows = nested_rows_dist(rg.generator);
+
+            for (const auto & entry : this->entries)
+            {
+                buf += fmt::format(
+                    "{}{}{}{}",
+                    first ? "" : ", ",
+                    entry.path.size() > 1 ? "arrayRepeat([" : "",
+                    entry.getBottomType()->insertNumberEntry(rg, *this, string_length_dist(rg.generator), nested_rows_dist(rg.generator)),
+                    entry.path.size() > 1 ? ("], " + std::to_string(nested_nrows) + ")") : "");
+                first = false;
+            }
+            ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
+            gsf->set_fname(GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers);
+            gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+        }
+        else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + number_func + insert_select + 1))
+        {
+            /// Use insert select combination
             sparen->set_paren(rg.nextSmallNumber() < 4);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             if (rg.nextMediumNumber() < 13)
