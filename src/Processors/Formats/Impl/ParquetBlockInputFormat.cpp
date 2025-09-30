@@ -69,6 +69,15 @@ namespace ErrorCodes
 
 namespace
 {
+String removeListElement(const String & value)
+{
+    const String pattern = ".list.element";
+    String result = value;
+    size_t pos;
+    while ((pos = result.find(pattern)) != std::string::npos)
+        result.erase(pos, pattern.size());
+    return result;
+}
 
 
 void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
@@ -80,7 +89,7 @@ void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map
             traverseAllFields(group->field(i), fields_mapping, Nested::concatenateName(current_path, group->name()));
     }
     int field_id = node->field_id();
-    fields_mapping[field_id] = Nested::concatenateName(current_path, node->name());
+    fields_mapping[field_id] = removeListElement(Nested::concatenateName(current_path, node->name()));
 }
 
 }
@@ -1149,7 +1158,7 @@ Chunk ParquetBlockInputFormat::read()
                               [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
 
         row_group_batches_completed++;
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
         return chunk;
     }
 
@@ -1197,7 +1206,7 @@ Chunk ParquetBlockInputFormat::read()
                 + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
 
 
-            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
 
             return std::move(chunk.chunk);
         }

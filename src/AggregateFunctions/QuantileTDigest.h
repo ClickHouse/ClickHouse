@@ -119,7 +119,6 @@ class QuantileTDigest
         static constexpr size_t PART_SIZE_BITS = 8;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
-        using Allocator = RadixSortAllocator;
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }

@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -39,7 +38,7 @@ FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilter::Parameters & params)
+void FunctionSearchImpl<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
@@ -47,28 +46,11 @@ void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilter
     if (token_extractor != nullptr)
         return;
 
-    if (params.tokenizer == DefaultTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (params.tokenizer == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = params.ngram_size.value_or(DEFAULT_NGRAM_SIZE);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    else if (params.tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        const auto & separators = params.separators.value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
-    }
-    else if (params.tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+    token_extractor = std::move(new_token_extractor_);
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::trySetSearchTokens(const std::vector<String> & tokens)
+void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
 {
     static constexpr size_t supported_number_of_needles = 64;
 
@@ -108,7 +90,7 @@ constexpr size_t arg_needles = 1;
 
 template <typename StringColumnType>
 void executeSearchAny(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -134,7 +116,7 @@ void executeSearchAny(
 
 template <typename StringColumnType>
 void executeSearchAll(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -148,11 +130,11 @@ void executeSearchAll(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
         mask = 0;
-        tokens = token_extractor->getTokensView(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
             if (auto it = needles.find(token); it != needles.end())
@@ -169,20 +151,18 @@ void executeSearchAll(
 
 template <class SearchTraits, typename StringColumnType>
 void execute(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    col_result.resize(input_rows_count);
-
-    switch (SearchTraits::search_mode)
+    switch (SearchTraits::mode)
     {
-        case GinSearchMode::Any:
+        case SearchAnyAllMode::Any:
             executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
-        case GinSearchMode::All:
+        case SearchAnyAllMode::All:
             executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
     }
@@ -207,17 +187,20 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()); !col_needles_const)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Needles argument of function '{}' must be Array(String), got: {}",
-            name,
-            col_needles->getFamilyName());
-
-    if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
-    else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    col_result->getData().resize(input_rows_count);
+    if (needles->empty())
+    {
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result->getData()[i] = true;
+    }
+    else
+    {
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    }
 
     return col_result;
 }

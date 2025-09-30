@@ -1,0 +1,12 @@
+<clickhouse>
+    <jemalloc_enable_global_profiler>1</jemalloc_enable_global_profiler>
+    <jemalloc_collect_global_profile_samples_in_trace_log>1</jemalloc_collect_global_profile_samples_in_trace_log>
+    <total_memory_tracker_sample_probability>0.1</total_memory_tracker_sample_probability>
+
+    <trace_log>
+        <!-- jemalloc has too many events, which leads to slower testing with default value 1KK -->
+        <max_size_rows>100000</max_size_rows>
+    </trace_log>
+
+    <text_log remove="remove" />
+</clickhouse>

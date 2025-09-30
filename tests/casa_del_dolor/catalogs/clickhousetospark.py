@@ -52,11 +52,11 @@ class ClickHouseSparkTypeMapper:
             "String": ("STRING", StringType()),
             "FixedString": ("STRING", StringType()),
             # Date and Time types
-            "Date": ("DATE", DateType()),
+            "Date": ("STRING", StringType()),  # it doesn't fit
             "Date32": ("DATE", DateType()),
             "Time": ("STRING", StringType()),
             "Time64": ("STRING", StringType()),
-            "DateTime": ("TIMESTAMP", TimestampType()),
+            "DateTime": ("STRING", StringType()),  # it doesn't fit
             "DateTime64": ("TIMESTAMP", TimestampType()),
             # Boolean
             "Bool": ("BOOLEAN", BooleanType()),
@@ -96,13 +96,13 @@ class ClickHouseSparkTypeMapper:
         # Handle Array types
         if ch_type.startswith("Array("):
             element_type = self._extract_nested_content(ch_type, "Array")
-            inner_str_type, inner_nullable, inner_spark_type = self.clickhouse_to_spark(
+            inner_str, inner_null, inner_tp = self.clickhouse_to_spark(
                 element_type, False
             )
             return (
-                f"ARRAY<{inner_str_type}>",
+                f"ARRAY<{inner_str}>",
                 False,
-                ArrayType(inner_spark_type, containsNull=inner_nullable),
+                ArrayType(inner_tp, containsNull=inner_null),
             )
 
         # Handle Nested (similar to Array of Structs)
@@ -154,10 +154,10 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False
                     )
-                    spark_elements.append(f"_{i}: {next_tp}")
+                    spark_elements.append(f"_{i + 1}: {next_tp}")
                     struct_fields.append(
                         StructField(
-                            name=f"_{i}", dataType=next_spark, nullable=next_null
+                            name=f"_{i + 1}", dataType=next_spark, nullable=next_null
                         )
                     )
 
@@ -190,12 +190,15 @@ class ClickHouseSparkTypeMapper:
         # Handle Decimal types
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
         if decimal_match:
-            nprecision = decimal_match.group(1)
-            nscale = decimal_match.group(2) if decimal_match.group(2) else "0"
+            nprecision = min(38, int(decimal_match.group(1)))
+            nscale = min(
+                nprecision,
+                int(decimal_match.group(2) if decimal_match.group(2) else "0"),
+            )
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
-                DecimalType(precision=int(nprecision), scale=int(nscale)),
+                DecimalType(precision=nprecision, scale=nscale),
             )
 
         # Handle FixedString with length

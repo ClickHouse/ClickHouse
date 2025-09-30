@@ -1419,7 +1419,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
 
 void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    te->add_params()->set_svalue(t.getTablePath(rg, fc, true));
+    te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
 
 bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1495,13 +1495,18 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
         catalog);
+    fc.outf << "--External database " << buf << std::endl;
     return httpPut("/sparkdatabase", buf);
+}
+
+bool DolorIntegration::reRunCreateDatabase(const String & body)
+{
+    return httpPut("/sparkdatabase", body);
 }
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
-    const ServerCredentials & minio = fc.minio_server.value();
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
     SetValue * sv2 = svs->add_other_values();
 
@@ -1537,15 +1542,22 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             chassert(0);
     }
     sv2->set_property("warehouse");
-    sv2->set_value("'" + d.getSparkCatalogName() + "'");
-    if (d.catalog != LakeCatalog::Unity && d.format != LakeFormat::Iceberg)
+    sv2->set_value("'" + d.getName() + "'");
+    if (d.storage == LakeStorage::S3)
     {
+        const ServerCredentials & minio = fc.minio_server.value();
+
         de->add_params()->set_svalue(minio.user);
         de->add_params()->set_svalue(minio.password);
 
         SetValue * sv3 = svs->add_other_values();
         sv3->set_property("storage_endpoint");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, d.getName()));
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+    }
+    else
+    {
+        /// I don't know how to set for other storages
+        chassert(0);
     }
     if (!cat->region.empty())
     {
@@ -1580,9 +1592,10 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextRandomUInt64(),
         t.getSparkCatalogName(),
+        t.getDatabaseName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
         t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
@@ -1595,7 +1608,13 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         first = false;
     }
     buf += "]}";
+    fc.outf << "--External table " << buf << std::endl;
     return httpPut("/sparktable", buf);
+}
+
+bool DolorIntegration::reRunCreateTable(const String & body)
+{
+    return httpPut("/sparktable", body);
 }
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
@@ -1618,7 +1637,6 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
         sv3->set_property("object_storage_endpoint");
         sv4->set_property("storage_catalog_url");
         sv2->set_value("'" + t.getDatabaseName() + "'");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, t.getDatabaseName()));
         switch (catalog)
         {
             case LakeCatalog::Glue:
@@ -1645,6 +1663,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
             default:
                 chassert(0);
         }
+        if (t.isOnS3())
+        {
+            const ServerCredentials & minio = fc.minio_server.value();
+            sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+        }
+        else
+        {
+            /// I don't know how to set for other storages
+            chassert(0);
+        }
         if (!cat->region.empty())
         {
             SetValue * sv5 = svs->add_other_values();
@@ -1653,6 +1681,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
             sv5->set_value("'" + cat->region + "'");
         }
     }
+}
+
+bool DolorIntegration::performExternalCommand(const uint64_t seed, const String & cname, const String & tname)
+{
+    RandomGenerator rg(seed, 0, 1);
+    const String & uri = rg.nextSmallNumber() < 8 ? "/sparkupdate" : "/sparkcheck";
+    const bool res
+        = httpPut(uri, fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", rg.nextRandomUInt64(), cname, tname));
+
+    return uri == "/sparkupdate" || res;
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1759,6 +1797,54 @@ void ExternalIntegrations::createExternalDatabaseTable(
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
     next->setTableEngineDetails(rg, t, te);
+}
+
+bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const String & body)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->reRunCreateDatabase(body) : false;
+}
+
+bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const String & body)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->reRunCreateTable(body) : false;
+}
+
+bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const IntegrationCall ic, const String & cname, const String & tname)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->performExternalCommand(seed, cname, tname) : false;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const

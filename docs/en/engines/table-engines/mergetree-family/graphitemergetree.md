@@ -4,6 +4,7 @@ sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
 slug: /engines/table-engines/mergetree-family/graphitemergetree
 title: 'GraphiteMergeTree'
+doc_type: 'guide'
 ---
 
 # GraphiteMergeTree

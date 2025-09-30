@@ -165,7 +165,9 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ArrowCompression
+ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -256,6 +258,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 Bech
 benchmarked
@@ -811,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -1175,6 +1179,7 @@ GTID
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfday
 halfMD
@@ -1389,6 +1394,7 @@ Jemalloc
 jeprof
 Jepsen
 JetBrains
+JetStream
 Jitter
 joda
 Joda
@@ -2025,6 +2031,7 @@ OKLCH
 OLAP
 OLTP
 omclickhouse
+oneof
 onstraints
 ontime
 OnTime
@@ -2343,6 +2350,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator
@@ -2365,6 +2374,7 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive
@@ -2834,6 +2844,8 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
+studentTTestOneSample
+studentttestonesample
 subarray
 subarrays
 subBitmap
@@ -2990,11 +3002,13 @@ ThreadsActive
 ThreadsInOvercommitTracker
 throwif
 throwIf
+Tiering
 timeDiff
 TimescaleDB's
 timeseries
 timeSeries
 TimeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3009,6 +3023,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
 timeSeriesSelector
 timeSeriesTags
 timeSlot
@@ -3075,8 +3090,10 @@ toJSONString
 tokenbf
 tokenization
 tokenize
+tokenizes
 tokenized
 tokenizer
+tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek
