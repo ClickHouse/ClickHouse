@@ -96,6 +96,8 @@ struct FixedStringUnaryOperationImpl
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
+        _Pragma("clang loop vectorize(enable)")
+        _Pragma("clang loop interleave(enable)")
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))

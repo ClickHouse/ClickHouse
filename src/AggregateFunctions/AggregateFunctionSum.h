@@ -164,32 +164,22 @@ struct AggregateFunctionSumData
         else if constexpr (is_over_big_int<T>)
         {
             /// Use a mask to discard or keep the value to reduce branch miss.
-            using MaskType = Int64;
-            alignas(64) const MaskType masks[2] = {0, -1};
-            T local_sum{};
-            while (ptr < end_ptr)
-            {
-                Value v = *ptr;
-                if constexpr (!add_if_zero)
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!!*condition_map];
-                    else
-                        v.value &= masks[!!*condition_map];
-                }
-                else
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!*condition_map];
-                    else
-                        v.value &= masks[!*condition_map];
-                }
+            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
+            // using MaskType = Int256;
+            // alignas(64) const MaskType masks[2] = {0, -1};
+            // T local_sum{};
 
-                Impl::add(local_sum, v);
-                ++ptr;
-                ++condition_map;
+            const auto sz = end_ptr - ptr;
+
+            for (auto i = 0; i < sz; ++i)
+            {
+                auto flag = (!condition_map[i] == add_if_zero);
+                T mask{};
+                std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+                sum += ptr[i] & mask;
             }
-            Impl::add(sum, local_sum);
+
+            // Impl::add(sum, local_sum);
             return;
         }
         else if constexpr (is_floating_point<T> && (sizeof(Value) == 4 || sizeof(Value) == 8))
