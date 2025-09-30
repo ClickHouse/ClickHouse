@@ -341,7 +341,7 @@ static void explainStep(
     if (options.estimates)
     {
         if (cost_estimation.has_value())
-            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f}", cost_estimation->rows, cost_estimation->cost);
+            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
         else
             settings.out << " (rows: <unknown>, cost: <unknown>)";
     }
