@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int CORRUPTED_DATA;
 }
 
 /** Stores another column with unique values
@@ -62,7 +61,7 @@ public:
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
-    MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length, bool throw_non_unique) override;
+    MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
@@ -222,7 +221,7 @@ private:
     ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
-    template <typename IndexType, bool THROW_NON_UNIQUE>
+    template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
         const IColumn & src,
         size_t start,
@@ -570,7 +569,7 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
 }
 
 template <typename ColumnType>
-template <typename IndexType, bool THROW_NON_UNIQUE>
+template <typename IndexType>
 MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     const IColumn & src,
     size_t start,
@@ -602,7 +601,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
             for (size_t i = 0; i < num_added_rows; ++i)
                 expanded_data[i] = positions[i];
 
-            return uniqueInsertRangeImpl<SuperiorIndexType, THROW_NON_UNIQUE>(
+            return uniqueInsertRangeImpl<SuperiorIndexType>(
                     src,
                     start,
                     length,
@@ -639,8 +638,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         positions[num_added_rows] = static_cast<IndexType>(inserted_pos);
         if (inserted_pos == next_position)
             return update_position(next_position);
-        if constexpr (THROW_NON_UNIQUE)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated keys for ColumnUnique.");
 
         return nullptr;
     };
@@ -678,9 +675,9 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
 }
 
 template <typename ColumnType>
-MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length, bool throw_non_unique)
+MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto call_for_type = [this, &src, start, length, throw_non_unique](auto x) -> MutableColumnPtr
+    auto call_for_type = [this, &src, start, length](auto x) -> MutableColumnPtr
     {
         size_t size = getRawColumnPtr()->size();
 
@@ -688,7 +685,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn &
         if (size <= std::numeric_limits<IndexType>::max())
         {
             auto positions = ColumnVector<IndexType>::create(length);
-            return throw_non_unique ? this->uniqueInsertRangeImpl<IndexType, true>(src, start, length, 0, std::move(positions), nullptr, 0) : this->uniqueInsertRangeImpl<IndexType, false>(src, start, length, 0, std::move(positions), nullptr, 0);
+            return this->uniqueInsertRangeImpl<IndexType>(src, start, length, 0, std::move(positions), nullptr, 0);
         }
 
         return nullptr;
@@ -733,7 +730,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
             auto positions = ColumnVector<IndexType>::create(length);
             ReverseIndex<UInt64, ColumnType> secondary_index(0, max_dictionary_size);
             secondary_index.setColumn(overflowed_keys_ptr);
-            return this->uniqueInsertRangeImpl<IndexType, false>(src, start, length, 0, std::move(positions),
+            return this->uniqueInsertRangeImpl<IndexType>(src, start, length, 0, std::move(positions),
                                                           &secondary_index, max_dictionary_size);
         }
 

@@ -45,7 +45,7 @@ public:
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
-    virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length, bool throw_non_unique = false) = 0;
+    virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
     struct IndexesWithOverflow
     {
