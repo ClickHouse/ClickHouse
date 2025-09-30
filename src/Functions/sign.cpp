@@ -18,7 +18,7 @@ struct SignImpl
         else if constexpr (is_signed_v<A>)
         {
             constexpr int shift = sizeof(A) * 8 - 1;
-            return int8_t((a >> shift) | (-a >> shift));
+            return int8_t((a >> shift) | (-a >> shift));  /// For some reason faster than ResultType(...).
         }
         else if constexpr (is_unsigned_v<A>)
             return a == 0 ? 0 : 1;
