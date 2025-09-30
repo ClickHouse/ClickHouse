@@ -130,7 +130,6 @@ DROP TABLE qbit;
 
 
 -- Check if small p are handled correctly
-
 SELECT 'Difficult test: 3';
 
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 15)) ENGINE = Memory;
@@ -146,8 +145,14 @@ DROP TABLE qbit;
 
 
 -- Check if non-cost reference vector works
-
 SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 1 + 3)::Array(Float32), 32);
 SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), materialize([1, 2, 3])::Array(Float32), 32);
+
+
+-- Others
+SELECT L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 2)'), [0.1, 0.2], 64) AS distance;
+SELECT L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float32, 2)'), [0.1, 0.2], 32) AS distance; -- { serverError TYPE_MISMATCH }
+SELECT L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2], 32) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2, 0.1, 0.2], 32) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 {% endfor -%}

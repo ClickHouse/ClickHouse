@@ -63,3 +63,8 @@ SELECT L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 
 SELECT L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3) settings enable_analyzer=1;
 SELECT L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3) settings enable_analyzer=0;
 SELECT L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3) settings enable_analyzer=1;
+
+SELECT 'Difficult tests';
+SELECT bin(CAST([0.1, 0.2], 'QBit(Float64, 2)').1) AS tuple_result;
+SELECT bin(CAST([0.1, 0.2], 'QBit(Float64, 2)').2) AS tuple_result;
+SELECT bin(CAST([0.1, 0.2], 'QBit(Float64, 2)').3) AS tuple_result;
