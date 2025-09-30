@@ -241,7 +241,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::truncateFile(const String & path, size_t size)
 {
-    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    LOG_TEST(log, "Truncate file operation {} to size {}", path, size);
     auto transaction = createObjectStorageTransaction();
     transaction->truncateFile(path, size);
     transaction->commit();
@@ -388,15 +388,6 @@ void DiskObjectStorage::createDirectories(const String & path)
         transaction->commit();
     }
 }
-
-
-void DiskObjectStorage::clearDirectory(const String & path)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->clearDirectory(path);
-    transaction->commit();
-}
-
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
@@ -754,7 +745,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         && settings.read_through_distributed_cache
         && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = object_storage->getConnectionInfo();
+        connection_info = DistributedCache::getConnectionInfo(*object_storage);
         if (connection_info)
             use_distributed_cache = true;
     }
@@ -882,7 +873,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 
     WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(path, buf_size, mode, write_settings);
+    return transaction->writeFileWithAutoCommit(path, buf_size, mode, write_settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const

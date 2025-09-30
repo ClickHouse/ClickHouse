@@ -29,7 +29,7 @@ To create a text index, first enable the corresponding experimental setting:
 SET allow_experimental_full_text_index = true;
 ```
 
-A text index can be defined on a [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md) column using the following syntax:
+A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) map functions) column using the following syntax:
 
 ```sql
 CREATE TABLE tab
@@ -43,6 +43,7 @@ CREATE TABLE tab
                                 [, ngram_size = N]
                                 [, separators = []]
                                 [, dictionary_block_size = D]
+                                [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
                                 [, bloom_filter_false_positive_rate = R]
                             ) [GRANULARITY 64]
@@ -105,6 +106,8 @@ The default values of the following advanced parameters will work well in virtua
 We do not recommend changing them.
 
 Optional parameter `dictionary_block_size` (default: 128) specifies the size of dictionary blocks in rows.
+
+Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
 Optional parameter `max_cardinality_for_embedded_postings` (default: 16) specifies the cardinality threshold below which posting lists should be embedded into dictionary blocks.
 
@@ -232,6 +235,150 @@ Example:
 SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
 
 SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+```
+
+#### `has` {#functions-example-has}
+
+Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+#### `mapContains` {#functions-example-mapcontains}
+
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias of: `mapContainsKey`) matches against a single token in the keys of a map.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+-- OR
+SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
+```
+
+#### `operator[]` {#functions-example-access-operator}
+
+Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+```
+
+See the following examples for the usage of `Array(T)` and `Map(K, V)` with the text index.
+
+### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
+
+#### Indexing Array(String) {#text-indexi-example-array}
+
+In a simple blogging platform, authors assign keywords to their posts to categorize content.
+A common feature allows users to discover related content by clicking on keywords or searching for topics.
+
+Consider this table definition:
+
+```sql
+CREATE TABLE posts (
+    post_id UInt64,
+    title String,
+    content String,
+    keywords Array(String) COMMENT 'Author-defined keywords'
+)
+ENGINE = MergeTree
+ORDER BY (post_id);
+```
+
+Without a text index, finding posts with a specific keyword (e.g. `clickhouse`) requires scanning all entries:
+
+```sql
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post 
+```
+
+As the platform grows, this becomes increasingly slow because the query must examine every keywords array in every row.
+
+To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
+
+```sql
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'default');
+```
+
+:::note
+Important: After adding the text index, you must rebuild it for existing data:
+
+```sql
+ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
+```
+:::
+
+#### Indexing Map {#text-index-example-map}
+
+In a logging system, server requests often store metadata in key-value pairs. Operations teams need to efficiently search through logs for debugging, security incidents, and monitoring.
+
+Consider this logs table:
+
+```sql
+CREATE TABLE logs (
+    id UInt64,
+    timestamp DateTime,
+    message String,
+    attributes Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+```
+
+Without a text index, searching through [Map](/sql-reference/data-types/map.md) data requires full table scans:
+
+1. Finds all logs with rate limiting:
+
+```sql
+SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
+```
+
+2. Finds all logs from a specific IP:
+
+```sql
+SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
+```
+
+As log volume grows, these queries become slow.
+
+The solution is creating a text index for the [Map](/sql-reference/data-types/map.md) keys and values.
+
+Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'no_op');
+```
+
+Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'no_op');
+```
+
+:::note
+Important: After adding the text index, you must rebuild it for existing data:
+
+```sql
+ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+```
+:::
+
+1. Find all rate-limited requests:
+
+```sql
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
+```
+
+2. Finds all logs from a specific IP:
+
+```sql
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 ```
 
 ## Implementation {#implementation}

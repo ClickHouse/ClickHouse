@@ -355,6 +355,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
   grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
   xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
 
+# Forbid using std::shared_mutex and point to the faster alternative
+find ./{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
+  grep -vP $EXCLUDE |
+  xargs grep 'std::shared_mutex' | \
+  xargs -i echo "Found std::shared_mutex '{}'. Please use DB::SharedMutex instead"
+
 # Context.h (and a few similar headers) is included in many parts of the
 # codebase, so any modifications to it trigger a large-scale recompilation.
 # Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
