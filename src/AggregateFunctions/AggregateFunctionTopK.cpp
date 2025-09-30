@@ -270,7 +270,8 @@ public:
         auto & state = this->data(place);
         auto & set = state.value;
         set.clear();
-        state.loaded_from_state = true;
+        // Mark external load only for approx_top_k variants; plain topK must not be tainted by internal binary transport
+        state.loaded_from_state = is_approx_top_k;
 
         size_t size = 0;
         try
@@ -345,8 +346,9 @@ public:
         if (set.capacity() != reserved)
             set.resize(reserved);
         set.merge(this->data(rhs).value);
-        // Propagate external-load flag during merge
-        this->data(place).loaded_from_state = this->data(place).loaded_from_state || this->data(rhs).loaded_from_state;
+        // Propagate external-load flag only for approx_top_k variants
+        if (is_approx_top_k)
+            this->data(place).loaded_from_state = this->data(place).loaded_from_state || this->data(rhs).loaded_from_state;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -354,7 +356,7 @@ public:
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        if (this->data(place).loaded_from_state)
+        if (is_approx_top_k && this->data(place).loaded_from_state)
         {
             offsets_to.push_back(offsets_to.back());
             return;
