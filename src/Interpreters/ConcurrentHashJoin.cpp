@@ -428,7 +428,7 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
 
     hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
     if (hash_joins[0]->data->twoLevelMapIsUsed())
-        dispatched_blocks.emplace_back(std::move(block));
+        dispatched_blocks = dispatchBlockTwoLevel(table_join->getOnlyClause().key_names_left, std::move(block));
     else
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
 
@@ -665,6 +665,23 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
 
     return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
+}
+
+ScatteredBlocks ConcurrentHashJoin::dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block)	
+{	
+    const size_t num_shards = hash_joins.size();	
+    if (num_shards == 1)	
+    {	
+        ScatteredBlocks res;	
+        res.emplace_back(std::move(from_block));	
+        return res;	
+    }	
+
+    /// use already existing selector: it already has HasGetBucketFromHash -> bucket & (slots-1)	
+    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);	
+
+    /// for TwoLevelMap, we don't copy columns	
+    return scatterBlocksWithSelector(num_shards, selector, from_block);	
 }
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
