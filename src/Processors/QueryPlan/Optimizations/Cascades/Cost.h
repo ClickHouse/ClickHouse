@@ -26,6 +26,7 @@ class JoinStepLogical;
 class ReadFromMergeTree;
 class FilterStep;
 class ExpressionStep;
+class AggregatingStep;
 
 class CostEstimator
 {
@@ -50,6 +51,7 @@ private:
     ExpressionStatistics fillReadStatistics(const ReadFromMergeTree & read_step);
     ExpressionStatistics fillFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics fillExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics fillAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
 
     const Memo & memo;
     const IOptimizerStatistics & statistics_lookup;
