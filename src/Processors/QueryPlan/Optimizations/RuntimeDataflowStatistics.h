@@ -6,7 +6,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Common/CacheBase.h>
 
