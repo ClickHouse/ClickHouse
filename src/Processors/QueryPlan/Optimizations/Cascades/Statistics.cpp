@@ -6,7 +6,6 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
-#include <vector>
 
 
 namespace DB
@@ -19,7 +18,7 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
         << " max_rows: " << max_row_count
         << "\n";
     for (const auto & column : column_statistics)
-        out << "`" << column.first << "` NDV : " << column.second.number_of_distinct_values << "\n";
+        out << "`" << column.first << "` NDV : " << column.second.num_distinct_values << "\n";
 }
 
 String ExpressionStatistics::dump() const
@@ -27,14 +26,6 @@ String ExpressionStatistics::dump() const
     WriteBufferFromOwnString out;
     dump(out);
     return out.str();
-}
-
-/// TODO: this is a temporary hack until table names are properly handled
-String getUnqualifiedColumnName(const String & full_column_name)
-{
-    std::vector<String> identifiers;
-    boost::split(identifiers, full_column_name, [](char c) { return c == '.'; });
-    return identifiers.back();
 }
 
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
 #include <limits>
 #include <memory>
@@ -11,11 +12,6 @@ namespace DB
 
 class WriteBuffer;
 
-struct ExpressionColumnStatistics
-{
-    UInt64 number_of_distinct_values;
-};
-
 struct ExpressionStatistics
 {
     /// Number of row that we estimated using probabilities, histograms, heurisitcs, etc.
@@ -26,7 +22,7 @@ struct ExpressionStatistics
     Float64 max_row_count = std::numeric_limits<UInt64>::max();
 
     /// Statistics for output columns of the expression
-    std::unordered_map<String, ExpressionColumnStatistics> column_statistics;
+    std::unordered_map<String, ColumnStats> column_statistics;
 
     void dump(WriteBuffer & out) const;
     String dump() const;
@@ -41,9 +37,6 @@ public:
 };
 
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
-
-/// TODO: this is a temporary hack until table names are properly handled
-String getUnqualifiedColumnName(const String & full_column_name);
 
 OptimizerStatisticsPtr createEmptyStatistics();
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
