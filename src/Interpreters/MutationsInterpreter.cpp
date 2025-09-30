@@ -968,8 +968,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            for (const auto & stat_column_name: command.statistics_columns)
-                materialized_statistics.erase(stat_column_name);
+
+            if (command.clear && command.statistics_columns.empty())
+            {
+                for (const auto & column_desc : columns_desc)
+                {
+                    if (!column_desc.statistics.empty())
+                        materialized_statistics.erase(column_desc.name);
+                }
+            }
+            else
+            {
+                for (const auto & stat_column_name: command.statistics_columns)
+                    materialized_statistics.erase(stat_column_name);
+            }
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {

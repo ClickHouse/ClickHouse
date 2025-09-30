@@ -6472,9 +6472,12 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
-    addImplicitStatistics(future_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
 
-    if (commands.isSettingsAlter())
+    auto old_settings = getSettings();
+    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    addImplicitStatistics(future_metadata.columns, auto_statistics_types);
+
+    if (commands.isSettingsAlter() && !statistics_changed)
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.

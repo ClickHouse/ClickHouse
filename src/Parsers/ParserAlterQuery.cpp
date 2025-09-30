@@ -124,6 +124,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by(Keyword::REMOVE_SAMPLE_BY);
     ParserKeyword s_apply_deleted_mask(Keyword::APPLY_DELETED_MASK);
     ParserKeyword s_apply_patches(Keyword::APPLY_PATCHES);
+    ParserKeyword s_all(Keyword::ALL);
 
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
@@ -413,20 +414,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_clear_statistics.ignore(pos, expected))
             {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
-                    return false;
-
                 command->type = ASTAlterCommand::DROP_STATISTICS;
                 command->clear_statistics = true;
                 command->detach = false;
 
-                if (s_in_partition.ignore(pos, expected))
+                if (!s_all.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    if (s_if_exists.ignore(pos, expected))
+                        command->if_exists = true;
+
+                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
                         return false;
+
+                    if (s_in_partition.ignore(pos, expected))
+                    {
+                        if (!parser_partition.parse(pos, command_partition, expected))
+                            return false;
+                    }
                 }
             }
             else if (s_materialize_statistics.ignore(pos, expected))

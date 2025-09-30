@@ -18,7 +18,7 @@ SELECT
 FROM system.parts_columns
 WHERE table = 't_long_statistics_name'
     AND database = currentDatabase()
-    AND column = '一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串'
-ORDER BY name;
+    AND table = 't_long_statistics_name'
+    AND column = '一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串';
 
 DROP TABLE IF EXISTS t_long_statistics_name;

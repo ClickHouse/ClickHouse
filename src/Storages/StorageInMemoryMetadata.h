@@ -268,6 +268,7 @@ struct StorageInMemoryMetadata
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
+    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.

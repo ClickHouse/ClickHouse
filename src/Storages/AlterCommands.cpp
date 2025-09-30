@@ -381,11 +381,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistics_decl = command_ast->statistics_decl->clone();
         command.type = AlterCommand::DROP_STATISTICS;
-        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistics_columns = ast_stat_decl.getColumnNames();
+        if (command_ast->statistics_decl)
+        {
+            command.statistics_decl = command_ast->statistics_decl->clone();
+
+            const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
+            command.statistics_columns = ast_stat_decl.getColumnNames();
+        }
+
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistics;
 

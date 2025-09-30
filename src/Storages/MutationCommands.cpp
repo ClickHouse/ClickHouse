@@ -180,7 +180,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.partition = command->partition->clone();
         if (command->clear_index)
             res.clear = true;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)

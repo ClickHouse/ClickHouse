@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -601,6 +602,17 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return settings_changes->clone();
     return nullptr;
 }
+
+Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return Field();
+
+    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
+    return it != changes.end() ? it->value : Field();
+}
+
 const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
 {
     return select;
