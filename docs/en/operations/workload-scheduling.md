@@ -345,7 +345,7 @@ Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and 
 
 In addition to SQL-based definitions, workloads and resources can be predefined in the server configuration file. This is useful in cloud environments where some limitations are dictated by infrastructure, while other limits could be changed by customers. Configuration-based entities have priority over SQL-defined ones and cannot be modified or deleted using SQL commands.
 
-### Configuration format
+### Configuration format {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -360,7 +360,7 @@ In addition to SQL-based definitions, workloads and resources can be predefined 
 
 The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
 
-### Usage recommendations
+### Usage recommendations {#config_based_workloads_usage_recommendations}
 
 For cloud environments, a typical setup might include:
 
