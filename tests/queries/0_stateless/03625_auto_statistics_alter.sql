@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- no-fasttest: 'countmin' sketches need a 3rd party library
 
 SET mutations_sync = 2;
 SET allow_experimental_statistics = 1;
