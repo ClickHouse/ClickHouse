@@ -465,7 +465,7 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
             }
             else
             {
-                buf += rg.pickRandomly(rg.nextTokenString());
+                buf += rg.nextTokenString();
             }
         }
         expr->mutable_lit_val()->set_string_lit(std::move(buf));

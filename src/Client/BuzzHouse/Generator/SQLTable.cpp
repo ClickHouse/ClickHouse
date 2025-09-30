@@ -1178,7 +1178,7 @@ void StatementGenerator::generateEngineDetails(
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!b.is_deterministic && !systemTables.empty());
         const uint32_t prob_space = dist_table + dist_view + dist_dictionary + dist_system_table;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
@@ -1925,7 +1925,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(ArrowFlight);
     }
-    if (has_tables || has_views || has_dictionaries || !systemTables.empty())
+    if (has_tables || has_views || has_dictionaries || (!b.is_deterministic && !systemTables.empty()))
     {
         if ((fc.engine_mask & allow_buffer) != 0)
         {
@@ -2322,7 +2322,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
     const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
     const uint32_t null_src = 2;
