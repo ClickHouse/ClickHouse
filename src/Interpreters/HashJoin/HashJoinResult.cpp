@@ -366,7 +366,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     size_t limit_rows_per_key = 0;
     /// We can split when using lazy_output with row_refs and offsets
-    if (properties.allow_split_single_row_in_joined_block
+    if (properties.joined_block_split_single_row
         /// ignore join get, it has any join semantics
         && !properties.is_join_get
         /// With offsets need_filter is false

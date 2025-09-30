@@ -22,7 +22,7 @@ public:
         bool need_filter;
         bool is_join_get;
 
-        bool allow_split_single_row_in_joined_block = false;
+        bool joined_block_split_single_row = false;
     };
 
     struct GenerateCurrentRowState;

@@ -183,7 +183,7 @@ Minimum block size in rows for JOIN input and output blocks (if join algorithm s
     DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
-    DECLARE(Bool, allow_split_single_row_in_joined_block, false, R"(
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
 Allow to chunk hash join result by rows corresponding to single row from left table.
 This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
 )", 0) \
