@@ -29,6 +29,7 @@ using JSONParserImpl = DB::DummyJSONParser;
 }
 #endif
 
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -46,7 +47,8 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
-                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33);
+                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33),
+                         allow_qbit = (UINT64_C(1) << 34);
 
 const constexpr uint64_t allow_replacing_mergetree
     = (UINT64_C(1) << 0),
@@ -230,6 +232,12 @@ public:
     SystemTable(SystemTable && c) = default;
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
+
+    void setName(ExprSchemaTable * est) const
+    {
+        est->mutable_database()->set_database(schema_name);
+        est->mutable_table()->set_table(table_name);
+    }
 };
 
 class FuzzConfig
@@ -241,7 +249,7 @@ public:
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
-        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings;
+        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server, dolor_server;
     std::unordered_map<String, PerformanceMetric> metrics;
