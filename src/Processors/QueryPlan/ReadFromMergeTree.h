@@ -226,7 +226,7 @@ public:
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
-    void updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 

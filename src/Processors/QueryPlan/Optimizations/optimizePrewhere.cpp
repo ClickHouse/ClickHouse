@@ -203,7 +203,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         optimize_result.prewhere_nodes,
         optimize_result.prewhere_nodes_list);
 
-    source_step_with_filter->updatePrewhereInfo(source_step_with_filter->getRowLevelFilter(), prewhere_info);
+    source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)

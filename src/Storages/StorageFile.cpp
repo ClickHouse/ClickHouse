@@ -1622,7 +1622,7 @@ public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromFile(
         const Names & column_names_,
@@ -1667,9 +1667,9 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator(predicate);
 }
 
-void ReadFromFile::updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value)
+void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, row_level_filter_value, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
@@ -1781,7 +1781,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, row_level_filter, prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

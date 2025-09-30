@@ -104,7 +104,6 @@ public:
         : SourceStepWithFilterBase(std::move(output_header_))
         , required_source_columns(column_names_)
         , query_info(query_info_)
-        , row_level_filter(query_info.row_level_filter)
         , prewhere_info(query_info.prewhere_info)
         , storage_snapshot(storage_snapshot_)
         , context(context_)
@@ -114,7 +113,7 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
-    FilterDAGInfoPtr getRowLevelFilter() const override { return row_level_filter; }
+    FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
     PrewhereInfoPtr getPrewhereInfo() const override { return prewhere_info; }
     ContextPtr getContext() const { return context; }
     const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
@@ -125,7 +124,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    virtual void updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value);
+    virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
     void describeActions(FormatSettings & format_settings) const override;
 
@@ -136,7 +135,6 @@ public:
 protected:
     Names required_source_columns;
     SelectQueryInfo query_info;
-    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;

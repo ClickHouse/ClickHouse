@@ -1120,7 +1120,7 @@ public:
     std::string getName() const override { return "ReadFromURL"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromURL(
         const Names & column_names_,
@@ -1180,9 +1180,9 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator(predicate);
 }
 
-void ReadFromURL::updatePrewhereInfo(const FilterDAGInfoPtr & row_level_filter_value, const PrewhereInfoPtr & prewhere_info_value)
+void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, row_level_filter_value, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
@@ -1323,7 +1323,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, row_level_filter, prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
