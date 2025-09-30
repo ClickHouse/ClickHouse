@@ -1093,7 +1093,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
+
     size_t partitions_count = partition_num_to_first_row.size();
+    chassert(partitions_count > 0);
     std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
     result_columns.reserve(partitions_count);
 

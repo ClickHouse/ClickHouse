@@ -6403,6 +6403,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \

@@ -164,10 +164,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns);
-
     size_t granularity = index.index->index.granularity;
-    size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
-    index_reader->adjustRightMark(index_last_mark);
 
     while (read_rows < max_rows_to_read)
     {
