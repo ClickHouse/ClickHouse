@@ -9,6 +9,8 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -80,6 +82,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace MergeTreeSetting
@@ -637,7 +640,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
-            && !select_query->with()
             && !hasAggregateFunctions(select_query));
     }
     return false;
@@ -751,9 +753,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
-    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
-        return {};
-
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
@@ -764,6 +763,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
+            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
             if (joined_tables.tablesCount() == 1)
                 src_storage = joined_tables.getLeftTableStorage();
@@ -774,6 +777,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
     if (!src_storage_cluster)
+        return {};
+
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
     /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
