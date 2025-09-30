@@ -293,19 +293,28 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         name_and_type = result_name_and_type;
     }
 
-    /// If only virtual columns were requested, just read the smallest non-partitin column.
-    /// Because format header cannot be empty.
-    if (supports_subset_of_columns && columns_to_read.empty())
+    if (supports_subset_of_columns)
     {
-        auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-        NamesAndTypesList non_partition_columns;
-        for (const auto & name_and_type : table_columns)
-            if (!partition_columns.contains(name_and_type.name))
-                non_partition_columns.push_back(name_and_type);
-        columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+        /// If only virtual columns were requested, just read the smallest non-partitin column.
+        /// Because format header cannot be empty.
+        if (columns_to_read.empty())
+        {
+            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+            NamesAndTypesList non_partition_columns;
+            for (const auto & name_and_type : table_columns)
+                if (!partition_columns.contains(name_and_type.name))
+                    non_partition_columns.push_back(name_and_type);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+        }
+
+        info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
+    }
+    else
+    {
+        info.columns_description = storage_snapshot->getDescriptionForColumns(
+            storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical)).getNames());
     }
 
-    info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     /// Set format_header with columns that should be read from data.
