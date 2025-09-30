@@ -10,7 +10,6 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
-#include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
