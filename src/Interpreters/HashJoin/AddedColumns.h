@@ -75,7 +75,13 @@ struct LazyOutput
         ++row_count;
     }
 
-    void buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+    size_t buildOutput(size_t size_to_reserve,
+        MutableColumns & columns,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        size_t rows_offset,
+        size_t rows_limit) const;
+
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
@@ -85,6 +91,10 @@ struct LazyOutput
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+
+    size_t buildOutputFromBlocksLimitAndOffset(
+        MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
+        size_t rows_offset, size_t rows_limit) const;
 };
 
 template <bool lazy>

@@ -143,36 +143,138 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
-static Block generateBlock(
-    ScatteredBlock scattered_block,
-    const LazyOutput & lazy_output,
-    size_t rows_to_reserve,
-    size_t row_ref_begin,
-    size_t row_ref_end,
-    MutableColumns columns,
-    const HashJoinResult::Properties & properties,
-    const IColumn::Offsets & offsets,
-    const IColumn::Filter & filter,
-    std::span<UInt64> matched_rows)
+MutableColumns copyEmptyColumns(const MutableColumns & columns)
 {
+    MutableColumns res_columns;
+    res_columns.reserve(columns.size());
+    for (const auto & column : columns)
+        res_columns.push_back(column->cloneEmpty());
+    return res_columns;
+}
+
+struct HashJoinResult::GenerateCurrentRowState
+{
+    GenerateCurrentRowState(
+        Block block_,
+        size_t rows_to_reserve_,
+        size_t row_ref_begin_,
+        size_t row_ref_end_,
+        MutableColumns columns_,
+        IColumn::Offsets offsets_,
+        std::span<UInt64> matched_rows_,
+        size_t limit_,
+        bool is_last_)
+            : block(std::move(block_))
+            , rows_to_reserve(rows_to_reserve_)
+            , row_ref_begin(row_ref_begin_)
+            , row_ref_end(row_ref_end_)
+            , columns(std::move(columns_))
+            , offsets(std::move(offsets_))
+            , matched_rows(matched_rows_)
+            , state_row_limit(limit_)
+            , is_last(is_last_)
+    {
+    }
+
+    MutableColumns getColumns()
+    {
+        if (!state_row_limit)
+            return std::move(columns);
+        return copyEmptyColumns(columns);
+    }
+
+    Block block;
+    size_t rows_to_reserve;
+    size_t row_ref_begin;
+    size_t row_ref_end;
+    MutableColumns columns;
+
+    IColumn::Offsets offsets;
+    IColumn::Filter filter;
+
+    std::span<UInt64> matched_rows;
+
+    size_t state_row_offset = 0;
+    size_t state_row_limit = 0;
+
+    bool is_last = false;
+};
+
+void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
+{
+    out_offsets.clear();
+    out_offsets.resize_fill(offsets.size(), 0);
+    if (offsets.empty())
+        return;
+
+    const UInt64 total = offsets.back();
+
+    if (limit == 0 || shift >= total)
+        return;
+
+    const UInt64 end = shift + std::min(limit, total - shift);
+
+    UInt64 out = 0;
+    UInt64 prev = 0;
+
+    for (size_t i = 0, n = offsets.size(); i < n; ++i)
+    {
+        const UInt64 curr = offsets[i];
+
+        const UInt64 start = std::max(prev,  shift);
+        const UInt64 stop  = std::min(curr,  end);
+
+        if (start < stop)
+            out += (stop - start);
+
+        out_offsets[i] = out;
+        prev = curr;
+    }
+}
+
+static Block generateBlock(
+    std::unique_ptr<HashJoinResult::GenerateCurrentRowState> & state,
+    const IColumn::Filter & filter,
+    const LazyOutput & lazy_output,
+    const HashJoinResult::Properties & properties)
+{
+    size_t rows_added = 0;
     const auto * off_data = lazy_output.row_refs.data();
+
+    MutableColumns columns = state->getColumns();
     if (properties.is_join_get)
+    {
         lazy_output.buildJoinGetOutput(
-            rows_to_reserve, columns,
-            off_data + row_ref_begin, off_data + row_ref_end);
+            state->rows_to_reserve, columns,
+            off_data + state->row_ref_begin, off_data + state->row_ref_end);
+    }
     else
-        lazy_output.buildOutput(
-            rows_to_reserve, columns,
-            off_data + row_ref_begin, off_data + row_ref_end);
+    {
+        rows_added = lazy_output.buildOutput(
+            state->rows_to_reserve, columns,
+            off_data + state->row_ref_begin, off_data + state->row_ref_end,
+            state->state_row_offset, state->state_row_limit);
+    }
 
-    /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
-    /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-    if (properties.need_filter)
-        scattered_block.filter(matched_rows);
+    IColumn::Offsets offsets;
+    if (state->state_row_limit > 0)
+        applyShiftAndLimitToOffsets(state->offsets, offsets, state->state_row_offset, rows_added);
+    else
+        offsets = std::move(state->offsets);
 
-    scattered_block.filterBySelector();
+    Block block;
+    if (state->state_row_limit == 0 || rows_added < state->state_row_limit)
+    {
+        block = std::move(state->block);
+        state.reset();
+    }
+    else
+    {
+        state->state_row_offset += rows_added;
+        block = state->block;
+    }
 
-    auto block = std::move(scattered_block).getSourceBlock();
+
     appendRightColumns(
         block,
         std::move(columns),
@@ -241,6 +343,8 @@ HashJoinResult::HashJoinResult(
 {
 }
 
+HashJoinResult::~HashJoinResult() = default;
+
 static size_t getAvgBytesPerRow(const Block & block)
 {
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
@@ -248,34 +352,60 @@ static size_t getAvgBytesPerRow(const Block & block)
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    if (current_row_state)
+    {
+        bool is_last = current_row_state->is_last;
+        auto block = generateBlock(current_row_state, {}, lazy_output, properties);
+        return {std::move(block), is_last && current_row_state == nullptr};
+    }
+
     if (!scattered_block)
         return {};
 
+    size_t limit_rows_per_key = 0;
+    if (!properties.need_filter
+        && filter.empty()
+        && !properties.is_join_get
+        && !offsets.empty()
+        && !lazy_output.row_refs.empty()
+        && lazy_output.output_by_row_list
+        && std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }))
+    {
+        limit_rows_per_key = properties.max_joined_block_rows;
+    }
+
     size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
     auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {} {}", __FILE__, __LINE__, next_row, num_lhs_rows, scattered_block->rows());
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
-        auto block = generateBlock(
-            std::move(*scattered_block),
-            lazy_output,
+        /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
+        /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
+        if (properties.need_filter)
+            scattered_block->filter(std::span<UInt64>{matched_rows});
+        scattered_block->filterBySelector();
+
+        current_row_state = std::make_unique<GenerateCurrentRowState>(
+            std::move(*scattered_block).getSourceBlock(),
             lazy_output.row_count,
             0,
             lazy_output.row_refs.size(),
             std::move(columns),
-            properties,
-            offsets,
-            filter,
-            std::span<UInt64>{matched_rows});
+            std::move(offsets),
+            std::span<UInt64>{matched_rows},
+            limit_rows_per_key,
+            /* is_last */ true);
 
+        auto block = generateBlock(current_row_state, filter, lazy_output, properties);
         scattered_block.reset();
-        return {std::move(block), true};
+        return {std::move(block), current_row_state == nullptr};
     }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
     size_t num_rhs_rows = offsets[next_row + num_lhs_rows - 1] - prev_offset;
 
-    auto current_block = std::move(*scattered_block);
-    scattered_block = current_block.cut(num_lhs_rows);
+    auto current_scattered_block = std::move(*scattered_block);
+    scattered_block = current_scattered_block.cut(num_lhs_rows);
 
     bool add_missing = isLeftOrFull(properties.table_join.kind()) && properties.table_join.strictness() != JoinStrictness::Semi;
     size_t num_skipped_not_matched_rows_in_row_ref_list = 0;
@@ -350,9 +480,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     MutableColumns rhs_columns; /// Columns from the right table
     if (!lazy_output.row_refs.empty())
     {
-        rhs_columns.reserve(columns.size());
-        for (auto & column : columns)
-            rhs_columns.push_back(column->cloneEmpty());
+        rhs_columns = copyEmptyColumns(columns);
     }
     else
     {
@@ -373,22 +501,29 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         }
     }
 
-    auto block = generateBlock(
-        std::move(current_block),
-        lazy_output,
+
+    /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
+    /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
+    if (properties.need_filter)
+        current_scattered_block.filter(partial_matched_rows);
+    current_scattered_block.filterBySelector();
+
+    current_row_state = std::make_unique<GenerateCurrentRowState>(
+        std::move(current_scattered_block).getSourceBlock(),
         num_rhs_rows,
         row_ref_start,
         next_row_ref,
         std::move(rhs_columns),
-        properties,
-        partial_offsets,
-        partial_filter,
-        partial_matched_rows);
+        std::move(partial_offsets),
+        partial_matched_rows,
+        limit_rows_per_key,
+        is_last);
 
+    auto block = generateBlock(current_row_state, partial_filter, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
 
-    return {std::move(block), is_last};
+    return {std::move(block), is_last && current_row_state == nullptr};
 }
 
 }
