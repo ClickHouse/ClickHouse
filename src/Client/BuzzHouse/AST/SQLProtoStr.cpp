@@ -4890,6 +4890,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DISABLE FAILPOINT ";
             ret += FailPoint_Name(cmd.disable_failpoint());
             break;
+        case CmdType::kIcebergMetadataCache:
+            ret += "DROP ICEBERG METADATA CACHE";
+            can_set_cluster = true;
+            break;
         default:
             ret += "FLUSH LOGS";
     }

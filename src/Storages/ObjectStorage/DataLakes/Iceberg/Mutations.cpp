@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -101,6 +102,17 @@ static Block getNonVirtualColumns(const Block & block)
     return Block(columns);
 }
 
+static std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
+getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chunk_partitioner)
+{
+    if (chunk_partitioner.has_value())
+        return chunk_partitioner->partitionChunk(chunk);
+    auto unpartitioned_result = std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>{};
+    unpartitioned_result.emplace_back(ChunkPartitioner::PartitionKey{}, chunk.clone());
+    return unpartitioned_result;
+}
+
+
 std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
@@ -110,7 +122,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
     StorageObjectStorageConfigurationPtr configuration,
     FileNamesGenerator & generator,
     const std::optional<FormatSettings> & format_settings,
-    ChunkPartitioner & chunk_partitioner,
+    std::optional<ChunkPartitioner> & chunk_partitioner,
     Poco::JSON::Object::Ptr data_schema)
 {
     chassert(commands.size() == 1);
@@ -147,20 +159,13 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
-            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
-            auto col_data_filename = block.getByName(block_datafile_path);
-            auto col_position = block.getByName(block_row_number);
 
-            size_t col_data_filename_index = 0;
-            size_t col_position_index = 0;
-            for (size_t i = 0; i < block.columns(); ++i)
-            {
-                if (block.getNames()[i] == block_datafile_path)
-                    col_data_filename_index = i;
-                if (block.getNames()[i] == block_row_number)
-                    col_position_index = i;
-            }
+            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
+            size_t col_position_index = block.getPositionByName(block_row_number);
+            ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
+            ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
@@ -195,6 +200,14 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
                 col_position.column = partition_chunk.getColumns()[col_position_index];
+
+                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
+                {
+                    const auto & null_map = nullable->getNullMapData();
+                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
+                    col_position.column = nullable->getNestedColumnPtr();
+                }
 
                 auto col_data_filename_without_namespaces = ColumnString::create();
                 for (size_t i = 0; i < col_data_filename.column->size(); ++i)
@@ -252,7 +265,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         {
             auto data_block = getNonVirtualColumns(block);
             Chunk chunk(data_block.getColumns(), data_block.rows());
-            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
@@ -295,8 +308,10 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 
     if (commands[0].type == MutationCommand::DELETE)
         return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, std::nullopt};
-    else
+    else if (commands[0].type == MutationCommand::UPDATE)
         return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
+    else
+        return {};
 }
 
 struct WriteMetadataResult
@@ -316,7 +331,7 @@ WriteMetadataResult writeMetadataFiles(
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
-    ChunkPartitioner & chunk_partitioner,
+    std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
     SharedHeader sample_block)
 {
@@ -412,9 +427,9 @@ WriteMetadataResult writeMetadataFiles(
             {
                 generateManifestFile(
                     metadata,
-                    chunk_partitioner.getColumns(),
+                    chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
                     partition_key,
-                    chunk_partitioner.getResultTypes(),
+                    chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     {delete_filename.path.path_in_metadata},
                     delete_filenames.delete_statistic.at(partition_key),
                     sample_block,
@@ -557,7 +572,9 @@ void mutate(
     }
 
     const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
-    auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
+    std::optional<ChunkPartitioner> chunk_partitioner;
+    if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
+        chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
 
     if (mutation_files)

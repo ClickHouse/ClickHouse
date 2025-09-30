@@ -456,9 +456,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual std::optional<QueryPipeline> distributedWrite(
-        const ASTInsertQuery & /*query*/,
-        ContextPtr /*context*/);
+    virtual std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/);
 
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
@@ -505,7 +503,7 @@ public:
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
-    virtual bool updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { return false; }
+    virtual void updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.

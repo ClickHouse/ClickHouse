@@ -194,9 +194,9 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     const auto & column_descriptions = metadata_snapshot->getColumns();

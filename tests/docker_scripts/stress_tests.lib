@@ -60,7 +60,14 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth
+
+    # --no-remote-database-disk - stress tests does not enable remote database
+    # disk since server left some garbage files in the root, and clickhouse failed
+    # to start after with:
+    #
+    #  DB::Exception: Incorrect file extension: V.sql.move_from.X in metadata directory store/346/346b09d6-907d-4b6b-a1e3-361ecfdab8a4/. (INCORRECT_FILE_NAME)
+    #
+    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
