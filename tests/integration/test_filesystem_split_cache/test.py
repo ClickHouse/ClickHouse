@@ -134,7 +134,6 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     """
     # Generaly they should be different, but for simplicity they are equal.
     filesystem_cache_name = storage_policy
-    disk_name = storage_policy
 
     node.query("DROP TABLE IF EXISTS t0")
     node.query(
@@ -149,9 +148,6 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
         """
     )
 
-    cache_path = node.query(
-        f"SELECT path FROM system.disks WHERE name = '{disk_name}'"
-    ).strip()
     for _ in range(100):
         node.query(
             """
@@ -165,15 +161,17 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
 
     count = int(
         node.query(
-            f"SELECT count(*) FROM system.filesystem_cache WHERE cache_path ILIKE '/{cache_path}/Data/%'"
+            f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
         )
     )
+    assert count > 0
+
     node.query("SELECT * FROM t0 FORMAT NULL")
 
     assert (
         int(
             node.query(
-                f"SELECT count(*) FROM system.filesystem_cache WHERE cache_path ILIKE '/{cache_path}/Data/%'"
+                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
             )
         )
         == count
@@ -184,10 +182,10 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     assert (
         int(
             node.query(
-                f"SELECT count(*) FROM system.filesystem_cache WHERE cache_path ILIKE '/{cache_path}/Data/%'"
+                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
             )
         )
         == count
     )
 
-    node.query("DROP TABLE t0")
+    node.query("DROP TABLE t0 SYNC")

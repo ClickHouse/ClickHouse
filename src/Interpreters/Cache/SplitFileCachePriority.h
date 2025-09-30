@@ -12,8 +12,10 @@
 namespace DB
 {
 
-/// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
-/// the head of the queue, and the record with the highest priority is stored at the tail.
+///  Wrapper for IFilecachePriority that keeps two IFilecachePriority inside:
+///  Data: for `.bin`, `.mrk` and etc files
+///  System: for indexes, `.json`, `.txt` files.
+///  Such separations might be performance-useful.
 class SplitFileCachePriority : public IFileCachePriority
 {
 public:

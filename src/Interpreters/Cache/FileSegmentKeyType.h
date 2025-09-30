@@ -20,4 +20,9 @@ namespace DB
             return "";
         return String(magic_enum::enum_name(type));
     }
+
+    inline String toString(FileSegmentKeyType type)
+    {
+        return String(magic_enum::enum_name(type));
+    }
 }

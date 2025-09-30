@@ -91,7 +91,7 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    std::optional<FileCacheOriginInfo> filecache_user_info;
+    std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;

@@ -266,7 +266,7 @@ IFileCachePriority::CollectStatus SplitFileCachePriority::collectCandidatesForEv
 
     LOG_TEST(
         log,
-        "Collected {} to evict from protected queue "
+        "Collected {} to evict from data queue "
         "with total size: {} (result: {}). "
         "Desired size: {}, desired elements count: {}, current state: {}",
         data_stat.total_stat.releasable_count,
