@@ -610,6 +610,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
+        /// We need this call to clear to_path metadata file if it exists
+        tx->createMetadataFile(to_path, /*objects=*/{});
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
         if (source_blobs.empty())
