@@ -139,6 +139,7 @@ HashJoin::HashJoin(
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
+    , allow_split_single_row_in_joined_block(table_join->joinedBlockAllowSplitSingleRow())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -173,8 +174,10 @@ HashJoin::HashJoin(
         /// We might need to insert default values into the right columns, materialize them
         sample_block_with_columns_to_add = materializeBlock(right_sample_block);
     }
-    else if (table_join->oneDisjunct())
+    else if (table_join->oneDisjunct() && !allow_split_single_row_in_joined_block)
     {
+        /// With allow_split_single_row_in_joined_block we do not use required_right_keys, which uses need_filter:
+        /// split single row does not handle filter in HashJoinResult.
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
         required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);

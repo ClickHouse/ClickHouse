@@ -81,7 +81,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     size_t rows_offset, size_t rows_limit) const
 {
     if (columns.empty())
-        return 0;
+        return rows_limit;
     std::vector<const Columns *> many_columns;
     std::vector<UInt32> row_nums;
     many_columns.reserve(rows_limit);

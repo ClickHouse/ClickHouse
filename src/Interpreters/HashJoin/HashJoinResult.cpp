@@ -257,13 +257,15 @@ static Block generateBlock(
     }
 
     IColumn::Offsets offsets;
+    auto last_offset = state->offsets.empty() ? 0 : state->offsets.back();
+
     if (state->state_row_limit > 0)
         applyShiftAndLimitToOffsets(state->offsets, offsets, state->state_row_offset, rows_added);
     else
         offsets = std::move(state->offsets);
 
     Block block;
-    if (state->state_row_limit == 0 || rows_added < state->state_row_limit)
+    if (state->state_row_limit == 0 || state->state_row_offset + rows_added >= last_offset)
     {
         block = std::move(state->block);
         state.reset();
@@ -363,12 +365,20 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         return {};
 
     size_t limit_rows_per_key = 0;
-    if (!properties.need_filter
-        && filter.empty()
+    /// We can split when using lazy_output with row_refs and offsets
+    if (properties.allow_split_single_row_in_joined_block
+        /// ignore join get, it has any join semantics
         && !properties.is_join_get
+        /// With offsets need_filter is false
+        && !properties.need_filter
+        /// filter is set when offsets are not used and
+        /// filter may be needed for required_right_keys,
+        /// but we disable it with allow_split_single_row
+        && filter.empty()
         && !offsets.empty()
-        && !lazy_output.row_refs.empty()
+        /// check if using lazy_output with row_refs
         && lazy_output.output_by_row_list
+        /// columns are empty when using lazy_output
         && std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }))
     {
         limit_rows_per_key = properties.max_joined_block_rows;
@@ -376,7 +386,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
     auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {} {}", __FILE__, __LINE__, next_row, num_lhs_rows, scattered_block->rows());
+
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
         /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()

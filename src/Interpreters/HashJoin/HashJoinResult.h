@@ -21,6 +21,8 @@ public:
 
         bool need_filter;
         bool is_join_get;
+
+        bool allow_split_single_row_in_joined_block = false;
     };
 
     struct GenerateCurrentRowState;
@@ -53,6 +55,10 @@ private:
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
 
+    /// HashJoinResult iterates over rows from the left side.
+    /// This state is used to generate blocks for a single row from the left side.
+    /// When limiting the number of rows in a block, if there are many matches for a single key,
+    /// the current progress is saved here to continue from this state on the next call to next().
     std::unique_ptr<GenerateCurrentRowState> current_row_state;
 };
 
