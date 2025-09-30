@@ -139,10 +139,10 @@ void UnlinkFileOperation::tryUnlinkMetadataFile()
     if (!object_metadata.has_value())
         return;
 
-    uint32_t ref_count = object_metadata->getRefCount();
+    uint32_t ref_count = object_metadata->ref_count;
     if (ref_count > 0)
     {
-        object_metadata->decrementRefCount();
+        object_metadata->ref_count -= 1;
         write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
         write_operation->execute();
     }
@@ -258,10 +258,10 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     if (!object_metadata.has_value())
         return;
 
-    uint32_t ref_count = object_metadata->getRefCount();
+    uint32_t ref_count = object_metadata->ref_count;
     if (ref_count > 0)
     {
-        object_metadata->decrementRefCount();
+        object_metadata->ref_count -= 1;
         write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk));
         write_operations.back()->execute();
     }
@@ -337,7 +337,7 @@ void CreateHardlinkOperation::execute()
     if (!object_metadata.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't create hardlink for file {}", path_from);
 
-    object_metadata->incrementRefCount();
+    object_metadata->ref_count += 1;
     write_operation = std::make_unique<WriteFileOperation>(path_from, object_metadata->serializeToString(), disk);
     write_operation->execute();
 
@@ -432,7 +432,7 @@ WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::strin
 void WriteInlineDataOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
-    object_metadata.setInlineData(inline_data);
+    object_metadata.inline_data = inline_data;
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
@@ -444,7 +444,7 @@ void WriteInlineDataOperation::undo()
         write_operation->undo();
 }
 
-RewriteFileOperation::RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, const std::string & compatible_key_prefix_, IDisk & disk_)
+RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(path_)
     , objects(std::move(objects_))
     , compatible_key_prefix(compatible_key_prefix_)
@@ -456,9 +456,8 @@ void RewriteFileOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
 
-    object_metadata.resetData();
-    for (const auto & [key, size_in_bytes] : objects)
-        object_metadata.addObject(key, size_in_bytes);
+    object_metadata.inline_data.clear();
+    object_metadata.objects = objects;
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
@@ -470,10 +469,9 @@ void RewriteFileOperation::undo()
         write_operation->undo();
 }
 
-AddBlobOperation::AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, const std::string & compatible_key_prefix_, IDisk & disk_)
+AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_)
     : path(path_)
-    , key(std::move(key_))
-    , size_in_bytes(size_in_bytes_)
+    , object(std::move(object_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
 {
@@ -482,7 +480,7 @@ AddBlobOperation::AddBlobOperation(std::string path_, ObjectStorageKey key_, uin
 void AddBlobOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
-    object_metadata.addObject(key, size_in_bytes);
+    object_metadata.objects.push_back(object);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
@@ -507,7 +505,7 @@ void SetReadonlyFileOperation::execute()
     if (!object_metadata.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't update readonly flag for file: {}", path);
 
-    object_metadata->setReadOnly();
+    object_metadata->read_only = true;
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
     write_operation->execute();
@@ -544,13 +542,17 @@ void TruncateMetadataFileOperation::execute()
             return;
     }
 
-    while (object_metadata->getTotalSizeBytes() > target_size)
+    size_t current_size = getTotalSize(object_metadata->objects);
+    while (current_size > target_size)
     {
-        auto object_key_with_metadata = object_metadata->popLastObject();
-        outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
+        StoredObject next_to_remove = std::move(object_metadata->objects.back());
+        object_metadata->objects.pop_back();
+
+        current_size -= next_to_remove.bytes_size;
+        outcome->objects_to_remove.push_back(std::move(next_to_remove));
     }
 
-    if (object_metadata->getTotalSizeBytes() != target_size)
+    if (current_size != target_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
