@@ -276,9 +276,12 @@ public:
 
     void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
     {
-        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
+        auto wrapped = [weak = weak_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
         {
-            moved_func(*tx);
+            if (auto tx = weak.lock())
+                moved_func(*tx);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskEncryptedTransaction is already destroyed");
         };
         delegate_transaction->validateTransaction(std::move(wrapped));
     }

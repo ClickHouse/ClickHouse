@@ -25,6 +25,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include "Functions/IFunction.h"
 #include <base/scope_guard.h>
 #include <Disks/IDisk.h>
 #include <Disks/IDiskTransaction.h>
@@ -5144,20 +5145,26 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
     std::sort(files_in_checksums.begin(), files_in_checksums.end());
 
     /// make sure we do not hold part by shared ptr inside the lambda
-    auto shared_counter = part.use_count();
-    SCOPE_EXIT({ chassert(shared_counter == part.use_count()); });
+    auto part_shared_counter = part.use_count();
+    SCOPE_EXIT({ chassert(part_shared_counter == part.use_count()); });
+    auto part_storage_shared_counter = part->getDataPartStoragePtr().use_count();
+    SCOPE_EXIT({ chassert(part_storage_shared_counter == part->getDataPartStoragePtr().use_count()); });
 
     part->getDataPartStorage().validateDiskTransaction(
     [
         current_part_dir = fs::path(part->getDataPartStorage().getRelativePath()),
         part_name = part->name,
-        part_storage_prt = part->getDataPartStoragePtr(),
+        part_storage_weak = std::weak_ptr(part->getDataPartStoragePtr()),
         part_type = part->getDataPartStorage().getType(),
         is_storage_transactional = part->getDataPartStorage().isTransactional(),
         files_in_checksums,
         projections_in_checksums
     ] (IDiskTransaction & tx)
     {
+        auto part_storage_prt = part_storage_weak.lock();
+        if (!part_storage_prt)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DataPartStorage has been already destroyed before checking checksums.txt consistency with file system for part {}, this is a bug", part_name);
+
         LOG_TEST(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
             "Checking checksums.txt file is consistent with the files on file system for part {}",
             current_part_dir);
