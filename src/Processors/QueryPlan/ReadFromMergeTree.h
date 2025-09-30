@@ -187,6 +187,7 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
+            , support_disjuncts_with_skip_indexes(false)
         {}
 
         KeyCondition key_condition;
