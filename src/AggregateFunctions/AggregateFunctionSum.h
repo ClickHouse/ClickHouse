@@ -231,7 +231,8 @@ struct AggregateFunctionSumData
             T local_sum{};
 
             _Pragma("clang loop unroll_count(8)")
-            for (size_t i = 0; i < count; ++i) {
+            for (size_t i = 0; i < count; ++i)
+            {
                 auto flag = (!condition_map[i] == add_if_zero);
                 Impl::add(local_sum, ptr[i] * flag);
             }
@@ -244,7 +245,8 @@ struct AggregateFunctionSumData
             T local_sum{};
 
             _Pragma("clang loop unroll_count(8)")
-            for (size_t i = 0; i < count; ++i) {
+            for (size_t i = 0; i < count; ++i)
+            {
                 auto flag = (!condition_map[i] == add_if_zero);
                 Impl::add(local_sum, ptr[i] * flag);
             }
