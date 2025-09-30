@@ -179,36 +179,53 @@ template <class SearchTraits>
 ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
-
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    auto col_input = arguments[arg_input].column;
+    ColumnPtr col_input = arguments[arg_input].column;
     auto col_result = ColumnVector<UInt8>::create();
 
     col_result->getData().resize(input_rows_count);
 
-    /// If token_extractor == nullptr, we do a brute force scan on a column without index
+    // If token_extractor is not set it means that we are using brute force instead of index
     if (token_extractor == nullptr)
     {
         chassert(!needles.has_value());
 
-        /// Populate needles from function arguments
         Needles needles_tmp;
-        UInt64 position_in_needles_tmp = 0;
-        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(arguments[arg_needles].column.get());
-        for (const auto & needle : col_needles_const->getValue<Array>())
-            needles_tmp.emplace(needle.safeGet<String>(), ++position_in_needles_tmp);
+        const ColumnPtr col_needles = arguments[arg_needles].column;
+
+        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+        {
+            const Array & array = col_needles_const->getValue<Array>();
+
+            for (size_t i = 0; i < array.size(); ++i)
+                needles_tmp.emplace(array.at(i).safeGet<String>(), i);
+
+        }
+        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
+        {
+            // This is what happens when called over a string instead of a column
+            const IColumn & needles_data = col_needles_vector->getData();
+            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
+
+            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+
+            for (size_t i = 0; i < needles_offsets[0]; ++i)
+                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
             execute<SearchTraits>(token_default_extractor.get(), *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
             execute<SearchTraits>(token_default_extractor.get(), *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+
     }
     else
     {
-        /// If token_extractor != nullptr, we are doing text index lookups
+        // token_extractor != nullptr => We are using a column with index.
         if (!needles.has_value())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
