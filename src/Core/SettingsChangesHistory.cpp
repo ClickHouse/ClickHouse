@@ -59,7 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
-            {"output_format_parquet_date_as_uint16", true, false, "(Actually added in 25.8 and backported into here.)"},
+            {"output_format_parquet_date_as_uint16", false, false, "(Actually added in 25.8 and backported into here.)"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
