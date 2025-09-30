@@ -1685,12 +1685,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
 
 bool DolorIntegration::performExternalCommand(const uint64_t seed, const String & cname, const String & tname)
 {
-    RandomGenerator rg(seed, 0, 1);
-    const String & uri = rg.nextSmallNumber() < 8 ? "/sparkupdate" : "/sparkcheck";
-    const bool res
-        = httpPut(uri, fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", rg.nextRandomUInt64(), cname, tname));
-
-    return uri == "/sparkupdate" || res;
+    return httpPut("/sparkupdate", fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", seed, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)

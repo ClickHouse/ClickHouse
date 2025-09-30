@@ -2977,6 +2977,11 @@ message Dynamic {
     optional uint32 ntypes = 1;
 }
 
+message QBit {
+    required FloatingPoints subtype = 1;
+    required uint32 dimension = 2;
+}
+
 message BottomTypeName {
     oneof bottom_one_of {
         Integers integers = 1;
@@ -2994,6 +2999,7 @@ message BottomTypeName {
         EnumDef enum_def = 13;
         bool IPv4 = 14;
         bool IPv6 = 15;
+        QBit qbit = 16;
     }
 }
 
@@ -3547,6 +3553,13 @@ message AddStatistics {
     required ColumnStatistics stats = 2;
 }
 
+message MaterializeStatistics {
+    oneof statistics_oneof {
+        ColumnPathList cols = 1;
+        bool all = 2;
+    }
+}
+
 message AddIndex {
     required IndexDef new_idx = 1;
     optional AddWhere add_where = 2;
@@ -3773,7 +3786,7 @@ message AlterItem {
         AddStatistics mod_stats = 14;
         ColumnPathList drop_stats = 15;
         ColumnPathList clear_stats = 16;
-        ColumnPathList mat_stats = 17;
+        MaterializeStatistics mat_stats = 17;
         AddIndex add_index = 18;
         IdxInPartition materialize_index = 19;
         Index drop_index = 20;
@@ -4081,6 +4094,70 @@ message Kill {
     optional SettingValues setting_values = 7;
 }
 
+message ShowObject {
+    optional bool create = 1;
+    optional bool is_temp = 2;
+    required SQLObject sobject = 3;
+    required SQLObjectName object = 4;
+}
+
+message ShowTables {
+    optional bool full = 1;
+    optional bool is_temp = 2;
+    optional Database database = 3;
+}
+
+message ShowDictionaries {
+    optional Database database = 1;
+}
+
+message ShowColumns {
+    optional bool extended = 1;
+    optional bool full = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowIndex {
+    enum IndexShow {
+        INDEX = 1;
+        INDEXES = 2;
+        INDICES = 3;
+        KEYS = 4;
+    }
+    optional bool extended = 1;
+    required IndexShow key = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowStatement {
+    oneof show_oneof {
+        ShowObject object = 1;
+        bool databases = 2;
+        ShowTables tables = 3;
+        ShowColumns columns = 4;
+        ShowDictionaries dictionaries = 5;
+        ShowIndex indexes = 6;
+        bool processlist = 7;
+        bool grants = 8;// bool is used here
+        bool users = 9;
+        bool roles = 10; // bool is used here
+        bool profiles = 11; // bool is used here
+        ExprSchemaTable policies = 12;
+        bool quotas = 13;
+        bool quota = 14; // bool is used here
+        bool access = 15;
+        Cluster cluster = 16;
+        bool clusters = 17;
+        bool settings = 18; // bool is used here
+        string setting = 19;
+        bool filesystem_caches = 20;
+        bool engines = 21;
+        bool functions = 22;
+        bool merges = 23;
+    }
+    optional SettingValues setting_values = 24;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -4106,6 +4183,7 @@ message SQLQueryInner {
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
         Kill kill = 23;
+        ShowStatement show = 24;
     }
 }
 
