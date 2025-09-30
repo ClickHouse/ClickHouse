@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -154,8 +153,6 @@ private:
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
-
-    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 

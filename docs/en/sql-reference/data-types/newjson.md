@@ -6,6 +6,7 @@ sidebar_label: 'JSON'
 sidebar_position: 63
 slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
+doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
@@ -774,6 +775,8 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
 
+See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
+
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
 In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
@@ -829,12 +832,12 @@ Note: because of storing some additional information inside the data structure, 
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
-- [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
-- [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
-- [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
-- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
-- [`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
-- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
+- [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
+- [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
+- [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
+- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
+- [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
+- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
 - [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
 - [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 

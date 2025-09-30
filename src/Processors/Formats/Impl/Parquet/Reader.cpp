@@ -308,6 +308,7 @@ void Reader::prefilterAndInitRowGroups()
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
@@ -315,6 +316,8 @@ void Reader::prefilterAndInitRowGroups()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
+
+        total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -328,6 +331,7 @@ void Reader::prefilterAndInitRowGroups()
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.row_group_idx = row_group_idx;
+        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 

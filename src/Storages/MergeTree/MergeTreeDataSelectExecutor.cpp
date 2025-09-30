@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -65,8 +64,6 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
-extern const Event QueryConditionCacheHits;
-extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -391,14 +388,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         if (upper_limit_rational < size_of_universum)
             has_upper_limit = true;
 
-        /*std::cerr << std::fixed << std::setprecision(100)
-            << "relative_sample_size: " << relative_sample_size << "\n"
-            << "relative_sample_offset: " << relative_sample_offset << "\n"
-            << "lower_limit_float: " << lower_limit_rational << "\n"
-            << "upper_limit_float: " << upper_limit_rational << "\n"
-            << "lower: " << lower << "\n"
-            << "upper: " << upper << "\n";*/
-
         if ((has_upper_limit && upper == 0)
             || (has_lower_limit && has_upper_limit && lower == upper))
             no_data = true;
@@ -686,14 +675,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    /// If parallel_replicas_support_projection is enabled, selected_marks will be used to determine the optimal projection.
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
-        && !settings[Setting::parallel_replicas_support_projection])
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
     {
-        // Skip index analysis and return parts with all marks
-        // The coordinator will choose ranges to read for workers based on index analysis on its side
-        return parts_with_ranges;
+        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
+        bool is_handling_projection_parts = std::any_of(
+            parts_with_ranges.begin(),
+            parts_with_ranges.end(),
+            [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
+        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts || metadata_snapshot->hasProjections());
+
+        if (!support_projection_optimization)
+            // Skip index analysis and return parts with all marks
+            // The coordinator will choose ranges to read for workers based on index analysis on its side
+            return parts_with_ranges;
     }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
@@ -1114,12 +1109,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
             if (!matching_marks_opt)
             {
-                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
-            else
-                ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
@@ -1653,11 +1645,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         MarkRange result_range;
 
         size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
-        size_t searched_left = 0;
-        size_t searched_right = last_mark;
 
-        bool check_left = false;
-        bool check_right = false;
+        /// Invariant: !check_in_range(0..searched_left).can_be_true
+        ///             check_in_range(0..searched_right).can_be_true
+        /// (last_mark+1 is a sentinel out-of-bounds index, such that by definition
+        ///  check_in_range(x..last_mark+1).can_be_true is true. The binary search will never
+        ///  actually call check_in_range with this out-of-bounds index.)
+        /// If the condition is not true anywhere, we'll end up with searched_left == last_mark.
+        size_t searched_left = 0;
+        size_t searched_right = last_mark + 1;
+
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
@@ -1667,11 +1664,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             else
                 searched_left = middle;
             ++steps;
-            check_left = true;
         }
         result_range.begin = searched_left;
         LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
 
+        /// Invariant:  check_in_range(searched_left..last_mark).can_be_true
+        ///            !check_in_range(searched_right..last_mark).can_be_true
+        /// (Except if searched_left was initially already equal to last_mark.)
         searched_right = last_mark;
         while (searched_left + 1 < searched_right)
         {
@@ -1682,49 +1681,36 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             else
                 searched_right = middle;
             ++steps;
-            check_right = true;
         }
         result_range.end = searched_right;
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
         if (result_range.begin < result_range.end)
         {
+            res.emplace_back(result_range);
+
             if (exact_ranges)
             {
-                if (result_range.begin + 1 == result_range.end)
-                {
-                    auto check_result = check_in_range(result_range);
-                    if (check_result.can_be_true)
-                    {
-                        if (!check_result.can_be_false)
-                            exact_ranges->emplace_back(result_range);
-                        res.emplace_back(std::move(result_range));
-                    }
-                }
-                else
-                {
-                    /// Candidate range with size > 1 is already can_be_true
-                    auto result_exact_range = result_range;
-                    if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
-                        ++result_exact_range.begin;
+                auto result_exact_range = result_range;
+                if (result_exact_range.begin < result_exact_range.end &&
+                    check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                    ++result_exact_range.begin;
 
-                    if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
-                        --result_exact_range.end;
+                if (result_exact_range.begin < result_exact_range.end &&
+                    check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                    --result_exact_range.end;
 
-                    if (result_exact_range.begin < result_exact_range.end)
+                if (result_exact_range.begin < result_exact_range.end)
+                {
+                    if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                     {
-                        chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
-                        exact_ranges->emplace_back(std::move(result_exact_range));
+                        /// key_condition.matchesExactContinuousRange returned true, but the
+                        /// range doesn't seem to be continuous.
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
                     }
 
-                    res.emplace_back(std::move(result_range));
+                    exact_ranges->emplace_back(std::move(result_exact_range));
                 }
-            }
-            else
-            {
-                /// Candidate range with both ends checked is already can_be_true
-                if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
-                    res.emplace_back(std::move(result_range));
             }
         }
 
@@ -1857,10 +1843,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        GinPostingsListsCacheForStore postings_lists_cache_for_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            postings_lists_cache_for_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -1908,13 +1890,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = postings_lists_cache_for_store.store
-                                    ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, postings_lists_cache_for_store)
-                                    : true;
-                    else
-                        result = condition->mayBeTrueOnGranule(granule);
+                    bool result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
                         continue;
