@@ -25,6 +25,11 @@ extern const Metric DestroyAggregatesThreads;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
