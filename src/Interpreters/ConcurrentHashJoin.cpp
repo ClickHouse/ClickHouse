@@ -8,8 +8,8 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
@@ -79,23 +79,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    // TODO
-    // Different shards may legitimately have different sizes.
-    // Use the maximum observed size for reporting instead of enforcing equality.
-    size_t total_ht_size = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        size_t size = hash_join->data->getTotalRowCount();
-        total_ht_size += size;
-    }
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (total_ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = total_ht_size, .source_rows = source_rows}, params);
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -320,10 +314,14 @@ public:
         {
             auto & child = children.front();
             if (!child)
+            {
+                children.erase(children.begin());
                 continue;
+            }
             Block b = child->next();
-            if (!b.empty()) return b;
-              children.erase(children.begin());
+            if (!b.empty())
+                return b;
+            children.erase(children.begin());
         }
         return {};
     }
@@ -375,7 +373,7 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
     else
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
 
-    chassert(dispatched_blocks.size() == slots || slots == 1);
+    chassert(dispatched_blocks.size() == slots || slots == 1); // TODO: should be (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots)
 
     return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
 }
@@ -439,7 +437,8 @@ bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
 
 bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
+    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm()
+        && table_join->strictness() != JoinStrictness::RightAny;
 }
 
 bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
@@ -453,51 +452,49 @@ bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJ
 }
 
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
-    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
-        return {};
-
     if (!isRightOrFull(table_join->kind()))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Invalid join type for non-joined blocks: kind={}, strictness={}",
             table_join->kind(), table_join->strictness());
 
-    /// Collect non-joined streams from each slot
-    std::vector<IBlocksStreamPtr> streams;
-    // Special handling for joins with always false condition (no right keys):
-    // iterate all shards, since right-side rows are stored per-slot
-    if (table_join->getOnlyClause().key_names_right.empty())
-    {
-        for (const auto & hj : hash_joins)
-        {
-            std::lock_guard lock(hj->mutex);
-            if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                streams.push_back(std::move(s));
-        }
-    }
-    else
-    {
-        /// For regular joins, ask each shard for its non-joined rows stream.
-        /// Do not rely on hasNonJoinedRows() gating: some cases don't mark flags per-row.
-        for (const auto & hash_join : hash_joins)
-        {
-            std::lock_guard lock(hash_join->mutex);
-            if (auto s = hash_join->data->getNonJoinedBlocks(
-                    left_sample_block, result_sample_block, max_block_size))
-            {
-                streams.push_back(std::move(s));
-            }
-        }
-    }
 
-    if (streams.empty())
-        return {};
-    if (streams.size() == 1)
-        return streams[0];
+    /// Collect non-joined streams from each slot	    return std::make_shared<NonJoinedDrainStream>(hash_joins, left_sample_block, result_sample_block, max_block_size);
+    std::vector<IBlocksStreamPtr> streams;	
+    // Special handling for joins with always false condition (no right keys):	
+    // iterate all shards, since right-side rows are stored per-slot	
+    if (table_join->getOnlyClause().key_names_right.empty())	
+    {	
+        for (const auto & hj : hash_joins)	
+        {	
+            std::lock_guard lock(hj->mutex);	
+            if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))	
+                streams.push_back(std::move(s));	
+        }	
+    }	
+    else	
+    {	
+        /// For regular joins, ask each shard for its non-joined rows stream.	
+        /// Do not rely on hasNonJoinedRows() gating: some cases don't mark flags per-row.	
+        for (const auto & hash_join : hash_joins)	
+        {	
+            std::lock_guard lock(hash_join->mutex);	
+            if (auto s = hash_join->data->getNonJoinedBlocks(	
+                    left_sample_block, result_sample_block, max_block_size))	
+            {	
+                streams.push_back(std::move(s));	
+            }	
+        }	
+    }	
 
-    return std::make_shared<ConcatStreams>(std::move(streams));
+    if (streams.empty())	
+        return {};	
+    if (streams.size() == 1)	
+        return streams[0];	
+
+    return std::make_shared<ConcatStreams>(std::move(streams));	
 }
 
 template <typename HashTable>
@@ -641,8 +638,8 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block)
-{
+ScatteredBlocks ConcurrentHashJoin::dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block)	
+{	
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
     {
@@ -696,8 +693,6 @@ void ConcurrentHashJoin::finalizeSlots()
     if (hash_joins.empty())
         return;
 
-    // Finalize each slot sequentially under its own lock.
-    // This avoids races while ensuring per-slot internal structures are ready.
     for (auto & hj : hash_joins)
     {
         std::lock_guard lock(hj->mutex);
@@ -707,7 +702,7 @@ void ConcurrentHashJoin::finalizeSlots()
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
-    /// Finalize each slot after build
+    /// Finalize each slot after build	
     finalizeSlots();
     build_phase_finished.store(true, std::memory_order_release);
 }

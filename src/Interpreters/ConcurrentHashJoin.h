@@ -110,6 +110,7 @@ private:
 
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
     ScatteredBlocks dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block);
+    ScatteredBlocks dispatchBlockMultiClauses(const std::vector<Strings> & keys_per_clause, Block & from_block);
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;

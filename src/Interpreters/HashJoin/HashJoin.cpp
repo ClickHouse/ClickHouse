@@ -1290,9 +1290,7 @@ void HashJoin::updateNonJoinedRowsStatus() const
     bool found_non_joined = false;
 
     if (!empty() && used_flags)
-    {
-        found_non_joined = true;
-    }
+        found_non_joined = used_flags->hasUnused();
 
     has_non_joined_rows.store(found_non_joined, std::memory_order_release);
     has_non_joined_rows_checked.store(true, std::memory_order_release);
@@ -1383,6 +1381,10 @@ private:
     bool flag_per_row;
 
     size_t current_block_start;
+    size_t current_index_pos;
+
+    size_t nulls_row_cursor;
+    size_t nulls_index_pos;
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
@@ -1400,36 +1402,35 @@ private:
         for (; block_it != end; ++block_it)
         {
             const auto & cols = block_it->columns;
-            const auto & sel  = block_it->selector;
+            const size_t rows_in_block = cols.at(0)->size();
 
-            auto emit_row = [&](size_t row)
-            {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                    columns_right[j]->insertFrom(*cols[j], row);
-                ++rows_added;
-            };
+            const size_t can_take =
+                std::min<UInt64>(max_block_size - rows_added, rows_in_block - current_block_start);
 
-            if (sel.isContinuousRange())
-            {
-                auto [beg, end_row] = sel.getRange();
-                for (size_t row = beg; row < end_row && rows_added < max_block_size; ++row)
-                    emit_row(row);
-            }
-            else
-            {
-                const auto & idxs = sel.getIndexes().getData();
-                for (size_t row : idxs)
-                {
-                    if (rows_added >= max_block_size) break;
-                    emit_row(row);
-                }
-            }
+            for (size_t j = 0; j < columns_right.size(); ++j)
+                columns_right[j]->insertRangeFrom(*cols[j], current_block_start, can_take);
+
+            rows_added += can_take;
+            current_block_start += can_take;
 
             if (rows_added >= max_block_size)
-                break;
+            {
+                // if we finished the block, advance to the next
+                if (current_block_start >= rows_in_block)
+                {
+                    ++block_it;
+                    current_block_start = 0;
+                }
+                break; // return a chunk and resume here later
+            }
+
+            // finished this block, go to the next
+            current_block_start = 0;
         }
+
         return rows_added;
     }
+
 
     template <typename Maps>
     size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
@@ -1458,37 +1459,49 @@ private:
 
             auto end = parent.data->columns.end();
 
-            for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
+            for (auto & it = *used_position; it != end; /* advance inside */)
             {
                 const auto & mapped_block = *it;
-                // size_t rows = mapped_block.columns.at(0)->size();
+                const auto & cols = mapped_block.columns;
+                const auto & sel  = mapped_block.selector;
 
-                const auto & sel = mapped_block.selector;
-                auto try_emit = [&](size_t row)
+                auto emit_row = [&](size_t row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns, row))
+                    if (!parent.isUsed(&cols, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
-                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
+                            columns_keys_and_right[colnum]->insertFrom(*cols[colnum], row);
                         ++rows_added;
                     }
                 };
+
                 if (sel.isContinuousRange())
                 {
-                    auto [range_beg, range_end] = sel.getRange();
-                    for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
-                        try_emit(row);
+                    auto [beg, end_row] = sel.getRange();
+                    size_t row = std::max(beg, current_block_start);
+                    for (; row < end_row && rows_added < max_block_size; ++row)
+                        emit_row(row);
+                    current_block_start = row; // remember where we stopped
                 }
                 else
                 {
                     const auto & idxs = sel.getIndexes().getData();
-                    for (size_t row : idxs)
-                    {
-                        if (rows_added >= max_block_size) break;
-                        try_emit(row);
-                    }
+                    size_t k = current_index_pos;
+                    for (; k < idxs.size() && rows_added < max_block_size; ++k)
+                        emit_row(idxs[k]);
+                    current_index_pos = k; // remember where we stopped
                 }
+
+                if (rows_added >= max_block_size)
+                    return rows_added; // resume mid-block on next call
+
+                // move to next block
+                ++it;
+                current_block_start = 0;
+                current_index_pos = 0;
             }
+
+            return rows_added;
         }
         else
         {
@@ -1529,18 +1542,18 @@ private:
 
         auto end = parent.data->nullmaps.end();
 
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; /* advance inside */)
         {
             const auto * columns = it->columns;
             ConstNullMapPtr nullmap = nullptr;
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            const auto & sel = columns->selector;
             auto consume_row = [&](size_t row)
             {
                 if (!nullmap || !(*nullmap)[row])
                     return;
+
                 for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                 {
                     if (col < columns->columns.size())
@@ -1548,21 +1561,32 @@ private:
                 }
                 ++rows_added;
             };
+
+            const auto & sel = columns->selector;
             if (sel.isContinuousRange())
             {
                 auto [range_beg, range_end] = sel.getRange();
-                for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
+                size_t row = std::max(range_beg, nulls_row_cursor);
+                for (; row < range_end && rows_added < max_block_size; ++row)
                     consume_row(row);
+                nulls_row_cursor = row; // remember
             }
             else
             {
                 const auto & idxs = sel.getIndexes().getData();
-                for (size_t row : idxs)
-                {
-                    if (rows_added >= max_block_size) break;
-                    consume_row(row);
-                }
+                size_t k = nulls_index_pos;
+                for (; k < idxs.size() && rows_added < max_block_size; ++k)
+                    consume_row(idxs[k]);
+                nulls_index_pos = k; // remember
             }
+
+            if (rows_added >= max_block_size)
+                return;
+
+            // finished this block
+            ++it;
+            nulls_row_cursor = 0;
+            nulls_index_pos = 0;
         }
     }
 };
