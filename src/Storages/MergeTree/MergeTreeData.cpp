@@ -25,7 +25,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
-#include "Functions/IFunction.h"
 #include <base/scope_guard.h>
 #include <Disks/IDisk.h>
 #include <Disks/IDiskTransaction.h>
@@ -4890,8 +4889,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     bool rename_in_transaction)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
-
-    checkChecksumsFileIsConsistentWithFileSystem(part);
 
     if (&out_transaction.data != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::Transaction for one table cannot be used with another. It is a bug.");

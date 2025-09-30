@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DATA_ENCRYPTION_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -137,6 +138,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncryptedTransaction::readUncommitte
     FileEncryption::Header header = readHeader(*buffer);
     String key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
     return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+}
+
+void DiskEncryptedTransaction::validateTransaction(std::function<void(IDiskTransaction &)> check_function)
+{
+    auto wrapped = [weak = weak_from_this(), moved_func = std::move(check_function)](IDiskTransaction &)
+    {
+        if (auto tx = weak.lock())
+            moved_func(*tx);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskEncryptedTransaction is already destroyed");
+    };
+    delegate_transaction->validateTransaction(std::move(wrapped));
 }
 }
 

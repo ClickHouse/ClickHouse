@@ -274,17 +274,7 @@ public:
         return delegate_transaction->isTransactional();
     }
 
-    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
-    {
-        auto wrapped = [weak = weak_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
-        {
-            if (auto tx = weak.lock())
-                moved_func(*tx);
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskEncryptedTransaction is already destroyed");
-        };
-        delegate_transaction->validateTransaction(std::move(wrapped));
-    }
+    void validateTransaction(std::function<void(IDiskTransaction &)> check_function) override;
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
