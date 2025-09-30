@@ -71,9 +71,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event IcebergTrivialCountOptimizationApplied;
-    extern const Event IcebergIteratorInitializationMicroseconds;
-    extern const Event IcebergTrivialCountOptimizationApplied;
+extern const Event IcebergIteratorInitializationMicroseconds;
+extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
 namespace DB
