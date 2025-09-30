@@ -122,7 +122,7 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr /*loca
     return table_snapshot->getTableSchema();
 }
 
-void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
+void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
 {
     /// There can be missing columns because of ALTER ADD/DROP COLUMN.
     /// So to support reading from such tables it is enough to turn on this setting.
