@@ -362,7 +362,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_MSAN], release_only=True
         ),
         JobNames.UPGRADE_TEST_ASAN: CommonJobConfigs.UPGRADE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            required_builds=[BuildNames.PACKAGE_ASAN],
             random_bucket="upgrade_with_sanitizer",
             pr_only=True,
         ),
@@ -402,7 +402,7 @@ class CI:
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=4,
+            num_batches=6,
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(

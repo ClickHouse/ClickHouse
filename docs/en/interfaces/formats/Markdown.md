@@ -3,6 +3,7 @@ description: 'Documentation for the Markdown format'
 keywords: ['Markdown']
 slug: /interfaces/formats/Markdown
 title: 'Markdown'
+doc_type: 'reference'
 ---
 
 ## Description {#description}
@@ -11,7 +12,7 @@ You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) 
 
 The markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 ```sql
 SELECT
@@ -30,4 +31,4 @@ FORMAT Markdown
 | 4 | 8 |
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

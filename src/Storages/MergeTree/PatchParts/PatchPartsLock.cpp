@@ -11,8 +11,15 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockMicroseconds;
+}
 
 namespace DB
 {
@@ -39,12 +46,15 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
     auto lock_path = fs::path(zookeeper_path) / "lightweight_updates" / "lock";
     auto lock_event = std::make_shared<Poco::Event>();
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
 
     for (size_t i = 0; i < max_tries; ++i)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
         LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", i, lock_path.string());
         auto code = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
 
@@ -70,6 +80,8 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
     auto affected_columns = getUpdateAffectedColumns(commands, context);
     auto in_progress_path = fs::path(zookeeper_path) / "lightweight_updates" / "in_progress";
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
@@ -80,6 +92,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
 
     for (size_t num_try = 0; num_try < max_tries; ++num_try)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
         LOG_TRACE(getLogger("getLockForAutoMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, in_progress_path.string());
 
         auto in_progress_ids = zookeeper->getChildren(in_progress_path, &parent_stat, in_progress_event);

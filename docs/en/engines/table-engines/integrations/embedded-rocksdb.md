@@ -4,17 +4,18 @@ sidebar_label: 'EmbeddedRocksDB'
 sidebar_position: 50
 slug: /engines/table-engines/integrations/embedded-rocksdb
 title: 'EmbeddedRocksDB Engine'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# EmbeddedRocksDB Engine
+# EmbeddedRocksDB engine
 
 <CloudNotSupportedBadge />
 
 This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

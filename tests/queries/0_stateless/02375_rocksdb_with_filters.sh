@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, use-rocksdb
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,6 +11,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE rocksdb_with_filter (key String, value 
 $CLICKHOUSE_CLIENT --query="INSERT INTO rocksdb_with_filter (*) SELECT n.number, n.number*10 FROM numbers(10000) n;"
 
 $CLICKHOUSE_CLIENT --query "EXPLAIN actions=1 SELECT value FROM rocksdb_with_filter LIMIT 1" | grep -A 2 "ReadFromEmbeddedRocksDB"
+$CLICKHOUSE_CLIENT --query "EXPLAIN actions=1,optimize=0 SELECT value FROM rocksdb_with_filter" | grep -A 2 "ReadFromEmbeddedRocksDB" | tr -d "[:blank:]"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM rocksdb_with_filter WHERE key = '5000'"
 $CLICKHOUSE_CLIENT --query "SELECT value FROM rocksdb_with_filter WHERE key = '5000' FORMAT JSON" | grep "rows_read" | tr -d "[:blank:]"

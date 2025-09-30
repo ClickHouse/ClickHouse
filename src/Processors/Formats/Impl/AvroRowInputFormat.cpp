@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 bool AvroInputStreamReadBufferAdapter::next(const uint8_t ** data, size_t * len)
@@ -191,7 +192,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
 
         if (tmp.size() > field_type_size || tmp.empty())
             throw Exception(
-                ErrorCodes::CANNOT_PARSE_UUID,
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                 "Cannot parse type {}, expected non-empty binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
                 field_type_size,
@@ -1010,7 +1011,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 
-AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
 }
@@ -1023,7 +1024,7 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr->init();
 }
 
-bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
+bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (file_reader_ptr->hasMore())
     {
@@ -1083,7 +1084,10 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                request.setHost(url.getHost());
+                if (url.getPort())
+                    request.setHost(url.getHost(), url.getPort());
+                else
+                    request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())
                 {
@@ -1192,7 +1196,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 }
 
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
@@ -1410,7 +1414,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
@@ -1421,7 +1425,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");

@@ -6,27 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./parts.lib
+. "$CURDIR"/parts.lib
+
 set -e
 
-function wait_for_block_allocated()
-{
-    path="$1"
-    block_number="$2"
-
-    for _ in {0..50}; do
-        sleep 0.1
-        res=`$CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.zookeeper
-            WHERE path = '$path' AND name = '$block_number'
-        "`
-        if [[ "$res" -eq "1" ]]; then
-            break
-        fi
-    done
-}
-
 failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
-storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+storage_policy=`$CLICKHOUSE_CLIENT -q "SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"`
 
 if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
@@ -47,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT $failpoint_name;
 "
 
-$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --allow_experimental_lightweight_update 1 &
+$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --enable_lightweight_update 1 &
 
 wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_block_number/block_numbers/all" "block-0000000001"
 

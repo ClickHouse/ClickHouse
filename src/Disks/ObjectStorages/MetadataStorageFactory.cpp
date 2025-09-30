@@ -1,11 +1,16 @@
 #include <Common/assert_cast.h>
+#include <Common/Macros.h>
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#if CLICKHOUSE_CLOUD
+    #include <Disks/ObjectStorages/MetadataStorageFromKeeper.h>
+#endif
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -85,7 +90,12 @@ static std::string getObjectKeyCompatiblePrefix(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    return config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getCommonKeyPrefix());
+    std::string prefix = config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getCommonKeyPrefix());
+    Macros::MacroExpansionInfo info;
+    info.ignore_unknown = true;
+    info.expand_special_macros_only = true;
+    info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+    return Context::getGlobalContextInstance()->getMacros()->expand(prefix, info);
 }
 
 void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
@@ -107,6 +117,29 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         return std::make_shared<MetadataStorageFromDisk>(db_disk, key_compatibility_prefix);
     });
 }
+
+#if CLICKHOUSE_CLOUD
+void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
+{
+    factory.registerMetadataStorageType("keeper", [](
+        const std::string & /* name */,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ObjectStoragePtr object_storage) -> MetadataStoragePtr
+    {
+        LOG_INFO(getLogger("registerDiskS3"), "Using DiskS3 with metadata keeper");
+
+        std::string zookeeper_name = config.getString(config_prefix + ".zookeeper_name", "default");
+        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+        /// Yes, we place objects in metadata storage from keeper by prefix from s3 object keys.
+        /// No reason, it just happened. Now it has to be preserved.
+        auto keeper_prefix = key_compatibility_prefix;
+
+        return std::make_shared<MetadataStorageFromKeeper>(
+            zookeeper_name, keeper_prefix, key_compatibility_prefix, config, config_prefix, Context::getGlobalContextInstance());
+    });
+}
+#endif
 
 void registerPlainMetadataStorage(MetadataStorageFactory & factory)
 {
@@ -156,6 +189,13 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
+#if CLICKHOUSE_CLOUD
+    registerMetadataStorageFromKeeper(factory);
+#endif
 }
 
+void MetadataStorageFactory::clearRegistry()
+{
+    registry.clear();
+}
 }

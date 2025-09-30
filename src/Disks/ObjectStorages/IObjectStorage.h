@@ -27,6 +27,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -45,13 +46,33 @@ namespace DB::AzureBlobStorage
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
 
+class StaticCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
+        : token(std::move(token_)), expires_on(expires_on_)
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+    }
+
+private:
+    std::string token;
+    std::chrono::system_clock::time_point expires_on;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
+    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
 }
 
 #endif
@@ -102,6 +123,8 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
+    RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
+
     virtual ~RelativePathWithMetadata() = default;
 
     virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
@@ -110,6 +133,7 @@ struct RelativePathWithMetadata
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 };
 
 struct ObjectKeyWithMetadata
@@ -174,18 +198,16 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
-
-    /// Get object metadata if supported. It should be possible to receive
-    /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+
+    /// Same as getObjectMetadata(), but ignores if object does not exist.
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

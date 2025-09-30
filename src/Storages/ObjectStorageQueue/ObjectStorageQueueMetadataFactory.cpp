@@ -1,11 +1,131 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageQueueShutdownThreads;
+    extern const Metric ObjectStorageQueueShutdownThreadsActive;
+    extern const Metric ObjectStorageQueueShutdownThreadsScheduled;
+}
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+ObjectStorageQueueFactory & ObjectStorageQueueFactory::instance()
+{
+    static ObjectStorageQueueFactory ret;
+    return ret;
+}
+
+void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
+{
+    std::lock_guard lock(mutex);
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+
+    const bool inserted = storages.emplace(storage).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+
+    LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
+}
+
+void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool if_exists)
+{
+    std::lock_guard lock(mutex);
+
+    if (shutdown_called)
+    {
+        /// We can call unregisterTable from table shutdown.
+        return;
+    }
+
+    auto it = storages.find(storage);
+    if (it == storages.end())
+    {
+        if (if_exists)
+        {
+            LOG_DEBUG(getLogger("ObjectStorageQueueFactory"), "Table does not exist, nothing to unregister");
+            return;
+        }
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with storage id {} is not registered", storage.getNameForLogs());
+    }
+    storages.erase(it);
+    LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
+}
+
+void ObjectStorageQueueFactory::renameTable(const StorageID & from, const StorageID & to)
+{
+    std::lock_guard lock(mutex);
+    if (shutdown_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+
+    auto from_it = storages.find(from);
+    if (from_it == storages.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
+
+    storages.erase(from_it);
+
+    auto to_it = storages.find(to);
+    if (to_it == storages.end())
+    {
+        storages.emplace(to);
+        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
+    }
+    else
+    {
+        /// This could happen because of exchange/replace tables.
+        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
+    }
+}
+
+void ObjectStorageQueueFactory::shutdown()
+{
+    std::vector<StorageID> shutdown_storages;
+    {
+        std::lock_guard lock(mutex);
+        shutdown_called = true;
+        shutdown_storages = std::vector<StorageID>(storages.begin(), storages.end());
+    }
+
+    if (shutdown_storages.empty())
+    {
+        LOG_DEBUG(log, "There are no queue storages to shutdown");
+        return;
+    }
+
+    static const auto default_shutdown_threads = 10;
+    ThreadPool pool(
+        CurrentMetrics::ObjectStorageQueueShutdownThreads,
+        CurrentMetrics::ObjectStorageQueueShutdownThreadsActive,
+        CurrentMetrics::ObjectStorageQueueShutdownThreadsScheduled,
+        std::min<size_t>(default_shutdown_threads, shutdown_storages.size()));
+
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "ObjectStorageQueueFactory::shutdown");
+
+    LOG_DEBUG(log, "Will shutdown {} queue storages", shutdown_storages.size());
+
+    for (const auto & storage : shutdown_storages)
+    {
+        runner([&]()
+        {
+            DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
+        });
+    }
+
+    runner.waitForAllToFinish();
 }
 
 ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance()
@@ -17,7 +137,8 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
     ObjectStorageQueueMetadataPtr metadata,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    bool & created_new_metadata)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -34,12 +155,16 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id, false);
+    it->second.metadata->registerNonActive(storage_id, created_new_metadata);
     *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadataFactory::remove(
+    const std::string & zookeeper_path,
+    const StorageID & storage_id,
+    bool is_drop,
+    bool keep_data_in_keeper)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -49,18 +174,22 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     *it->second.ref_count -= 1;
 
-    try
-    {
-        const auto registry_size = it->second.metadata->unregister(
-            storage_id,
-            /* active */ false,
-            remove_metadata_if_no_registered);
+    LOG_TRACE(
+        log, "Removed table {} (is drop: {}, keep data in keeper: {})",
+        storage_id.getNameForLogs(), is_drop, keep_data_in_keeper);
 
-        LOG_TRACE(log, "Remaining registry size: {}", registry_size);
-    }
-    catch (...)
+    if (is_drop)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            it->second.metadata->unregisterNonActive(
+                storage_id,
+                /* remove_metadata_if_no_registered */is_drop && !keep_data_in_keeper);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     if (*it->second.ref_count == 0)

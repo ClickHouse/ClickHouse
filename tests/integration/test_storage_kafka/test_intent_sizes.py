@@ -89,7 +89,7 @@ def test_good_intent_size(kafka_cluster):
 
     produce_message(1)
 
-    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 500})
+    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 3000})
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.query(
@@ -112,7 +112,7 @@ def test_good_intent_size(kafka_cluster):
         def check_intent_size(num_messages, offset):
             consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count =30, sleep_time=1, check_callback=lambda x: len(TSV(x)) == num_messages)
             logging.debug(f"Consumed messages: {consumed_messages}")
-            instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {offset}", look_behind_lines=500)
+            instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {offset}", look_behind_lines=800)
 
         INVALID_KAFKA_OFFSET = -1001
         check_intent_size(1, INVALID_KAFKA_OFFSET)

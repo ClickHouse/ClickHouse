@@ -19,6 +19,7 @@ WITH '(\\w+): (\\d+)' AS pattern,
      AND line NOT LIKE '%S3DiskConnections%'
      AND line NOT LIKE '%S3DiskAddresses%'
      AND line NOT LIKE '%RequestThrottlerCount%'
+     AND line NOT LIKE '%RetryableErrors%'
      ) AS pe_map
 SELECT * FROM (
     SELECT untuple(arrayJoin(pe_map) AS pe)

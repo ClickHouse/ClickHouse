@@ -84,7 +84,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
 
 EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     ContextPtr context_, StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_), storage(storage_), metadata_snapshot(metadata_snapshot_)
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_), storage(storage_), metadata_snapshot(metadata_snapshot_)
 {
     for (const auto & elem : getHeader())
     {
@@ -213,9 +213,6 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
                     writeString(ts_string, writer_value);
                 }
 
-                /// String in ColumnString must be null-terminated
-                writeChar('\0', writer_key);
-                writeChar('\0', writer_value);
                 serialized_key_offsets.emplace_back(writer_key.count());
                 serialized_value_offsets.emplace_back(writer_value.count());
             }

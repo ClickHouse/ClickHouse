@@ -3,6 +3,7 @@ description: 'The DataLakeCatalog database engine enables you to connect ClickHo
 sidebar_label: 'DataLakeCatalog'
 slug: /engines/database-engines/datalakecatalog
 title: 'DataLakeCatalog'
+doc_type: 'reference'
 ---
 
 # DataLakeCatalog
@@ -12,7 +13,7 @@ data catalogs and query open table format data without the need for data duplica
 This transforms ClickHouse into a powerful query engine that works seamlessly with
 your existing data lake infrastructure.
 
-## Supported Catalogs {#supported-catalogs}
+## Supported catalogs {#supported-catalogs}
 
 The `DataLakeCatalog` engine supports the following data catalogs:
 
@@ -21,7 +22,7 @@ The `DataLakeCatalog` engine supports the following data catalogs:
 - **Hive Metastore** - Traditional Hadoop ecosystem catalog
 - **REST Catalogs** - Any catalog supporting the Iceberg REST specification
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
 

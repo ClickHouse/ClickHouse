@@ -107,7 +107,6 @@ class DisksClient(object):
 
         initialized_disks = []
         unitialized_disks = []
-
         disk_ref = []
 
         for line in lines:

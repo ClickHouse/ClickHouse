@@ -4,6 +4,7 @@ description: 'Computes the quantile of a numeric data sequence using the Greenwa
 sidebar_position: 175
 slug: /sql-reference/aggregate-functions/reference/quantileGK
 title: 'quantileGK'
+doc_type: 'reference'
 ---
 
 # quantileGK
@@ -28,11 +29,9 @@ Alias: `medianGK`.
 
 - `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
-
 **Returned value**
 
 - Quantile of the specified level and accuracy.
-
 
 Type:
 
@@ -71,7 +70,6 @@ FROM numbers(1000)
 │                                     249 │
 └─────────────────────────────────────────┘
 ```
-
 
 **See Also**
 

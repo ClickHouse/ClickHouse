@@ -42,9 +42,10 @@ const FormatSettings & getFormatSettings()
 /// Shared variant will contain String values but we cannot use usual String type
 /// because we can have regular variant with type String.
 /// To solve it, we use String type with custom name for shared variant.
-DataTypePtr ColumnDynamic::getSharedVariantDataType()
+const DataTypePtr & ColumnDynamic::getSharedVariantDataType()
 {
-    return DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
+    static thread_local DataTypePtr type = DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
+    return type;
 }
 
 ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_), global_max_dynamic_types(max_dynamic_types)
@@ -266,7 +267,6 @@ void ColumnDynamic::insert(const Field & x)
             encodeDataType(field_data_type, value_buf);
             getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
         }
-        chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
         variant_col.getOffsets().push_back(shared_variant.size() - 1);
@@ -299,7 +299,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
         return;
     }
 
-    /// We should deeserialize value from shared variant.
+    /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -314,7 +314,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
         return variant_col.getValueNameAndType(n);
 
-    /// We should deeserialize value from shared variant.
+    /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -722,7 +722,6 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
         encodeDataType(type, value_buf);
         serialization->serializeBinary(src, n, value_buf, getFormatSettings());
     }
-    chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
 
@@ -1021,25 +1020,26 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
         });
 }
 
+ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
+{
+    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+        variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
+    return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
+}
+
 void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
-    auto & nested = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
-    const auto & variants = variant_column_ptr->getVariants();
+    auto & variants_checkpoints = assert_cast<DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
-    size_t old_size = nested.size();
-    chassert(old_size <= variants.size());
-
-    for (size_t i = 0; i < old_size; ++i)
+    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
     {
-        variants[i]->updateCheckpoint(*nested[i]);
-    }
-
-    /// If column has new variants since last checkpoint create checkpoints for them.
-    if (old_size < variants.size())
-    {
-        nested.resize(variants.size());
-        for (size_t i = old_size; i < variants.size(); ++i)
-            nested[i] = variants[i]->getCheckpoint();
+        auto it = variants_checkpoints.find(name);
+        /// If column has new variants since last checkpoint create checkpoints for them.
+        if (it == variants_checkpoints.end())
+            variants_checkpoints.emplace(name, variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint());
+        else
+            variant_column_ptr->getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
     }
 
     checkpoint.size = size();
@@ -1047,28 +1047,22 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
-    const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
-    chassert(nested.size() <= variant_column_ptr->getNumVariants());
-
-    /// The structure hasn't changed, so we can use generic rollback of Variant column
-    if (nested.size() == variant_column_ptr->getNumVariants())
-    {
-        variant_column_ptr->rollback(checkpoint);
-        return;
-    }
+    const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     /// Manually rollback internals of Variant column
     variant_column_ptr->getOffsets().resize_assume_reserved(checkpoint.size);
     variant_column_ptr->getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
 
-    auto & variants = variant_column_ptr->getVariants();
-    for (size_t i = 0; i < nested.size(); ++i)
-        variants[i]->rollback(*nested[i]);
-
-    /// Keep the structure of variant as is but rollback
-    /// to 0 variants that are not in the checkpoint.
-    for (size_t i = nested.size(); i < variants.size(); ++i)
-        variants[i] = variants[i]->cloneEmpty();
+    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+    {
+        auto it = variants_checkpoints.find(name);
+        /// Keep the structure of variant as is but rollback
+        /// to 0 variants that are not in the checkpoint.
+        if (it == variants_checkpoints.end())
+            variant_column_ptr->getVariantPtrByGlobalDiscriminator(discr) = variant_column_ptr->getVariantPtrByGlobalDiscriminator(discr)->cloneEmpty();
+        else
+            variant_column_ptr->getVariantByGlobalDiscriminator(discr).rollback(*it->second);
+    }
 }
 
 String ColumnDynamic::getTypeNameAt(size_t row_num) const
@@ -1383,7 +1377,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inerts into this column during merges.
+    /// to extend selected variants on inserts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 
@@ -1409,6 +1403,28 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+}
+
+void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromColumn should be called only on empty Dynamic column");
+
+    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+    variant_column = source_dynamic.getVariantColumn().cloneEmpty();
+    variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+    variant_info = source_dynamic.getVariantInfo();
+    statistics = source_dynamic.getStatistics();
+    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
+    /// to extend selected variants on inserts into this column.
+    /// -1 because we don't count shared variant in the limit.
+    max_dynamic_types = variant_info.variant_names.size() - 1;
+
+    /// Run takeDynamicStructureFromColumn recursively for variants.
+    const auto & source_variant_column = source_dynamic.getVariantColumn();
+    auto & variant_col = getVariantColumn();
+    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

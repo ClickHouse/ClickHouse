@@ -22,8 +22,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(header, description)
+MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(*header, description)
 {
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
@@ -42,7 +42,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
+        cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -148,7 +148,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 }
 
 SortingTransform::SortingTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
     UInt64 limit_,
@@ -183,7 +183,7 @@ SortingTransform::SortingTransform(
     description_without_constants.reserve(description.size());
     for (const auto & column_description : description)
     {
-        auto old_pos = header.getPositionByName(column_description.column_name);
+        auto old_pos = header->getPositionByName(column_description.column_name);
         auto new_pos = map[old_pos];
 
         if (new_pos < num_columns)
