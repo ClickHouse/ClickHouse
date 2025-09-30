@@ -182,9 +182,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
 LRUFileCachePriority::LRUQueue::iterator
 LRUFileCachePriority::iterateImpl(LRUQueue::iterator start_pos, IterateFunc func, const CachePriorityGuard::Lock & lock)
 {
-    if (start_pos == queue.end())
-        start_pos = queue.begin();
-
     const size_t max_elements_to_iterate = queue.size();
     auto it = start_pos;
 

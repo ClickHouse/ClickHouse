@@ -962,9 +962,9 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    cache_reserve_active_threads += 1;
+    cache_reserve_active_threads.fetch_add(1, std::memory_order_relaxed);
     SCOPE_EXIT({
-        cache_reserve_active_threads -= 1;
+        cache_reserve_active_threads.fetch_sub(1, std::memory_order_relaxed);
     });
 
     auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
