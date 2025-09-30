@@ -3951,7 +3951,7 @@ services:
         tmpfs: {tmpfs}
         {mem_limit}
         {cpu_limit}
-        pids_limit: 200
+        pids_limit: 2000
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -4071,7 +4071,7 @@ class ClickHouseInstance:
         if cpu_limit is not None:
             self.cpu_limit = "cpus : " + cpu_limit
         else:
-            self.cpu_limit = "cpus : 4"
+            self.cpu_limit = "cpus : 5"
 
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
