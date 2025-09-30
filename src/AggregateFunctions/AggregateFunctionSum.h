@@ -226,41 +226,12 @@ struct AggregateFunctionSumData
         //     Impl::add(sum, result);
         //     return;
         // }
-        else if constexpr (std::is_same_v<T, UInt128>)
+        else if constexpr (std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>)
         {
-            /// Use a mask to discard or keep the value to reduce branch miss.
-            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
-            // using MaskType = Int256;
-            // alignas(64) const MaskType masks[2] = {0, -1};
             T local_sum{};
 
-            size_t i = 0;
-            const size_t unroll_factor = 8;
-            const size_t vectorized_end = count - (count % unroll_factor);
-
-            // Unrolled loop processing 8 elements at once
-            for (i = 0; i < vectorized_end; i += unroll_factor) {
-                auto flag0 = (!condition_map[i+0] == add_if_zero);
-                auto flag1 = (!condition_map[i+1] == add_if_zero);
-                auto flag2 = (!condition_map[i+2] == add_if_zero);
-                auto flag3 = (!condition_map[i+3] == add_if_zero);
-                auto flag4 = (!condition_map[i+4] == add_if_zero);
-                auto flag5 = (!condition_map[i+5] == add_if_zero);
-                auto flag6 = (!condition_map[i+6] == add_if_zero);
-                auto flag7 = (!condition_map[i+7] == add_if_zero);
-
-                Impl::add(local_sum, ptr[i+0] * flag0);
-                Impl::add(local_sum, ptr[i+1] * flag1);
-                Impl::add(local_sum, ptr[i+2] * flag2);
-                Impl::add(local_sum, ptr[i+3] * flag3);
-                Impl::add(local_sum, ptr[i+4] * flag4);
-                Impl::add(local_sum, ptr[i+5] * flag5);
-                Impl::add(local_sum, ptr[i+6] * flag6);
-                Impl::add(local_sum, ptr[i+7] * flag7);
-            }
-
-            // Handle remaining elements
-            for (; i < count; ++i) {
+            _Pragma("clang loop unroll_count(8)")
+            for (size_t i = 0; i < count; ++i) {
                 auto flag = (!condition_map[i] == add_if_zero);
                 Impl::add(local_sum, ptr[i] * flag);
             }
@@ -268,25 +239,35 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (is_over_big_int<T>)
+        else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Int256>)
         {
-            /// Use a mask to discard or keep the value to reduce branch miss.
-            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
-            // using MaskType = Int256;
-            // alignas(64) const MaskType masks[2] = {0, -1};
             T local_sum{};
 
-            for (size_t i = 0; i < count; ++i)
-            {
+            _Pragma("clang loop unroll_count(8)")
+            for (size_t i = 0; i < count; ++i) {
                 auto flag = (!condition_map[i] == add_if_zero);
-                T mask{};
-                std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
-                sum += ptr[i] & mask;
+                Impl::add(local_sum, ptr[i] * flag);
             }
 
             Impl::add(sum, local_sum);
             return;
         }
+        // else if constexpr (is_over_big_int<T>)
+        // {
+        //     /// Use a mask to discard or keep the value to reduce branch miss.
+        //     T local_sum{};
+        //
+        //     for (size_t i = 0; i < count; ++i)
+        //     {
+        //         auto flag = (!condition_map[i] == add_if_zero);
+        //         T mask{};
+        //         std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+        //         sum += ptr[i] & mask;
+        //     }
+        //
+        //     Impl::add(sum, local_sum);
+        //     return;
+        // }
         else if constexpr (is_floating_point<T> && (sizeof(Value) == 4 || sizeof(Value) == 8))
         {
             /// For floating point we use a similar trick as above, except that now we reinterpret the floating point number as an unsigned
