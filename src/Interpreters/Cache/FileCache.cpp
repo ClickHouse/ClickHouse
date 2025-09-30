@@ -1059,7 +1059,7 @@ bool FileCache::tryReserve(
         reserve_stat.stat_by_kind.clear();
     }
 
-    bool continue_from_last_eviction_pos = cache_reserve_active_threads > 1;
+    bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
     if (!continue_from_last_eviction_pos)
         main_priority->resetEvictionPos(cache_lock);
 
@@ -1159,7 +1159,7 @@ bool FileCache::tryReserve(
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
-    if (cache_reserve_active_threads == 1)
+    if (cache_reserve_active_threads.load(std::memory_order_relaxed) == 1)
     {
         main_priority->resetEvictionPos(cache_lock);
     }
