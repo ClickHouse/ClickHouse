@@ -236,6 +236,8 @@ void Client::initialize(Poco::Util::Application & self)
         if (config().has("connection"))
             connection_name.emplace(config().getString("connection"));
 
+        const auto have_password = config().has("password");
+
         /// Connection credentials overrides should be set via loaded_config.configuration to have proper order.
         auto overrides = parseConnectionsCredentials(configuration, default_host, connection_name);
         if (overrides.hostname.has_value())
@@ -253,6 +255,13 @@ void Client::initialize(Poco::Util::Application & self)
             configuration.setString("user", overrides.user.value());
         if (overrides.password.has_value())
             configuration.setString("password", overrides.password.value());
+        if (overrides.ssh_key_file.has_value())
+        {
+            if (!have_password) /// only override if no --password
+                configuration.setString("ssh-key-file", overrides.ssh_key_file.value());
+        }
+        if (overrides.ssh_key_passphrase.has_value())
+            configuration.setString("ssh-key-passphrase", overrides.ssh_key_passphrase.value());
         if (overrides.database.has_value())
             configuration.setString("database", overrides.database.value());
         if (overrides.history_file.has_value())

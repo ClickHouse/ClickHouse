@@ -44,6 +44,10 @@ ConnectionsCredentials parseConnectionsCredentials(const Poco::Util::AbstractCon
             res.user.emplace(config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
             res.password.emplace(config.getString(prefix + ".password"));
+        if (config.has(prefix + ".ssh_key_file"))
+            res.ssh_key_file.emplace(config.getString(prefix + ".ssh_key_file"));
+        if (config.has(prefix + ".ssh_key_passphrase"))
+            res.ssh_key_passphrase.emplace(config.getString(prefix + ".ssh_key_passphrase"));
         if (config.has(prefix + ".database"))
             res.database.emplace(config.getString(prefix + ".database"));
         if (config.has(prefix + ".history_file"))
