@@ -49,7 +49,7 @@ StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguratio
     paths = other.paths;
 }
 
-void StorageHDFSConfiguration::check(ContextPtr context) const
+void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.substr(1));

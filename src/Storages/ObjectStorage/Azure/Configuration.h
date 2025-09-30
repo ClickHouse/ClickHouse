@@ -67,7 +67,7 @@ public:
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    void check(ContextPtr context) const override;
+    void check(ContextPtr context) override;
     ConfigurationPtr clone() override { return std::make_shared<StorageAzureConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
