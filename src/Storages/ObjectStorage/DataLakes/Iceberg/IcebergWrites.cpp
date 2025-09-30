@@ -1578,17 +1578,21 @@ bool IcebergStorageSink::initializeMetadata()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
-            if (object_storage->exists(StoredObject(storage_metadata_name)))
+            try
             {
+                Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, /* write-if-none-match */ "*", metadata_compression_method);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 cleanup();
                 return false;
             }
 
-            Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup, metadata_compression_method);
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
                 auto filename_version_hint = filename_generator.generateVersionHint();
-                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
+                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, false);
             }
 
             if (catalog)

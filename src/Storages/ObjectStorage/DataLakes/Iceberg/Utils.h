@@ -28,7 +28,7 @@ void writeMessageToFile(
     const String & filename,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    std::function<void()> cleanup,
+    const std::string & write_if_none_match,
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);

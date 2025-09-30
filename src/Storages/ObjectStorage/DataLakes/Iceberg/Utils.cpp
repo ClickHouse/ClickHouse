@@ -85,30 +85,24 @@ void writeMessageToFile(
     const String & filename,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    std::function<void()> cleanup,
+    const std::string & write_if_none_match,
     CompressionMethod compression_method)
 {
-    try
+    auto write_settings = context->getWriteSettings();
+    write_settings.s3_write_if_none_match = write_if_none_match;
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    if (compression_method != CompressionMethod::None)
     {
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        if (compression_method != CompressionMethod::None)
-        {
-            auto settings = context->getSettingsRef();
-            auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
-            compressed_buffer_metadata->write(data.data(), data.size());
-            compressed_buffer_metadata->finalize();
-        }
-        else
-        {
-            buffer_metadata->write(data.data(), data.size());
-            buffer_metadata->finalize();
-        }
+        auto settings = context->getSettingsRef();
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        compressed_buffer_metadata->write(data.data(), data.size());
+        compressed_buffer_metadata->finalize();
     }
-    catch (...)
+    else
     {
-        cleanup();
-        throw;
+        buffer_metadata->write(data.data(), data.size());
+        buffer_metadata->finalize();
     }
 }
 
