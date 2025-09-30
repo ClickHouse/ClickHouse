@@ -314,8 +314,6 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
-    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
     queue->push(std::move(element));
 }
 
