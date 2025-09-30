@@ -70,6 +70,17 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x);
     const Decimal<T> & operator %= (const T & x);
 
+    constexpr Decimal<T> operator~() const { return Decimal<T>(~value); }
+
+    constexpr Decimal<T> operator&(const T& x) const { return Decimal<T>(value & x); }
+    constexpr Decimal<T> operator|(const T& x) const { return Decimal<T>(value | x); }
+
+    template <typename U>
+    constexpr Decimal<T> operator&(const Decimal<U>& x) const { return Decimal<T>(value & static_cast<T>(x.value)); }
+
+    template <typename U>
+    constexpr Decimal<T> operator|(const Decimal<U>& x) const { return Decimal<T>(value | static_cast<T>(x.value)); }
+
     template <typename U> const Decimal<T> & operator += (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator -= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator *= (const Decimal<U> & x);
