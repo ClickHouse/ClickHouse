@@ -425,7 +425,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
-    char key_fuzzy = 'R', key_regular = 'T';
+    char key_fuzzy = 'R';
+    char key_regular = 'T';
     if (options.interactive_history_legacy_keymap)
         std::swap(key_fuzzy, key_regular);
 
