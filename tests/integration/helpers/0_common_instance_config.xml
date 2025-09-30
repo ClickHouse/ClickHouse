@@ -38,9 +38,6 @@
     <merge_tree>
         <vertical_merge_algorithm_min_rows_to_activate>1</vertical_merge_algorithm_min_rows_to_activate>
         <vertical_merge_algorithm_min_columns_to_activate>1</vertical_merge_algorithm_min_columns_to_activate>
-        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
-        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
-        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
     </merge_tree>
 
     <!-- Remove the default remote server to avoid people depending on its hardcoded config -->
@@ -53,7 +50,7 @@
     <jemalloc_flush_profile_on_memory_exceeded>1</jemalloc_flush_profile_on_memory_exceeded>
 
     <background_schedule_pool_size>8</background_schedule_pool_size>
-    <background_pool_size>6</background_pool_size>
+    <background_pool_size>25</background_pool_size>
     <max_thread_pool_size>800</max_thread_pool_size>
     <thread_pool_queue_size>800</thread_pool_queue_size>
 
