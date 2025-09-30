@@ -784,6 +784,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChasTokenOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitiveOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCsearchAll, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCsearchAny, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcompareSubstrings, 0, 0, 5, 5),
     /// Split strings
     CHFunction(SQLFunc::FUNCsplitByChar, 0, 0, 2, ulimited_params),

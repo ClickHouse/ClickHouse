@@ -233,6 +233,8 @@ public:
 
     String nextJSONCol();
 
+    String nextTokenString();
+
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 
     String nextUUID();

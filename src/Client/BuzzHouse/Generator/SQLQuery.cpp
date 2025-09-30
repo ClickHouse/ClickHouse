@@ -1336,7 +1336,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     const GroupCol & gcol = rg.pickRandomly(available_cols);
     const uint32_t noption = rg.nextLargeNumber();
 
-    if (noption < 761)
+    if (noption < 751)
     {
         /// Binary expr
         Expr * lexpr = nullptr;
@@ -1373,7 +1373,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, rexpr);
         }
     }
-    else if (noption < 901)
+    else if (noption < 851)
     {
         /// Between expr
         const uint32_t noption2 = rg.nextMediumNumber();
@@ -1403,7 +1403,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, expr3);
         }
     }
-    else if (noption < 971)
+    else if (noption < 901)
     {
         /// Is null expr
         Expr * isexpr = nullptr;
@@ -1427,7 +1427,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         refColumn(rg, gcol, isexpr);
     }
-    else if (noption < 981)
+    else if (noption < 931)
     {
         /// Like expr
         Expr * expr1 = nullptr;
@@ -1455,14 +1455,19 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             expr2 = sfc->add_args()->mutable_expr();
         }
         refColumn(rg, gcol, expr1);
-        if (rg.nextSmallNumber() < 5)
+        if (rg.nextBool())
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
+            generateLikeExpr(rg, expr2);
         }
         else
         {
             addWhereSide(rg, available_cols, expr2);
         }
+    }
+    else if (noption < 961)
+    {
+        /// Search expr
+        refColumn(rg, gcol, generatePartialSearchExpr(rg, expr));
     }
     else if (noption < 991)
     {

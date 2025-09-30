@@ -443,6 +443,68 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
     this->current_level--;
 }
 
+void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
+{
+    if (rg.nextBool())
+    {
+        String buf;
+        std::uniform_int_distribution<uint32_t> count_dist(1, 5);
+        const uint32_t count = count_dist(rg.generator);
+
+        for (uint32_t i = 0; i < count; i++)
+        {
+            const uint32_t nopt = rg.nextSmallNumber();
+
+            if (nopt < 4)
+            {
+                buf += "%";
+            }
+            else if (nopt < 7)
+            {
+                buf += "_";
+            }
+            else
+            {
+                buf += rg.pickRandomly(rg.nextTokenString());
+            }
+        }
+        expr->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
+    else
+    {
+        this->generateExpression(rg, expr);
+    }
+}
+
+Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr * expr)
+{
+    /// Use search functions more often
+    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+    static const auto & searchFuncs
+        = {SQLFunc::FUNCstartsWith, SQLFunc::FUNChasToken, SQLFunc::FUNChasTokenOrNull, SQLFunc::FUNCsearchAny, SQLFunc::FUNCsearchAll};
+    const auto & nfunc = rg.pickRandomly(searchFuncs);
+
+    sfc->mutable_func()->set_catalog_func(nfunc);
+    Expr * res = sfc->add_args()->mutable_expr();
+    Expr * expr2 = sfc->add_args()->mutable_expr();
+    if (nfunc == SQLFunc::FUNCsearchAny || nfunc == SQLFunc::FUNCsearchAll)
+    {
+        ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 6) + 1;
+
+        for (uint32_t i = 0; i < nvalues; i++)
+        {
+            Expr * next = i == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
+            next->mutable_lit_val()->set_string_lit(rg.nextTokenString());
+        }
+    }
+    else
+    {
+        expr2->mutable_lit_val()->set_string_lit(rg.nextTokenString());
+    }
+    return res;
+}
+
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth < this->fc.max_depth)
@@ -455,9 +517,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         const uint32_t is_null_expr = 100;
         const uint32_t exists_expr = 100 * static_cast<uint32_t>(this->allow_subqueries);
         const uint32_t like_expr = 100;
+        const uint32_t search_expr = 100;
         const uint32_t other_expr = 10;
-        const uint32_t prob_space
-            = unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + other_expr;
+        const uint32_t prob_space = unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr
+            + search_expr + other_expr;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t noption = next_dist(rg.generator);
 
@@ -597,14 +660,25 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, elike->mutable_expr1());
             this->width++;
-            this->generateExpression(rg, elike->mutable_expr2());
+            this->generateLikeExpr(rg, elike->mutable_expr2());
             this->width--;
+            this->depth--;
+        }
+        else if (
+            search_expr
+            && noption
+                < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + search_expr + 1))
+        {
+            /// Use search functions more often
+            this->depth++;
+            this->generateExpression(rg, generatePartialSearchExpr(rg, expr));
             this->depth--;
         }
         else if (
             other_expr
             && noption
-                < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + other_expr + 1))
+                < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + search_expr
+                   + other_expr + 1))
         {
             this->depth++;
             this->generateExpression(rg, expr);
