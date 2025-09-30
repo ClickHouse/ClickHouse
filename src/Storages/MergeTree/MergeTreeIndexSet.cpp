@@ -104,7 +104,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     UInt64 rows_to_read = 0;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
+    {
+        block.clear();
         return;
+    }
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
