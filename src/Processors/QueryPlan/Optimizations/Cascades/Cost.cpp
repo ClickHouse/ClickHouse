@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -118,6 +119,12 @@ void CostEstimator::fillStatistics(GroupExpressionPtr expression)
         auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
         fillStatistics(input_best_implementation);
         expression->statistics = fillExpressionStatistics(*expression_step, *input_best_implementation->statistics);
+    }
+    else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
+    {
+        auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
+        fillStatistics(input_best_implementation);
+        expression->statistics = fillAggregatingStatistics(*aggregating_step, *input_best_implementation->statistics);
     }
     else if (!expression->inputs.empty())
     {
@@ -261,6 +268,40 @@ ExpressionStatistics CostEstimator::fillExpressionStatistics(const ExpressionSte
 {
     /// TODO:
     return input_statistics;
+}
+
+ExpressionStatistics CostEstimator::fillAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+{
+    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
+    Float64 max_key_number_of_distinct_values = 1;
+    Float64 max_total_number_of_distinct_values = 1;
+    ExpressionStatistics aggregation_statistics;
+    for (const auto & aggregation_key : aggregator_params.keys)
+    {
+        const auto key = getUnqualifiedColumnName(aggregation_key);
+
+        /// If stats are present set NDV to 10% of number of rows
+        Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
+
+        auto key_stats = input_statistics.column_statistics.find(key);
+        if (key_stats != input_statistics.column_statistics.end())
+        {
+            key_number_of_distinct_values = key_stats->second.number_of_distinct_values;
+            key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
+        }
+
+        aggregation_statistics.column_statistics[key].number_of_distinct_values = UInt64(key_number_of_distinct_values);
+
+        max_key_number_of_distinct_values = std::max(max_key_number_of_distinct_values, key_number_of_distinct_values);
+        max_total_number_of_distinct_values *= key_number_of_distinct_values;
+    }
+
+    aggregation_statistics.min_row_count = 0;
+    /// Estimate cardinality of aggregation as max NDV across individual aggregation keys
+    aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
+    /// Maximum number of rows is the product of all aggreagation key NDVs
+    aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
+    return aggregation_statistics;
 }
 
 }
