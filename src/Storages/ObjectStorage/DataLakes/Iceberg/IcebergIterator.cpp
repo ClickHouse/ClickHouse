@@ -352,6 +352,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
         object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
 
+        ProfileEvents::increment(ProfileEvents::IcebergKeysReturnedFromIterator);
         return object_info;
     }
     {

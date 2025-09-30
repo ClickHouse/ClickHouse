@@ -51,6 +51,7 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
             result[name] = query_result.split('\n')
             result[name] = list(filter(lambda x: len(x) > 0, result[name]))
         result['row_in_file'] = list(map(lambda x : int(x) if x.isdigit() else None, result['row_in_file']))
+        result['pruning_status'] = list(map(lambda x : int(x) if x.isdigit() else None, result['pruning_status']))
         return result
     
     def verify_result_dictionary(diction : dict, allowed_content_types : set):
@@ -73,6 +74,8 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
 
         # All content is json-serializable
         for content in diction['content']:
+            if content == '':
+                continue
             try:
                 json.loads(content)
             except:
@@ -81,6 +84,8 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
             row_values = set()
             number_of_missing_row_values = 0
             number_of_rows = 0
+            partitioned_rows = set()
+            not_deleted_files = set()
             for i in range(len(diction['file_path'])):
                 if file_path == diction['file_path'][i]:
                     if diction['row_in_file'][i] is not None:
@@ -89,12 +94,24 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
                         if diction['content_type'][i] not in ['ManifestFileEntry', 'ManifestListEntry']:
                             raise ValueError("Row should not be specified for an entry {}, file_path: {}".format(diction['content_type'][i], file_path))
                         number_of_rows += 1
+
+                        if diction['content_type'][i] == 'ManifestFileEntry':
+                            if diction['content'][i] == '':
+                                if diction['pruning_status'][i] is None:
+                                    raise ValueError("Pruning status should be specified for this manifest file entry, file_path: {}".format(file_path))
+                                partitioned_rows.add(diction['row_in_file'][i])
+                            else:
+                                data_object = json.loads(diction['content'][i])
+                                if data_object['status'] < 2:
+                                    not_deleted_files.add(diction['row_in_file'][i])
                     else:
                         # If row is not present that the type is metadata
                         if diction['content_type'][i] not in ['Metadata', 'ManifestFileMetadata', 'ManifestListMetadata']:
                             raise ValueError("Row should be specified for an entry {}, file_path: {}".format(diction['content_type'][i], file_path))
 
                         number_of_missing_row_values += 1
+            if partitioned_rows != not_deleted_files:
+                raise ValueError("Partitioned rows are not consistent with not deleted files for file path: {}, partitioned rows: {}, not deleted files: {}".format(file_path, partitioned_rows, not_deleted_files))
                     
             # We have exactly one metadata file
             if number_of_missing_row_values != 1:
