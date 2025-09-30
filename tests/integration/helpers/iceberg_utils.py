@@ -29,7 +29,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("iceberg_utils")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
@@ -43,7 +43,7 @@ def get_spark():
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="module")
@@ -216,7 +216,7 @@ def get_creation_expression(
 
     if_not_exists_prefix = ""
     if if_not_exists:
-        if_not_exists_prefix = "IF NOT EXISTS"        
+        if_not_exists_prefix = "IF NOT EXISTS"
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -312,7 +312,7 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
     pandas_types = [clickhouse_to_pandas_types[t]for t in types]
 
     schema_df = pd.DataFrame([types], columns=column_names)
-    
+
     # Convert data to DataFrame
     data_rows = list(
         map(
@@ -320,13 +320,13 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
             filter(lambda x: len(x) > 0, data_raw.strip().split("\n")),
         )
     )
-    
+
     if data_rows:
         data_df = pd.DataFrame(data_rows, columns=column_names, dtype='object')
     else:
         # Create empty DataFrame with correct columns
         data_df = pd.DataFrame(columns=column_names, dtype='object')
-    
+
     data_df = data_df.astype(dict(zip(column_names, pandas_types)))
     return schema_df, data_df
 
@@ -442,7 +442,7 @@ def default_download_directory(
     else:
         raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
 
-        
+
 def execute_spark_query_general(
     spark, started_cluster, storage_type: str, table_name: str, query: str
 ):

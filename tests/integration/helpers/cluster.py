@@ -1865,6 +1865,7 @@ class ClickHouseCluster:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -2019,6 +2020,7 @@ class ClickHouseCluster:
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
+            cpu_limit=cpu_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
@@ -4065,13 +4067,13 @@ class ClickHouseInstance:
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         if mem_limit is not None:
-            self.mem_limit = "mem_limit : " + mem_limit
+            self.mem_limit = f"mem_limit : {mem_limit}"
         else:
-            self.mem_limit = "mem_limit : 6g"
+            self.mem_limit = "mem_limit : 10g"
         if cpu_limit is not None:
-            self.cpu_limit = "cpus : " + cpu_limit
+            self.cpu_limit = f"cpus : {cpu_limit}"
         else:
-            self.cpu_limit = "cpus : 5"
+            self.cpu_limit = "cpus : 8"
 
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None

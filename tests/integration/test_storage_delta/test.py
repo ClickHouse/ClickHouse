@@ -70,7 +70,7 @@ S3_DATA = [
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_delta")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
@@ -82,7 +82,7 @@ def get_spark():
         .master("local")
     )
 
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 
 def randomize_table_name(table_name, random_suffix_length=10):
