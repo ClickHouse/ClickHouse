@@ -56,24 +56,12 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
         if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
-
-        // Early safe path for approx_top_k/approx_top_sum states to avoid risky deserialization of crafted bytes.
-        // If the argument's type is AggregateFunction(approx_top_...), return default (empty) results directly.
-        const auto & arg_type = arguments.at(0).type;
-        if (arg_type && arg_type->getName().find("AggregateFunction(approx_top_") != String::npos)
-        {
-            MutableColumnPtr res = return_type->createColumn();
-            res->reserve(input_rows_count);
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res->insertDefault();
-            return std::move(res);
-        }
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
