@@ -211,7 +211,8 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges,
         bool is_final_query,
-        bool is_parallel_reading_from_replicas);
+        bool is_parallel_reading_from_replicas,
+        bool is_support_disjuncts);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
@@ -246,7 +247,7 @@ public:
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
-        size_t min_marks_for_seek,
+        MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 };
 

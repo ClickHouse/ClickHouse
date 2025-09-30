@@ -671,7 +671,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges,
     bool is_final_query,
-    bool is_parallel_reading_from_replicas)
+    bool is_parallel_reading_from_replicas,
+    bool is_support_disjuncts)
 {
 
     const auto original_num_parts = parts_with_ranges.size();
@@ -753,7 +754,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
-    const bool support_disjuncts = skip_indexes.useful_indices.size() > 1 && key_condition_rpn_template && !key_condition_rpn_template.value().isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts] && !use_skip_indexes_on_data_read;
+    const bool support_disjuncts = is_support_disjuncts && !use_skip_indexes_on_data_read;
 
     /// Let's find what range to read from each part.
     {
@@ -842,12 +843,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 std::unordered_map<size_t, std::vector<bool>> partial_eval_results;
 
-                const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-                            reader_settings.merge_tree_min_rows_for_seek,
-                            reader_settings.merge_tree_min_bytes_for_seek,
-                            ranges.data_part->index_granularity_info.fixed_index_granularity,
-                            ranges.data_part->index_granularity_info.index_granularity_bytes);
-
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
@@ -906,7 +901,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 {
                     ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
                                         ranges.ranges, key_condition_rpn_template.value(),
-                                        partial_eval_results, min_marks_for_seek, log);
+                                        partial_eval_results, reader_settings, log);
 
                     sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
@@ -2251,7 +2246,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
     const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
-    size_t min_marks_for_seek,
+    MergeTreeReaderSettings reader_settings,
     LoggerPtr log)
 {
     MarkRanges res;
@@ -2260,6 +2255,12 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
 
     LOG_DEBUG(log, "Entered finalSetOfRangesForConditionWithORs for part {}, rpn = {}",
               part->name, rpn_template_for_eval_result_string);
+
+    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+                reader_settings.merge_tree_min_rows_for_seek,
+                reader_settings.merge_tree_min_bytes_for_seek,
+                part->index_granularity_info.fixed_index_granularity,
+                part->index_granularity_info.index_granularity_bytes);
 
     /// Evaluate the RPN over all the ranges.
     auto rpn = rpn_template_for_eval_result.getRPN();

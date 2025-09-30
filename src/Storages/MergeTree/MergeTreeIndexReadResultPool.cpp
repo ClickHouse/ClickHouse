@@ -17,12 +17,16 @@ namespace DB
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
+    std::optional<KeyCondition> & key_condition_rpn_template_,
+    bool support_disjuncts_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
+    , key_condition_rpn_template(key_condition_rpn_template_)
+    , support_disjuncts(support_disjuncts_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
@@ -37,7 +41,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
-    std::unordered_map<size_t, std::vector<bool>> partial_results_unused;
+    std::unordered_map<size_t, std::vector<bool>> partial_eval_results;
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -51,7 +55,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
-            {},
+            key_condition_rpn_template,
             part.data_part,
             ranges,
             part.read_hints,
@@ -59,9 +63,16 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
-            false, /* support disjuncts */
-            partial_results_unused,
+            support_disjuncts,
+            partial_eval_results,
             log).first;
+    }
+
+    if (support_disjuncts)
+    {
+        ranges = MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
+                            part.data_part, ranges, key_condition_rpn_template.value(),
+                            partial_eval_results, reader_settings, log);
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)

@@ -197,6 +197,7 @@ public:
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        bool support_disjuncts_with_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 
