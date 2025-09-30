@@ -159,8 +159,8 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
         auto right_column_actions = get<2>(predicate);
         if (left_column_actions.fromRight() && right_column_actions.fromLeft())
             std::swap(left_column_actions, right_column_actions);
-        const auto & left_column = getUnqualifiedColumnName(left_column_actions.getColumnName());
-        const auto & right_column = getUnqualifiedColumnName(right_column_actions.getColumnName());
+        const auto & left_column = left_column_actions.getColumnName();
+        const auto & right_column = right_column_actions.getColumnName();
 
         auto left_column_statistics = left_statistics.column_statistics.find(left_column);
         auto right_column_statistics = right_statistics.column_statistics.find(right_column);
@@ -170,12 +170,12 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
         UInt64 min_number_of_distinct_values = UInt64(std::min(left_statistics.estimated_row_count, right_statistics.estimated_row_count));
         if (left_column_statistics != left_statistics.column_statistics.end())
         {
-            left_number_of_distinct_values = left_column_statistics->second.number_of_distinct_values;
+            left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
             min_number_of_distinct_values = std::min(min_number_of_distinct_values, left_number_of_distinct_values);
         }
         if (right_column_statistics != right_statistics.column_statistics.end())
         {
-            right_number_of_distinct_values = right_column_statistics->second.number_of_distinct_values;
+            right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
             min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
         }
 
@@ -184,8 +184,8 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
         Float64 predicate_selectivity = 1.0 / max_number_of_distinct_values;
 
         /// NDV for join predicate columns can decrease if the other column has smaller NDV
-        statistics.column_statistics[left_column].number_of_distinct_values = min_number_of_distinct_values;
-        statistics.column_statistics[right_column].number_of_distinct_values = min_number_of_distinct_values;
+        statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
+        statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
 
         LOG_TEST(log, "Predicate '{} = {}' selectivity: 1 / {}",
             left_column, right_column, 1.0 / predicate_selectivity);
@@ -237,7 +237,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
             statistics.estimated_row_count = relation_profile.rows;
             statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
-                statistics.column_statistics[column_name].number_of_distinct_values = column_stats.num_distinct_values;
+                statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
 
             LOG_TRACE(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
             return statistics;
@@ -248,7 +248,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     {
         auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
         if (column_ndv)
-            statistics.column_statistics[column_name].number_of_distinct_values = column_ndv.value();
+            statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
     }
 
     auto cardinality_hint = statistics_lookup.getCardinaity(table_name);
@@ -258,16 +258,23 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     return statistics;
 }
 
-ExpressionStatistics CostEstimator::fillFilterStatistics(const FilterStep & /*filter_step*/, const ExpressionStatistics & input_statistics)
+namespace QueryPlanOptimizations
 {
-    /// TODO:
-    return input_statistics;
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 }
 
-ExpressionStatistics CostEstimator::fillExpressionStatistics(const ExpressionStep & /*expression_step*/, const ExpressionStatistics & input_statistics)
+ExpressionStatistics CostEstimator::fillFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics)
 {
-    /// TODO:
-    return input_statistics;
+    ExpressionStatistics result_statistics = input_statistics;
+    QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, filter_step.getExpression());
+    return result_statistics;
+}
+
+ExpressionStatistics CostEstimator::fillExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, expression_step.getExpression());
+    return result_statistics;
 }
 
 ExpressionStatistics CostEstimator::fillAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
@@ -276,21 +283,19 @@ ExpressionStatistics CostEstimator::fillAggregatingStatistics(const AggregatingS
     Float64 max_key_number_of_distinct_values = 1;
     Float64 max_total_number_of_distinct_values = 1;
     ExpressionStatistics aggregation_statistics;
-    for (const auto & aggregation_key : aggregator_params.keys)
+    for (const auto & key : aggregator_params.keys)
     {
-        const auto key = getUnqualifiedColumnName(aggregation_key);
-
         /// If stats are present set NDV to 10% of number of rows
         Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
 
         auto key_stats = input_statistics.column_statistics.find(key);
         if (key_stats != input_statistics.column_statistics.end())
         {
-            key_number_of_distinct_values = key_stats->second.number_of_distinct_values;
+            key_number_of_distinct_values = key_stats->second.num_distinct_values;
             key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
         }
 
-        aggregation_statistics.column_statistics[key].number_of_distinct_values = UInt64(key_number_of_distinct_values);
+        aggregation_statistics.column_statistics[key].num_distinct_values = UInt64(key_number_of_distinct_values);
 
         max_key_number_of_distinct_values = std::max(max_key_number_of_distinct_values, key_number_of_distinct_values);
         max_total_number_of_distinct_values *= key_number_of_distinct_values;
