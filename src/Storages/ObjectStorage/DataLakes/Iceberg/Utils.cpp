@@ -118,7 +118,7 @@ bool writeMetadataFileAndVersionHint(
 {
     try
     {
-        Iceberg::writeMessageToFile(metadata_file_path, metadata_file_content, object_storage, context, /* write-if-none-match */ "*", compression_method);
+        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", compression_method);
     }
     catch (...)
     {
