@@ -44,8 +44,8 @@ DROP TABLE IF EXISTS alias_syntax_2;
 DROP TABLE IF EXISTS alias_syntax_3;
 DROP TABLE IF EXISTS source_table;
 
-DROP DATABASE IF EXISTS test_db1;
-DROP DATABASE IF EXISTS test_db2;
+DROP DATABASE IF EXISTS test_db1 SYNC;
+DROP DATABASE IF EXISTS test_db2 SYNC;
 CREATE DATABASE test_db1;
 CREATE DATABASE test_db2;
 
@@ -85,5 +85,5 @@ SELECT count() FROM test_db1.alias_3_1;
 SELECT count() FROM test_db1.alias_3_2;
 SELECT count() FROM test_db1.alias_4_2;
 
-DROP DATABASE test_db1;
-DROP DATABASE test_db2;
+DROP DATABASE IF EXISTS test_db1 SYNC;
+DROP DATABASE IF EXISTS test_db2 SYNC;
