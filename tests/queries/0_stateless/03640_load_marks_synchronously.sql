@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 create table data (key int) engine=MergeTree() order by key settings prewarm_mark_cache=0;
 insert into data select * from numbers(1000);
 
