@@ -25,7 +25,7 @@ public:
     inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
 protected:
-    void setRemovalTIDLock(TIDHash removal_tid_hash) override;
+    void setRemovalTIDLock(TIDHash removal_tid_lock_hash) override;
     void appendCreationCSNToStoredMetadataImpl() override;
     void appendRemovalCSNToStoredMetadataImpl() override;
     void appendRemovalTIDToStoredMetadataImpl() override;

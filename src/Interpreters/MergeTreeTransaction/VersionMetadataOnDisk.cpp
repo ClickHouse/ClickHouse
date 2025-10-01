@@ -252,14 +252,14 @@ bool VersionMetadataOnDisk::hasStoredMetadata() const
     return merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
 }
 
-void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_hash)
+void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_lock_hash)
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
         "Object {}, setRemovalTIDLock removal_tid_hash {}",
         getObjectName(),
         getCreationCSN());
-    removal_tid_lock = removal_tid_hash;
+    removal_tid_lock = removal_tid_lock_hash;
 }
 
 void appendToMetadataHelper(

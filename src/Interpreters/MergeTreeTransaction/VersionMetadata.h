@@ -172,6 +172,7 @@ protected:
     String getObjectName() const;
 
     bool canBeRemovedImpl(CSN oldest_snapshot_version);
+
     /**
     * @brief Verify information from metadata
     *
@@ -231,9 +232,9 @@ protected:
     /**
     * @brief Set the hash of the TID which locks the object for removal.
     *
-    * @param removal_tid_hash The target TID hash
+    * @param removal_tid_lock_hash The target TID hash
     */
-    virtual void setRemovalTIDLock(TIDHash removal_tid_hash) = 0;
+    virtual void setRemovalTIDLock(TIDHash removal_tid_lock_hash) = 0;
 
     /**
     * @brief The implementation to append `creation_csn` to the stored metadata. Called by `appendCreationCSNToStoredMetadata`
@@ -267,6 +268,8 @@ protected:
     TransactionID creation_tid = Tx::EmptyTID;
     /// ID of transaction that has removed/is trying to remove this object stored in the storage.
     TransactionID removal_tid = Tx::EmptyTID;
+    /// The hash of `removal_tid`. If `removal_tid` is Tx::EmptyTID, then removal_tid_hash is 0.
+    std::atomic<TIDHash> removal_tid_hash{0};
 
     /// CSN of transaction that has created this object stored in the storage.
     std::atomic<CSN> creation_csn = Tx::UnknownCSN;
@@ -274,6 +277,14 @@ protected:
     std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
     LoggerPtr log;
+
+private:
+    /**
+    * @brief Set `removal_tid` and `removal_tid_hash`
+    *
+    * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back, and removal_tid_hash will be reset to 0.
+    */
+    void setRemovalTIDAndHash(const TransactionID & tid);
 };
 
 DataTypePtr getTransactionIDDataType();
