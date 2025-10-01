@@ -24,7 +24,7 @@ namespace DimensionalMetrics
 
     MetricFamily & MergeTreeParts = Factory::instance().registerMetric(
         "merge_tree_parts",
-        "Number of merge tree data parts, labelled by state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part_type (e.g. Wide, Compact, Unknown) and is_projection_part.",
+        "Number of merge tree data parts, labelled by part state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part type (e.g. Wide, Compact, Unknown) and whether it is a projection part.",
         {"part_state", "part_type", "part_is_projection"}
     );
 
