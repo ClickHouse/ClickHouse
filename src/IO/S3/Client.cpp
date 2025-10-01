@@ -144,6 +144,37 @@ long Client::RetryStrategy::GetMaxAttempts() const
     return config.max_retries + 1;
 }
 
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome)
+{
+    if (!httpResponseOutcome.IsSuccess())
+    {
+        auto error = httpResponseOutcome.GetError();
+        if (error.ShouldRetry())
+            LOG_TRACE(
+                getLogger("RetryStrategy"),
+                "Attempt {}/{} failed with retryable error: {}, {}",
+                httpResponseOutcome.GetRetryCount() + 1,
+                GetMaxAttempts(),
+                static_cast<size_t>(error.GetResponseCode()),
+                error.GetMessage());
+    }
+}
+
+void Client::RetryStrategy::RequestBookkeeping(
+    const Aws::Client::HttpResponseOutcome & httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors> & lastError)
+{
+    if (httpResponseOutcome.IsSuccess())
+        LOG_TRACE(
+            getLogger("RetryStrategy"),
+            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            httpResponseOutcome.GetRetryCount() + 1,
+            GetMaxAttempts(),
+            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
+            static_cast<size_t>(lastError.GetResponseCode()),
+            lastError.GetMessage());
+    return RequestBookkeeping(httpResponseOutcome);
+}
+
 namespace
 {
 

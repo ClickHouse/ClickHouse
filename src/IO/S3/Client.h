@@ -165,6 +165,12 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome) override;
+        void RequestBookkeeping(
+            const Aws::Client::HttpResponseOutcome & httpResponseOutcome,
+            const Aws::Client::AWSError<Aws::Client::CoreErrors> & lastError) override;
+
+
         /// Sometimes [1] GCS may suggest to use Rewrite over CopyObject, i.e.:
         ///
         ///     AWSError 'InternalError': Copy spanning locations and/or storage classes could not complete within 30 seconds. Please use the Rewrite method in the JSON API (https://cloud.google.com/storage/docs/json_api/v1/objects/rewrite) instead.
