@@ -487,7 +487,9 @@ if (NOT ENABLE_JEMALLOC)
 endif ()
 
 macro (clickhouse_add_executable target)
-    add_library(${target}_objects OBJECT ${ARGN})
+    if (FUZZER AND (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse"))
+        add_library(${target}_objects OBJECT ${ARGN})
+    endif()
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
