@@ -606,7 +606,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
-                "FORMAT RawBlob;",
+                "FORMAT CSV;",
                 rand_val,
                 fuzz_server_out.generic_string())))
     {
@@ -624,7 +624,7 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT CSV;",
                 property,
                 fuzz_server_out.generic_string())))
     {
@@ -649,7 +649,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT CSV;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
