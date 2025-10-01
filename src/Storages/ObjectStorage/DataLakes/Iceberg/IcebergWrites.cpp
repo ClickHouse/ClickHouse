@@ -101,6 +101,8 @@ namespace FailPoints
 extern const char iceberg_writes_cleanup[];
 }
 
+static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+
 namespace
 {
 
@@ -1321,7 +1323,6 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
 {
     configuration->update(object_storage, context, /* if_not_updated_before */ true);
-    auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
@@ -1350,7 +1351,7 @@ IcebergStorageSink::IcebergStorageSink(
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
-    auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+    current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = metadata->getArray(Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
@@ -1425,8 +1426,12 @@ void IcebergStorageSink::finalizeBuffers()
     if (writer_per_partition_key.empty())
         return;
 
-    while (!initializeMetadata())
+    size_t i = 0;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
+        if (initializeMetadata())
+            break;
+        ++i;
     }
 }
 
@@ -1467,52 +1472,46 @@ bool IcebergStorageSink::initializeMetadata()
 
     auto cleanup = [&] ()
     {
-        try
+        for (const auto & [_, writer] : writer_per_partition_key)
+            writer.clearAllDataFiles();
+
+        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+
+        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+
+        auto [last_version, metadata_path, compression_method]
+            = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
+
+        metadata_compression_method = compression_method;
+        filename_generator.setVersion(last_version + 1);
+
+        metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
+        partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
+
+        auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+        if (new_schema_id != current_schema_id)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
+
+        auto schemas = metadata->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
         {
-            for (const auto & [_, writer] : writer_per_partition_key)
-                writer.clearAllDataFiles();
-
-            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
-
-            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-
-            auto [last_version, metadata_path, compression_method]
-                = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
-
-            LOG_DEBUG(getLogger("IcebergWrites"), "LASTEST VERSION {}", last_version);
-
-            metadata_compression_method = compression_method;
-            filename_generator.setVersion(last_version + 1);
-
-            metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
-            partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
-            auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
-
-            auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-            auto schemas = metadata->getArray(Iceberg::f_schemas);
-            for (size_t i = 0; i < schemas->size(); ++i)
+            if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
-                if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-                {
-                    current_schema = schemas->getObject(static_cast<UInt32>(i));
-                }
-            }
-            for (size_t i = 0; i < partitions_specs->size(); ++i)
-            {
-                auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
-                if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
-                {
-                    partititon_spec = current_partition_spec;
-                    if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                        partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
-                    break;
-                }
+                current_schema = schemas->getObject(static_cast<UInt32>(i));
             }
         }
-        catch (...)
+        for (size_t i = 0; i < partitions_specs->size(); ++i)
         {
-            LOG_DEBUG(getLogger("IcebergMutations"), "Iceberg cleanup failed");
+            auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
+            if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+            {
+                partititon_spec = current_partition_spec;
+                if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
+                    partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
+                break;
+            }
         }
     };
 
@@ -1592,7 +1591,35 @@ bool IcebergStorageSink::initializeMetadata()
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
                 auto filename_version_hint = filename_generator.generateVersionHint();
-                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, false);
+                size_t i = 0;
+                while (i < 10)
+                {
+                    StoredObject object_info(filename_version_hint.path_in_storage);
+                    std::string version_hint_value;
+                    std::string etag = "*";
+                    if (object_storage->exists(object_info))
+                    {
+                        auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
+                        version_hint_value = object_data;
+                        etag = object_metadata.etag;
+                    }
+
+                    if (version_hint_value < storage_metadata_name)
+                    {
+                        try
+                        {
+                            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, /* write-if-none-match */ etag);
+                            break;
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                        }
+                    }
+                    else
+                        break;
+                    ++i;
+                }
             }
 
             if (catalog)

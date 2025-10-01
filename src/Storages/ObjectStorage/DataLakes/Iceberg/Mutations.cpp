@@ -113,7 +113,7 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
 }
 
 
-std::optional<WriteDataFilesResult> writeDataFiles(
+static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -314,13 +314,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         return {};
 }
 
-struct WriteMetadataResult
-{
-    bool success;
-    std::function<void()> cleanup;
-};
-
-WriteMetadataResult writeMetadataFiles(
+static bool writeMetadataFiles(
     DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
@@ -333,7 +327,8 @@ WriteMetadataResult writeMetadataFiles(
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
-    SharedHeader sample_block)
+    SharedHeader sample_block,
+    CompressionMethod compression_method)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -401,7 +396,6 @@ WriteMetadataResult writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
         }
         catch (...)
         {
@@ -488,18 +482,51 @@ WriteMetadataResult writeMetadataFiles(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
-            if (object_storage->exists(StoredObject(storage_metadata_name)))
+            try
             {
+                Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, /* write-if-none-match */ "*", compression_method);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 cleanup();
-                return {false, cleanup};
+                return false;
             }
 
-            Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
                 auto filename_version_hint = filename_generator.generateVersionHint();
-                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
+                size_t i = 0;
+                while (i < 10)
+                {
+                    StoredObject object_info(filename_version_hint.path_in_storage);
+                    std::string version_hint_value;
+                    std::string etag = "*";
+                    if (object_storage->exists(object_info))
+                    {
+                        auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
+                        version_hint_value = object_data;
+                        etag = object_metadata.etag;
+                    }
+
+                    if (version_hint_value < storage_metadata_name)
+                    {
+                        try
+                        {
+                            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, /* write-if-none-match */ etag);
+                            break;
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                        }
+                    }
+                    else
+                        break;
+                    ++i;
+                }
             }
+
             if (catalog)
             {
                 String catalog_filename = metadata_name;
@@ -511,7 +538,7 @@ WriteMetadataResult writeMetadataFiles(
                 {
                     cleanup();
                     object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                    return {false, cleanup};
+                    return false;
                 }
             }
         }
@@ -521,7 +548,7 @@ WriteMetadataResult writeMetadataFiles(
         cleanup();
         throw;
     }
-    return {true, cleanup};
+    return true;
 }
 
 void mutate(
@@ -537,69 +564,69 @@ void mutate(
     auto common_path = configuration->getRawPath().path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
-    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
 
-    auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
-
-    filename_generator.setVersion(last_version + 1);
-    filename_generator.setCompressionMethod(compression_method);
-
-    auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-    auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
-    auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
-    Poco::JSON::Object::Ptr partititon_spec;
-    for (size_t i = 0; i < partitions_specs->size(); ++i)
+    int max_retries = MAX_TRANSACTION_RETRIES;
+    while (--max_retries > 0)
     {
-        auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
-        if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+        FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
+        auto log = getLogger("IcebergMutations");
+        auto [last_version, metadata_path, compression_method]
+            = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+        auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
+        Poco::JSON::Object::Ptr partititon_spec;
+        for (size_t i = 0; i < partitions_specs->size(); ++i)
         {
-            partititon_spec = current_partition_spec;
-            break;
+            auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
+            if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+            {
+                partititon_spec = current_partition_spec;
+                break;
+            }
         }
-    }
 
-    auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
-    auto schemas = metadata->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr current_schema;
+        auto schemas = metadata->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
         {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
+            if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                current_schema = schemas->getObject(static_cast<UInt32>(i));
+            }
         }
-    }
 
-    const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
-    std::optional<ChunkPartitioner> chunk_partitioner;
-    if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
-        chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
-    auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
+        const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
+        std::optional<ChunkPartitioner> chunk_partitioner;
+        if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
+            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
 
-    if (mutation_files)
-    {
-        int max_retries = MAX_TRANSACTION_RETRIES;
-        while (--max_retries > 0)
+        auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
+
+        if (mutation_files)
         {
-            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
-            if (!result_delete_files_metadata.success)
+            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()), compression_method);
+            if (!result_delete_files_metadata)
                 continue;
+
             if (mutation_files->data_file)
             {
-                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
-                if (!result_data_files_metadata.success)
+                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block, compression_method);
+                if (!result_data_files_metadata)
                 {
-                    result_delete_files_metadata.cleanup();
                     continue;
                 }
             }
-            break;
         }
-
-        if (max_retries == 0)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
     }
+
+    if (max_retries == 0)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
 void alter(
@@ -611,48 +638,92 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
-    auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
-
-    filename_generator.setVersion(last_version + 1);
-    filename_generator.setCompressionMethod(compression_method);
-
-    auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-
-    auto metadata_json_generator = MetadataGenerator(metadata);
-
-    switch (params[0].type)
+    size_t i = 0;
+    while (i++ < MAX_TRANSACTION_RETRIES)
     {
-        case AlterCommand::Type::ADD_COLUMN:
-            metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
-            break;
-        case AlterCommand::Type::DROP_COLUMN:
-            if (params[0].clear)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
-            metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
-            break;
-        case AlterCommand::Type::MODIFY_COLUMN:
-            metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
+
+        FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
+        auto log = getLogger("IcebergMutations");
+        auto [last_version, metadata_path, compression_method]
+            = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+
+        auto metadata_json_generator = MetadataGenerator(metadata);
+
+        switch (params[0].type)
+        {
+            case AlterCommand::Type::ADD_COLUMN:
+                metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
+                break;
+            case AlterCommand::Type::DROP_COLUMN:
+                if (params[0].clear)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
+                metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
+                break;
+            case AlterCommand::Type::MODIFY_COLUMN:
+                metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
+        }
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+
+        auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+
+        try
+        {
+            Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, /* write-if-none-match */ "*", compression_method);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            continue;
+        }
+
+        if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = filename_generator.generateVersionHint();
+            size_t j = 0;
+            while (j++ < 10)
+            {
+                StoredObject object_info(filename_version_hint.path_in_storage);
+                std::string version_hint_value;
+                std::string etag = "*";
+                if (object_storage->exists(object_info))
+                {
+                    auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
+                    version_hint_value = object_data;
+                    etag = object_metadata.etag;
+                }
+
+                if (version_hint_value < storage_metadata_name)
+                {
+                    try
+                    {
+                        Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, /* write-if-none-match */ etag);
+                        break;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                }
+                else
+                    break;
+            }
+        }
+        break;
     }
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-    std::string json_representation = removeEscapedSlashes(oss.str());
-
-    auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-    auto cleanup = [] {};
-    Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
-
-    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-    {
-        auto filename_version_hint = filename_generator.generateVersionHint();
-        Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
-    }
+    if (i == MAX_TRANSACTION_RETRIES)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
 }
 
 #endif

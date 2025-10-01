@@ -573,15 +573,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
-    auto cleanup = [&]() { object_storage->removeObjectIfExists(StoredObject(filename)); };
 
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, cleanup, compression_method);
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, cleanup);
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*");
     }
+
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
@@ -1014,7 +1014,6 @@ void IcebergMetadata::drop(ContextPtr context)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
 }
-
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
 {
