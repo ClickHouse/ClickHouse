@@ -265,6 +265,9 @@ bool VersionMetadata::canBeRemoved()
         if (creation_csn.load(std::memory_order_relaxed) == Tx::RolledBackCSN)
             return true;
 
+        if (removal_tid_hash == Tx::PrehistoricTID.getHash())
+            return true;
+
         TIDHash removal_lock = getRemovalTIDLock();
 
         if (removal_lock == Tx::PrehistoricTID.getHash())
