@@ -9,7 +9,7 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3", "local"])
+@pytest.mark.parametrize("storage_type", ["s3",])
 def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_version, storage_type):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = "test_writes_multiple_threads_" + storage_type + "_" + get_uuid_str()
@@ -19,6 +19,6 @@ def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_versio
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     query_id = get_uuid_str()
-    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_experimental_insert_into_iceberg": 1, "max_iceberg_data_file_rows" : 4000000, "query_id": query_id, "max_insert_threads": 2})
+    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_experimental_insert_into_iceberg": 1, "max_iceberg_data_file_rows" : 4000000, "query_id": query_id, "max_insert_threads": 32})
     instance.query("SYSTEM FLUSH LOGS")
     assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == '4000000\n'

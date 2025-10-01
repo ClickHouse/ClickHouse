@@ -106,6 +106,63 @@ void writeMessageToFile(
     }
 }
 
+bool writeMetadataFileAndVersionHint(
+    const std::string & metadata_file_path,
+    const std::string & metadata_file_content,
+    const std::string & version_hint_path,
+    const std::string & version_hint_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    DB::CompressionMethod compression_method,
+    bool try_write_version_hint)
+{
+    try
+    {
+        Iceberg::writeMessageToFile(metadata_file_path, metadata_file_content, object_storage, context, /* write-if-none-match */ "*", compression_method);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+
+    if (try_write_version_hint)
+    {
+        size_t i = 0;
+        while (i < 10)
+        {
+            StoredObject object_info(version_hint_path);
+            std::string version_hint_value;
+            std::string etag = "*";
+            if (object_storage->exists(object_info))
+            {
+                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
+                version_hint_value = object_data;
+                etag = object_metadata.etag;
+            }
+
+            if (version_hint_value < metadata_file_path)
+            {
+                try
+                {
+                    Iceberg::writeMessageToFile(metadata_file_path, version_hint_content, object_storage, context, /* write-if-none-match */ etag);
+                    break;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+            else
+                break;
+            ++i;
+        }
+    }
+
+    return true;
+}
+
+
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
     std::string transform_name = Poco::toLower(transform_name_src);

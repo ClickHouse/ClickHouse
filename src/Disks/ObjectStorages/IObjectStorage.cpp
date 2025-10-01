@@ -49,6 +49,8 @@ SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata(
     copyDataMaxBytes(*buffer, out, max_size_bytes);
     out.finalize();
 
+    /// By default no metadata available, derived classes may override this method
+
     return result;
 }
 

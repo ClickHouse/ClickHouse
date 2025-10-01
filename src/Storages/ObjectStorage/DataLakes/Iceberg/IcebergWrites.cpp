@@ -1577,49 +1577,11 @@ bool IcebergStorageSink::initializeMetadata()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
-            try
+            auto hint = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(storage_metadata_name, json_representation, hint.path_in_storage, storage_metadata_name, object_storage, context, metadata_compression_method, configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
-                Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, /* write-if-none-match */ "*", metadata_compression_method);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
                 cleanup();
                 return false;
-            }
-
-            if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-            {
-                auto filename_version_hint = filename_generator.generateVersionHint();
-                size_t i = 0;
-                while (i < 10)
-                {
-                    StoredObject object_info(filename_version_hint.path_in_storage);
-                    std::string version_hint_value;
-                    std::string etag = "*";
-                    if (object_storage->exists(object_info))
-                    {
-                        auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
-                        version_hint_value = object_data;
-                        etag = object_metadata.etag;
-                    }
-
-                    if (version_hint_value < storage_metadata_name)
-                    {
-                        try
-                        {
-                            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, /* write-if-none-match */ etag);
-                            break;
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
-                        }
-                    }
-                    else
-                        break;
-                    ++i;
-                }
             }
 
             if (catalog)
