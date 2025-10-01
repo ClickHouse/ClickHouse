@@ -57,11 +57,7 @@ workflow = Workflow.Config(
             for j in JobConfigs.functional_tests_jobs
         ],
         JobConfigs.bugfix_validation_it_job.set_dependency(
-            [
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                JobConfigs.tidy_build_arm_jobs[0].name,
-            ]
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
@@ -73,7 +69,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        JobConfigs.integration_test_asan_flaky_pr_job,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.docker_sever.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
