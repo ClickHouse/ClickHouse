@@ -215,9 +215,13 @@ possible_properties = {
     ),
     "mlock_executable": true_false_lambda,
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
-    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(
+        0.2, 0.2, -20, 19
+    ),
     "os_threads_nice_value_merge_mutate": threshold_generator(0.2, 0.2, -20, 19),
-    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(
+        0.2, 0.2, -20, 19
+    ),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),

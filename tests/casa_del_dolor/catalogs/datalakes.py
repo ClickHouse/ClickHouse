@@ -4,10 +4,12 @@ import random
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import typing
 
 from pathlib import Path
+from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.rest import RestCatalog
 from .laketables import (
@@ -19,6 +21,9 @@ from .laketables import (
 from .tablegenerator import LakeTableGenerator
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
+
+sys.path.append("..")
+from utils.backgroundworker import BackgroundWorker
 
 
 """
@@ -503,6 +508,13 @@ logger.jetty.level = warn
         with open(self.spark_log_config, "w+") as f:
             f.write(spark_log)
 
+        # Setup background worker for later
+        def my_task():
+            pass
+
+        self.worker = BackgroundWorker(my_task, interval=1)
+        self.worker.start()
+
     def start_uc_server(self):
         if self.uc_server is None:
             if self.uc_server_dir is None:
@@ -611,6 +623,7 @@ logger.jetty.level = warn
         self.run_query(session, next_sql)
 
     def create_lake_database(self, cluster, data) -> bool:
+        saved_exception = None
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
@@ -709,13 +722,15 @@ logger.jetty.level = warn
         )
         try:
             self.create_database(next_session, catalog_name)
-        except:
-            next_session.stop()
-            raise
+        except Exception as e:
+            saved_exception = e
         next_session.stop()
+        if saved_exception is not None:
+            raise saved_exception
         return True
 
     def create_lake_table(self, cluster, data) -> bool:
+        saved_exception = None
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
@@ -730,12 +745,14 @@ logger.jetty.level = warn
             next_session = self.get_next_session(
                 cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
             )
+            saved_exception = None
             try:
                 self.create_database(next_session, catalog_name)
-            except:
-                next_session.stop()
-                raise
+            except Exception as e:
+                saved_exception = e
             next_session.stop()
+            if saved_exception is not None:
+                raise saved_exception
 
         # To fix, this is not right for some catalogs
         next_location = ""
@@ -770,16 +787,38 @@ logger.jetty.level = warn
             self.run_query(next_session, next_sql)
             if random.randint(1, 5) != 5:
                 self.data_generator.insert_random_data(next_session, next_table)
-        except:
-            next_session.stop()
-            raise
+        except Exception as e:
+            saved_exception = e
         next_session.stop()
+        if saved_exception is not None:
+            raise saved_exception
         return True
 
     def update_or_check_table(self, cluster, data) -> bool:
         res = False
+        saved_exception = None
         catalog_name = data["catalog_name"]
         next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
+        run_background_worker = random.randint(1, 2) == 1
+
+        if run_background_worker:
+
+            def my_new_task():
+                client = Client(
+                    host=(
+                        cluster.instances["node0"].ip_address
+                        if hasattr(cluster, "instances")
+                        else "localhost"
+                    ),
+                    port=9000,
+                    command=cluster.client_bin_path,
+                )
+                client.query(
+                    f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
+                )
+
+            self.worker.set_task_function(my_new_task)
+            self.worker.resume()
 
         next_session = self.get_next_session(
             cluster,
@@ -794,10 +833,13 @@ logger.jetty.level = warn
                 if random.randint(1, 10) < 9
                 else self.table_check.check_table(cluster, next_session, next_table)
             )
-        except:
-            next_session.stop()
-            raise
+        except Exception as e:
+            saved_exception = e
         next_session.stop()
+        if run_background_worker:
+            self.worker.pause()
+        if saved_exception is not None:
+            raise saved_exception
         return res
 
     def close_sessions(self):
