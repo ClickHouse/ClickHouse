@@ -1473,9 +1473,6 @@ bool IcebergStorageSink::initializeMetadata()
 
     auto cleanup = [&] ()
     {
-        for (const auto & [_, writer] : writer_per_partition_key)
-            writer.clearAllDataFiles();
-
         for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
