@@ -216,11 +216,12 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const
+bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const PartialEvalResultsFunction & partial_eval_results_function) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
 
+    size_t position = 0;
     for (const auto & element : rpn)
     {
         switch (element.function)
@@ -282,6 +283,11 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 rpn_stack.emplace_back(false, true);
                 break;
             /// No `default:` to make the compiler warn if not all enum values are handled.
+        }
+        if (unlikely(partial_eval_results_function))
+        {
+            partial_eval_results_function(position, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            position++;
         }
     }
 
