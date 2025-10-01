@@ -9,7 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
-#include<Common/NamePrompter.h>
+#include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
 
