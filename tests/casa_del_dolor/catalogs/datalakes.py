@@ -6,7 +6,6 @@ import socket
 import subprocess
 import sys
 import time
-import typing
 
 from pathlib import Path
 from integration.helpers.client import Client
@@ -18,7 +17,7 @@ from .laketables import (
     LakeCatalogs,
     SparkTable,
 )
-from .tablegenerator import LakeTableGenerator
+from .tablegenerator import LakeTableGenerator, sample_from_dict
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
@@ -54,14 +53,6 @@ from utils.backgroundworker import BackgroundWorker
 
 def get_local_base_path(catalog_name: str) -> str:
     return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
-
-
-Parameter = typing.Callable[[], int | float]
-
-
-def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
-    items = random.sample(list(d.items()), sample)
-    return dict(items)
 
 
 true_false_lambda = lambda: random.choice(["false", "true"])
