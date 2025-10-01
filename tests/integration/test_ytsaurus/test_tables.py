@@ -44,7 +44,7 @@ def test_yt_simple_table_engine(started_cluster):
     assert instance.query("SELECT a FROM yt_test") == "10\n20\n"
 
     assert instance.query("SELECT * FROM yt_test WHERE a > 15") == "20\t40\n"
-    instance.wait_for_log_line("Get list of heavy proxies from path", look_behind_lines=3000)
+    instance.wait_for_log_line("Get list of heavy proxies from path")
 
     instance.query("DROP TABLE yt_test SYNC")
 
@@ -474,7 +474,7 @@ def test_ytsaurus_dynamic_table(started_cluster):
         f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/dynamic_table', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
     )
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
-    instance.wait_for_log_line("Get list of heavy proxies from path", look_behind_lines=3000)
+    instance.wait_for_log_line("Get list of heavy proxies from path")
     instance.query("DROP TABLE yt_test SYNC")
     yt.remove_table("//tmp/dynamic_table")
 
