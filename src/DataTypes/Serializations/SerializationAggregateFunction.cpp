@@ -53,8 +53,19 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     }
     catch (...)
     {
-        function->destroy(place);
-        throw;
+        // For approx_top_* states, optionally swallow malformed input and keep an empty state instead of failing CAST
+        if (function->getName().starts_with("approx_top_") && std::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        {
+            // Reset to a fresh empty state
+            function->destroy(place);
+            place = arena.alignedAlloc(size_of_state, function->alignOfData());
+            function->create(place);
+        }
+        else
+        {
+            function->destroy(place);
+            throw;
+        }
     }
 
     column_concrete.getData().push_back(place);
@@ -120,8 +131,17 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     }
     catch (...)
     {
-        function->destroy(place);
-        throw;
+        if (function->getName().starts_with("approx_top_") && std::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        {
+            function->destroy(place);
+            place = arena.alignedAlloc(size_of_state, function->alignOfData());
+            function->create(place);
+        }
+        else
+        {
+            function->destroy(place);
+            throw;
+        }
     }
 
     column_concrete.getData().push_back(place);
