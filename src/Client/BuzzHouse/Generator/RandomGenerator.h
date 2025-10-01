@@ -244,7 +244,9 @@ public:
     String nextIPv6();
 };
 
-using RandomSettingParameter = std::function<String(RandomGenerator &)>;
+class FuzzConfig;
+
+using RandomSettingParameter = std::function<String(RandomGenerator &, FuzzConfig &)>;
 
 struct CHSetting
 {

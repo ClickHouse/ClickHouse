@@ -297,6 +297,8 @@ public:
 
     String getRandomMutation(uint64_t rand_val);
 
+    String getRandomIcebergHistoryValue(const String & property);
+
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);

@@ -616,6 +616,24 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
     return res;
 }
 
+String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                property,
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res.empty() ? "-1" : res;
+}
+
 String FuzzConfig::tableGetRandomPartitionOrPart(
     const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {

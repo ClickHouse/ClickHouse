@@ -236,7 +236,7 @@ void StatementGenerator::generateSettingValues(
         SetValue * set = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
 
         set->set_property(setting);
-        set->set_value(settings.at(setting).random_func(rg));
+        set->set_value(settings.at(setting).random_func(rg, fc));
     }
 }
 
