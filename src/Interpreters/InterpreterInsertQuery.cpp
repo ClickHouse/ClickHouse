@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -81,6 +82,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace MergeTreeSetting
@@ -761,6 +763,8 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClu
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
+            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
             ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
