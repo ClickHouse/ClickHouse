@@ -105,4 +105,16 @@ SELECT message FROM system.text_log WHERE
        startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
 
 
+----------------------------------------------------
+SELECT 'Test NOT searchAll';
+
+SELECT count() FROM tab WHERE NOT searchAll(text, ['Blick']);
+
+SYSTEM FLUSH LOGS text_log;
+
+SELECT message FROM system.text_log WHERE
+       (logger_name = 'optimizeDirectReadFromTextIndex') and
+       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
+
+
 DROP TABLE IF EXISTS tab;

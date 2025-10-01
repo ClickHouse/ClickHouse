@@ -20,3 +20,6 @@ Added: [__text_index_idx_hasToken_0, __text_index_idx_hasToken_1], Removed: [tex
 Test searchAny or hasToken
 2
 Added: [__text_index_idx_searchAny_0, __text_index_idx_hasToken_0], Removed: [text]
+Test NOT searchAll
+1
+Added: [__text_index_idx_searchAll_0], Removed: [text]
