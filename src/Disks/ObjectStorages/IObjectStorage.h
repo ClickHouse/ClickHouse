@@ -222,6 +222,9 @@ public:
     /// NOTE: This method exists because it's impossible to get object metadata in generic way
     /// from readObject. ReadObject returns ReadBufferFromFileBase and most of implementations
     /// issue first request to object store only in first call of read/next method.
+    ///
+    /// WARN: Don't use this method for large objects, it will eat all memory.
+    /// That is the reason why max_size_bytes is explicit and 0-value will not help to bypass this check.
     virtual SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
