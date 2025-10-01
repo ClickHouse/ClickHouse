@@ -487,7 +487,7 @@ if (NOT ENABLE_JEMALLOC)
 endif ()
 
 macro (clickhouse_add_executable target)
-    if (FUZZER AND (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse"))
+    if (FUZZER AND (${target} MATCHES ".+_fuzzer" OR ${target} STREQUAL "clickhouse"))
         add_library(${target}_objects OBJECT ${ARGN})
     endif()
     # invoke built-in add_executable
