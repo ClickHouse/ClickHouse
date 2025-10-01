@@ -47,4 +47,4 @@ FROM (
 )
 ORDER BY event_time_microseconds ASC;
 
-DROP TABLE IF EXISTS tab;
+DROP TABLE tab;
