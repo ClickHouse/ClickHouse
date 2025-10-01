@@ -3,6 +3,7 @@
 #include <memory>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
@@ -33,13 +34,29 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
@@ -984,6 +1001,70 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 
 namespace
 {
+
+std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
+{
+    auto execution_context = Context::createCopy(context);
+
+    ColumnsDescription fake_column_descriptions(all_columns);
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    QueryAnalyzer analyzer(/* only_analyze */ false);
+
+    auto expression_list = buildQueryTree(default_expr_list, execution_context);
+
+    auto query_node = std::make_shared<QueryNode>(execution_context);
+    query_node->getProjectionNode() = expression_list;
+    query_node->getJoinTree() = fake_table_expression;
+
+    QueryTreeNodePtr query_tree = query_node;
+    analyzer.resolve(query_tree, nullptr, execution_context);
+
+    query_node = std::static_pointer_cast<QueryNode>(query_tree);
+    expression_list = query_node->getProjectionNode();
+
+    assertNoAggregateFunctionNodes(expression_list, "in column DEFAULT expression");
+
+    if (!get_sample_block)
+        return {};
+
+    collectSourceColumns(expression_list, planner_context, false);
+    collectSets(expression_list, *planner_context);
+
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    auto [actions, _] = buildActionsDAGFromExpressionNode(
+        expression_list,
+        {},
+        planner_context,
+        empty_correlated_columns_set);
+
+    // Get all projected column names from actions dag and rename/alias each output result to match the original column names in the sample output block.
+    const auto & projection_columns = query_node->getProjectionColumns();
+    auto & outputs = actions.getOutputs();
+    NamesWithAliases rename_pairs;
+    rename_pairs.reserve(outputs.size());
+
+    for (size_t i = 0; i != outputs.size(); ++i)
+        rename_pairs.emplace_back(outputs[i]->result_name, projection_columns[i].name);
+
+    // do the actual projecting/renaming for the output actions
+    actions.project(rename_pairs);
+
+    for (const auto & action : actions.getNodes())
+        if (action.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
+
+    Block result_block;
+    for (const auto * output : outputs)
+        result_block.insert(ColumnWithTypeAndName{output->column, output->result_type, output->result_name});
+
+    return result_block;
+}
+
 std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     for (const auto & child : default_expr_list->children)
@@ -992,16 +1073,21 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 
     try
     {
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
-        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (const auto & action : actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block);
+        else
+        {
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
+            const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
+            for (const auto & action : actions->getActions())
+                if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                    throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
-        if (!get_sample_block)
-            return {};
+            if (!get_sample_block)
+                return {};
 
-        return actions->getSampleBlock();
+            return actions->getSampleBlock();
+        }
     }
     catch (Exception & ex)
     {
