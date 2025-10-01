@@ -1009,9 +1009,6 @@ FormatFactory & FormatFactory::instance()
 
 std::vector<String> FormatFactory::getAllRegisteredNames() const
 {
-    std::vector<String> result;
-    auto getter = [](const auto & pair) { return pair.first; };
-    std::transform(getAllFormats().begin(), getAllFormats().end(), std::back_inserter(result), getter);
-    return result;
+    return KnownFormatNames::instance().getAllRegisteredNames();
 }
 }
