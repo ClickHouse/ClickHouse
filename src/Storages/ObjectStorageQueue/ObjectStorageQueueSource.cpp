@@ -261,6 +261,8 @@ ObjectStorageQueueSource::FileIterator::next()
                     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
                     if (is_retry)
                     {
+                        LOG_TEST(log, "Retrying set processing requests batch ({})", processing_paths.size());
+
                         bool failed = false;
                         bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
                         if (is_multi_read_enabled)
@@ -268,6 +270,7 @@ ObjectStorageQueueSource::FileIterator::next()
                             auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
                             for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
+                                LOG_TEST(log, "Having {}, current processor: {}", processing_paths_responses[i].data, processor_info);
                                 if (processing_paths_responses[i].data != processor_info)
                                 {
                                     failed = true;
@@ -280,7 +283,15 @@ ObjectStorageQueueSource::FileIterator::next()
                             String data;
                             for (const auto & path : processing_paths)
                             {
-                                if (!zk_client->tryGet(path, data) || data != processor_info)
+                                if (!zk_client->tryGet(path, data))
+                                {
+                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    failed = true;
+                                    break;
+                                }
+
+                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
+                                if (data != processor_info)
                                 {
                                     failed = true;
                                     break;
@@ -296,7 +307,9 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                     }
                     code = zk_client->tryMulti(requests, responses);
-                }, [&] { is_retry = true; });
+                },
+                /* iteration_cleanup */[]{},
+                /* on_error */[&] { is_retry = true; });
 
                 if (code == Coordination::Error::ZOK)
                 {

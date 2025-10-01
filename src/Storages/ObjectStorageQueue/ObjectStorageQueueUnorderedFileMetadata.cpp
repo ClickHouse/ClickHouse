@@ -84,7 +84,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             }
         }
         code = zk_client->tryMulti(requests, responses);
-    }, [&]{ is_retry = true; });
+    },
+    /* iteration_cleanup */[&]{},
+    /* on_error */[&]{ is_retry = true; });
 
     if (code == Coordination::Error::ZOK)
     {

@@ -323,7 +323,6 @@ def test_alter_settings(started_cluster):
         ).strip()
     )
 
-    use_persistent_nodes = random.choice(["true", "false"])
     node1.query(
         f"""
         ALTER TABLE r.{table_name}
@@ -345,7 +344,6 @@ def test_alter_settings(started_cluster):
         min_insert_block_size_bytes_for_materialized_views=321,
         cleanup_interval_min_ms=34500,
         cleanup_interval_max_ms=45600,
-        use_persistent_processing_nodes={use_persistent_nodes},
         persistent_processing_node_ttl_seconds=89
     """
     )
@@ -368,7 +366,6 @@ def test_alter_settings(started_cluster):
         "min_insert_block_size_bytes_for_materialized_views": 321,
         "cleanup_interval_min_ms": 34500,
         "cleanup_interval_max_ms": 45600,
-        "use_persistent_processing_nodes": use_persistent_nodes,
         "persistent_processing_node_ttl_seconds": 89
     }
     string_settings = {"after_processing": "delete"}
