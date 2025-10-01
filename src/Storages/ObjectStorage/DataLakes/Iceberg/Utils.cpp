@@ -118,6 +118,9 @@ bool writeMetadataFileAndVersionHint(
 {
     try
     {
+        if (object_storage->exists(StoredObject(metadata_file_path)))
+            return false;
+
         Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", compression_method);
     }
     catch (...)
@@ -145,7 +148,7 @@ bool writeMetadataFileAndVersionHint(
             {
                 try
                 {
-                    Iceberg::writeMessageToFile(metadata_file_path, version_hint_content, object_storage, context, /* write-if-none-match */ etag);
+                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, /* write-if-none-match */ etag);
                     break;
                 }
                 catch (...)

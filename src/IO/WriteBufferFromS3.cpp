@@ -706,7 +706,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
-    if (write_settings.s3_write_if_none_match.empty())
+    if (!write_settings.s3_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.s3_write_if_none_match);
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840

@@ -1422,6 +1422,7 @@ void IcebergStorageSink::finalizeBuffers()
     {
         writer.finalize();
         total_chunks_size += writer.getResultBytes();
+        LOG_DEBUG(log, "For partition written {} data files with total size {} bytes",  writer.getDataFiles().size(), writer.getResultBytes());
     }
 
     if (writer_per_partition_key.empty())
@@ -1480,6 +1481,8 @@ bool IcebergStorageSink::initializeMetadata()
 
         auto [last_version, metadata_path, compression_method]
             = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
+
+        LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
         metadata_compression_method = compression_method;
         filename_generator.setVersion(last_version + 1);
@@ -1575,11 +1578,17 @@ bool IcebergStorageSink::initializeMetadata()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
+            LOG_DEBUG(log, "Writing new metadata file {}", storage_metadata_name);
             auto hint = filename_generator.generateVersionHint();
             if (!writeMetadataFileAndVersionHint(storage_metadata_name, json_representation, hint.path_in_storage, storage_metadata_name, object_storage, context, metadata_compression_method, configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
+                LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
                 cleanup();
                 return false;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Metadata file {} written", storage_metadata_name);
             }
 
             if (catalog)
