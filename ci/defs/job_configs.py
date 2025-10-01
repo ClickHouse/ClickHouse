@@ -827,6 +827,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/scripts/fuzzer/",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/buzzhouse_job.py",
             ],
         ),
