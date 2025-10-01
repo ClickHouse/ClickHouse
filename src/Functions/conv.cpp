@@ -133,7 +133,7 @@ private:
             UInt64 value = parseFromBase(clean_number, from_base);
             if (is_negative)
             {
-                value = static_cast<UInt64>(-static_cast<Int64>(value));
+                value = 0ULL - value;
             }
             return formatToBase(value, to_base);
         }
