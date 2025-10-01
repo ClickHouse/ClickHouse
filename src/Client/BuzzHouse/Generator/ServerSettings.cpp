@@ -212,6 +212,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
          {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
          false)},
     {"rewrite_count_distinct_if_with_count_distinct_implementation", trueOrFalseSetting},
+    {"rewrite_in_to_join", trueOrFalseSetting},
     {"short_circuit_function_evaluation",
      CHSetting(
          [](RandomGenerator & rg)
