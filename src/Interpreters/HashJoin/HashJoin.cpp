@@ -730,46 +730,21 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            bool has_right_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
                 /// Save rows that do not hold conditions
-                not_joined_map = ColumnUInt8::create(block.rows(), 0);
-
-                const auto & sel = stored_columns->selector;
-                if (sel.isContinuousRange())
+                not_joined_map = ColumnUInt8::create(rows, 0);
+                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
                 {
-                    auto range = sel.getRange();
-                    for (size_t i = range.first; i < range.second; ++i)
-                    {
-                        /// Condition hold, do not save row
-                        if (!join_mask_col.isRowFiltered(i))
-                            continue;
+                    /// Condition hold, do not save row
+                    if (!join_mask_col.isRowFiltered(i))
+                        continue;
 
-                        /// NULL key will be saved anyway because, do not save twice
-                        if (save_nullmap && (*null_map)[i])
-                            continue;
+                    /// NULL key will be saved anyway because, do not save twice
+                    if (save_nullmap && (*null_map)[i])
+                        continue;
 
-                        not_joined_map->getData()[i] = 1;
-                        has_right_not_joined = true;
-                    }
-                }
-                else
-                {
-                    /// for non-continuous selector iterate explicit indices that belong to this shard
-                    const auto & idxs = sel.getIndexes().getData();
-                    for (size_t i : idxs)
-                    {
-                        if (!join_mask_col.isRowFiltered(i)) /// Keep rows that failed the ON condition
-                            continue;
-
-                        /// skip if right key is null
-                        if (save_nullmap && (*null_map)[i])
-                            continue;
-
-                        not_joined_map->getData()[i] = 1;
-                        has_right_not_joined = true;
-                    }
+                    not_joined_map->getData()[i] = 1;
                 }
             }
 
@@ -802,19 +777,19 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     });
             }
 
-            if (!flag_per_row && save_nullmap)
+            if (!flag_per_row && save_nullmap && is_inserted)
             {
                 data->nullmaps.emplace_back(stored_columns, null_map_holder);
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
+            if (!flag_per_row && not_joined_map && is_inserted)
             {
                 data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && !is_inserted && !save_nullmap && !has_right_not_joined)
+            if (!flag_per_row && !is_inserted)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
