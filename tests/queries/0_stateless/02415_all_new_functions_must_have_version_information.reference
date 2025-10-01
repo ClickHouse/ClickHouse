@@ -13,7 +13,6 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-asin
 caseWithExpression
 catboostEvaluate
 countSubstrings
@@ -76,7 +75,6 @@ dynamicType
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
-factorial
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
@@ -220,6 +218,5 @@ tupleNames
 validateNestedArraySizes
 variantElement
 variantType
-widthBucket
 windowID
 wkt

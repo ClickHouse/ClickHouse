@@ -1,5 +1,13 @@
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BUZZHOUSE;
+}
+}
+
 namespace BuzzHouse
 {
 
@@ -650,6 +658,14 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {RANGE_HASHED, rangeHashedLayoutSettings},
          {SPARSE_HASHED, hashedLayoutSettings},
          {SSD_CACHE, ssdCachedLayoutSettings}});
+
+    for (const auto & entry : fc.hot_table_settings)
+    {
+        if (mergeTreeTableSettings.find(entry) == mergeTreeTableSettings.end())
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown MergeTree table setting: {}", entry);
+        }
+    }
 }
 
 }
