@@ -21,6 +21,12 @@ namespace CurrentMetrics
 extern const Metric DestroyAggregatesThreads;
 }
 
+namespace ProfileEvents
+{
+extern const Event RuntimeDataflowStatisticsInputBytes;
+extern const Event RuntimeDataflowStatisticsOutputBytes;
+}
+
 namespace DB
 {
 
@@ -58,6 +64,8 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats)
     {
+        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
+        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputBytes, stats.output_bytes);
         std::lock_guard lock(mutex);
         if (auto existing_stats = stats_cache->get(key))
         {

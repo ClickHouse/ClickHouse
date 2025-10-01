@@ -1168,6 +1168,9 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
+    \
+    M(RuntimeDataflowStatisticsInputBytes, "How many times refreshable materialized views refreshed", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "How many times refreshable materialized views failed to refresh", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
