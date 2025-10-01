@@ -6,6 +6,7 @@
 #include <optional>
 #include <filesystem>
 #include <variant>
+#include <expected>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -149,6 +150,12 @@ struct ObjectKeyWithMetadata
     {}
 };
 
+struct SmallObjectDataWithMetadata
+{
+    std::string data;
+    ObjectMetadata metadata;
+};
+
 using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
@@ -208,6 +215,15 @@ public:
         const StoredObject & object,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const = 0;
+
+    /// Read small object into memory and return it as string
+    /// Also contain consistent object metadata
+    /// if size of object is larger than max_size_bytes return nullopt
+    virtual SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

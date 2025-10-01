@@ -35,6 +35,15 @@ void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
+/// Read single object
+SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject &,
+    const ReadSettings &,
+    size_t,
+    std::optional<size_t>) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readSmallObjectAndGetObjectMetadata() is not supported");
+}
 
 ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
