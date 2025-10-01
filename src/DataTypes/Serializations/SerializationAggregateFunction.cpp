@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <cstdlib>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
@@ -54,7 +55,9 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     catch (...)
     {
         // For approx_top_* states, optionally swallow malformed input and keep an empty state instead of failing CAST
-        if (function->getName().starts_with("approx_top_") && std::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        const String & fname = function->getName();
+        const bool is_approx_top = (fname.rfind("approx_top_", 0) == 0);
+        if (is_approx_top && ::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
         {
             // Reset to a fresh empty state
             function->destroy(place);
@@ -131,7 +134,9 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     }
     catch (...)
     {
-        if (function->getName().starts_with("approx_top_") && std::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        const String & fname = function->getName();
+        const bool is_approx_top = (fname.rfind("approx_top_", 0) == 0);
+        if (is_approx_top && ::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
         {
             function->destroy(place);
             place = arena.alignedAlloc(size_of_state, function->alignOfData());
