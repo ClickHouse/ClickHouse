@@ -189,11 +189,6 @@ SYSTEM JEMALLOC FLUSH PROFILE
 
 It will return the location of the flushed profile.
 
-You can also specify a different prefix for the file in the query:
-```sql
-SYSTEM JEMALLOC FLUSH PROFILE TO '/tmp/my_own_prefix'
-```
-
 </TabItem>
 <TabItem value="keeper" label="Keeper">
     
