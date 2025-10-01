@@ -2374,6 +2374,7 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive
@@ -3001,6 +3002,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 throwif
 throwIf
+Tiering
 timeDiff
 TimescaleDB's
 timeseries

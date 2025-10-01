@@ -133,9 +133,7 @@ public:
         /// Noop
     }
 
-    void createEmptyMetadataFile(const std::string & /* path */) override;
-
-    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override;
+    void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
 
     void createDirectory(const std::string & path) override;
 

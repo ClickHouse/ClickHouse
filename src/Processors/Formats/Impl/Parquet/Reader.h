@@ -25,7 +25,6 @@ namespace DB::Parquet
 
 // TODO [parquet]:
 //  * column_mapper
-//  * find a way to make this compatible at all with our implementation of iceberg positioned deletes: https://github.com/ClickHouse/ClickHouse/pull/83094 (prewhere causes nonconsecutive row idxs in chunk)
 //  * allow_geoparquet_parser
 //  * test on files from https://github.com/apache/parquet-testing
 //  * check fields for false sharing, add cacheline padding as needed
@@ -390,6 +389,7 @@ struct Reader
         const parq::RowGroup * meta;
 
         size_t row_group_idx; // in parquet file
+        size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
