@@ -23,98 +23,28 @@ INSERT INTO tab VALUES (101, 'Alick a01'),
 
 
 ----------------------------------------------------
-SELECT 'Test hasToken';
 
-SELECT count() FROM tab WHERE hasToken(text, 'Alick');
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time DESC LIMIT 1;
-
-----------------------------------------------------
-SELECT 'Test searchAll';
-
-SELECT count() FROM tab WHERE searchAll(text, ['Alick']);
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
-----------------------------------------------------
-SELECT 'Test searchAny';
-
-SELECT count() FROM tab WHERE searchAny(text, ['Alick']);
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
-----------------------------------------------------
--- Adds column, but keeps the original
-SELECT 'Test hasToken + length(text)';
-
-SELECT count() FROM tab WHERE hasToken(text, 'Alick') or length(text) > 1;
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
-----------------------------------------------------
--- Adds column, but keeps the original
-SELECT 'Test select text + hasToken';
-
-SELECT text FROM tab WHERE searchAny(text, ['Alick']);
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT 'Test hasToken:', count() FROM tab WHERE hasToken(text, 'Alick');
+SELECT 'Test searchAll:', count() FROM tab WHERE searchAll(text, ['Alick']);
+SELECT 'Test searchAny:', count() FROM tab WHERE searchAny(text, ['Alick']);
+SELECT 'Test hasToken + length(text):', count() FROM tab WHERE hasToken(text, 'Alick') or length(text) > 1;
+SELECT 'Test select text + searchAny:', text FROM tab WHERE searchAny(text, ['Alick']);
+SELECT 'Test hasToken and hasToken:', count() FROM tab WHERE hasToken(text, 'Alick') and hasToken(text, 'Blick');
+SELECT 'Test searchAny or hasToken:', count() FROM tab WHERE searchAny(text, ['Blick']) or hasToken(text, 'Alick');
+SELECT 'Test NOT searchAll:', count() FROM tab WHERE NOT searchAll(text, ['Blick']);
 
 
 ----------------------------------------------------
--- 2 substitutions
+-- Now check the logs all at once (one by one is too slow)
 ----------------------------------------------------
-SELECT 'Test hasToken and hasToken';
-
-SELECT count() FROM tab WHERE hasToken(text, 'Alick') and hasToken(text, 'Blick');
-
 SYSTEM FLUSH LOGS text_log;
 
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
-----------------------------------------------------
-SELECT 'Test searchAny or hasToken';
-
-SELECT count() FROM tab WHERE searchAny(text, ['Blick']) or hasToken(text, 'Alick');
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
-
-----------------------------------------------------
-SELECT 'Test NOT searchAll';
-
-SELECT count() FROM tab WHERE NOT searchAll(text, ['Blick']);
-
-SYSTEM FLUSH LOGS text_log;
-
-SELECT message FROM system.text_log WHERE
-       (logger_name = 'optimizeDirectReadFromTextIndex') and
-       startsWith(message, 'Added:') ORDER BY event_time_microseconds DESC LIMIT 1;
-
+SELECT message
+FROM (
+     SELECT event_time_microseconds, message FROM system.text_log
+     WHERE logger_name = 'optimizeDirectReadFromTextIndex' AND startsWith(message, 'Added:')
+     ORDER BY event_time_microseconds DESC LIMIT 8
+)
+ORDER BY event_time_microseconds ASC;
 
 DROP TABLE IF EXISTS tab;
