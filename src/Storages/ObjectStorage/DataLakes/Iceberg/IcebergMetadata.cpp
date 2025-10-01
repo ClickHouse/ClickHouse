@@ -71,6 +71,8 @@
 
 namespace ProfileEvents
 {
+extern const Event IcebergIteratorInitializationMicroseconds;
+extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -439,6 +441,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         DB::IcebergMetadataLogLevel::Metadata,
         configuration_ptr->getRawPath().path,
         metadata_path,
+        std::nullopt,
         std::nullopt);
 
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
@@ -830,6 +833,8 @@ ObjectIterator IcebergMetadata::iterate(
             persistent_components.table_location);
     }
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
+
     return std::make_shared<IcebergIterator>(
         object_storage,
         local_context,
@@ -849,6 +854,7 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
 
 StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
     StorageInMemoryMetadata result;
     result.setColumns(
