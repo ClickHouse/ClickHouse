@@ -414,7 +414,7 @@ If the cardinality of a posting list is less than 16 (configurable by parameter 
 ### Direct read {#direct-read}
 
 Certain types of text queries can be speed up significantly by an optimization called "direct read".
-More specifically, if the SELECT query does _not_ project from the text column, the optimization can be applied.
+More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
 
 Example:
 
@@ -424,20 +424,13 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-This is specially useful and a common strategy used to filter other columns based in the text column entry.
+The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
+Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
 
-Some queries that project from the text column or include more complex conditions may still benefit from the "direct read" optimization.
-However, the degree of performance improvement varies depending on the query structure.
-
-### High level description and supported functions {#supported-functions}
-
-The direct read optimization leverages the inverted index to retrieve all necessary information directly, without accessing the full text
-column whenever possible.  By relying on structured dictionary information stored in memory, queries can avoid the overhead of parsing large
-text columns.  Because the index is typically much smaller than the full text data, reading from it is considerably more efficient.
-
-This optimization is not available for all text search functions, as the inverted index is intentionally kept compact.  Currently, only
-`hasToken`, `searchAll`, and `searchAny` support direct read, though we plan to extend this functionality to additional commonly used
-functions.  The optimization remains effective even when these supported functions are combined with logical operators.
+**Supported functions**
+The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
+These functions can also be combined by AND, OR, and NOT operators.
+The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
