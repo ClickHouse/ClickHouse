@@ -481,7 +481,15 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
     static const auto & searchFuncs
-        = {SQLFunc::FUNCstartsWith, SQLFunc::FUNChasToken, SQLFunc::FUNChasTokenOrNull, SQLFunc::FUNCsearchAny, SQLFunc::FUNCsearchAll};
+        = {SQLFunc::FUNCendsWith,
+           SQLFunc::FUNChas,
+           SQLFunc::FUNChasToken,
+           SQLFunc::FUNChasTokenOrNull,
+           SQLFunc::FUNCmapContains,
+           SQLFunc::FUNCmatch,
+           SQLFunc::FUNCsearchAll,
+           SQLFunc::FUNCsearchAny,
+           SQLFunc::FUNCstartsWith};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
 
     sfc->mutable_func()->set_catalog_func(nfunc);
