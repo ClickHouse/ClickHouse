@@ -38,9 +38,9 @@ public:
     virtual std::string getInfoForLog() const = 0;
 };
 
-using DiskObjectStorageOperation = std::shared_ptr<IDiskObjectStorageOperation>;
+using DiskObjectStorageOperationPtr = std::shared_ptr<IDiskObjectStorageOperation>;
 
-using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
+using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperationPtr>;
 
 
 /// Disk object storage transaction, actually implement some part of disk object storage

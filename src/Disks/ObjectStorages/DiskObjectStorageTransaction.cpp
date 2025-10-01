@@ -759,13 +759,13 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
 
 struct ValidateTransactionObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    DiskTransactionPtr disk_transaction;
+    IDiskTransaction & disk_transaction;
     std::function<void(IDiskTransaction&)> check_function;
 
     ValidateTransactionObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        DiskTransactionPtr disk_transaction_,
+        IDiskTransaction & disk_transaction_,
         std::function<void(IDiskTransaction&)> check_function_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , disk_transaction(disk_transaction_)
@@ -779,7 +779,7 @@ struct ValidateTransactionObjectStorageOperation final : public IDiskObjectStora
 
     void execute(MetadataTransactionPtr) override
     {
-        check_function(*disk_transaction);
+        check_function(disk_transaction);
     }
 
     void undo() override
@@ -1327,8 +1327,7 @@ bool DiskObjectStorageTransaction::isTransactional() const
 
 void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskTransaction&)> check_function)
 {
-    auto operation = std::make_unique<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, shared_from_this(), std::move(check_function));
-    operations_to_execute.emplace_back(std::move(operation));
+    operations_to_execute.emplace_back(std::make_shared<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, *this, std::move(check_function)));
 }
 
 }

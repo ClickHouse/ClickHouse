@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DATA_ENCRYPTION_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -142,12 +141,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncryptedTransaction::readUncommitte
 
 void DiskEncryptedTransaction::validateTransaction(std::function<void(IDiskTransaction &)> check_function)
 {
-    auto wrapped = [weak = weak_from_this(), moved_func = std::move(check_function)](IDiskTransaction &)
+    auto wrapped = [&, moved_func = std::move(check_function)](IDiskTransaction &)
     {
-        if (auto tx = weak.lock())
-            moved_func(*tx);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskEncryptedTransaction is already destroyed");
+        moved_func(*this);
     };
     delegate_transaction->validateTransaction(std::move(wrapped));
 }
