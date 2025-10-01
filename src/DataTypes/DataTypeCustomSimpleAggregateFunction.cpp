@@ -36,6 +36,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "any_respect_nulls",
         "anyLast",
         "anyLast_respect_nulls",
+        "count",
         "min",
         "max",
         "sum",
@@ -154,7 +155,16 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
-    DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
+    DataTypePtr storage_type;
+    if (!argument_types.empty())
+    {
+        storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
+    }
+    else
+    {
+        // count does not require an argument, get UInt64 result type from the function
+        storage_type = function->getResultType();
+    }
 
     if (!function->getResultType()->equals(*removeLowCardinality(storage_type)))
     {

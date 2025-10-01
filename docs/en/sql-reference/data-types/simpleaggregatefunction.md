@@ -51,6 +51,7 @@ The following aggregate functions are supported:
 - [`any_respect_nulls`](/sql-reference/aggregate-functions/reference/any)
 - [`anyLast`](/sql-reference/aggregate-functions/reference/anylast)
 - [`anyLast_respect_nulls`](/sql-reference/aggregate-functions/reference/anylast)
+- [`count`](/sql-reference/aggregate-functions/reference/count)
 - [`min`](/sql-reference/aggregate-functions/reference/min)
 - [`max`](/sql-reference/aggregate-functions/reference/max)
 - [`sum`](/sql-reference/aggregate-functions/reference/sum)
