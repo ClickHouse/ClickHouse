@@ -813,9 +813,12 @@ logger.jetty.level = warn
                     port=9000,
                     command=cluster.client_bin_path,
                 )
-                client.query(
-                    f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
-                )
+                nloops = random.randint(1, 50)
+                for _ in range(nloops):
+                    client.query(
+                        f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
+                    )
+                    time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
