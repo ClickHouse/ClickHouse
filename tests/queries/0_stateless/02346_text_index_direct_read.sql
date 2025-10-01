@@ -1,5 +1,5 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
+-- Tags: no-parallel
+-- Tag no-parallel -- due to access to the system.text_log
 
 SET log_queries = 1;
 
