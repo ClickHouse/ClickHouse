@@ -32,16 +32,19 @@ struct IFilterDescription
     virtual ~IFilterDescription() = default;
 };
 
-/// Obtain a filter from non constant Column, that may have type: UInt8, Nullable(UInt8).
 struct FilterDescription final : public IFilterDescription
 {
-    const IColumnFilter * data = nullptr; /// Pointer to filter when it is not always true or always false.
-    ColumnPtr data_holder;                /// If new column was generated, it will be owned by holder.
+    const IColumnFilter * data = nullptr;
+    ColumnPtr data_holder;
 
     explicit FilterDescription(const IColumn & column);
 
     ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
     size_t countBytesInFilter() const override;
+
+    /// Takes a filter column that may be sparse or const or low-cardinality or nullable or wider
+    /// than 8 bits, etc. Returns a ColumnUInt8.
+    static ColumnPtr preprocessFilterColumn(ColumnPtr column);
 };
 
 struct SparseFilterDescription final : public IFilterDescription

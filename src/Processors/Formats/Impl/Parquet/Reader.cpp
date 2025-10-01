@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -1945,22 +1946,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
         if (!step.need_filter)
             continue;
 
-        filter_column = filter_column->convertToFullIfNeeded();
-        if (filter_column->isNullable())
-        {
-            /// Calculate `filter->nested & !filter->null_map`.
-            auto col = IColumn::mutate(std::move(filter_column));
-            auto & nullable = typeid_cast<ColumnNullable &>(*col);
-            const auto & null_map = nullable.getNullMapData();
-            auto nested_col = IColumn::mutate(std::move(nullable.getNestedColumnPtr()));
-            auto & nested_data = typeid_cast<ColumnUInt8 &>(*nested_col).getData();
-            chassert(nested_data.size() == null_map.size());
-            for (size_t i = 0; i < nested_data.size(); ++i)
-                nested_data[i] &= !null_map[i];
-            nullable.getNullMapColumnPtr().reset();
-            filter_column = std::move(nested_col);
-        }
-
+        filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 
