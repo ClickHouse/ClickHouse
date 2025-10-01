@@ -189,7 +189,7 @@ public:
         unused_count.fetch_add(n, std::memory_order_relaxed);
     }
 
-    // Returns True if was spot for the first time
+    /// returns true if the row was not used before
     bool markUsed(size_t row_id)
     {
         bool expected = false;
