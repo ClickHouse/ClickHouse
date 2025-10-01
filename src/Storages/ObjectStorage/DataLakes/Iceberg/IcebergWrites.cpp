@@ -77,28 +77,29 @@ using namespace Iceberg;
 
 namespace Setting
 {
-extern const SettingsUInt64 output_format_compression_level;
-extern const SettingsUInt64 output_format_compression_zstd_window_log;
-extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
-extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsBool write_full_path_in_iceberg_metadata;
+    extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 }
 
 namespace DataLakeStorageSetting
 {
-extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
-extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
 {
-extern const char iceberg_writes_cleanup[];
+    extern const char iceberg_writes_cleanup[];
 }
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
