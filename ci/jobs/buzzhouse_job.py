@@ -93,6 +93,7 @@ def main():
                 "ipv6",
                 "geo",
                 "fixedstring",
+                "qbit",
             ]
             random.shuffle(disabled_types)
             disabled_types_str = ",".join(
@@ -198,7 +199,7 @@ def main():
             "allow_infinite_tables": random.choice([True, False]),
             "allow_hardcoded_inserts": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
-            "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,233,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
+            "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
             "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
@@ -231,6 +232,28 @@ def main():
                 "send_logs_level",
                 "query_plan_max_limit_for_lazy_materialization",
                 "max_download_buffer_size",
+            ],
+            # MergeTree settings to set more often
+            "hot_table_settings": [
+                "add_minmax_index_for_numeric_columns",
+                "add_minmax_index_for_string_columns",
+                "allow_coalescing_columns_in_partition_or_order_key",
+                "allow_experimental_replacing_merge_with_cleanup",
+                "allow_experimental_reverse_key",
+                "allow_floating_point_partition_key",
+                "allow_nullable_key",
+                "allow_summing_columns_in_partition_or_order_key",
+                "allow_suspicious_indices",
+                "allow_vertical_merges_from_compact_to_wide_parts",
+                "enable_block_number_column",
+                "enable_block_offset_column",
+                "min_bytes_for_full_part_storage",
+                "min_bytes_for_wide_part",
+                "min_rows_for_full_part_storage",
+                "min_rows_for_wide_part",
+                "vertical_merge_algorithm_min_bytes_to_activate",
+                "vertical_merge_algorithm_min_columns_to_activate",
+                "vertical_merge_algorithm_min_rows_to_activate",
             ],
         }
         with open(buzz_config_file, "w") as outfile:
