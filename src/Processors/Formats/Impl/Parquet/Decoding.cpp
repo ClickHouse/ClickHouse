@@ -249,7 +249,7 @@ struct PlainBooleanDecoder : public PageDecoder
                 /// x = 00000000 000000hg 00000000 000000fe 00000000 000000dc 00000000 000000ba
                 x = (x | (x <<  7)) & 0x0101010101010101ul;
                 /// x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b 0000000a
-                memcpy(to + i * 8, &x, 8);
+                memcpy(to + i, &x, 8);
                 i += 8;
             }
             else

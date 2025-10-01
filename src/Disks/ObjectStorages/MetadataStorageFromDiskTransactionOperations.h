@@ -2,6 +2,7 @@
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 
 #include <unordered_set>
 
@@ -223,14 +224,14 @@ private:
 
 struct RewriteFileOperation final : public IMetadataOperation
 {
-    RewriteFileOperation(std::string path_, std::vector<std::pair<ObjectStorageKey, uint64_t>> objects_, const std::string & compatible_key_prefix, IDisk & disk_);
+    RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
 
 private:
     const std::string path;
-    const std::vector<std::pair<ObjectStorageKey, uint64_t>> objects;
+    const StoredObjects objects;
     const std::string & compatible_key_prefix;
     IDisk & disk;
 
@@ -239,15 +240,14 @@ private:
 
 struct AddBlobOperation final : public IMetadataOperation
 {
-    AddBlobOperation(std::string path_, ObjectStorageKey key_, uint64_t size_in_bytes_, const std::string & compatible_key_prefix, IDisk & disk_);
+    AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
 
 private:
     const std::string path;
-    const ObjectStorageKey key;
-    const uint64_t size_in_bytes;
+    const StoredObject object;
     const std::string & compatible_key_prefix;
     IDisk & disk;
 

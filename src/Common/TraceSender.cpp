@@ -1,3 +1,4 @@
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/TraceSender.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -46,6 +47,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(UInt64)                     /// thread_id
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
+        + sizeof(UInt8)                      /// memory_context
+        + sizeof(UInt8)                      /// memory_blocked_context
         + sizeof(ProfileEvents::Event)       /// event
         + sizeof(ProfileEvents::Count);      /// increment
 
@@ -88,6 +91,14 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     writePODBinary(thread_id, out);
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);
+    if (extras.memory_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
+    if (extras.memory_blocked_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_blocked_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
     writePODBinary(extras.event, out);
     writePODBinary(extras.increment, out);
 

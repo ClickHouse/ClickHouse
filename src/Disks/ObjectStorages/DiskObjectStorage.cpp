@@ -389,15 +389,6 @@ void DiskObjectStorage::createDirectories(const String & path)
     }
 }
 
-
-void DiskObjectStorage::clearDirectory(const String & path)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->clearDirectory(path);
-    transaction->commit();
-}
-
-
 void DiskObjectStorage::removeDirectory(const String & path)
 {
     if (!isDirectoryEmpty(path))
@@ -754,7 +745,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         && settings.read_through_distributed_cache
         && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = object_storage->getConnectionInfo();
+        connection_info = DistributedCache::getConnectionInfo(*object_storage);
         if (connection_info)
             use_distributed_cache = true;
     }

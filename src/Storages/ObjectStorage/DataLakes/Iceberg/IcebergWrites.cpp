@@ -1095,7 +1095,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
+
     size_t partitions_count = partition_num_to_first_row.size();
+    chassert(partitions_count > 0);
     std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
     result_columns.reserve(partitions_count);
 
@@ -1322,7 +1324,7 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
     , use_previous_snapshots(use_previous_snapshots_)
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, /* if_not_updated_before */ true);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
