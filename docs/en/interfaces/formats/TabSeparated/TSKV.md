@@ -6,6 +6,7 @@ keywords: ['TSKV']
 output_format: true
 slug: /interfaces/formats/TSKV
 title: 'TSKV'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -29,7 +30,6 @@ SearchPhrase=photos of dog breeds    count()=1091
 SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
-
 
 ```sql title="Query"
 SELECT * FROM t_null FORMAT TSKV
@@ -56,9 +56,9 @@ if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-fo
 
 [NULL](/sql-reference/syntax.md) is formatted as `\N`.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using the following tskv file, named as `football.tskv`:
 
@@ -88,7 +88,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tskv' FORMAT TSKV;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `TSKV` format:
 
@@ -120,4 +120,4 @@ date=2022-05-07 season=2021     home_team=Stevenage Borough     away_team=Salfor
 date=2022-05-07 season=2021     home_team=Walsall       away_team=Swindon Town  home_team_goals=0       away_team_goals=3
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

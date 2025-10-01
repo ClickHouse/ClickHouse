@@ -4,6 +4,7 @@ sidebar_label: 'clickhouse-local'
 sidebar_position: 60
 slug: /operations/utilities/clickhouse-local
 title: 'clickhouse-local'
+doc_type: 'reference'
 ---
 
 # clickhouse-local
@@ -174,7 +175,6 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
 When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](/get-started/quick-start) for more details.
 :::
 
-
 ## Format Conversions {#format-conversions}
 
 You can use `clickhouse-local` for converting data between different formats. Example:
@@ -193,7 +193,6 @@ As a shortcut, you can write it using the `--copy` argument:
 ```bash
 $ clickhouse-local --copy < data.json > data.csv
 ```
-
 
 ## Usage {#usage}
 
@@ -239,7 +238,6 @@ Arguments:
 - `-V`, `--version` — print version information and exit.
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
-
 
 ## Examples {#examples}
 

@@ -6,23 +6,25 @@ sidebar_label: 'Atomic'
 sidebar_position: 10
 slug: /engines/database-engines/atomic
 title: 'Atomic'
+doc_type: 'reference'
 ---
 
 # Atomic 
 
-The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default. 
+The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse. 
 
 :::note
-On ClickHouse Cloud, the `Replicated` database engine is used by default.
+On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default and also supports
+the above mentioned operations.
 :::
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 ```
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## Specifics and recommendations {#specifics-and-recommendations}
 
 ### Table UUID {#table-uuid}
 
@@ -68,7 +70,7 @@ you can use an atomic one:
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
+### ReplicatedMergeTree in atomic database {#replicatedmergetree-in-atomic-database}
 
 For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
@@ -81,7 +83,6 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
 
-
-## See Also {#see-also}
+## See also {#see-also}
 
 - [system.databases](../../operations/system-tables/databases.md) system table

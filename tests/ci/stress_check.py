@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import csv
 import logging
 import os
@@ -9,12 +7,10 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from build_download_helper import download_all_deb_packages
 from ci_utils import Shell
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY
 from get_robot_token import get_parameter_from_ssm
-from pr_info import PRInfo
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -140,10 +136,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
-    temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
+    temp_path = repo_path / "ci/tmp"
     repo_tests_path = repo_path / "tests"
 
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
@@ -151,17 +145,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
-    pr_info = PRInfo()
-
-    packages_path = temp_path / "packages"
-    packages_path.mkdir(parents=True, exist_ok=True)
-
-    if check_name.startswith("amd_") or check_name.startswith("arm_"):
-        # this is praktika based CI
-        print("Copy input *.deb artifacts")
-        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
-    else:
-        download_all_deb_packages(check_name, reports_path, packages_path)
+    packages_path = temp_path
 
     docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 

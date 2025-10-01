@@ -8,8 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-config="${BASH_SOURCE[0]/.sh/.xml}"
-
 CONTAINER="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
 
 DISK_NAME="$CONTAINER"

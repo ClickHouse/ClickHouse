@@ -4,28 +4,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./parts.lib
+. "$CURDIR"/parts.lib
+
 set -e
-
-function wait_for_block_allocated()
-{
-    path="$1"
-    block_number="$2"
-
-    for _ in {0..50}; do
-        sleep 0.1
-        res=`$CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.zookeeper
-            WHERE path = '$path' AND name = '$block_number'
-        "`
-        if [[ "$res" -eq "1" ]]; then
-            break
-        fi
-    done
-}
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_block_number SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     SET insert_keeper_fault_injection_probability = 0.0;
 
     CREATE TABLE t_lwu_block_number (id UInt64,s String)
@@ -40,7 +26,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 failpoint_name="rmt_merge_task_sleep_in_prepare"
-storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+storage_policy=`$CLICKHOUSE_CLIENT -q "SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"`
 
 if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_merge_task_sleep_in_prepare"
@@ -55,7 +41,7 @@ $CLICKHOUSE_CLIENT --query "
 sleep 1.0
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
     OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL;
 "

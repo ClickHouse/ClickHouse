@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Functions for Generating Random Numbers'
-sidebar_label: 'Random Numbers'
-sidebar_position: 145
+sidebar_label: 'Random number'
 slug: /sql-reference/functions/random-functions
 title: 'Functions for Generating Random Numbers'
+doc_type: 'reference'
 ---
 
 # Functions for Generating Random Numbers

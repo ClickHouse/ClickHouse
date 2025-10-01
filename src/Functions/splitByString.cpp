@@ -144,7 +144,51 @@ using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
 
 REGISTER_FUNCTION(SplitByString)
 {
-    factory.registerFunction<FunctionSplitByString>();
+    FunctionDocumentation::Description description = R"(
+Splits a string with a constant `separator` consisting of multiple characters into an array of substrings.
+If the string `separator` is empty, it will split the string `s` into an array of single characters.
+
+Empty substrings may be selected when:
+- A non-empty separator occurs at the beginning or end of the string
+- There are multiple consecutive non-empty separators
+- The original string `s` is empty while the separator is not empty
+
+:::note
+Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "splitByString(separator, s[, max_substrings])";
+    FunctionDocumentation::Arguments arguments = {
+        {"separator", "The separator.", {"String"}},
+        {"s", "The string to split.", {"String"}},
+        {"max_substrings", "Optional. When `max_substrings > 0`, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible. Default value: `0`.", {"Int64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings of `s`", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT splitByString(', ', '1, 2 3, 4,5, abcde');",
+        R"(
+┌─splitByStrin⋯4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde'] │
+└───────────────────────────┘
+        )"
+    },
+    {
+        "Empty separator",
+        "SELECT splitByString('', 'abcde');",
+        R"(
+┌─splitByString('', 'abcde')─┐
+│ ['a','b','c','d','e']      │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSplitByString>(documentation);
 }
 
 }

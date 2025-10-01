@@ -107,8 +107,6 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
-
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
@@ -163,7 +161,7 @@ private:
     mutable std::condition_variable committing_blocks_cv;
 
     void removeCommittingBlock(CommittingBlock block);
-    CommittingBlock allocateBlockNumber(CommittingBlock::Op op);
+    std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
     CommittingBlocksSet getCommittingBlocks() const;
 

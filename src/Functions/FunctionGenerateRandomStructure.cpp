@@ -420,7 +420,6 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
         auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
         writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
     }
-    chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);
 }

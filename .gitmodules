@@ -124,7 +124,7 @@
 	url = https://github.com/anrieff/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
-	url = https://github.com/ClickHouse/openldap
+	url = https://github.com/openldap/openldap
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse/AMQP-CPP
@@ -357,9 +357,6 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
-[submodule "contrib/sz3"]
-	path = contrib/sz3
-	url = https://github.com/ClickHouse/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -375,3 +372,15 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/ai-sdk-cpp"]
+	path = contrib/ai-sdk-cpp
+	url = https://github.com/ClickHouse/ai-sdk-cpp
+[submodule "contrib/nlohmann-json"]
+	path = contrib/nlohmann-json
+	url = https://github.com/nlohmann/json.git
+[submodule "contrib/crc32c"]
+	path = contrib/crc32c
+	url = https://github.com/google/crc32c.git
+[submodule "contrib/antlr4-cpp-runtime"]
+	path = contrib/antlr4-cpp-runtime
+	url = https://github.com/antlr/antlr4.git

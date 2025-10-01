@@ -947,6 +947,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+
+        /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
+        /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
+        if (!index_granularity->hasFinalMark())
+        {
+            return skip_and_return_all_part_ranges();
+        }
+
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -1118,7 +1126,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     {
         auto pipe = in_order_reading_step_getter(ranges);
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
@@ -1168,7 +1176,8 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
+        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
     return result;
 }
@@ -1205,7 +1214,7 @@ Pipes readByLayers(
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
         merging_pipes[i].addSimpleTransform(
-            [&](const Block & header)
+            [&](const SharedHeader & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);
