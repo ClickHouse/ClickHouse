@@ -49,6 +49,10 @@ struct FormatSettings
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
+    
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_STATE = "state";
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE = "value";
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY = "array";
 
     enum class DateTimeInputFormat : uint8_t
     {
@@ -540,6 +544,9 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
+
+    /// Settings for AggregateFunction input format
+    String aggregate_function_input_format = AGGREGATE_FUNCTION_INPUT_FORMAT_STATE;
 };
 
 }
