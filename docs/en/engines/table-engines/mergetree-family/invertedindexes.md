@@ -439,7 +439,6 @@ This optimization is not available for all text search functions, as the inverte
 `hasToken`, `searchAll`, and `searchAny` support direct read, though we plan to extend this functionality to additional commonly used
 functions.  The optimization remains effective even when these supported functions are combined with logical operators.
 
-
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
