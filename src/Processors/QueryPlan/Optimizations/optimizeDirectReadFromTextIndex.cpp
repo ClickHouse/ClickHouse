@@ -36,19 +36,19 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-String optimizationInfoToString(const IndexReadColumns &added_columns, const Names &removed_columns)
+String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
 {
     chassert(!added_columns.empty());
 
     String result = "Added: [";
 
-    // This will list the index and the new associated columns
-    size_t idx = 0;
-    for (const auto &[_, name_and_type] : added_columns)
+    /// This will list the index and the new associated columns
+    bool first_iteration = true;
+    for (const auto & [_, columns_names_and_types] : added_columns)
     {
-        for (const String & column_name : name_and_type.getNames())
+        for (const String & column_name : columns_names_and_types.getNames())
         {
-            if (++idx > 1)
+            if (!std::exchange(first_iteration, false))
                 result += ", ";
             result += column_name;
         }
