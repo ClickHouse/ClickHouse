@@ -40,6 +40,7 @@ size_t LazyOutput::buildOutput(size_t size_to_reserve,
         else
             buildOutputFromRowRefLists(size_to_reserve, columns, row_refs_begin, row_refs_end);
     }
+    /// Without rows_limit, all possible rows are added and result value is not used.
     return 0;
 }
 
@@ -76,6 +77,7 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
     }
 }
 
+/// Returns how many rows were added to columns, up to rows_limit
 size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
     size_t rows_offset, size_t rows_limit) const

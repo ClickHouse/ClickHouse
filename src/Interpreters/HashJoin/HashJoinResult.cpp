@@ -198,7 +198,9 @@ struct HashJoinResult::GenerateCurrentRowState
 
     std::span<UInt64> matched_rows;
 
+    /// Rows already outputted from the block, which are skipped on next call to generateBlock.
     size_t state_row_offset = 0;
+    /// If non-zero, limits the number of rows outputted from the block.
     size_t state_row_limit = 0;
 
     bool is_last = false;
@@ -236,6 +238,8 @@ void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offs
     }
 }
 
+/// Generates joined block from lazy output
+/// If state is not finished, it will keep it for next call, otherwise reset it.
 static Block generateBlock(
     std::unique_ptr<HashJoinResult::GenerateCurrentRowState> & state,
     const LazyOutput & lazy_output,
@@ -263,6 +267,9 @@ static Block generateBlock(
     auto last_offset = state->offsets.empty() ? 0 : state->offsets.back();
 
     if (state->state_row_limit > 0)
+        /// Apply row offset and limit to create a subset of the original offsets.
+        /// Example: original offsets [3, 5, 8, 10], row_offset=4, row_limit=3 -> [0, 1, 3, 3]
+        /// This extracts rows [4, 7] from the full result.
         applyShiftAndLimitToOffsets(state->offsets, offsets, state->state_row_offset, rows_added);
     else
         offsets = std::move(state->offsets);
