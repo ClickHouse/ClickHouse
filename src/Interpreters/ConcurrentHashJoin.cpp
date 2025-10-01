@@ -371,11 +371,11 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
 
     hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
     if (hash_joins[0]->data->twoLevelMapIsUsed())
-        dispatched_blocks.emplace_back(std::move(block));
+        dispatched_blocks = dispatchBlockTwoLevel(table_join->getOnlyClause().key_names_left, std::move(block));
     else
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
 
-    chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
+    chassert(dispatched_blocks.size() == slots || slots == 1);
 
     return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
 }
@@ -466,11 +466,30 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 
     /// Collect non-joined streams from each slot
     std::vector<IBlocksStreamPtr> streams;
-    for (const auto & hj : hash_joins)
+    // Special handling for joins with always false condition (no right keys):
+    // iterate all shards, since right-side rows are stored per-slot
+    if (table_join->getOnlyClause().key_names_right.empty())
     {
-        std::lock_guard lock(hj->mutex);
-        if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
+        for (const auto & hj : hash_joins)
+        {
+            std::lock_guard lock(hj->mutex);
+            if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                streams.push_back(std::move(s));
+        }
+    }
+    else
+    {
+        /// For regular joins, ask each shard for its non-joined rows stream.
+        /// Do not rely on hasNonJoinedRows() gating: some cases don't mark flags per-row.
+        for (const auto & hash_join : hash_joins)
+        {
+            std::lock_guard lock(hash_join->mutex);
+            if (auto s = hash_join->data->getNonJoinedBlocks(
+                    left_sample_block, result_sample_block, max_block_size))
+            {
+                streams.push_back(std::move(s));
+            }
+        }
     }
 
     if (streams.empty())
@@ -620,6 +639,23 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
 
     return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
+}
+
+ScatteredBlocks ConcurrentHashJoin::dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block)
+{
+    const size_t num_shards = hash_joins.size();
+    if (num_shards == 1)
+    {
+        ScatteredBlocks res;
+        res.emplace_back(std::move(from_block));
+        return res;
+    }
+
+    /// use already existing selector: it already has HasGetBucketFromHash -> bucket & (slots-1)
+    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
+
+    /// for TwoLevelMap, we don't copy columns
+    return scatterBlocksWithSelector(num_shards, selector, from_block);
 }
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
