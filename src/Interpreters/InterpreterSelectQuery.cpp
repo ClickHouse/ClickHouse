@@ -2448,7 +2448,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
 
     // It's possible to optimize count() given only partition predicates
     ActionsDAG::NodeRawConstPtrs filter_nodes;
-    if (analysis_result.hasFilter())
+    if (analysis_result.hasRowPolicyFilter())
     {
         auto & row_level_filter = analysis_result.row_policy_info;
         filter_nodes.push_back(&row_level_filter->actions.findInOutputs(row_level_filter->column_name));

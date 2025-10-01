@@ -293,7 +293,7 @@ struct ExpressionAnalysisResult
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasFilter() const { return row_policy_info.get(); }
+    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
     bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
