@@ -1,4 +1,4 @@
-When creating a PR use PR body template from `/.github/PULL_REQUEST_TEMPLATE.md` 
+When creating a PR, use PR body template from `/.github/PULL_REQUEST_TEMPLATE.md` 
 
 When performing a code review, ignore `/.github/workflows/*` files.
 
