@@ -21,7 +21,6 @@ namespace DB
 class ReadBufferFromPocoSocket;
 class Session;
 class TCPServer;
-struct BlockIO;
 
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html

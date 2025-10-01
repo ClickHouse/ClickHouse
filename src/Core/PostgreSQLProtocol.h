@@ -1314,9 +1314,43 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    static String extractNormalizedPrefix(const String & query, size_t max_len)
+    {
+        String prefix;
+        prefix.reserve(max_len);
+
+        bool prev_was_space = true;
+
+        for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
+        {
+            if (std::isspace(query[i]))
+            {
+                if (!prev_was_space)
+                {
+                    prefix.push_back(' ');
+                    prev_was_space = true;
+                }
+            }
+            else
+            {
+                prefix.push_back(std::toupper(query[i]));
+                prev_was_space = false;
+            }
+        }
+
+        return prefix;
+    }
+
     static Command classifyQuery(const String & query)
     {
-        std::vector<std::pair<String, Command>> query_patterns = {
+        // Max pattern length: "CREATE TEMPORARY TABLE"
+        constexpr size_t MAX_PATTERN_LEN = 22;
+        static_assert(std::string_view("CREATE TEMPORARY TABLE").size() == MAX_PATTERN_LEN);
+
+        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
+
+        static const std::vector<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1334,20 +1368,13 @@ public:
             {"FETCH", Command::FETCH},
             {"COPY", Command::COPY},
             {"EXECUTE", Command::EXECUTE},
-            {"USE", Command::USE},  // ClickHouse-specific, not have in PostgreSQL
+            {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
             {"SET", Command::SET},
         };
 
         for (const auto & [pattern, command] : query_patterns)
         {
-            String::const_iterator iter = std::search(
-                query.begin(),
-                query.end(),
-                pattern.begin(),
-                pattern.end(),
-                [](char a, char b){return std::toupper(a) == b;});
-
-            if (iter != query.end())
+            if (prefix.starts_with(pattern))
                 return command;
         }
 
