@@ -1422,7 +1422,6 @@ void IcebergStorageSink::finalizeBuffers()
     {
         writer.finalize();
         total_chunks_size += writer.getResultBytes();
-        LOG_DEBUG(log, "For partition written {} data files with total size {} bytes",  writer.getDataFiles().size(), writer.getResultBytes());
     }
 
     if (writer_per_partition_key.empty())
