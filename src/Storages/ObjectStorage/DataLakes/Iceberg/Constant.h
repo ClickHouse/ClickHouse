@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
 #define DEFINE_ICEBERG_FIELD_ALIAS(name, strval) constexpr const char * f_##name = #strval;
@@ -72,6 +72,11 @@ DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
 DEFINE_ICEBERG_FIELD(properties);
 DEFINE_ICEBERG_FIELD(owner);
+DEFINE_ICEBERG_FIELD(column_sizes);
+DEFINE_ICEBERG_FIELD(null_value_counts);
+DEFINE_ICEBERG_FIELD(lower_bounds);
+DEFINE_ICEBERG_FIELD(upper_bounds);
+
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
@@ -122,7 +127,9 @@ DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, equality_ids);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, partition);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);

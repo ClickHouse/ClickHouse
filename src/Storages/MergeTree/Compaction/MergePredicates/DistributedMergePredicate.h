@@ -131,8 +131,8 @@ public:
 
         if (left.projection_names != right.projection_names)
             return std::unexpected(PreformattedMessage::create(
-                    "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
-                    fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
+                    "Parts have different projection sets: {} in '{}' and {} in '{}'",
+                    left.projection_names, left.name, right.projection_names, right.name));
 
         return {};
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -78,6 +79,11 @@ public:
             return {};
 
         return expression_it->second.front();
+    }
+
+    bool has(const IQueryTreeNode * node) const
+    {
+        return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
     }
 
     [[maybe_unused]] size_t size() const

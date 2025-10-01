@@ -219,6 +219,38 @@ public:
 
 REGISTER_FUNCTION(ZTest)
 {
+    FunctionDocumentation::Description description = R"(
+Returns test statistics for the two proportion Z-test - a statistical test for comparing the proportions from two populations x and y.
+The function supports both pooled and unpooled estimation methods for the standard error.
+In the pooled version, the two proportions are averaged and only one proportion is used to estimate the standard error.
+In the unpooled version, the two proportions are used separately.
+    )";
+    FunctionDocumentation::Syntax syntax = "proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_type)";
+    FunctionDocumentation::Arguments arguments = {
+        {"successes_x", "Number of successes in population x.", {"UInt64"}},
+        {"successes_y", "Number of successes in population y.", {"UInt64"}},
+        {"trials_x", "Number of trials in population x.", {"UInt64"}},
+        {"trials_y", "Number of trials in population y.", {"UInt64"}},
+        {"conf_level", "Confidence level for the test.", {"Float64"}},
+        {"pool_type", "Selection of pooling method for standard error estimation. Can be either 'unpooled' or 'pooled'.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing: `z_stat` (Z statistic), `p_val` (P value), `ci_low` (lower confidence interval), `ci_high` (upper confidence interval).", {"Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
+        )",
+        R"(
+┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────┐
+│ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
+└────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionTwoSampleProportionsZTest>();
 }
 

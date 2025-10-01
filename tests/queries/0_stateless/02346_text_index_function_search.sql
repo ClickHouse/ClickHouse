@@ -2,6 +2,8 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -18,7 +20,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id);
 
-INSERT INTO tab VALUES (1, 'b', 'b', ['c']);
+INSERT INTO tab VALUES (1, 'b', 'b', ['c']), (2, 'c', 'c', ['c']);
 
 -- Must accept two arguments
 SELECT id FROM tab WHERE searchAny(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -35,13 +37,53 @@ SELECT id FROM tab WHERE searchAny(message, materialize(['b'])); -- { serverErro
 SELECT id FROM tab WHERE searchAll(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
--- search functions must be called on a column with text index
-SELECT id FROM tab WHERE searchAny('a', ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAny(col_str, ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll('a', ['b']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll(col_str, ['b']); -- { serverError BAD_ARGUMENTS }
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Test what happens searchAny/All are called on columns without index';
+-- It is expected that the default tokenizer is used
+-- { echoOn }
+SELECT searchAny('a b', ['b']);
+SELECT searchAny('a b', ['c']);
+SELECT searchAny(materialize('a b'), ['b']);
+SELECT searchAny(materialize('a b'), ['c']);
+--
+SELECT searchAll('a b', ['a', 'b']);
+SELECT searchAll('a b', ['a', 'c']);
+SELECT searchAll(materialize('a b'), ['a', 'b']);
+SELECT searchAll(materialize('a b'), ['a', 'c']);
+-- { echoOff }
+
+-- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
+-- We keep this test because the direct read optimization substituted Search{Any,All} only
+-- when they are in the filterStep, and we want to detect any variation eagerly.
+SELECT id FROM tab WHERE searchAny('a b', ['b']);
+SELECT id FROM tab WHERE searchAny('a b', ['c']);
+SELECT id FROM tab WHERE searchAny(col_str, ['b']);
+SELECT id FROM tab WHERE searchAny(col_str, ['c']);
+
+SELECT id FROM tab WHERE searchAll('a b', ['a b']);
+SELECT id FROM tab WHERE searchAll('a b', ['a c']);
+SELECT id FROM tab WHERE searchAll(col_str, ['a b']);
+SELECT id FROM tab WHERE searchAll(col_str, ['a c']);
+
+
+DROP TABLE tab;
+
+SELECT 'FixedString input columns';
+
+CREATE TABLE tab (
+    id Int,
+    text FixedString(16),
+    INDEX idx_text(text) TYPE text(tokenizer = 'default')
+)
+ENGINE=MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES(1, toFixedString('bar', 3)), (2, toFixedString('foo', 3));
+
+SELECT groupArray(id) FROM tab WHERE searchAny(text, ['bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(text, ['bar']);
 
 DROP TABLE tab;
 
@@ -83,6 +125,11 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'foo']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
+
+--- Test for FixedString needles
+--- Not a systematic test, just to see that FixedString needles work in principle
+SELECT groupArray(id) FROM tab WHERE searchAny(message, [toFixedString('abc', 3)]);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, [toFixedString('abc', 3)]);
 
 DROP TABLE tab;
 

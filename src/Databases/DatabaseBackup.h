@@ -55,7 +55,7 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
     bool isReadOnly() const override { return true; }
 

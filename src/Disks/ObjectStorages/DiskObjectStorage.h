@@ -43,7 +43,7 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return true; }
+    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
@@ -118,8 +118,6 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
-
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
@@ -152,14 +150,12 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -275,7 +271,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    bool use_fake_transaction;
+    const bool use_fake_transaction;
     UInt64 remove_shared_recursive_file_limit;
 };
 

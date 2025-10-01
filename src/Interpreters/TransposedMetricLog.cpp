@@ -345,9 +345,7 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
 
 void TransposedMetricLog::stepFunction(TimePoint current_time)
 {
-    /// Static lazy initialization to avoid polluting the header with implementation details
-    /// For differentiation of ProfileEvents counters.
-    static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
+    std::lock_guard lock(previous_profile_events_mutex);
 
     TransposedMetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
@@ -357,7 +355,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        auto & old_value = prev_profile_events[i];
+        auto & old_value = previous_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
         /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
