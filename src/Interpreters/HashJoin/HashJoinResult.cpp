@@ -326,6 +326,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     const auto row_ref_start = next_row_ref;
+    const auto start_row = next_row;
 
     next_row += num_lhs_rows;
     next_row_ref += num_refs;
@@ -346,12 +347,30 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     bool is_last = next_row >= offsets.size();
 
-    MutableColumns next_columns;
-    if (!is_last)
+    MutableColumns rhs_columns; /// Columns from the right table
+    if (!lazy_output.row_refs.empty())
     {
-        next_columns.reserve(columns.size());
+        rhs_columns.reserve(columns.size());
         for (auto & column : columns)
-            next_columns.push_back(column->cloneEmpty());
+            rhs_columns.push_back(column->cloneEmpty());
+    }
+    else
+    {
+        if (start_row == 0 && is_last)
+        {
+            rhs_columns = std::move(columns);
+        }
+        else
+        {
+            /// The result columns should contain only data for the current block.
+            /// Copy data from the original columns to preserve columns size in the block.
+            rhs_columns.reserve(columns.size());
+            for (auto & column : columns)
+                rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
+
+            if (is_last)
+                columns.clear();
+        }
     }
 
     auto block = generateBlock(
@@ -360,13 +379,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         num_rhs_rows,
         row_ref_start,
         next_row_ref,
-        std::move(columns),
+        std::move(rhs_columns),
         properties,
         partial_offsets,
         partial_filter,
         partial_matched_rows);
 
-    columns = std::move(next_columns);
     if (is_last)
         scattered_block.reset();
 
