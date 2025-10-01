@@ -139,6 +139,7 @@ namespace ErrorCodes
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
@@ -970,6 +971,9 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
         false);
+
+    if (table_replicated_ptr->isTableReadOnly())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is still in readonly mode after attempting to restore replica");
 }
 
 void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
