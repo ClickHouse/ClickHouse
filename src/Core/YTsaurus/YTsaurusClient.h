@@ -1,4 +1,6 @@
 #pragma once
+#include <unordered_map>
+#include <utility>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -61,9 +63,15 @@ public:
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
-    Poco::JSON::Array::Ptr getTableSchema(const String & cypress_path);
+    struct SchemaDescription
+    {
+        bool is_strict;
+        std::unordered_map<String, DataTypePtr> columns;
+    };
 
-    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block);
+    SchemaDescription getTableSchema(const String & cypress_path);
+
+    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 
