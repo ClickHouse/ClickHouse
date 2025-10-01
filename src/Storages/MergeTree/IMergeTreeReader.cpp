@@ -206,6 +206,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
         /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
+        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
