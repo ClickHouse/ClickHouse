@@ -185,10 +185,7 @@ struct HashJoinResult::GenerateCurrentRowState
 
     void setFilter(IColumn::Filter && filter_) { filter = std::move(filter_); }
     void setFilter(const IColumn::Filter * filter_) { filter = std::cref(*filter_); }
-    const IColumn::Filter & getFilter() const
-    {
-        return std::visit([](const auto & arg) -> const IColumn::Filter & { return arg; }, filter);
-    }
+    const IColumn::Filter & getFilter() const { return filter.index() == 0 ? std::get<0>(filter) : std::get<1>(filter).get(); }
 
     Block block;
     size_t rows_to_reserve;
