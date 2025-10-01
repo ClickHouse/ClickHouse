@@ -56,8 +56,8 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     {
         // For approx_top_* states, optionally swallow malformed input and keep an empty state instead of failing CAST
         const String & fname = function->getName();
-        const bool is_approx_top = (fname.rfind("approx_top_", 0) == 0);
-        if (is_approx_top && ::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        const bool is_approx_top = fname.starts_with("approx_top_");
+        if (is_approx_top)
         {
             // Reset to a fresh empty state
             function->destroy(place);
@@ -135,8 +135,8 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     catch (...)
     {
         const String & fname = function->getName();
-        const bool is_approx_top = (fname.rfind("approx_top_", 0) == 0);
-        if (is_approx_top && ::getenv("CLICKHOUSE_APPROX_TOPK_STRICT_CAST") == nullptr)
+        const bool is_approx_top = fname.starts_with("approx_top_");
+        if (is_approx_top)
         {
             function->destroy(place);
             place = arena.alignedAlloc(size_of_state, function->alignOfData());
