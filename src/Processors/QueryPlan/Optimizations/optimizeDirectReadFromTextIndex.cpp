@@ -43,12 +43,12 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     String result = "Added: [";
 
     /// This will list the index and the new associated columns
-    bool first_iteration = true;
+    size_t idx = 0;
     for (const auto & [_, columns_names_and_types] : added_columns)
     {
         for (const String & column_name : columns_names_and_types.getNames())
         {
-            if (!std::exchange(first_iteration, false))
+            if (++idx > 1)
                 result += ", ";
             result += column_name;
         }
