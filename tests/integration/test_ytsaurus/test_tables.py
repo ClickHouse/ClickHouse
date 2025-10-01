@@ -552,9 +552,7 @@ def test_ytsaurus_select_subset_of_columns(started_cluster):
     yt.create_table(
         table_path,
         '{"a":10,"b":20, "c": 1}{"a":20,"b":40, "c": 2}',
-        dynamic=True,
         schema={"a": "int32", "b": "int32", "c": "int32"},
-        retry_count=5,
     )
 
     instance.query(
