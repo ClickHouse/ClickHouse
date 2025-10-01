@@ -3,6 +3,7 @@ description: 'System table containing information about settings for MergeTree t
 keywords: ['system table', 'merge_tree_settings']
 slug: /operations/system-tables/merge_tree_settings
 title: 'system.merge_tree_settings'
+doc_type: 'reference'
 ---
 
 # system.merge_tree_settings
@@ -31,13 +32,13 @@ Columns:
 
 **Example**
 ```sql
-SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
+SELECT * FROM system.merge_tree_settings LIMIT 3 FORMAT Vertical;
 ```
 
 ```response
 SELECT *
 FROM system.merge_tree_settings
-LIMIT 4
+LIMIT 3
 FORMAT Vertical
 
 Query id: 2580779c-776e-465f-a90c-4b7630d0bb70
@@ -84,19 +85,5 @@ type:        UInt64
 is_obsolete: 0
 tier:        Production
 
-Row 4:
-──────
-name:        max_digestion_size_per_segment
-value:       268435456
-default:     268435456
-changed:     0
-description: Max number of bytes to digest per segment to build GIN index.
-min:         ᴺᵁᴸᴸ
-max:         ᴺᵁᴸᴸ
-readonly:    0
-type:        UInt64
-is_obsolete: 0
-tier:        Production
-
-4 rows in set. Elapsed: 0.001 sec. 
+3 rows in set. Elapsed: 0.001 sec. 
 ```

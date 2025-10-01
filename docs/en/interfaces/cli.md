@@ -4,6 +4,7 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
+doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';
@@ -91,12 +92,18 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <name>default</name>
-        <hostname>hostname</hostname>
-        <port>9440</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password>password</password>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
     </connections_credentials>
 </config>
 ```
@@ -637,6 +644,15 @@ Example XML syntax:
     <user>username</user>
     <password>password</password>
     <secure>true</secure>
+    <host>hostname</host>
+    <connections_credentials>
+      <connection>
+        <name>cloud</name>
+        <hostname>abc.clickhouse.cloud</hostname>
+        <user>username</user>
+        <password>password</password>
+      </connection>
+    </connections_credentials>
     <openSSL>
       <client>
         <caConfig>/etc/ssl/cert.pem</caConfig>
@@ -651,10 +667,102 @@ The same configuration in YAML format:
 user: username
 password: 'password'
 secure: true
+connections_credentials:
+  connection:
+    - name: cloud
+      hostname: abc.clickhouse.cloud
+      user: username
+      password: 'password'
 openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
+
+## Client Configuration Resolution {#config_resolution}
+
+The configuration of the client follows the following pattern:
+
+1.  Parameters passed via [Command-line options](#command-line-options) take
+    the highest priority.
+2.  For parameters not passed via the command-line, [Environment variable
+    options](#environment-variable-options) will be used.
+3.  Other connection options will be drawn from one or more `connection`
+    objects under the `connections_credentials` key in the configuration file,
+    where `connection.name` matches the connection name. That name is
+    determined by the value of `--connection`, the root `connection`
+    parameter, the `--host` option or root `host` parameter, or "default". All
+    `connections` matching the name will be evaluated in the order in which
+    they appear. The supported keys in each `connection` object are:
+    *   `name`
+    *   `hostname`
+    *   `port`
+    *   `secure`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+4.  Finally, parameters set at the root level of the configuration apply.
+    These include:
+    *   `connection`
+    *   `secure` and `no-secure`
+    *   `bind_host`
+    *   `host`
+    *   `port`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+    *   `jwt`
+    *   `ssh-key-file`
+    *   `ssh-key-passphrase`
+    *   `ask-password`
+
+## Additional Configuration Parameters {#additional_configuration}
+
+These additional parameters may also be set at the root level of the
+configuration, and are not overridden by other means:
+
+*   `quota_key`
+*   `compression`
+*   `connect_timeout`
+*   `send_timeout`
+*   `receive_timeout`
+*   `tcp_keep_alive_timeout`
+*   `handshake_timeout_ms`
+*   `sync_request_timeout`
+*   `tcp_port`
+*   `tcp_port_secure`
+
+### Secure Connections {#secure_connections}
+
+The `openSSL` object determines TLS encryption and authentication behavior.
+See
+[OpenSSL](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#openssl)
+for details.
+
+The `openSSL` object and other parameters also impact the determination of
+whether to use a secure connection, as follows:
+
+*   If `--secure` has been passed or the `secure` root or `connection`
+    configuration parameter has been set, the connection will use encryption.
+*   If `--no-secure` has been passed or the root `no-secure` parameter is
+    true, the connection will not be encrypted.
+*   If the host name has resoled to a subdomain of `clickhouse.cloud`, the
+    connection will use encryption.
+*   If the [port](https://clickhouse.com/docs/guides/sre/network-ports) has
+    resolved to the Native protocol SSL/TLS port, `9440`, the connection will
+    use encryption.
+
+## Environment variable options {#environment-variable-options}
+
+The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 

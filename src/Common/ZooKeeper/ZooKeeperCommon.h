@@ -42,6 +42,7 @@ struct ZooKeeperRequest : virtual Request
 {
     XID xid = 0;
     bool has_watch = false;
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback;
     /// If the request was not send and the error happens, we definitely sure, that it has not been processed by the server.
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
@@ -467,7 +468,7 @@ struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
     ZooKeeperCheckRequest() = default;
     explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
-    OpNum getOpNum() const override { return not_exists ? OpNum::CheckNotExists : OpNum::Check; }
+    OpNum getOpNum() const override;
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -494,6 +495,12 @@ struct ZooKeeperCheckResponse : CheckResponse, ZooKeeperResponse
 struct ZooKeeperCheckNotExistsResponse : public ZooKeeperCheckResponse
 {
     OpNum getOpNum() const override { return OpNum::CheckNotExists; }
+    using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
+};
+
+struct ZooKeeperCheckStatResponse : public ZooKeeperCheckResponse
+{
+    OpNum getOpNum() const override { return OpNum::CheckStat; }
     using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
 };
 
@@ -692,9 +699,9 @@ enum class PathMatchResult : uint8_t
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);
 
-StringRef parentNodePath(StringRef path);
+std::string_view parentNodePath(std::string_view path);
 
-StringRef getBaseNodeName(StringRef path);
+std::string_view getBaseNodeName(std::string_view path);
 
 
 }

@@ -6,6 +6,7 @@ keywords: ['JSONObjectEachRow']
 output_format: true
 slug: /interfaces/formats/JSONObjectEachRow
 title: 'JSONObjectEachRow'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

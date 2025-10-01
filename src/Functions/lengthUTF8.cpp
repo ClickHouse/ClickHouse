@@ -28,7 +28,7 @@ struct LengthUTF8Impl
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = UTF8::countCodePoints(&data[prev_offset], offsets[i] - prev_offset - 1);
+            res[i] = UTF8::countCodePoints(&data[prev_offset], offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }
@@ -74,7 +74,33 @@ using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUT
 
 REGISTER_FUNCTION(LengthUTF8)
 {
-    factory.registerFunction<FunctionLengthUTF8>();
+    FunctionDocumentation::Description description = R"(
+Returns the length of a string in Unicode code points rather than in bytes or characters.
+It assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+
+)";
+    FunctionDocumentation::Syntax syntax = "lengthUTF8(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing valid UTF-8 encoded text.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Length of the string `s` in Unicode code points.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT lengthUTF8('Здравствуй, мир!')",
+        R"(
+┌─lengthUTF8('Здравствуй, мир!')─┐
+│                             16 │
+└────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLengthUTF8>(documentation);
 
     /// Compatibility aliases.
     factory.registerAlias("CHAR_LENGTH", "lengthUTF8", FunctionFactory::Case::Insensitive);

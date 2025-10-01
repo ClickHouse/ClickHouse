@@ -51,8 +51,7 @@ boost::context::stack_context FiberStack::allocate() const
         num_pages += 1;
 
     size_t num_bytes = num_pages * page_size;
-
-    void * data = aligned_alloc(page_size, num_bytes);
+    void * data = ::aligned_alloc(page_size, num_bytes);
 
     if (!data)
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
@@ -67,13 +66,10 @@ boost::context::stack_context FiberStack::allocate() const
         }
         catch (...)
         {
-            free(data);
+            ::free(data);
             throw;
         }
     }
-
-    auto trace = CurrentMemoryTracker::alloc(num_bytes);
-    trace.onAlloc(data, num_bytes);
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
@@ -94,9 +90,5 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
     if constexpr (guardPagesEnabled())
         memoryGuardRemove(data, page_size);
 
-    free(data);
-
-    /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::free(sctx.size);
-    trace.onFree(data, sctx.size - page_size);
+    ::free(data);
 }

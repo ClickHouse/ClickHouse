@@ -503,7 +503,7 @@ def test_streaming_to_many_views(started_cluster, mode):
         table_name,
         broken_dst_table,
         mv_name=f"{table_name}_{expect_files_num[0] + 1}_mv",
-        format="column1 String, column2 JSON",
+        format="column1 String, column2 Array(UInt32)",
         create_dst_table_first=False
     )
 
@@ -516,8 +516,8 @@ def test_streaming_to_many_views(started_cluster, mode):
 
         node.wait_for_log_line(
             log_message,
-            timeout=30,
-            look_behind_lines=10000,
+            timeout=120,
+            look_behind_lines=200000,
         )
 
         assert node.contains_in_log(

@@ -4,6 +4,7 @@ description: 'System table containing formation about quota usage by the current
 keywords: ['system table', 'quota_usage']
 slug: /operations/system-tables/quota_usage
 title: 'system.quota_usage'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, use-rocksdb
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +16,8 @@ echo "
 
 function read_stat_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         echo "
             SELECT * FROM system.rocksdb FORMAT Null;
         " | $CLICKHOUSE_CLIENT
@@ -25,7 +26,8 @@ function read_stat_thread()
 
 function truncate_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         sleep 3s;
         echo "
             TRUNCATE TABLE rocksdb_race;
@@ -33,14 +35,10 @@ function truncate_thread()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_stat_thread;
-export -f truncate_thread;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_stat_thread 2> /dev/null &
-timeout $TIMEOUT bash -c truncate_thread 2> /dev/null &
+read_stat_thread 2> /dev/null &
+truncate_thread 2> /dev/null &
 
 wait
 

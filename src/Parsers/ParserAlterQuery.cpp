@@ -40,7 +40,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -432,19 +431,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_materialize_statistics.ignore(pos, expected))
             {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
-                    return false;
-
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTICS;
                 command->detach = false;
-
-                if (s_in_partition.ignore(pos, expected))
+                if (!ParserKeyword(Keyword::ALL).ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    if (s_if_exists.ignore(pos, expected))
+                        command->if_exists = true;
+
+                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
                         return false;
+
+                    if (s_in_partition.ignore(pos, expected))
+                    {
+                        if (!parser_partition.parse(pos, command_partition, expected))
+                            return false;
+                    }
                 }
             }
             else if (s_add_projection.ignore(pos, expected))
@@ -889,13 +890,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
-                /// MODIFY TTL MATERIALIZE|REMOVE|MODIFY is illegal
-                /// because MATERIALIZE|REMOVE|MODIFY TTL is used instead.
-                if (s_materialize.checkWithoutMoving(pos, expected) ||
-                    s_remove.checkWithoutMoving(pos, expected) ||
-                    s_modify.checkWithoutMoving(pos, expected))
-                    return false;
-
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_TTL;
