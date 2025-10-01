@@ -12,14 +12,13 @@ namespace DB::Iceberg
 #if USE_AVRO
 
 void compactIcebergTable(
-    IcebergHistory snapshots_info,
-    const PersistentTableComponents & persistent_table_components,
-    DB::ObjectStoragePtr object_storage_,
-    DB::StorageObjectStorageConfigurationPtr configuration_,
-    const std::optional<DB::FormatSettings> & format_settings_,
-    DB::SharedHeader sample_block_,
-    DB::ContextPtr context_,
-    DB::CompressionMethod compression_method_);
+    ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    const std::optional<FormatSettings> & format_settings_,
+    SharedHeader sample_block_,
+    ContextPtr context_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    const StorageID & table_id_);
 
 #endif
 }

@@ -340,10 +340,15 @@ public:
         return nullptr;
     }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    bool optimize(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        const StorageID & storage_id) override
     {
         assertInitialized();
-        return current_metadata->optimize(metadata_snapshot, context, format_settings);
+        auto catalog = getCatalog(context, false);
+        return current_metadata->optimize(metadata_snapshot, context, format_settings, catalog, storage_id);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override

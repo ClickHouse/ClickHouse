@@ -343,22 +343,25 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             configuration_ptr->getPathForRead().path);
 }
 
-bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
+bool IcebergMetadata::optimize(
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings,
+    std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id)
 {
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         auto configuration_ptr = configuration.lock();
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
         compactIcebergTable(
-            snapshots_info,
-            persistent_components,
             object_storage,
             configuration_ptr,
             format_settings,
             sample_block,
             context,
-            metadata_compression_method);
+            catalog,
+            storage_id);
         return true;
     }
     else
@@ -386,6 +389,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
     {
         Int64 closest_timestamp = 0;
         Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
+        std::cerr << "query_timestamp " << query_timestamp << '\n';
         if (!metadata_object->has(f_snapshot_log))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp", configuration_ptr->getPathForRead().path);
         auto snapshots = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
@@ -394,6 +398,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
             Int64 snapshot_timestamp = snapshot->getValue<Int64>(f_timestamp_ms);
+            std::cerr << "snapshot_timestamp " << snapshot_timestamp << '\n';
             if (snapshot_timestamp <= query_timestamp && snapshot_timestamp > closest_timestamp)
             {
                 closest_timestamp = snapshot_timestamp;

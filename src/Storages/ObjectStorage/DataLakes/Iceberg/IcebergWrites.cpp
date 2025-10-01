@@ -513,19 +513,21 @@ void generateManifestFile(
 
             statistics = data_file_statistics->getNullCounts();
             set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int32>(value); });
+            auto lower_statistics = data_file_statistics->getLowerBounds();
+            auto upper_statistics = data_file_statistics->getUpperBounds();
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
+            {
                 field_id_to_column_index[field_ids[i]] = i;
+            }
 
             auto dump_fields = [&](size_t field_id, Field value)
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
-            auto lower_statistics = data_file_statistics->getLowerBounds();
             if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
                 set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
-            auto upper_statistics = data_file_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
         }
@@ -1308,7 +1310,8 @@ IcebergStorageSink::IcebergStorageSink(
     SharedHeader sample_block_,
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    bool use_previous_snapshots_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
@@ -1317,6 +1320,7 @@ IcebergStorageSink::IcebergStorageSink(
     , format_settings(format_settings_)
     , catalog(catalog_)
     , table_id(table_id_)
+    , use_previous_snapshots(use_previous_snapshots_)
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
@@ -1454,7 +1458,21 @@ bool IcebergStorageSink::initializeMetadata()
     Int32 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += writer.getDataFiles().size();
-    auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
+    MetadataGenerator metadata_generator;
+    if (use_previous_snapshots)
+    {
+        metadata_generator = MetadataGenerator(metadata);
+    }
+    else
+    {
+        auto empty_metadata_file = metadata;
+        empty_metadata_file->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        empty_metadata_file->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        empty_metadata_file->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        empty_metadata_file->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        metadata_generator = MetadataGenerator(empty_metadata_file);
+    }
+    auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = metadata_generator.generateNextMetadata(
         filename_generator, metadata_name, parent_snapshot, total_data_files, total_rows, total_chunks_size, total_data_files, /* added_delete_files */0, /* num_deleted_rows */0);
 
     Strings manifest_entries_in_storage;
@@ -1522,7 +1540,16 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
+                    filename_generator,
+                    metadata,
+                    object_storage,
+                    context,
+                    manifest_entries,
+                    new_snapshot,
+                    manifest_lengths,
+                    *buffer_manifest_list,
+                    Iceberg::FileContentType::DATA,
+                    use_previous_snapshots);
                 buffer_manifest_list->finalize();
             }
             catch (...)

@@ -103,7 +103,7 @@ public:
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    std::vector<Int64> getFieldIds() const { return field_ids; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
@@ -140,8 +140,9 @@ public:
         return data_file_names;
     }
 
-    const DataFileStatistics & getResultStatistics() const
+    DataFileStatistics getResultStatistics() const
     {
+        std::cerr << "getResultStatistics " << stats.getFieldIds()[0] << '\n';
         return stats;
     }
 
@@ -194,6 +195,7 @@ void generateManifestList(
 class MetadataGenerator
 {
 public:
+    MetadataGenerator() = default;
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
     struct NextMetadataResult
@@ -269,7 +271,8 @@ public:
         SharedHeader sample_block_,
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        bool use_previous_snapshots_ = true);
 
     ~IcebergStorageSink() override = default;
 
@@ -304,6 +307,7 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    bool use_previous_snapshots;
 };
 
 }

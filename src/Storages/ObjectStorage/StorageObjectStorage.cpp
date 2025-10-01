@@ -473,7 +473,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
+    return configuration->optimize(metadata_snapshot, context, format_settings, storage_id);
 }
 
 void StorageObjectStorage::truncate(
