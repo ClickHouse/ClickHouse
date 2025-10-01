@@ -1307,7 +1307,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
-                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + is_lc_nullable;
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + (is_lc_nullable == true);
                 if (tmp_dict_column->size() != expected_dictionary_size)
                 {
                     throw Exception(
