@@ -74,6 +74,7 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
             /// Move the data out of the column so that the caller can mutate it without copying.
             auto mut_col = IColumn::mutate(std::move(column));
             auto filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            column = nullptr;
             return std::make_optional(std::move(filter));
         }
         else
