@@ -11,6 +11,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Core/Settings.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -52,6 +54,8 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    local_context->checkAccess(AccessType::SELECT, target_table_id, column_names);
+
     auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
@@ -80,6 +84,8 @@ SinkToStoragePtr StorageAlias::write(
     ContextPtr local_context,
     bool async_insert)
 {
+    local_context->checkAccess(AccessType::INSERT, target_table_id);
+
     auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
@@ -97,6 +103,8 @@ void StorageAlias::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
     auto target_storage = getTargetTable();
     target_storage->alter(params, local_context, table_lock_holder);
 
@@ -113,6 +121,8 @@ void StorageAlias::truncate(
     ContextPtr local_context,
     TableExclusiveLockHolder & table_lock_holder)
 {
+    local_context->checkAccess(AccessType::TRUNCATE, target_table_id);
+
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
@@ -128,6 +138,8 @@ bool StorageAlias::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
+    local_context->checkAccess(AccessType::OPTIMIZE, target_table_id);
+
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
@@ -139,6 +151,8 @@ Pipe StorageAlias::alterPartition(
     const PartitionCommands & commands,
     ContextPtr local_context)
 {
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->alterPartition(target_metadata, commands, local_context);
@@ -157,6 +171,8 @@ void StorageAlias::checkAlterPartitionIsPossible(
 
 void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
     auto target_storage = getTargetTable();
     target_storage->mutate(commands, local_context);
 }
@@ -184,11 +200,10 @@ void registerStorageAlias(StorageFactory & factory)
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
         // Supported syntaxes:
-        // 1. CREATE TABLE t2 AS t ENGINE = Alias
-        // 2. CREATE TABLE t2 ENGINE = Alias(t)
-        // 3. CREATE TABLE t2 ENGINE = Alias(db, t)
-        // 4. CREATE TABLE t2 ENGINE = Alias('t')
-        // 5. CREATE TABLE t2 ENGINE = Alias('db', 't')
+        //  CREATE TABLE t2 ENGINE = Alias(t)
+        //  CREATE TABLE t2 ENGINE = Alias(db, t)
+        //  CREATE TABLE t2 ENGINE = Alias('t')
+        //  CREATE TABLE t2 ENGINE = Alias('db', 't')
 
         String target_database;
         String target_table;

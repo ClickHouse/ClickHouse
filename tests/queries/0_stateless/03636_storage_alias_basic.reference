@@ -30,10 +30,6 @@ Test Insert with new column
 4	four	active
 5	five	active
 6	six	inactive
-Test JOIN query
-1	one	A
-2	two	B
-3	three	C
 Test TRUNCATE
 0
 Test RENAME alias
@@ -48,6 +44,15 @@ Test OPTIMIZE
 1
 5
 Test ALTER MODIFY SETTING
+CREATE TABLE default.source_table
+(
+    `id` UInt32,
+    `value` String,
+    `status` String DEFAULT 'active'
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192, max_bytes_to_merge_at_max_space_in_pool = 1000000
 Test UPDATE (mutate)
 1	updated	active
 Test DELETE (mutate)

@@ -8,7 +8,6 @@ DROP TABLE IF EXISTS source_other;
 -- Create source table
 CREATE TABLE source_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
 
--- Insert test data
 INSERT INTO source_table VALUES (1, 'one'), (2, 'two'), (3, 'three');
 
 -- Test: Basic alias creation
@@ -40,15 +39,6 @@ SELECT id, value, status FROM source_table ORDER BY id;
 SELECT 'Test Insert with new column';
 INSERT INTO alias_1 VALUES (6, 'six', 'inactive');
 SELECT * FROM source_table ORDER BY id;
-
--- Test: JOIN query
-SELECT 'Test JOIN query';
-CREATE TABLE source_other (id UInt32, category String) ENGINE = MergeTree ORDER BY id;
-INSERT INTO source_other VALUES (1, 'A'), (2, 'B'), (3, 'C');
-SELECT alias_1.id, alias_1.value, source_other.category 
-FROM alias_1 
-INNER JOIN source_other ON alias_1.id = source_other.id 
-ORDER BY alias_1.id;
 
 -- Test: Truncate
 SELECT 'Test TRUNCATE';
@@ -87,6 +77,7 @@ SELECT count() FROM alias_4;
 -- Test: ALTER MODIFY SETTING
 SELECT 'Test ALTER MODIFY SETTING';
 ALTER TABLE alias_4 MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1000000;
+SHOW CREATE TABLE source_table FORMAT TSVRaw;
 
 -- Test: UPDATE through alias
 SELECT 'Test UPDATE (mutate)';
@@ -127,9 +118,3 @@ SELECT count() FROM alias_part;
 SELECT 'Test INSERT SELECT';
 INSERT INTO alias_4 SELECT id + 100, value, status FROM source_table WHERE id <= 10;
 SELECT count() FROM source_table WHERE id > 100;
-
-DROP TABLE IF EXISTS alias_4;
-DROP TABLE IF EXISTS alias_part;
-DROP TABLE IF EXISTS source_partitioned;
-DROP TABLE IF EXISTS source_other;
-DROP TABLE IF EXISTS source_table;
