@@ -84,6 +84,7 @@ private:
     size_t data_capacity;
 
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
+    /// No-way to make metadata non-mutable, because readBig method is const.
     mutable std::optional<ObjectMetadata> last_object_metadata;
 };
 
