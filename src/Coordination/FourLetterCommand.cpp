@@ -646,7 +646,7 @@ void printToString(void * output, const char * data)
 String JemallocDumpStats::run()
 {
     std::string output;
-    malloc_stats_print(printToString, &output, nullptr);
+    je_malloc_stats_print(printToString, &output, nullptr);
     return output;
 }
 

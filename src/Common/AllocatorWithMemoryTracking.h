@@ -6,6 +6,10 @@
 #include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
 
+#include <config.h>
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+#endif
 
 /// Implementation of std::allocator interface that tracks memory with MemoryTracker.
 /// NOTE We already plug MemoryTracker into new/delete operators. So, everything works even with default allocator.
@@ -34,7 +38,7 @@ struct AllocatorWithMemoryTracking
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
         auto trace = CurrentMemoryTracker::alloc(bytes);
 
-        T * p = static_cast<T *>(__real_malloc(bytes));
+        T * p = static_cast<T *>(je_malloc(bytes));
         if (!p)
             throw std::bad_alloc();
 
@@ -47,7 +51,7 @@ struct AllocatorWithMemoryTracking
     {
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
 
-        __real_free(p);
+        je_free(p);
         auto trace = CurrentMemoryTracker::free(bytes);
         trace.onFree(p, bytes);
     }

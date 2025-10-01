@@ -9,6 +9,9 @@
 /* #undef JEMALLOC_PREFIX */
 /* #undef JEMALLOC_CPREFIX */
 
+#define JEMALLOC_PREFIX "je_"
+#define JEMALLOC_CPREFIX "JE_"
+
 /*
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.

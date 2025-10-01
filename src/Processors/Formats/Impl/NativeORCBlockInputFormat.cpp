@@ -56,7 +56,7 @@ class MemoryPool : public orc::MemoryPool
 public:
     char * malloc(uint64_t size) override
     {
-        void * ptr = __real_malloc(size);
+        void * ptr = je_malloc(size);
         if (ptr)
         {
             AllocationTrace trace;
@@ -72,7 +72,7 @@ public:
         AllocationTrace trace;
         size_t actual_size = Memory::untrackMemory(ptr, trace);
         trace.onFree(ptr, actual_size);
-        __real_free(ptr);
+        je_free(ptr);
     }
 };
 

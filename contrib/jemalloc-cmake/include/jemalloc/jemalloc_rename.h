@@ -3,6 +3,7 @@
  * --with-jemalloc-prefix.  With default settings the je_ prefix is stripped by
  * these macro definitions.
  */
+#define JEMALLOC_NO_RENAME
 #ifndef JEMALLOC_NO_RENAME
 #  define je_aligned_alloc aligned_alloc
 #  define je_calloc calloc

@@ -199,11 +199,11 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-extern "C" void * __wrap_malloc(size_t size) // NOLINT
+extern "C" void * malloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemoryFromC(size, trace);
-    void * ptr = __real_malloc(size);
+    void * ptr = je_malloc(size);
     if (unlikely(!ptr))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -213,7 +213,7 @@ extern "C" void * __wrap_malloc(size_t size) // NOLINT
     return ptr;
 }
 
-extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
+extern "C" void * calloc(size_t number_of_members, size_t size) // NOLINT
 {
     size_t real_size = 0;
     if (__builtin_mul_overflow(number_of_members, size, &real_size))
@@ -221,7 +221,7 @@ extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
 
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(real_size, trace);
-    void * res = __real_calloc(number_of_members, size);
+    void * res = je_calloc(number_of_members, size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -231,7 +231,7 @@ extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
     return res;
 }
 
-extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
+extern "C" void * realloc(void * ptr, size_t size) // NOLINT
 {
     if (ptr)
     {
@@ -241,7 +241,7 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
     }
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace);
-    void * res = __real_realloc(ptr, size);
+    void * res = je_realloc(ptr, size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -251,11 +251,11 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
     return res;
 }
 
-extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size) // NOLINT
+extern "C" int posix_memalign(void ** memptr, size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
-    int res = __real_posix_memalign(memptr, alignment, size);
+    int res = je_posix_memalign(memptr, alignment, size);
     if (unlikely(res != 0))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -265,11 +265,11 @@ extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t si
     return res;
 }
 
-extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
+extern "C" void * aligned_alloc(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
-    void * res = __real_aligned_alloc(alignment, size);
+    void * res = je_aligned_alloc(alignment, size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -279,11 +279,11 @@ extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
     return res;
 }
 
-extern "C" void * __wrap_valloc(size_t size) // NOLINT
+extern "C" void * valloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace);
-    void * res = __real_valloc(size);
+    void * res = je_valloc(size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -293,29 +293,29 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
     return res;
 }
 
-extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
+extern "C" void * reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
 {
     size_t real_size = 0;
     if (__builtin_mul_overflow(number_of_members, size, &real_size))
         return nullptr;
 
-    return __wrap_realloc(ptr, real_size);
+    return realloc(ptr, real_size);
 }
 
-extern "C" void __wrap_free(void * ptr) // NOLINT
+extern "C" void free(void * ptr) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::untrackMemory(ptr, trace);
     trace.onFree(ptr, actual_size);
-    __real_free(ptr);
+    je_free(ptr);
 }
 
 #if !defined(OS_DARWIN)
-extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
+extern "C" void * memalign(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
-    void * res = __real_memalign(alignment, size);
+    void * res = je_memalign(alignment, size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
@@ -327,11 +327,11 @@ extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
 #endif
 
 #if !defined(USE_MUSL) && defined(OS_LINUX)
-extern "C" void * __wrap_pvalloc(size_t size) // NOLINT
+extern "C" void * pvalloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemoryFromC(size, trace);
-    void * res = __real_pvalloc(size);
+    void * res = je_pvalloc(size);
     if (unlikely(!res))
     {
         trace = CurrentMemoryTracker::free(actual_size);
