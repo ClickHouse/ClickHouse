@@ -115,7 +115,8 @@ enum class BinaryTypeIndex : uint8_t
 
     Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
     Time64 = 0x34
-    // reserved = 0x35
+    /// reserved = 0x35
+    /// QBit = 0x36 (only available in cloud)
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.

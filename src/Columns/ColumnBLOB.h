@@ -202,6 +202,7 @@ public:
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
     void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
+    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
 
 private:
     /// Compressed and serialized representation of the wrapped column.

@@ -57,7 +57,7 @@ void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String>
     if (needles.has_value())
         return;
 
-    needles = FunctionSearchNeedles();
+    needles = Needles();
     for (UInt64 pos = 0; const auto & token : tokens)
         if (auto [_, inserted] = needles->emplace(token, pos); inserted)
             ++pos;
@@ -88,12 +88,14 @@ namespace
 constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 
-template <typename StringColumnType>
+template <typename T>
+concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
+
 void executeSearchAny(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     std::vector<std::string_view> tokens;
@@ -114,12 +116,11 @@ void executeSearchAny(
     }
 }
 
-template <typename StringColumnType>
 void executeSearchAll(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -149,23 +150,28 @@ void executeSearchAll(
     }
 }
 
-template <class SearchTraits, typename StringColumnType>
+template <class SearchTraits>
 void execute(
     const ITokenExtractor * token_extractor,
-    StringColumnType & col_input,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const FunctionSearchNeedles & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    switch (SearchTraits::mode)
+    if (needles.empty())
     {
-        case SearchAnyAllMode::Any:
-            executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
-            break;
-        case SearchAnyAllMode::All:
-            executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
-            break;
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result[i] = true;
+        return;
     }
+
+    if constexpr (SearchTraits::mode == SearchAnyAllMode::Any)
+        executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
+    else if constexpr (SearchTraits::mode == SearchAnyAllMode::All)
+        executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
+    else
+        static_assert(false, "Unknown search mode value detected");
 }
 }
 
@@ -176,26 +182,57 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    if (token_extractor == nullptr || !needles.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' must be used with the index column, but got column '{}'",
-            getName(),
-            arguments[arg_input].name);
-
-    auto col_input = arguments[arg_input].column;
-    auto col_needles = arguments[arg_needles].column;
+    ColumnPtr col_input = arguments[arg_input].column;
     auto col_result = ColumnVector<UInt8>::create();
 
     col_result->getData().resize(input_rows_count);
-    if (needles->empty())
+
+    // If token_extractor is not set it means that we are using brute force instead of index
+    if (token_extractor == nullptr)
     {
-        /// No needles mean we don't filter and all rows pass
-        for (size_t i = 0; i < input_rows_count; ++i)
-            col_result->getData()[i] = true;
+        chassert(!needles.has_value());
+
+        Needles needles_tmp;
+        const ColumnPtr col_needles = arguments[arg_needles].column;
+
+        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+        {
+            const Array & array = col_needles_const->getValue<Array>();
+
+            for (size_t i = 0; i < array.size(); ++i)
+                needles_tmp.emplace(array.at(i).safeGet<String>(), i);
+
+        }
+        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
+        {
+            // This is what happens when called over a string instead of a column
+            const IColumn & needles_data = col_needles_vector->getData();
+            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
+
+            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+
+            for (size_t i = 0; i < needles_offsets[0]; ++i)
+                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
+
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_default_extractor.get(), *column_string, input_rows_count, needles_tmp, col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_default_extractor.get(), *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+
     }
     else
     {
+        // token_extractor != nullptr => We are using a column with index.
+        if (!needles.has_value())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' must be used with the index column, but got column '{}'",
+                getName(),
+                arguments[arg_input].name);
+
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
             execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
@@ -213,11 +250,11 @@ REGISTER_FUNCTION(SearchAny)
     FunctionDocumentation::Description description_searchAny = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
-:::note
-This function can only be used if setting `allow_experimental_full_text_index` is enabled.
-:::
+The `input` column should have a text index defined for optimal performance.
+Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
-The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
@@ -285,11 +322,11 @@ REGISTER_FUNCTION(SearchAll)
     FunctionDocumentation::Description description_searchAll = R"(
 Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
-:::note
-This function can only be used if setting `allow_experimental_full_text_index` is enabled.
-:::
+The `input` column should have a text index defined for optimal performance.
+Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
-The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**

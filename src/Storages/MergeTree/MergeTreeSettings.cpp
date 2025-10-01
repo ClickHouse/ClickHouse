@@ -935,7 +935,7 @@ namespace ErrorCodes
     the composition of the field names and types and the data of the inserted
     part (stream of bytes).
     )", 0) \
-    DECLARE(UInt64, replicated_deduplication_window_seconds, 7 * 24 * 60 * 60 /* one week */, R"(
+    DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
     removed from ClickHouse Keeper.
 

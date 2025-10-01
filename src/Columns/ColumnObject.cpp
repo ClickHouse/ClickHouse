@@ -1797,6 +1797,34 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_
     }
 }
 
+void ColumnObject::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromColumn should be called only on empty Object column");
+
+    const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+
+    for (auto & [path, column] : typed_paths)
+        column->takeDynamicStructureFromColumn(source_object.typed_paths.at(path));
+
+    dynamic_paths.clear();
+    dynamic_paths_ptrs.clear();
+    sorted_dynamic_paths.clear();
+    for (const auto & [path, column] : source_object.getDynamicPaths())
+    {
+        auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
+        it->second->takeDynamicStructureFromColumn(column);
+        dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+        sorted_dynamic_paths.insert(it->first);
+    }
+
+    /// Set max_dynamic_paths to the number of dynamic paths.
+    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    max_dynamic_paths = dynamic_paths.size();
+
+    statistics = source_object.getStatistics();
+}
+
 size_t ColumnObject::findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end)
 {
     /// Simple random access iterator over values in ColumnString in specified range.

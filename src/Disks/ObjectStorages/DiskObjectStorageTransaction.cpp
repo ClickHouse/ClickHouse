@@ -804,15 +804,6 @@ void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, co
     operations_to_execute.emplace_back(std::move(operation));
 }
 
-void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
-{
-    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-    {
-        if (metadata_storage.existsFile(it->path()))
-            removeFile(it->path());
-    }
-}
-
 void DiskObjectStorageTransaction::removeFile(const std::string & path)
 {
     removeSharedFile(path, false);
@@ -950,7 +941,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
     {
-        auto connection_info = object_storage.getConnectionInfo();
+        auto connection_info = DistributedCache::getConnectionInfo(object_storage);
         if (connection_info)
         {
             auto global_context = Context::getGlobalContextInstance();
