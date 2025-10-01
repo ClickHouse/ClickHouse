@@ -10,8 +10,6 @@
 namespace DB
 {
 
-static constexpr UInt64 BLOOM_FILTER_SEED = 42;
-
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     SharedHeader header_,
     String filter_column_name_,
@@ -25,7 +23,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , built_filter(std::make_unique<BloomFilter>(bloom_filter_bytes_, bloom_filter_hash_functions_, BLOOM_FILTER_SEED))
+    , built_filter(std::make_unique<RuntimeFilter>(filter_column_target_type, 1000, bloom_filter_bytes_, bloom_filter_hash_functions_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
@@ -55,13 +53,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
             false);
     }
 
-    const size_t num_rows = chunk.getNumRows();
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = filter_column->getDataAt(row);
-        built_filter->add(value.data, value.size);
-    }
+    built_filter->insert(filter_column);
 }
 
 void BuildRuntimeFilterTransform::finish()
