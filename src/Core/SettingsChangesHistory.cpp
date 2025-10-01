@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
@@ -897,7 +898,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-
+            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
