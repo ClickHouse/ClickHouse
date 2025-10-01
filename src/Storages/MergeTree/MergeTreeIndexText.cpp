@@ -993,7 +993,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
+            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', and 'array', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
     }

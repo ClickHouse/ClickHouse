@@ -1653,17 +1653,17 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         break;
         case IndexType::IDX_text: {
-            static const DB::Strings & tokenizerVals = {"default", "ngram", "split", "no_op"};
+            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "ngrams", "splitByString", "array"};
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
             idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
-            if (next_tokenizer == "ngram" && rg.nextBool())
+            if (next_tokenizer == "ngrams" && rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
                 idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
             }
-            if (next_tokenizer == "split" && rg.nextBool())
+            if (next_tokenizer == "splitByString" && rg.nextBool())
             {
                 String buf;
                 DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};

@@ -4,7 +4,7 @@ database:                 default
 table:                    tab
 name:                     text_idx
 type:                     text
-type_full:                text(tokenizer = 'ngram', ngram_size = 3)
+type_full:                text(tokenizer = 'ngrams', ngram_size = 3)
 granularity:              1
 greater(data⋯bytes, 100): 1
 greater(data⋯_bytes, 75): 1

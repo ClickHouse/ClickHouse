@@ -38,7 +38,7 @@ CREATE TABLE tab
     `str` String,
     INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
-                                tokenizer = 'default|ngram|split|no_op'
+                                tokenizer = 'splitByNonAlpha|splitByString|ngrams|array'
                                 -- Optional parameters:
                                 [, ngram_size = N]
                                 [, separators = []]
@@ -54,17 +54,17 @@ ORDER BY key
 
 The `tokenizer` argument specifies the tokenizer:
 
-- `default` splits strings along non-alphanumeric ASCII characters.
-- `ngram` split strings into equally large n-grams.
-- `split` split strings along certain user-defined separator strings.
-- `no_op` performs no tokenization, i.e. every row value is a token.
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters.
+- `splitByString` splits strings along certain user-defined separator strings.
+- `ngrams` splits strings into equally large n-grams.
+- `array` performs no tokenization, i.e. every row value is a token.
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
 
 As an example,
 
 ```sql
-SELECT tokens('abc def', 'ngram', 3) AS tokens;
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 ```
 
 returns
@@ -75,17 +75,17 @@ returns
 +---------------------------------+
 ```
 
-If you chose the `ngram` tokenizer, you can set the ngram length using the (optional) parameter `ngram_size`.
+If you chose the `ngrams` tokenizer, you can set the ngram length using the (optional) parameter `ngram_size`.
 If `ngram_size` is not specified, the default ngram size is 3.
 The smallest and largest possible ngram size are 2 and 8.
 
-If you chose the `split` tokenizer, you can set the separators using the (optional) parameter `separators`.
+If you chose the `splitByString` tokenizer, you can set the separators using the (optional) parameter `separators`.
 The parameter expects a list of strings, for example, `separators = [', ', '; ', '\n', '\\']`.
 Note that each string can consist of multiple characters (`', '` in the example).
-If parameter `split` is not specified, a single whitespace `[' ']` is used by default.
+If parameter `separators` is not specified, a single whitespace `[' ']` is used by default.
 
 :::note
-The `split` tokenizer applies the split separators left-to-right.
+The `splitByString` tokenizer applies the split separators left-to-right.
 This can create ambiguities.
 For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
 In the most cases, you want that matching prefers longer separators first.
@@ -118,7 +118,7 @@ Text indexes can be added to or removed from a column after the table has been c
 
 ```sql
 ALTER TABLE tab DROP INDEX text_idx;
-ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'default');
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'splitByNonAlpha');
 ```
 
 ## Using a Text Index {#using-a-text-index}
@@ -146,7 +146,7 @@ Example:
 SELECT * from tab WHERE str = 'Hello';
 ```
 
-The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `no_op` tokenizer (which causes the index to store entire row values).
+The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (which causes the index to store entire row values).
 
 #### `IN` and `NOT IN` {#functions-example-in-notin}
 
@@ -158,12 +158,12 @@ Example:
 SELECT * from tab WHERE str IN ('Hello', 'World');
 ```
 
-The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `no_op` tokenizer.
+The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `array` tokenizer.
 
 #### `LIKE`, `NOT LIKE` and `match` {#functions-example-like-notlike-match}
 
 :::note
-These functions currently use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
+These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha` or `ngrams`.
 :::
 
 In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
@@ -303,7 +303,7 @@ As the platform grows, this becomes increasingly slow because the query must exa
 To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
 
 ```sql
-ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'default');
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'splitByNonAlpha');
 ```
 
 :::note
@@ -352,13 +352,13 @@ The solution is creating a text index for the [Map](/sql-reference/data-types/ma
 Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'no_op');
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'array');
 ```
 
 Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'no_op');
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'array');
 ```
 
 :::note

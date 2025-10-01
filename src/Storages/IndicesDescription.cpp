@@ -32,18 +32,29 @@ using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMat
 
 Tuple parseTextIndexArgumentFromAST(const ASTPtr & arguments)
 {
-    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
-    if (identifier == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
+    Tuple parameter{};
 
-    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
-    if (literal == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
+    /// Parse parameter name. It can be Identifier.
+    {
+        if (const auto * identifier = arguments->children[0]->as<ASTIdentifier>(); identifier != nullptr)
+            parameter.emplace_back(identifier->name());
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter name: Expected identifier");
+    }
 
-    Tuple key_value_pair{};
-    key_value_pair.emplace_back(identifier->name());
-    key_value_pair.emplace_back(literal->value);
-    return key_value_pair;
+    /// Parse parameter value. It can be Literal, Identifier or Function.
+    {
+        if (const auto * literal = arguments->children[1]->as<ASTLiteral>(); literal != nullptr)
+            parameter.emplace_back(literal->value);
+        else if (const auto * identifier = arguments->children[1]->as<ASTIdentifier>(); identifier != nullptr)
+            parameter.emplace_back(identifier->name());
+        else if (const auto * function = arguments->children[1]->as<ASTFunction>(); function != nullptr)
+            parameter.emplace_back(function->name);
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+    }
+
+    return parameter;
 }
 
 bool parseTextIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)

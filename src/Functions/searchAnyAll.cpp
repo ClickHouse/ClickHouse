@@ -254,12 +254,12 @@ The `input` column should have a text index defined for optimal performance.
 Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
 When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `default` tokenizer is used instead.
+If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngrams', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -283,7 +283,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+    INDEX idx(msg) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -301,7 +301,7 @@ SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -326,12 +326,12 @@ The `input` column should have a text index defined for optimal performance.
 Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
 When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `default` tokenizer is used instead.
+If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngrams', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -355,7 +355,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\']) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -373,7 +373,7 @@ SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
