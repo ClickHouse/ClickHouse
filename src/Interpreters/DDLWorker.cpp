@@ -529,7 +529,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             throw;
 
         task.execution_status = ExecutionStatus::fromCurrentException();
-        tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
         /// We use return value of tryExecuteQuery(...) in tryExecuteQueryOnLeaderReplica(...) to determine
         /// if replica has stopped being leader and we should retry query.
@@ -544,6 +543,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
                                  e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+
+        tryLogCurrentException(
+            log, String(fmt::format("Query {} wasn't finished successfully, retriable {}", query_to_show_in_logs, !no_sense_to_retry)));
         return no_sense_to_retry;
     }
     catch (...)
@@ -654,6 +656,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
         task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
         task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, ExecutionStatus(0).serializeText(), zkutil::CreateMode::Persistent));
 
+        bool retriable = false;
         try
         {
             LOG_DEBUG(log, "Executing query: {}", task.query_for_logging);
@@ -673,12 +676,12 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
 
             if (task.execute_on_leader)
             {
-                tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
+                retriable = !tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
             }
             else
             {
                 storage.reset();
-                tryExecuteQuery(task, zookeeper, internal_query);
+                retriable = !tryExecuteQuery(task, zookeeper, internal_query);
             }
         }
         catch (const Coordination::Exception &)
@@ -692,12 +695,11 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
             tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
-
         if (task.execution_status.code != 0)
         {
             bool status_written_by_table_or_db = task.ops.empty();
             bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
-            if (status_written_by_table_or_db || is_replicated_database_task)
+            if (status_written_by_table_or_db || is_replicated_database_task || retriable)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
             }

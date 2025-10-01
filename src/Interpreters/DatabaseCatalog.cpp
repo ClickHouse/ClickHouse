@@ -2,17 +2,6 @@
 
 #include <Access/ContextAccess.h>
 
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -20,18 +9,30 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Poco/DirectoryIterator.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
+#include <Common/UniqueLock.h>
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <mutex>
@@ -650,17 +651,24 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
-
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
-
-        /// Delete the database.
-        db->drop(local_context);
-
         auto default_db_disk = getContext()->getDatabaseDisk();
+
+        try
+        {
+            /// Delete the database.
+            db->drop(local_context);
+        }
+        catch (...)
+        {
+            attachDatabase(database_name, db);
+            throw;
+        }
+
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
