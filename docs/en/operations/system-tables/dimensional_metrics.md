@@ -46,7 +46,7 @@ Number of all failed merges since startup.
 Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.
 
 ### merge_tree_parts {#merge_tree_parts}
-Number of merge tree data parts, labelled by part state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part type (e.g. Wide, Compact, Unknown) and whether it is a projection part.
+Number of merge tree data parts, labelled by part state, part type, and whether it is a projection part.
 
 **See Also**
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
