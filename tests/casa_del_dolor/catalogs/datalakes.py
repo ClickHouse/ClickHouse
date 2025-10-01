@@ -17,7 +17,7 @@ from .laketables import (
     LakeCatalogs,
     SparkTable,
 )
-from .tablegenerator import LakeTableGenerator, sample_from_dict
+from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lambda
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
@@ -54,8 +54,6 @@ from utils.backgroundworker import BackgroundWorker
 def get_local_base_path(catalog_name: str) -> str:
     return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
 
-
-true_false_lambda = lambda: random.choice(["false", "true"])
 
 spark_properties = {
     "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,

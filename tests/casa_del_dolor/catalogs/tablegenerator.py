@@ -16,6 +16,8 @@ from pyspark.sql.types import DateType, TimestampType
 
 Parameter = typing.Callable[[], int | float | str]
 
+true_false_lambda = lambda: random.choice(["false", "true"])
+
 
 def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
     items = random.sample(list(d.items()), sample)
@@ -306,7 +308,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             "commit.manifest.min-count-to-merge": lambda: str(
                 random.choice([1, 2, 8, 50, 100, 200, 500])
             ),
-            "commit.manifest-merge.enabled": lambda: random.choice(["true", "false"]),
+            "commit.manifest-merge.enabled": lambda: true_false_lambda,
             # Snapshot retention
             "history.expire.max-snapshot-age-ms": lambda: str(
                 random.choice(
@@ -340,7 +342,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 random.choice([1000, 60000, 180000, 300000])
             ),
             # Locking
-            "commit.lock.enabled": lambda: random.choice(["true", "false"]),
+            "commit.lock.enabled": true_false_lambda,
             "commit.lock.timeout-ms": lambda: str(
                 random.choice([1000, 30000, 60000, 120000])
             ),
@@ -351,12 +353,10 @@ class IcebergTableGenerator(LakeTableGenerator):
                 random.choice([1, 100, 1000, 10000, 50000, 100000])
             ),
             # Manifest list parallelism
-            "manifest-lists.enabled": lambda: random.choice(["true", "false"]),
+            "manifest-lists.enabled": true_false_lambda,
             "manifest-lists.parallelism": lambda: str(random.choice([1, 2, 4, 8, 16])),
             # Metadata deletion
-            "write.metadata.delete-after-commit.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "write.metadata.delete-after-commit.enabled": true_false_lambda,
             "write.metadata.previous-versions-max": lambda: str(
                 random.choice([1, 2, 3, 5, 10, 20])
             ),
@@ -379,7 +379,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             ),
             "write.tasks.min": lambda: str(random.choice([1, 2, 10, 50, 100])),
             # Sorting
-            "write.sort.enabled": lambda: random.choice(["true", "false"]),
+            "write.sort.enabled": true_false_lambda,
             "write.sort.order": lambda: self.random_ordered_columns(table, True),
             # Write modes
             "write.update.mode": lambda: random.choice(
@@ -412,28 +412,20 @@ class IcebergTableGenerator(LakeTableGenerator):
             ),
             "read.split.planning-lookback": lambda: str(random.choice([10, 50, 100])),
             # Streaming
-            "read.stream.enabled": lambda: random.choice(["true", "false"]),
-            "read.stream.skip-delete-snapshots": lambda: random.choice(
-                ["true", "false"]
-            ),
-            "read.stream.skip-overwrite-snapshots": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "read.stream.enabled": true_false_lambda,
+            "read.stream.skip-delete-snapshots": true_false_lambda,
+            "read.stream.skip-overwrite-snapshots": true_false_lambda,
             # Parquet vectorization
-            "read.parquet.vectorization.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "read.parquet.vectorization.enabled": true_false_lambda,
             "read.parquet.vectorization.batch-size": lambda: str(
                 random.choice([1, 16, 32, 128, 1024, 2048, 4096, 8192])
             ),
             # Compatibility
-            "compatibility.snapshot-id-inheritance.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "compatibility.snapshot-id-inheritance.enabled": true_false_lambda,
             # Schema evolution
-            "schema.auto-evolve": lambda: random.choice(["true", "false"]),
+            "schema.auto-evolve": true_false_lambda,
             # Data locality
-            "write.data.locality.enabled": lambda: random.choice(["true", "false"]),
+            "write.data.locality.enabled": true_false_lambda,
         }
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
@@ -507,23 +499,115 @@ class IcebergTableGenerator(LakeTableGenerator):
         ).collect()
         return [r.made_current_at for r in result]
 
+    def add_options(self, options: dict[str, Parameter]) -> str:
+        selected_opts = sample_from_dict(options, random.randint(1, len(options)))
+        res = ", options => map("
+        res += ",".join([f"'{key}', '{val()}'" for key, val in selected_opts.items()])
+        res += ")"
+        return res
+
     def generate_extra_statement(
         self,
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 13)
+        next_option = random.randint(1, 14)
 
         if next_option == 1:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+            if random.randint(1, 2) == 1:
+                res += f", prefix_listing => {random.choice(["true", "false"])}"
             timestamps = self.get_timestamps(spark, table)
             if len(timestamps) > 0 and random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
             res += ")"
             return res
         if next_option == 2:
+            res = f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
+            if random.randint(1, 2) == 1:
+                # Add options
+                options = {
+                    "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
+                    "partial-progress.enabled": true_false_lambda,
+                    "partial-progress.max-commits": lambda: random.randint(0, 20),
+                    "use-starting-sequence-number": true_false_lambda,
+                    "rewrite-job-order": random.choice(
+                        ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
+                    ),
+                    "target-file-size-bytes": lambda: str(
+                        random.choice(
+                            [
+                                1048576,  # 1MB
+                                2097152,  # 2MB
+                                134217728,  # 128MB
+                                268435456,  # 256MB
+                                536870912,  # 512MB
+                                1073741824,  # 1GB
+                            ]
+                        )
+                    ),
+                    "min-input-files": lambda: random.randint(0, 20),
+                    "rewrite-all": true_false_lambda,
+                    "max-file-group-size-bytes": lambda: str(
+                        random.choice(
+                            [
+                                1048576,  # 1MB
+                                2097152,  # 2MB
+                                134217728,  # 128MB
+                                268435456,  # 256MB
+                                536870912,  # 512MB
+                                1073741824,  # 1GB
+                            ]
+                        )
+                    ),
+                    "max-files-to-rewrite": lambda: random.randint(0, 100),
+                }
+                res += self.add_options(options)
+            res += ")"
+            return res
+        if next_option == 3:
+            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", use_caching => {random.choice(["true", "false"])}"
+            res += ")"
+            return res
+        if next_option == 4:
+            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
+            timestamps = self.get_timestamps(spark, table)
+            if len(timestamps) > 0 and random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
+            if random.randint(1, 2) == 1:
+                res += f", stream_results => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", retain_last => {random.randint(1, 10)}"
+            if random.randint(1, 2) == 1:
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+            if random.randint(1, 2) == 1:
+                res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
+            res += ")"
+            return res
+        if next_option == 5:
+            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
+        if next_option == 6:
+            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
+        if next_option == 7:
+            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
+        if next_option in (8, 9):
+            zorder = False
             next_strategy = random.choice(["sort", "binpack"])
 
             res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
@@ -536,45 +620,78 @@ class IcebergTableGenerator(LakeTableGenerator):
                 if zorder:
                     res += ")"
                 res += "'"
+            if random.randint(1, 3) == 1:
+                # Add options
+                options = {
+                    "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
+                    "partial-progress.enabled": true_false_lambda,
+                    "partial-progress.max-commits": lambda: random.randint(0, 20),
+                    "use-starting-sequence-number": true_false_lambda,
+                    "rewrite-job-order": random.choice(
+                        ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
+                    ),
+                    "target-file-size-bytes": lambda: str(
+                        random.choice(
+                            [
+                                1048576,  # 1MB
+                                2097152,  # 2MB
+                                134217728,  # 128MB
+                                268435456,  # 256MB
+                                536870912,  # 512MB
+                                1073741824,  # 1GB
+                            ]
+                        )
+                    ),
+                    "min-input-files": lambda: random.randint(0, 20),
+                    "rewrite-all": true_false_lambda,
+                    "max-file-group-size-bytes": lambda: str(
+                        random.choice(
+                            [
+                                1048576,  # 1MB
+                                2097152,  # 2MB
+                                134217728,  # 128MB
+                                268435456,  # 256MB
+                                536870912,  # 512MB
+                                1073741824,  # 1GB
+                            ]
+                        )
+                    ),
+                    "delete-file-threshold": lambda: random.randint(0, 10000),
+                    "delete-ratio-threshold": lambda: random.uniform(0, 1),
+                    "remove-dangling-deletes": true_false_lambda,
+                }
+                if next_strategy == "sort":
+                    options.update(
+                        {
+                            "compression-factor": lambda: random.uniform(0, 1),
+                            "shuffle-partitions-per-file": lambda: random.randint(
+                                0, 20
+                            ),
+                        }
+                    )
+                if zorder:
+                    options.update(
+                        {
+                            "var-length-contribution": lambda: random.randint(0, 100),
+                            "max-output-size": lambda: str(
+                                random.choice(
+                                    [
+                                        1048576,  # 1MB
+                                        2097152,  # 2MB
+                                        134217728,  # 128MB
+                                        268435456,  # 256MB
+                                        536870912,  # 512MB
+                                        1073741824,  # 1GB
+                                    ]
+                                )
+                            ),
+                        }
+                    )
+                res += self.add_options(options)
             res += ")"
             return res
-        if next_option == 3:
-            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
-            if random.randint(1, 2) == 1:
-                res += f", use_caching => {random.choice(["true", "false"])}"
-            res += ")"
-            return res
-        if next_option == 4:
-            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
-        if next_option == 5:
-            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
-            timestamps = self.get_timestamps(spark, table)
-            if len(timestamps) > 0 and random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
-            if random.randint(1, 2) == 1:
-                res += f", stream_results => {random.choice(["true", "false"])}"
-            if random.randint(1, 2) == 1:
-                res += f", retain_last => {random.randint(1, 10)}"
-            res += ")"
-            return res
-        if next_option == 6:
-            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
-            res += ")"
-            return res
-        if next_option == 7:
-            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
-            res += ")"
-            return res
-        if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
         snapshots = self.get_snapshots(spark, table)
-        if len(snapshots) > 0 and next_option in (9, 10, 11):
+        if len(snapshots) > 0 and next_option in (10, 11, 12):
             calls = [
                 "rollback_to_snapshot",
                 "set_current_snapshot",
@@ -582,7 +699,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             ]
             return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
         timestamps = self.get_timestamps(spark, table)
-        if len(timestamps) > 0 and next_option in (12, 13):
+        if len(timestamps) > 0 and next_option in (13, 14):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
         return ""
 
@@ -637,31 +754,21 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 random.choice([1, 8, 16, 32, 64, 128, 256])
             ),
             # Auto optimize
-            "delta.autoOptimize.optimizeWrite": lambda: random.choice(
-                ["true", "false"]
-            ),
-            "delta.autoOptimize.autoCompact": lambda: random.choice(["true", "false"]),
+            "delta.autoOptimize.optimizeWrite": true_false_lambda,
+            "delta.autoOptimize.autoCompact": true_false_lambda,
             # Optimize write
-            "spark.databricks.delta.autoCompact.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
             # Adaptive shuffle
-            "spark.databricks.delta.optimizeWrite.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "spark.databricks.delta.optimizeWrite.enabled": true_false_lambda,
             # Delta cache
-            "spark.databricks.io.cache.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "spark.databricks.io.cache.enabled": true_false_lambda,
             "spark.databricks.io.cache.maxDiskUsage": lambda: random.choice(
                 ["10g", "20g", "50g", "100g"]
             ),
             "spark.databricks.io.cache.maxMetaDataCache": lambda: random.choice(
                 ["1g", "2g", "5g", "10g"]
             ),
-            "spark.databricks.io.cache.compression.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "spark.databricks.io.cache.compression.enabled": true_false_lambda,
             # Column mapping mode
             "delta.columnMapping.mode": lambda: random.choice(["none", "name", "id"]),
             # Set minimum versions for readers and writers
@@ -690,21 +797,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 random.choice([1, 8, 16, 32, 64, 128, 256])
             ),
             # Statistics collection
-            "delta.checkpoint.writeStatsAsJson": lambda: random.choice(
-                ["true", "false"]
-            ),
-            "delta.checkpoint.writeStatsAsStruct": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "delta.checkpoint.writeStatsAsJson": true_false_lambda,
+            "delta.checkpoint.writeStatsAsStruct": true_false_lambda,
             # Sampling for stats
-            "spark.databricks.delta.stats.skipping": lambda: random.choice(
-                ["true", "false"]
-            ),
-            "delta.enableChangeDataFeed": lambda: random.choice(
-                ["true", "false"]
-            ),  # FIXME later requires specific writer version
+            "spark.databricks.delta.stats.skipping": true_false_lambda,
+            "delta.enableChangeDataFeed": true_false_lambda,  # FIXME later requires specific writer version
             # Append-only table
-            "delta.appendOnly": lambda: random.choice(["true", "false"]),
+            "delta.appendOnly": true_false_lambda,
             # Isolation level
             "delta.isolationLevel": lambda: str(
                 random.choice(
@@ -724,15 +823,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 ]
             ),
             # Compatibility
-            "delta.compatibility.symlinkFormatManifest.enabled": lambda: random.choice(
-                ["true", "false"]
-            ),
+            "delta.compatibility.symlinkFormatManifest.enabled": true_false_lambda,
             # Enable deletion vectors (Delta 3.0+)
-            "delta.enableDeletionVectors": lambda: random.choice(["true", "false"]),
+            "delta.enableDeletionVectors": true_false_lambda,
             # Row tracking
-            "delta.enableRowTracking": lambda: random.choice(["true", "false"]),
+            "delta.enableRowTracking": true_false_lambda,
             # Type widening
-            "delta.enableTypeWidening": lambda: random.choice(["true", "false"]),
+            "delta.enableTypeWidening": true_false_lambda,
             # Timestamp NTZ support
             "delta.feature.timestampNtz": lambda: random.choice(
                 ["supported", "enabled"]
