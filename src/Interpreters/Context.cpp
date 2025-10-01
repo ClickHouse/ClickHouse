@@ -1497,7 +1497,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     VolumePtr volume = tmp_policy->getVolume(0);
 
-    if
+    if (volume->getDisks().empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
 
     for (const auto & disk : volume->getDisks())
