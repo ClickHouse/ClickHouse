@@ -358,7 +358,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
-
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
     {
