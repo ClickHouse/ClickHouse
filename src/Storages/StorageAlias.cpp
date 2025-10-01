@@ -23,9 +23,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TABLE_WAS_NOT_DROPPED;
 }
 
 StorageAlias::StorageAlias(
@@ -56,12 +54,12 @@ void StorageAlias::read(
 {
     auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
-        local_context->getCurrentQueryId(), 
+        local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
-    
+
     target_storage->read(
         query_plan,
         column_names,
@@ -71,7 +69,7 @@ void StorageAlias::read(
         processed_stage,
         max_block_size,
         num_streams);
-    
+
     query_plan.addStorageHolder(target_storage);
     query_plan.addTableLock(std::move(lock));
 }
@@ -86,10 +84,10 @@ SinkToStoragePtr StorageAlias::write(
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto sink = target_storage->write(query, target_metadata, local_context, async_insert);
-    
+
     sink->addTableLock(lock);
     return sink;
 }
@@ -101,7 +99,7 @@ void StorageAlias::alter(
 {
     auto target_storage = getTargetTable();
     target_storage->alter(params, local_context, table_lock_holder);
-    
+
     // Update alias metadata to match target
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -191,11 +189,11 @@ void registerStorageAlias(StorageFactory & factory)
         // 3. CREATE TABLE t2 ENGINE = Alias(db, t)
         // 4. CREATE TABLE t2 ENGINE = Alias('t')
         // 5. CREATE TABLE t2 ENGINE = Alias('db', 't')
-        
+
         String target_database;
         String target_table;
         auto local_context = args.getLocalContext();
-        
+
         if (args.engine_args.empty())
         {
             // Note: CREATE TABLE ... AS ... syntax is not supported
@@ -208,7 +206,7 @@ void registerStorageAlias(StorageFactory & factory)
             // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
             auto evaluated_arg = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String table_arg = checkAndGetLiteralArgument<String>(evaluated_arg, "table_name");
-            
+
             auto dot_pos = table_arg.find('.');
             if (dot_pos != String::npos)
             {
@@ -234,9 +232,9 @@ void registerStorageAlias(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage Alias requires at most 2 arguments: database name and table name");
         }
-        
+
         StorageID target_table_id(target_database, target_table);
-        
+
         // Get columns from target table if not specified
         ColumnsDescription columns = args.columns;
         if (columns.empty())
@@ -244,7 +242,7 @@ void registerStorageAlias(StorageFactory & factory)
             auto target_storage = DatabaseCatalog::instance().getTable(target_table_id, local_context);
             columns = target_storage->getInMemoryMetadataPtr()->getColumns();
         }
-        
+
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,

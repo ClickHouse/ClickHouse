@@ -103,13 +103,13 @@ public:
     bool isRemote() const override { return getTargetTable()->isRemote(); }
 
     NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
-    
+
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
         QueryProcessingStage::Enum to_stage,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
-    
+
     Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
 
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
