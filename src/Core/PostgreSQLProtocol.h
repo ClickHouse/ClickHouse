@@ -133,7 +133,7 @@ enum class MessageType : Int32
     FUNCTION_CALL_RESPONSE = 191,
 };
 
-//// Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones
+/** Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones */
 enum class ColumnType : Int32
 {
     BOOL = 16,
@@ -1240,12 +1240,39 @@ public:
 };
 
 
+/**
+* CommandComplete message for PostgreSQL wire protocol
+* Reference: https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COMMANDCOMPLETE
+*/
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8, EXECUTE = 9};
+    enum Command {
+        BEGIN = 0,
+        COMMIT = 1,
+        INSERT = 2,
+        DELETE = 3,
+        UPDATE = 4,
+        SELECT = 5,
+        MOVE = 6,
+        FETCH = 7,
+        COPY = 8,
+        EXECUTE = 9,
+        CREATE_TABLE = 10,
+        CREATE_DATABASE = 11,
+        DROP_TABLE = 12,
+        DROP_DATABASE = 13,
+        ALTER_TABLE = 14,
+        TRUNCATE = 15,
+        USE = 16,
+        SET = 17
+    };
 private:
-    String enum_to_string[10] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"};
+    String enum_to_string[18] = {
+        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE",
+        "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
+        "TRUNCATE", "USE", "SET"
+    };
 
     String value;
 
@@ -1253,10 +1280,21 @@ public:
     CommandComplete(Command cmd_, Int32 rows_count_)
     {
         value = enum_to_string[cmd_];
-        String add = " ";
-        if (cmd_ == Command::INSERT)
-            add = " 0 ";
-        value += add + std::to_string(rows_count_);
+
+        // Commands that include row count according to PostgreSQL protocol
+        // Note: UPDATE and DELETE in ClickHouse always return 0 because ClickHouse uses
+        // lightweight deletes/updates that don't track affected rows in the same way as PostgreSQL
+        bool include_row_count = (cmd_ == Command::INSERT || cmd_ == Command::DELETE ||
+                                  cmd_ == Command::UPDATE || cmd_ == Command::SELECT ||
+                                  cmd_ == Command::MOVE || cmd_ == Command::FETCH || cmd_ == Command::COPY);
+
+        if (include_row_count)
+        {
+            String add = " ";
+            if (cmd_ == Command::INSERT)
+                add = " 0 ";  // OID (always 0 for ClickHouse tables)
+            value += add + std::to_string(rows_count_);
+        }
     }
 
     void serialize(WriteBuffer & out) const override
@@ -1278,18 +1316,39 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"});
-        for (size_t i = 0; i != query_types.size(); ++i)
+        std::vector<std::pair<String, Command>> query_patterns = {
+            {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
+            {"CREATE TABLE", Command::CREATE_TABLE},
+            {"CREATE DATABASE", Command::CREATE_DATABASE},
+            {"DROP TABLE", Command::DROP_TABLE},
+            {"DROP DATABASE", Command::DROP_DATABASE},
+            {"ALTER TABLE", Command::ALTER_TABLE},
+            {"TRUNCATE", Command::TRUNCATE},
+            {"BEGIN", Command::BEGIN},
+            {"COMMIT", Command::COMMIT},
+            {"INSERT", Command::INSERT},
+            {"DELETE", Command::DELETE},
+            {"UPDATE", Command::UPDATE},
+            {"SELECT", Command::SELECT},
+            {"MOVE", Command::MOVE},
+            {"FETCH", Command::FETCH},
+            {"COPY", Command::COPY},
+            {"EXECUTE", Command::EXECUTE},
+            {"USE", Command::USE},  // ClickHouse-specific, not have in PostgreSQL
+            {"SET", Command::SET},
+        };
+
+        for (const auto & [pattern, command] : query_patterns)
         {
             String::const_iterator iter = std::search(
                 query.begin(),
                 query.end(),
-                query_types[i].begin(),
-                query_types[i].end(),
+                pattern.begin(),
+                pattern.end(),
                 [](char a, char b){return std::toupper(a) == b;});
 
             if (iter != query.end())
-                return static_cast<Command>(i);
+                return command;
         }
 
         return Command::SELECT;
