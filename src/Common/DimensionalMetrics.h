@@ -2,10 +2,11 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -40,11 +41,12 @@ namespace DB::DimensionalMetrics
     public:
         explicit MetricFamily(Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
+        void unregister(LabelValues label_values) noexcept;
         MetricsMap getMetrics() const;
         const Labels & getLabels() const;
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         MetricsMap metrics;
         const Labels labels;
     };

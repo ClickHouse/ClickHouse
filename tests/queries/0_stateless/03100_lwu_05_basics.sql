@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_lightweight;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lightweight (d Date, e Enum8('foo' = 1, 'bar' = 2))
 ENGINE = MergeTree ORDER BY d

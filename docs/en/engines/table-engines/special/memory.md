@@ -6,6 +6,7 @@ sidebar_label: 'Memory'
 sidebar_position: 110
 slug: /engines/table-engines/special/memory
 title: 'Memory Table Engine'
+doc_type: 'reference'
 ---
 
 # Memory table engine
@@ -44,7 +45,6 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
   - Default value: `false`
 
 ## Usage {#usage}
-
 
 **Initialize settings**
 ```sql
@@ -108,4 +108,3 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
-

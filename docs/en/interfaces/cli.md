@@ -4,6 +4,7 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
+doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';
@@ -13,7 +14,6 @@ import connection_details_native from '@site/static/images/_snippets/connection-
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
-
 
 ## Install {#install}
 
@@ -31,7 +31,6 @@ sudo ./clickhouse install
 See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
-
 
 ## Run {#run}
 
@@ -67,7 +66,6 @@ Specify additional connection details as necessary:
 
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
 
-
 ### Connecting to ClickHouse Cloud {#connecting-cloud}
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
@@ -86,7 +84,6 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
   alt="ClickHouse Cloud Native TCP connection details"
 />
 
-
 ### Storing connections in a configuration file {#connection-credentials}
 
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
@@ -95,12 +92,18 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <name>default</name>
-        <hostname>hostname</hostname>
-        <port>9440</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password>password</password>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
     </connections_credentials>
 </config>
 ```
@@ -175,7 +178,6 @@ _EOF
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
-
 ## Notes {#notes}
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
@@ -200,7 +202,6 @@ When processing a query, the client shows:
 You can cancel a long query by pressing `Ctrl+C`. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press `Ctrl+C` a second time, the client will exit.
 
 ClickHouse Client allows passing external data (external temporary tables) for querying. For more information, see the section [External data for query processing](../engines/table-engines/special/external-data.md).
-
 
 ## Queries with parameters {#cli-queries-with-parameters}
 
@@ -235,7 +236,6 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
 $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
-
 
 ## AI-powered SQL generation {#ai-sql-generation}
 
@@ -443,15 +443,10 @@ ai:
 The AI SQL generator uses a multi-step process:
 
 1. **Schema Discovery**: The AI uses built-in tools to explore your database:
-   - Lists available databases
-   - Discovers tables within relevant databases
-   - Examines table structures via `CREATE TABLE` statements
+- Lists available databases  - Discovers tables within relevant databases   - Examines table structures via `CREATE TABLE` statements
 
 2. **Query Generation**: Based on the discovered schema, the AI generates SQL that:
-   - Matches your natural language intent
-   - Uses correct table and column names
-   - Applies appropriate joins and aggregations
-
+- Matches your natural language intent  - Uses correct table and column names  - Applies appropriate joins and aggregations
 3. **Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
@@ -467,14 +462,12 @@ The AI SQL generator uses a multi-step process:
 - The AI only sees schema information (table/column names and types), not actual data
 - All generated queries respect your existing database permissions
 
-
 ## Aliases {#cli_aliases}
 
 - `\l` - SHOW DATABASES
 - `\d` - SHOW TABLES
 - `\c <DATABASE>` - USE DATABASE
 - `.` - repeat the last query
-
 
 ## Keyboard shortcuts {#keyboard_shortcuts}
 
@@ -489,7 +482,6 @@ To configure the correct work of the meta key (Option) on MacOS:
 
 iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 :::
-
 
 ## Connection string {#connection_string}
 
@@ -607,7 +599,6 @@ Connect to one of two hosts: `192.168.1.15`, `192.168.1.25`.
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-
 ## Query ID format {#query-id-format}
 
 In interactive mode ClickHouse Client shows the query ID for every query. By default, the ID is formatted like this:
@@ -635,7 +626,6 @@ With the configuration above, the ID of a query is shown in the following format
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-
 ## Configuration files {#configuration_files}
 
 ClickHouse Client uses the first existing file of the following:
@@ -654,6 +644,15 @@ Example XML syntax:
     <user>username</user>
     <password>password</password>
     <secure>true</secure>
+    <host>hostname</host>
+    <connections_credentials>
+      <connection>
+        <name>cloud</name>
+        <hostname>abc.clickhouse.cloud</hostname>
+        <user>username</user>
+        <password>password</password>
+      </connection>
+    </connections_credentials>
     <openSSL>
       <client>
         <caConfig>/etc/ssl/cert.pem</caConfig>
@@ -668,11 +667,102 @@ The same configuration in YAML format:
 user: username
 password: 'password'
 secure: true
+connections_credentials:
+  connection:
+    - name: cloud
+      hostname: abc.clickhouse.cloud
+      user: username
+      password: 'password'
 openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
 
+## Client Configuration Resolution {#config_resolution}
+
+The configuration of the client follows the following pattern:
+
+1.  Parameters passed via [Command-line options](#command-line-options) take
+    the highest priority.
+2.  For parameters not passed via the command-line, [Environment variable
+    options](#environment-variable-options) will be used.
+3.  Other connection options will be drawn from one or more `connection`
+    objects under the `connections_credentials` key in the configuration file,
+    where `connection.name` matches the connection name. That name is
+    determined by the value of `--connection`, the root `connection`
+    parameter, the `--host` option or root `host` parameter, or "default". All
+    `connections` matching the name will be evaluated in the order in which
+    they appear. The supported keys in each `connection` object are:
+    *   `name`
+    *   `hostname`
+    *   `port`
+    *   `secure`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+4.  Finally, parameters set at the root level of the configuration apply.
+    These include:
+    *   `connection`
+    *   `secure` and `no-secure`
+    *   `bind_host`
+    *   `host`
+    *   `port`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+    *   `jwt`
+    *   `ssh-key-file`
+    *   `ssh-key-passphrase`
+    *   `ask-password`
+
+## Additional Configuration Parameters {#additional_configuration}
+
+These additional parameters may also be set at the root level of the
+configuration, and are not overridden by other means:
+
+*   `quota_key`
+*   `compression`
+*   `connect_timeout`
+*   `send_timeout`
+*   `receive_timeout`
+*   `tcp_keep_alive_timeout`
+*   `handshake_timeout_ms`
+*   `sync_request_timeout`
+*   `tcp_port`
+*   `tcp_port_secure`
+
+### Secure Connections {#secure_connections}
+
+The `openSSL` object determines TLS encryption and authentication behavior.
+See
+[OpenSSL](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#openssl)
+for details.
+
+The `openSSL` object and other parameters also impact the determination of
+whether to use a secure connection, as follows:
+
+*   If `--secure` has been passed or the `secure` root or `connection`
+    configuration parameter has been set, the connection will use encryption.
+*   If `--no-secure` has been passed or the root `no-secure` parameter is
+    true, the connection will not be encrypted.
+*   If the host name has resoled to a subdomain of `clickhouse.cloud`, the
+    connection will use encryption.
+*   If the [port](https://clickhouse.com/docs/guides/sre/network-ports) has
+    resolved to the Native protocol SSL/TLS port, `9440`, the connection will
+    use encryption.
+
+## Environment variable options {#environment-variable-options}
+
+The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 

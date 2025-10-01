@@ -49,9 +49,10 @@ StorageType parseStorageTypeFromString(const std::string & type)
     }
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
-
-    if (capitalize_first_letter(storage_type_str) == "S3a")
+    else if (capitalize_first_letter(storage_type_str) == "S3a")
         storage_type_str = "S3";
+    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+        storage_type_str = "Azure";
 
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
@@ -221,6 +222,32 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
         }
     }
     return metadata_location;
+}
+
+DB::SettingsChanges CatalogSettings::allChanged() const
+{
+    DB::SettingsChanges changes;
+    changes.emplace_back("storage_endpoint", storage_endpoint);
+    changes.emplace_back("aws_access_key_id", aws_access_key_id);
+    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
+    changes.emplace_back("region", region);
+
+    return changes;
+}
+
+void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
+}
+
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
 
 }

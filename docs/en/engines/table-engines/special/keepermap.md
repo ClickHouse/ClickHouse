@@ -5,6 +5,7 @@ sidebar_label: 'KeeperMap'
 sidebar_position: 150
 slug: /engines/table-engines/special/keeper-map
 title: 'KeeperMap'
+doc_type: 'reference'
 ---
 
 # KeeperMap {#keepermap}
@@ -68,7 +69,6 @@ with
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
 </clickhouse>
 ```
-
 
 Each value, which is binary serialization of `(v1, v2, v3)`, will be stored inside `/keeper_map_tables/keeper_map_table/data/serialized_key` in `Keeper`.
 Additionally, number of keys will have a soft limit of 4 for the number of keys.

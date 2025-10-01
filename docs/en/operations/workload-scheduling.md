@@ -4,6 +4,7 @@ sidebar_label: 'Workload scheduling'
 sidebar_position: 69
 slug: /operations/workload-scheduling
 title: 'Workload scheduling'
+doc_type: 'reference'
 ---
 
 When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks and CPU cores). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resources a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding requests that exceed resource capacity.
@@ -349,15 +350,15 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 :::
 
 ## See also {#see-also}
- - [system.scheduler](/operations/system-tables/scheduler.md)
- - [system.workloads](/operations/system-tables/workloads.md)
- - [system.resources](/operations/system-tables/resources.md)
- - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
- - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
- - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
- - [cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
- - [cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings.md#cpu_slot_quantum_ns) global server setting
- - [cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption_timeout_ms) global server setting
+- [system.scheduler](/operations/system-tables/scheduler.md)
+- [system.workloads](/operations/system-tables/workloads.md)
+- [system.resources](/operations/system-tables/resources.md)
+- [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+- [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+- [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+- [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+- [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+- [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+- [cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
+- [cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings.md#cpu_slot_quantum_ns) global server setting
+- [cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption_timeout_ms) global server setting

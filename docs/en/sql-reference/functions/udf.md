@@ -3,6 +3,7 @@ description: 'Documentation for UDFs User Defined Functions'
 sidebar_label: 'UDF'
 slug: /sql-reference/functions/udf
 title: 'UDFs User Defined Functions'
+doc_type: 'reference'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
@@ -23,22 +24,24 @@ The configuration of executable user defined functions can be located in one or 
 
 A function configuration contains the following settings:
 
-- `name` - a function name.
-- `command` - script name to execute or command if `execute_direct` is false.
-- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Default argument name value is `c` + argument_number.
-- `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
-- `return_type` - the type of a returned value.
-- `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Optional. Default value is `result`.
-- `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
-- `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
-- `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
-- `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
-- `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
-- `pool_size` - the size of a command pool. Optional. Default value is `16`.
-- `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
-- `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded. Default value is `0`. Optional parameter.
-- `deterministic` - if the function is deterministic (returns the same result for the same input). Default value is `false`. Optional parameter.
+| Parameter                     | Description                                                                                                                                                                                                                                                                                                                                                                                   | Required  | Default Value         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|-----------------------|
+| `name`                        | A function name                                                                                                                                                                                                                                                                                                                                                                               | Yes       | -                     |
+| `command`                     | Script name to execute or command if `execute_direct` is false                                                                                                                                                                                                                                                                                                                                | Yes       | -                     |
+| `argument`                    | Argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow)                                                             | Yes       | `c` + argument_number |
+| `format`                      | A [format](../../interfaces/formats.md) in which arguments are passed to the command. The command output is expected to use the same format too                                                                                                                                                                                                                                               | Yes       | -                     |
+| `return_type`                 | The type of a returned value                                                                                                                                                                                                                                                                                                                                                                  | Yes       | -                     |
+| `return_name`                 | Name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](/interfaces/formats/JSONEachRow)                                                                                                                                                      | Optional  | `result`              |
+| `type`                        | An executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created                                                                                                                                                                                                                                     | Yes       | -                     |
+| `max_command_execution_time`  | Maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only                                                                                                                                                                                                                                                                     | Optional  | `10`                  |
+| `command_termination_timeout` | Time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command                                                                                                                                                                                                                                         | Optional  | `10`                  |
+| `command_read_timeout`        | Timeout for reading data from command stdout in milliseconds                                                                                                                                                                                                                                                                                                                                  | Optional  | `10000`               |
+| `command_write_timeout`       | Timeout for writing data to command stdin in milliseconds                                                                                                                                                                                                                                                                                                                                     | Optional  | `10000`               |
+| `pool_size`                   | The size of a command pool                                                                                                                                                                                                                                                                                                                                                                    | Optional  | `16`                  |
+| `send_chunk_header`           | Controls whether to send row count before sending a chunk of data to process                                                                                                                                                                                                                                                                                                                  | Optional  | `false`               |
+| `execute_direct`              | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c` | Optional  | `1`                   |
+| `lifetime`                    | The reload interval of a function in seconds. If it is set to `0` then the function is not reloaded                                                                                                                                                                                                                                                                                           | Optional  | `0`                   |
+| `deterministic`               | If the function is deterministic (returns the same result for the same input)                                                                                                                                                                                                                                                                                                                 | Optional  | `false`               |
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
@@ -48,6 +51,7 @@ The command must read arguments from `STDIN` and must output the result to `STDO
 
 Creating `test_function_sum` manually specifying `execute_direct` to `0` using XML configuration.
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
+
 ```xml
 <functions>
     <function>
@@ -292,7 +296,6 @@ Result:
     └────────────────────┘
 ```
 
-
 ### Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
@@ -325,12 +328,3 @@ Custom functions from lambda expressions can be created using the [CREATE FUNCTI
 ## Related Content {#related-content}
 
 ### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->

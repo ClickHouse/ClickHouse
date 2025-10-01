@@ -244,6 +244,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true,
                         shared_used_flags_local);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+                    inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }

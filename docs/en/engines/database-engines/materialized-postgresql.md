@@ -4,6 +4,7 @@ sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
 slug: /engines/database-engines/materialized-postgresql
 title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -124,7 +125,6 @@ SELECT * FROM database1.`schema2.table2`;
 ```
 
 Warning: for this case dots in table name are not allowed.
-
 
 ## Requirements {#requirements}
 

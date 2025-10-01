@@ -6,6 +6,7 @@ keywords: ['JSONCompactStringsEachRow']
 output_format: true
 slug: /interfaces/formats/JSONCompactStringsEachRow
 title: 'JSONCompactStringsEachRow'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -80,6 +81,4 @@ The output will be in JSON format:
 ["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
 ```
 
-
 ## Format settings {#format-settings}
-

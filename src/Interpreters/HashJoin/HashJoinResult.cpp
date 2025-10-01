@@ -152,7 +152,8 @@ static Block generateBlock(
     MutableColumns columns,
     const HashJoinResult::Properties & properties,
     const IColumn::Offsets & offsets,
-    const IColumn::Filter & filter)
+    const IColumn::Filter & filter,
+    std::span<UInt64> matched_rows)
 {
     const auto * off_data = lazy_output.row_refs.data();
     if (properties.is_join_get)
@@ -166,10 +167,8 @@ static Block generateBlock(
 
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-    /// TODO: Technically, filter can be restored from the offsets.
-    //        We can check if this faster vs building filter in main join loop.
     if (properties.need_filter)
-        scattered_block.filter(filter);
+        scattered_block.filter(matched_rows);
 
     scattered_block.filterBySelector();
 
@@ -188,18 +187,24 @@ static Block generateBlock(
 static size_t numLeftRowsForNextBlock(
     size_t next_row,
     const IColumn::Offsets & offsets,
-    size_t max_joined_block_rows)
+    size_t max_joined_block_rows,
+    size_t max_joined_block_bytes,
+    size_t avg_bytes_per_row)
 {
     /// If rows are not replicated, do not split block.
-    if (offsets.empty() || max_joined_block_rows == 0)
+    if (offsets.empty() || (max_joined_block_rows == 0 && max_joined_block_bytes == 0))
         return 0;
 
     /// If offsets does not increase block size, do not split block.
     if (offsets.back() <= offsets.size())
         return 0;
 
+    size_t max_rows = max_joined_block_rows;
+    if (max_joined_block_bytes)
+        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
-    const size_t next_allowed_offset = prev_offset + max_joined_block_rows;
+    const size_t next_allowed_offset = prev_offset + max_rows;
 
     if (offsets.back() <= next_allowed_offset)
         return offsets.size() - next_row;
@@ -223,6 +228,7 @@ HashJoinResult::HashJoinResult(
     MutableColumns columns_,
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
+    IColumn::Offsets && matched_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -231,7 +237,13 @@ HashJoinResult::HashJoinResult(
     , columns(std::move(columns_))
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
+    , matched_rows(std::move(matched_rows_))
 {
+}
+
+static size_t getAvgBytesPerRow(const Block & block)
+{
+    return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
@@ -239,7 +251,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     if (!scattered_block)
         return {};
 
-    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows);
+    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
+    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
         auto block = generateBlock(
@@ -251,7 +264,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             std::move(columns),
             properties,
             offsets,
-            filter);
+            filter,
+            std::span<UInt64>{matched_rows});
 
         scattered_block.reset();
         return {std::move(block), true};
@@ -300,13 +314,19 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     IColumn::Filter partial_filter;
+    std::span<UInt64> partial_matched_rows;
     if (!filter.empty())
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
+        const auto old_selector_it = next_matched_rows_it;
+        while (next_matched_rows_it < matched_rows.size() && matched_rows[next_matched_rows_it] < next_row + num_lhs_rows)
+            ++next_matched_rows_it;
+        partial_matched_rows = std::span<UInt64>{&matched_rows[old_selector_it], &matched_rows[next_matched_rows_it]};
     }
 
     const auto row_ref_start = next_row_ref;
+    const auto start_row = next_row;
 
     next_row += num_lhs_rows;
     next_row_ref += num_refs;
@@ -327,12 +347,30 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     bool is_last = next_row >= offsets.size();
 
-    MutableColumns next_columns;
-    if (!is_last)
+    MutableColumns rhs_columns; /// Columns from the right table
+    if (!lazy_output.row_refs.empty())
     {
-        next_columns.reserve(columns.size());
+        rhs_columns.reserve(columns.size());
         for (auto & column : columns)
-            next_columns.push_back(column->cloneEmpty());
+            rhs_columns.push_back(column->cloneEmpty());
+    }
+    else
+    {
+        if (start_row == 0 && is_last)
+        {
+            rhs_columns = std::move(columns);
+        }
+        else
+        {
+            /// The result columns should contain only data for the current block.
+            /// Copy data from the original columns to preserve columns size in the block.
+            rhs_columns.reserve(columns.size());
+            for (auto & column : columns)
+                rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
+
+            if (is_last)
+                columns.clear();
+        }
     }
 
     auto block = generateBlock(
@@ -341,12 +379,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         num_rhs_rows,
         row_ref_start,
         next_row_ref,
-        std::move(columns),
+        std::move(rhs_columns),
         properties,
         partial_offsets,
-        partial_filter);
+        partial_filter,
+        partial_matched_rows);
 
-    columns = std::move(next_columns);
     if (is_last)
         scattered_block.reset();
 

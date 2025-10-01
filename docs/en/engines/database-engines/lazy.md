@@ -5,6 +5,7 @@ sidebar_label: 'Lazy'
 sidebar_position: 20
 slug: /engines/database-engines/lazy
 title: 'Lazy'
+doc_type: 'reference'
 ---
 
 # Lazy
@@ -19,4 +20,3 @@ It's optimized for storing many small \*Log tables, for which there is a long ti
 CREATE DATABASE testlazy 
 ENGINE = Lazy(expiration_time_in_seconds);
 ```
-
