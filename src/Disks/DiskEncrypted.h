@@ -66,13 +66,6 @@ public:
         delegate->createDirectories(wrapped_path);
     }
 
-    void clearDirectory(const String & path) override
-    {
-        auto tx = createEncryptedTransaction();
-        tx->clearDirectory(path);
-        tx->commit();
-    }
-
     void moveDirectory(const String & from_path, const String & to_path) override
     {
         auto tx = createEncryptedTransaction();

@@ -6391,6 +6391,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
@@ -7109,6 +7112,9 @@ Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_run
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(Bool, rewrite_in_to_join, false, R"(
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \

@@ -41,7 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void StorageHDFSConfiguration::check(ContextPtr context) const
+void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.path.substr(1));

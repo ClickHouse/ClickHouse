@@ -1,4 +1,5 @@
 import logging
+import traceback
 import random
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -13,9 +14,10 @@ from pyspark.sql.types import (
     DateType,
     FloatType,
     DoubleType,
+    DecimalType,
 )
 
-from .laketables import SparkTable, LakeFormat, get_timestamp_for_table
+from .laketables import SparkTable, LakeFormat
 from integration.helpers.client import Client
 
 
@@ -64,26 +66,34 @@ class SparkAndClickHouseCheck:
             )
 
             # For Iceberg, use time travel or snapshots sometimes
-            if table.lake_format == LakeFormat.Iceberg and random.randint(1, 2) == 1:
-                result = spark.sql(
-                    f"CALL `{table.catalog_name}`.system.snapshots('{table.get_namespace_path()}')"
-                ).collect()
-                snapshots = [x["snapshot_id"] for x in result]
+            if random.randint(1, 2) == 1:
+                snapshots = []
+                timestamps = []
 
-                if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                if table.lake_format == LakeFormat.Iceberg:
+                    result = spark.sql(
+                        f"SELECT snapshot_id, committed_at FROM {table.get_table_full_path()}.snapshots;"
+                    ).collect()
+                    snapshots = [r.snapshot_id for r in result]
+                    timestamps = [r.committed_at for r in result]
+                else:
+                    result = spark.sql(
+                        f"DESCRIBE HISTORY {table.get_table_full_path()};"
+                    ).collect()
+                    snapshots = [r.version for r in result]
+
+                if len(snapshots) > 0 and (
+                    len(timestamps) == 0 or random.randint(1, 2) == 1
+                ):
                     next_snapshot = random.choice(snapshots)
-                    clickhouse_predicate = (
-                        f" SETTINGS iceberg_snapshot_id = {next_snapshot}"
-                    )
+                    clickhouse_predicate = f" SETTINGS {"iceberg_snapshot_id" if table.lake_format == LakeFormat.Iceberg else "delta_lake_snapshot_version"} = {next_snapshot}"
                     spark_predicate = f" VERSION AS OF {next_snapshot}"
                     extra_predicate = f" on snapshot {next_snapshot}"
-                else:
-                    next_time = get_timestamp_for_table()
-                    clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {next_time.timestamp() * 1000}"
-                    spark_predicate = f" TIMESTAMP AS OF '{next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}'"
-                    extra_predicate = (
-                        f" on timestamp {next_time.strftime("%Y-%m-%d %H:%M:%S.%f")}"
-                    )
+                elif len(timestamps) > 0:
+                    next_time = random.choice(timestamps)
+                    clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {int(next_time.timestamp() * 1000)}"
+                    spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
+                    extra_predicate = f" on timestamp {next_time}"
 
             # Start by checking counts
             spark_query = spark.sql(
@@ -118,9 +128,13 @@ class SparkAndClickHouseCheck:
             )
 
             # Spark hash
-            # Convert all columns to string and concatenate
+            # Convert all columns to string and concatenate. Remove trailing 0 for decimals
             spark_strings = {
-                col.column_name: f"CAST({col.column_name} AS STRING)"
+                col.column_name: (
+                    f"TRIM(TRAILING '0' FROM CAST({col.column_name} AS STRING))"
+                    if isinstance(col.spark_type, DecimalType)
+                    else f"CAST({col.column_name} AS STRING)"
+                )
                 for col in order_by_cols
             }
             concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
@@ -142,7 +156,7 @@ class SparkAndClickHouseCheck:
             # ClickHouse arrays as strings don't have a space after the comma, add it
             clickhouse_strings = {
                 col.column_name: (
-                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), c0), ', ') || ']'"
+                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']'"
                     if isinstance(col.spark_type, (ArrayType))
                     else f"toString({col.column_name})"
                 )
@@ -173,5 +187,6 @@ class SparkAndClickHouseCheck:
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
+            traceback.print_exc()
             self.logger.error(str(e))
         return True
