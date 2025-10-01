@@ -1497,7 +1497,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     VolumePtr volume = tmp_policy->getVolume(0);
 
-    if (volume->getDisks().empty())
+    if
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
 
     for (const auto & disk : volume->getDisks())
@@ -2366,9 +2366,8 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
 
 void Context::addSkipIndexAccessInfo(const String & skip_index_name)
 {
-    if (skip_index_name.empty()) {
+    if (skip_index_name.empty())
         return;
-    }
 
     std::lock_guard lock(query_access_info->mutex);
     query_access_info->skip_indexes.emplace(skip_index_name);
