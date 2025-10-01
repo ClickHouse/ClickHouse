@@ -1257,7 +1257,7 @@ public:
         MOVE = 6,
         FETCH = 7,
         COPY = 8,
-        EXECUTE = 9,
+        PREPARE = 9,
         CREATE_TABLE = 10,
         CREATE_DATABASE = 11,
         DROP_TABLE = 12,
@@ -1269,7 +1269,7 @@ public:
     };
 private:
     String enum_to_string[18] = {
-        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE",
+        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
         "TRUNCATE", "USE", "SET"
     };
@@ -1367,7 +1367,7 @@ public:
             {"MOVE", Command::MOVE},
             {"FETCH", Command::FETCH},
             {"COPY", Command::COPY},
-            {"EXECUTE", Command::EXECUTE},
+            {"PREPARE", Command::PREPARE},
             {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
             {"SET", Command::SET},
         };
