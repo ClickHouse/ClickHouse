@@ -291,7 +291,15 @@ void JoinStepLogical::swapInputs()
 {
     auto inputs = getInputHeaders();
     chassert(inputs.size() == 2);
+
+    /// TODO: any other checks that join sides can be swapped?
+
     updateInputHeaders({inputs[1], inputs[0]});
+
+    if (join_operator.kind == JoinKind::Left)
+        join_operator.kind = JoinKind::Right;
+    else if (join_operator.kind == JoinKind::Right)
+        join_operator.kind = JoinKind::Left;
 
     expression_actions.swapExpressionSources();
 }

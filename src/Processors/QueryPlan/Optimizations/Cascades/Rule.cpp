@@ -3,7 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-//#include <Interpreters/JoinInfo.h>
+#include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -131,7 +131,18 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
 
 bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
 {
-    return expression->getName() == "Join";
+    const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
+    if (!join_step)
+        return false;
+
+    const auto & join = join_step->getJoinOperator();
+
+    return
+        join.kind == JoinKind::Inner ||
+        join.kind == JoinKind::Cross ||
+        join.strictness == JoinStrictness::Semi ||
+        join.strictness == JoinStrictness::Any ||
+        join.strictness == JoinStrictness::Anti;
 }
 
 /// Make the same JOIN but with left and right inputs swapped
