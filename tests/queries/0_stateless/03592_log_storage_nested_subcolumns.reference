@@ -1,0 +1,7 @@
+-- { echoOn }
+SELECT c0.c1.null, c0.c2 FROM nested_null;
+[0]	[2]
+SELECT c0.null, c0.c2 FROM null_name;
+[3]	[4]
+SELECT c0.null.null, c0.c2 FROM nested_null_clash;
+[0]	[6]
