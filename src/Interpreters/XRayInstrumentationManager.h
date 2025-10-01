@@ -48,14 +48,17 @@ public:
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
     using HandlerTypeToIP = std::unordered_map<HandlerType, InstrumentedFunctions::iterator>;
 
+protected:
+    static std::string_view removeTemplateArgs(std::string_view input);
+    static std::string extractNearestNamespaceAndFunction(std::string_view signature);
+
 private:
 
     XRayInstrumentationManager();
     void registerHandler(const std::string & name, XRayHandlerFunction handler);
     XRayHandlerFunction getHandler(const std::string & name) const;
     void parseXRayInstrumentationMap();
-    static std::string_view removeTemplateArgs(std::string_view input);
-    std::string extractNearestNamespaceAndFunction(std::string_view signature);
+
     HandlerType getHandlerType(const std::string & handler_name);
     std::string toLower(const std::string & s);
 
