@@ -891,7 +891,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Fix source_header for filter actions.
             if (row_policy_filter && !row_policy_filter->empty())
             {
-                filter_info = generateFilterActions(
+                row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
@@ -1184,7 +1184,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, *source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1642,13 +1642,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
         query_plan.addStep(std::move(read_nothing));
 
-        if (expressions.filter_info)
+        if (expressions.row_policy_info)
         {
             auto row_level_security_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
-                expressions.filter_info->actions.clone(),
-                expressions.filter_info->column_name,
-                expressions.filter_info->do_remove_column);
+                expressions.row_policy_info->actions.clone(),
+                expressions.row_policy_info->column_name,
+                expressions.row_policy_info->do_remove_column);
 
             row_level_security_step->setStepDescription("Row-level security filter");
             query_plan.addStep(std::move(row_level_security_step));
@@ -1757,13 +1757,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.filter_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
-                    expressions.filter_info->actions.clone(),
-                    expressions.filter_info->column_name,
-                    expressions.filter_info->do_remove_column);
+                    expressions.row_policy_info->actions.clone(),
+                    expressions.row_policy_info->column_name,
+                    expressions.row_policy_info->do_remove_column);
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
@@ -2258,7 +2258,7 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
-    auto & row_level_filter = analysis_result.filter_info;
+    auto & row_level_filter = analysis_result.row_policy_info;
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
@@ -2450,7 +2450,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     ActionsDAG::NodeRawConstPtrs filter_nodes;
     if (analysis_result.hasFilter())
     {
-        auto & row_level_filter = analysis_result.filter_info;
+        auto & row_level_filter = analysis_result.row_policy_info;
         filter_nodes.push_back(&row_level_filter->actions.findInOutputs(row_level_filter->column_name));
     }
     if (analysis_result.hasPrewhere())
@@ -2647,8 +2647,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.filter_info && (!input_pipe && storage && storage->supportsPrewhere()))
-            query_info.row_level_filter = analysis_result.filter_info;
+        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+            query_info.row_level_filter = analysis_result.row_policy_info;
 
         if (analysis_result.prewhere_info)
             query_info.prewhere_info = analysis_result.prewhere_info;
