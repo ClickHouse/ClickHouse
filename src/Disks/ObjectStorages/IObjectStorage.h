@@ -6,7 +6,6 @@
 #include <optional>
 #include <filesystem>
 #include <variant>
-#include <expected>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -217,8 +216,12 @@ public:
         std::optional<size_t> read_hint = {}) const = 0;
 
     /// Read small object into memory and return it as string
-    /// Also contain consistent object metadata
-    /// if size of object is larger than max_size_bytes return nullopt
+    /// Also contain consistent object metadata if available in this object storage.
+    /// if size of object is larger than max_size_bytes throws exception
+    ///
+    /// NOTE: This method exists because it's impossible to get object metadata in generic way
+    /// from readObject. ReadObject returns ReadBufferFromFileBase and most of implementations
+    /// issue first request to object store only in first call of read/next method.
     virtual SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
