@@ -126,7 +126,7 @@ private:
             check(*column.type);
             column.type->forEachChild(check);
             if (!is_valid)
-            	break;
+                break;
         }
 
         return is_valid;
