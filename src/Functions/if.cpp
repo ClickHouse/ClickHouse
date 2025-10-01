@@ -154,9 +154,8 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
             ResultType mask{};
             std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
 
-            res[i] = (~mask & new_a) | (mask & new_b);
+            res[i] = (mask & new_a) | (~mask & new_b);
         }
-
     }
     else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
     {
