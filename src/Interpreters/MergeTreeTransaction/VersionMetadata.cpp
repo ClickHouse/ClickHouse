@@ -152,7 +152,7 @@ void VersionMetadata::setRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setRemovalTID {}", getObjectName(), tid);
     chassert(tid.isEmpty() || tid.getHash() == getRemovalTIDLock());
-    removal_tid = tid;
+    setRemovalTIDAndHash(tid);
 }
 
 void VersionMetadata::appendRemovalTIDToStoredMetadata()
@@ -180,20 +180,20 @@ void VersionMetadata::appendRemovalTIDToStoredMetadata()
 /// It can be used for introspection purposes only
 TransactionID VersionMetadata::getRemovalTIDForLogging() const
 {
-    TIDHash removal_lock = getRemovalTIDLock();
-    if (removal_lock)
-    {
-        if (removal_lock == Tx::PrehistoricTID.getHash())
-            return Tx::PrehistoricTID;
-        if (auto txn = TransactionLog::instance().tryGetRunningTransaction(removal_lock))
-            return txn->tid;
-    }
-
     if (removal_csn.load(std::memory_order_relaxed))
     {
         /// removal_tid cannot be changed since we have removal_csn, so it's readonly
         return removal_tid;
     }
+    auto current_removal_tid_hash = removal_tid_hash.load(std::memory_order_relaxed);
+    if (current_removal_tid_hash == 0)
+        return Tx::EmptyTID;
+
+
+    if (current_removal_tid_hash == Tx::PrehistoricTID.getHash())
+        return Tx::PrehistoricTID;
+    if (auto txn = TransactionLog::instance().tryGetRunningTransaction(current_removal_tid_hash))
+        return txn->tid;
 
     return Tx::EmptyTID;
 }
@@ -386,7 +386,7 @@ bool VersionMetadata::verifyMetadata(LoggerPtr logger)
                 setRemovalTIDLock(0);
                 if (!removal_tid.isEmpty())
                 {
-                    removal_tid = Tx::EmptyTID;
+                    setRemovalTID(Tx::EmptyTID);
                     version_updated = true;
                 }
             }
@@ -394,7 +394,8 @@ bool VersionMetadata::verifyMetadata(LoggerPtr logger)
             {
                 LOG_TRACE(logger, "Object {}, unable to find removal_csn of removal_tid {}", getObjectName(), removal_tid);
                 TIDHash current_removal_tid_lock_hash = getRemovalTIDLock();
-                TIDHash removal_tid_hash = removal_tid.getHash();
+                TIDHash current_removal_tid_hash = removal_tid.getHash();
+                chassert(current_removal_tid_hash == removal_tid_hash);
 
                 if (!current_removal_tid_lock_hash)
                 {
@@ -403,7 +404,7 @@ bool VersionMetadata::verifyMetadata(LoggerPtr logger)
                         "Object {}, no removal_tid_lock, the transaction was not committed, resetting removal_tid",
                         merge_tree_data_part->name);
                 }
-                else if (current_removal_tid_lock_hash == removal_tid_hash)
+                else if (current_removal_tid_lock_hash == current_removal_tid_hash)
                 {
                     LOG_TRACE(
                         logger,
@@ -418,7 +419,7 @@ bool VersionMetadata::verifyMetadata(LoggerPtr logger)
                         "Object {}, removal_tid_lock hash {} is not matched to the removal_tid hash {}",
                         getObjectName(),
                         current_removal_tid_lock_hash,
-                        removal_tid_hash);
+                        current_removal_tid_hash);
                 }
             }
         }
@@ -438,6 +439,14 @@ bool VersionMetadata::verifyMetadata(LoggerPtr logger)
     return version_updated;
 }
 
+void VersionMetadata::setRemovalTIDAndHash(const TransactionID & tid)
+{
+    removal_tid = tid;
+    if (removal_tid.isEmpty())
+        removal_tid_hash = 0;
+    else
+        removal_tid_hash = removal_tid.getHash();
+}
 
 VersionMetadata::Info VersionMetadata::readFromBufferHelper(ReadBuffer & buf)
 {
@@ -503,7 +512,7 @@ void VersionMetadata::readFromBuffer(ReadBuffer & buf)
 {
     auto info = readFromBufferHelper(buf);
     creation_tid = info.creation_tid;
-    removal_tid = info.removal_tid;
+    setRemovalTIDAndHash(info.removal_tid);
     creation_csn = info.creation_csn;
     if (info.creation_csn != getCreationCSN())
         setCreationCSN(info.creation_csn);
