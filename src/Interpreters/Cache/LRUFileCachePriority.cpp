@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
+    extern const Event FilesystemCacheEvictionReusedIterator;
 }
 
 namespace DB
@@ -407,8 +408,15 @@ void LRUFileCachePriority::iterateForEviction(
         }
     };
 
+    auto start_pos = queue.begin();
+    if (continue_from_last_eviction_pos && eviction_pos != queue.end() && start_pos != eviction_pos)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+        start_pos = eviction_pos;
+    }
+
     auto iteration_pos = iterateImpl(
-        continue_from_last_eviction_pos ? eviction_pos : queue.begin(),
+        start_pos,
         [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         if (stop_condition())
