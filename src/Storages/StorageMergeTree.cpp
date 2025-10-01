@@ -399,9 +399,13 @@ void StorageMergeTree::alter(
         MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
     /// This alter can be performed at new_metadata level only
-    if (commands.isSettingsAlter() && !statistics_changed)
+    if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+        if (statistics_changed)
+            setInMemoryMetadata(new_metadata);
+
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }

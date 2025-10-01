@@ -6477,13 +6477,15 @@ void StorageReplicatedMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
-    if (commands.isSettingsAlter() && !statistics_changed)
+    if (commands.isSettingsAlter())
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
-
         changeSettings(future_metadata.settings_changes, table_lock_holder);
+
+        if (statistics_changed)
+            setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
