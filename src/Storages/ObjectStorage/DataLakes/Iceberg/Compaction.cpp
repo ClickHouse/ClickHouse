@@ -1,3 +1,4 @@
+#include <memory>
 #include <string>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -10,6 +11,7 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -23,16 +25,11 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Logger.h>
-#include "Processors/QueryPlan/QueryPlan.h"
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 #if USE_AVRO
-
-namespace DB::ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace DB::Iceberg
 {
@@ -96,6 +93,8 @@ void compactIcebergTable(
 
     SelectQueryInfo query_info;
     auto metadata_snapshot = source->getInMemoryMetadataPtr();
+    auto [_, iceberg_snapshot] = static_cast<IcebergMetadata*>(configuration_->getMetadata().get())->getRelevantState(context_);
+    metadata_snapshot->setDataLakeTableState(iceberg_snapshot);
     auto storage_snapshot = source->getStorageSnapshot(metadata_snapshot, context_);
     QueryProcessingStage::Enum read_from_table_stage = source->getQueryProcessingStage(
         context_, QueryProcessingStage::Complete, storage_snapshot, query_info);

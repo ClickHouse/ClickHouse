@@ -51,6 +51,14 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
+    if storage_type == "local":
+        initial_files = default_download_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        )
+
     instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction" : 1})
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
@@ -61,7 +69,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     if storage_type != "local":
         return
 
-    default_download_directory(
+    compacted_files = default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
@@ -69,3 +77,4 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90
+    assert len(initial_files) - len(compacted_files) == 10

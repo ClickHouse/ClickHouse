@@ -14,6 +14,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
+#include "Interpreters/Context_fwd.h"
 #include <Storages/StorageFactory.h>
 
 namespace DB
@@ -253,6 +254,11 @@ public:
     }
 
     virtual void drop(ContextPtr) {}
+
+    virtual const DataLakeMetadataPtr & getMetadata() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not get getMetadata");
+    }
 
     String format = "auto";
     String compression_method = "auto";

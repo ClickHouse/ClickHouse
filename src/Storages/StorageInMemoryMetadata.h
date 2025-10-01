@@ -71,7 +71,7 @@ struct StorageInMemoryMetadata
     int32_t metadata_version = 0;
 
     ///  Current state of a datalake table.
-    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
+    mutable std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
     StorageInMemoryMetadata() = default;
 
@@ -124,7 +124,7 @@ struct StorageInMemoryMetadata
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
 
-    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
+    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_) const;
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

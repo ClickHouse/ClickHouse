@@ -142,7 +142,6 @@ public:
 
     DataFileStatistics getResultStatistics() const
     {
-        std::cerr << "getResultStatistics " << stats.getFieldIds()[0] << '\n';
         return stats;
     }
 

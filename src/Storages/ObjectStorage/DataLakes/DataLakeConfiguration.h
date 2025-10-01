@@ -235,6 +235,11 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
+    const DataLakeMetadataPtr & getMetadata() const override
+    {
+        return current_metadata;
+    }
+
 #if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.

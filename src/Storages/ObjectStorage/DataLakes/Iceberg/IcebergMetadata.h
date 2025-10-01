@@ -129,6 +129,8 @@ public:
 
     void drop(ContextPtr context) override;
 
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
+
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
         IcebergMetadataFilesCachePtr cache_ptr,
@@ -144,7 +146,6 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
 
 
