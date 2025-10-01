@@ -1265,7 +1265,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::DICTIONARY:
         {
             auto & dict_info = dictionary_infos[column_name];
-            const auto is_lc_nullable = arrow_column->null_count() > 0 || (type_hint && type_hint->isLowCardinalityNullable());
+            const bool is_lc_nullable = arrow_column->null_count() > 0 || (type_hint && type_hint->isLowCardinalityNullable());
 
             /// Load dictionary values only once and reuse it.
             if (!dict_info.values)
@@ -1307,7 +1307,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
-                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + (is_lc_nullable == true);
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + (is_lc_nullable ? 1 : 0);
                 if (tmp_dict_column->size() != expected_dictionary_size)
                 {
                     throw Exception(
