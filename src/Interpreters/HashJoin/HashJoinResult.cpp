@@ -183,6 +183,13 @@ struct HashJoinResult::GenerateCurrentRowState
         return copyEmptyColumns(columns);
     }
 
+    void setFilter(IColumn::Filter && filter_) { filter = std::move(filter_); }
+    void setFilter(const IColumn::Filter * filter_) { filter = std::cref(*filter_); }
+    const IColumn::Filter & getFilter() const
+    {
+        return std::visit([](const auto & arg) -> const IColumn::Filter & { return arg; }, filter);
+    }
+
     Block block;
     size_t rows_to_reserve;
     size_t row_ref_begin;
@@ -190,7 +197,7 @@ struct HashJoinResult::GenerateCurrentRowState
     MutableColumns columns;
 
     IColumn::Offsets offsets;
-    IColumn::Filter filter;
+    std::variant<IColumn::Filter, std::reference_wrapper<const IColumn::Filter>> filter;
 
     std::span<UInt64> matched_rows;
 
@@ -234,7 +241,6 @@ void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offs
 
 static Block generateBlock(
     std::unique_ptr<HashJoinResult::GenerateCurrentRowState> & state,
-    const IColumn::Filter & filter,
     const LazyOutput & lazy_output,
     const HashJoinResult::Properties & properties)
 {
@@ -265,10 +271,11 @@ static Block generateBlock(
         offsets = std::move(state->offsets);
 
     Block block;
-    if (state->state_row_limit == 0 || state->state_row_offset + rows_added >= last_offset)
+    bool is_state_finished = false;
+    if (state->state_row_limit == 0 || rows_added == 0 || state->state_row_offset + rows_added >= last_offset)
     {
         block = std::move(state->block);
-        state.reset();
+        is_state_finished = true;
     }
     else
     {
@@ -281,9 +288,12 @@ static Block generateBlock(
         block,
         std::move(columns),
         offsets,
-        filter,
+        state->getFilter(),
         lazy_output.type_name,
         properties);
+
+    if (is_state_finished)
+        state.reset();
 
     return block;
 }
@@ -357,7 +367,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     if (current_row_state)
     {
         bool is_last = current_row_state->is_last;
-        auto block = generateBlock(current_row_state, {}, lazy_output, properties);
+        auto block = generateBlock(current_row_state, lazy_output, properties);
         return {std::move(block), is_last && current_row_state == nullptr};
     }
 
@@ -369,15 +379,11 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     if (properties.joined_block_split_single_row
         /// ignore join get, it has any join semantics
         && !properties.is_join_get
-        /// With offsets need_filter is false
-        && !properties.need_filter
-        /// filter is set when offsets are not used and
-        /// filter may be needed for required_right_keys,
-        /// but we disable it with allow_split_single_row
-        && filter.empty()
         && !offsets.empty()
         /// check if using lazy_output with row_refs
         && lazy_output.output_by_row_list
+        /// sorted need different build output logic that supports ranges
+        && !lazy_output.join_data_sorted
         /// columns are empty when using lazy_output
         && std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }))
     {
@@ -405,8 +411,9 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             std::span<UInt64>{matched_rows},
             limit_rows_per_key,
             /* is_last */ true);
+        current_row_state->setFilter(&filter);
 
-        auto block = generateBlock(current_row_state, filter, lazy_output, properties);
+        auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
         return {std::move(block), current_row_state == nullptr};
     }
@@ -528,8 +535,9 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         partial_matched_rows,
         limit_rows_per_key,
         is_last);
+    current_row_state->setFilter(std::move(partial_filter));
 
-    auto block = generateBlock(current_row_state, partial_filter, lazy_output, properties);
+    auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
 

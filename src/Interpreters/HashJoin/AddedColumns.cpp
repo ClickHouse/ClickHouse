@@ -35,7 +35,7 @@ size_t LazyOutput::buildOutput(size_t size_to_reserve,
     {
         if (rows_limit)
             return buildOutputFromBlocksLimitAndOffset(columns, row_refs_begin, row_refs_end, rows_offset, rows_limit);
-        if (join_data_avg_perkey_rows < output_by_row_list_threshold)
+        if (!join_data_sorted && join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>(size_to_reserve, columns, row_refs_begin, row_refs_end);
         else
             buildOutputFromRowRefLists(size_to_reserve, columns, row_refs_begin, row_refs_end);
