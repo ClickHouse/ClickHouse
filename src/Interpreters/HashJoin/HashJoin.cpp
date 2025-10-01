@@ -8,7 +8,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
-#include "Common/Logger.h"
 #include <Common/CurrentThread.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -31,7 +30,6 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
-#include "Core/Joins.h"
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
@@ -128,8 +126,7 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps,
-    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
+    bool use_two_level_maps)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -163,11 +160,7 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    /// use shared instance if provided, else create a new one
-    if (shared_used_flags_)
-        used_flags = shared_used_flags_;
-    else
-        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
+    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -737,21 +730,46 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
+            bool has_right_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
                 /// Save rows that do not hold conditions
-                not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
+                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+
+                const auto & sel = stored_columns->selector;
+                if (sel.isContinuousRange())
                 {
-                    /// Condition hold, do not save row
-                    if (!join_mask_col.isRowFiltered(i))
-                        continue;
+                    auto range = sel.getRange();
+                    for (size_t i = range.first; i < range.second; ++i)
+                    {
+                        /// Condition hold, do not save row
+                        if (!join_mask_col.isRowFiltered(i))
+                            continue;
 
-                    /// NULL key will be saved anyway because, do not save twice
-                    if (save_nullmap && (*null_map)[i])
-                        continue;
+                        /// NULL key will be saved anyway because, do not save twice
+                        if (save_nullmap && (*null_map)[i])
+                            continue;
 
-                    not_joined_map->getData()[i] = 1;
+                        not_joined_map->getData()[i] = 1;
+                        has_right_not_joined = true;
+                    }
+                }
+                else
+                {
+                    /// for non-continuous selector iterate explicit indices that belong to this shard
+                    const auto & idxs = sel.getIndexes().getData();
+                    for (size_t i : idxs)
+                    {
+                        if (!join_mask_col.isRowFiltered(i)) /// Keep rows that failed the ON condition
+                            continue;
+
+                        /// skip if right key is null
+                        if (save_nullmap && (*null_map)[i])
+                            continue;
+
+                        not_joined_map->getData()[i] = 1;
+                        has_right_not_joined = true;
+                    }
                 }
             }
 
@@ -784,19 +802,19 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     });
             }
 
-            if (!flag_per_row && save_nullmap && is_inserted)
+            if (!flag_per_row && save_nullmap)
             {
                 data->nullmaps.emplace_back(stored_columns, null_map_holder);
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && is_inserted)
+            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
                 data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && !is_inserted)
+            if (!flag_per_row && !is_inserted && !save_nullmap && !has_right_not_joined)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
@@ -1189,8 +1207,6 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
-
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1260,21 +1276,10 @@ HashJoin::~HashJoin()
 
 bool HashJoin::hasNonJoinedRows() const
 {
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
-        return has_non_joined_rows.load(std::memory_order_acquire);
-
-    if (!isRightOrFull(kind))
-        return false;
-
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-        return false;
-
-    /// if the hash table is empty, we have no non-joined rows
-    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
-        return false;
-
-    updateNonJoinedRowsStatus();
-    return has_non_joined_rows.load(std::memory_order_acquire);
+    if (!isRightOrFull(kind)) return false;
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty()) return false;
+    // precise check
+    return used_flags && used_flags->hasUnused();
 }
 
 void HashJoin::updateNonJoinedRowsStatus() const
@@ -1394,27 +1399,34 @@ private:
         size_t rows_added = 0;
         for (; block_it != end; ++block_it)
         {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns.at(0)->size() - current_block_start);
-            for (size_t j = 0; j < columns_right.size(); ++j)
+            const auto & cols = block_it->columns;
+            const auto & sel  = block_it->selector;
+
+            auto emit_row = [&](size_t row)
             {
-                const auto & col = block_it->columns[j];
-                columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
+                for (size_t j = 0; j < columns_right.size(); ++j)
+                    columns_right[j]->insertFrom(*cols[j], row);
+                ++rows_added;
+            };
+
+            if (sel.isContinuousRange())
+            {
+                auto [beg, end_row] = sel.getRange();
+                for (size_t row = beg; row < end_row && rows_added < max_block_size; ++row)
+                    emit_row(row);
             }
-            rows_added += rows_from_block;
+            else
+            {
+                const auto & idxs = sel.getIndexes().getData();
+                for (size_t row : idxs)
+                {
+                    if (rows_added >= max_block_size) break;
+                    emit_row(row);
+                }
+            }
 
             if (rows_added >= max_block_size)
-            {
-                /// How many rows have been read
-                current_block_start += rows_from_block;
-                if (block_it->columns.at(0)->size() <= current_block_start)
-                {
-                    /// current block was fully read
-                    ++block_it;
-                    current_block_start = 0;
-                }
                 break;
-            }
-            current_block_start = 0;
         }
         return rows_added;
     }
@@ -1449,18 +1461,31 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns.at(0)->size();
+                // size_t rows = mapped_block.columns.at(0)->size();
 
-                for (size_t row = 0; row < rows; ++row)
+                const auto & sel = mapped_block.selector;
+                auto try_emit = [&](size_t row)
                 {
                     if (!parent.isUsed(&mapped_block.columns, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
-                        {
                             columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
-                        }
-
                         ++rows_added;
+                    }
+                };
+                if (sel.isContinuousRange())
+                {
+                    auto [range_beg, range_end] = sel.getRange();
+                    for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
+                        try_emit(row);
+                }
+                else
+                {
+                    const auto & idxs = sel.getIndexes().getData();
+                    for (size_t row : idxs)
+                    {
+                        if (rows_added >= max_block_size) break;
+                        try_emit(row);
                     }
                 }
             }
@@ -1482,8 +1507,7 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                bool is_used = parent.isUsed(offset);
-                if (is_used)
+                if (parent.isUsed(offset))
                     continue;
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
@@ -1512,31 +1536,31 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            const auto & sel = columns->selector;
+            auto consume_row = [&](size_t row)
             {
-                try
+                if (!nullmap || !(*nullmap)[row])
+                    return;
+                for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                 {
-                    if ((*nullmap)[row])
-                    {
-                        /// we make sure we have columns to insert into
-                        if (columns_keys_and_right.empty())
-                            continue;
-
-                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        {
-                            /// check if the block has enough columns
-                            if (col < columns->columns.size())
-                                columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                        }
-                        ++rows_added;
-                    }
-                }
-                catch (...)
-                {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                    if (col < columns->columns.size())
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                    ++rows_added;
+                }
+                ++rows_added;
+            };
+            if (sel.isContinuousRange())
+            {
+                auto [range_beg, range_end] = sel.getRange();
+                for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
+                    consume_row(row);
+            }
+            else
+            {
+                const auto & idxs = sel.getIndexes().getData();
+                for (size_t row : idxs)
+                {
+                    if (rows_added >= max_block_size) break;
+                    consume_row(row);
                 }
             }
         }

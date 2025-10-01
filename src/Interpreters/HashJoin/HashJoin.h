@@ -116,8 +116,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
-        std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_ = {});
+        bool use_two_level_maps_ = false);
 
     ~HashJoin() override;
 
@@ -459,14 +458,13 @@ public:
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
+    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
 private:
     friend class NotJoinedHash;
-    friend class NotJoinedSingleSlot;
-
     friend class JoinSource;
     friend class CrossJoinResult;
 
