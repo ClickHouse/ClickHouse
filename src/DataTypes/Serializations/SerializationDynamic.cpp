@@ -16,6 +16,8 @@
 #include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
+#include <regex>
+
 namespace DB
 {
 
@@ -720,6 +722,61 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
     const auto & variant_type_name = variant_info.variant_names[global_discr];
     encodeDataType(variant_type, ostr);
     getDataTypesCache().getSerialization(variant_type_name)->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
+}
+
+namespace
+{
+
+/// Replace all types JSON(...) to just JSON. We want to have identical hashes for JSON with the same data regardless of parameters.
+String removeJSONParametersFromTypeName(const String & name)
+{
+    return std::regex_replace(name, std::regex(R"(JSON\([^)]*\))"), "JSON");
+}
+
+}
+
+void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
+    const auto & variant_info = dynamic_column.getVariantInfo();
+    const auto & variant_column = dynamic_column.getVariantColumn();
+    auto global_discr = variant_column.globalDiscriminatorAt(row_num);
+
+    /// Serialize NULL as Nothing type with no value.
+    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    {
+        writeStringBinary("Nothing", ostr);
+        return;
+    }
+
+    /// Check if this value is in shared variant.
+    if (global_discr == dynamic_column.getSharedVariantDiscriminator())
+    {
+        auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
+        ReadBufferFromMemory value_buf(value.data, value.size);
+        auto type = decodeDataType(value_buf);
+        auto type_name = type->getName();
+        auto serialization = getDataTypesCache().getSerialization(type_name);
+        auto tmp_column = type->createColumn();
+        serialization->deserializeBinary(*tmp_column, value_buf, {});
+        serializeVariantForHashCalculation(*tmp_column, serialization, type->getName(), 0, ostr);
+        return;
+    }
+
+    const auto & variant_type_name = variant_info.variant_names[global_discr];
+    serializeVariantForHashCalculation(
+        variant_column.getVariantByGlobalDiscriminator(global_discr),
+        getDataTypesCache().getSerialization(variant_type_name),
+        variant_type_name,
+        variant_column.offsetAt(row_num),
+        ostr);
+}
+
+void SerializationDynamic::serializeVariantForHashCalculation(const IColumn & column, const SerializationPtr & serialization, const String & type_name, size_t row_num, WriteBuffer & ostr)
+{
+    /// For hash calculation we serialize value type name and then the value.
+    writeStringBinary(removeJSONParametersFromTypeName(type_name), ostr);
+    serialization->serializeForHashCalculation(column, row_num, ostr);
 }
 
 template <typename ReturnType = void, typename DeserializeFunc>

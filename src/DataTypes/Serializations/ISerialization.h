@@ -495,6 +495,13 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
+    /// Method that is used to serialize value for generic hash calculation of a value in the column.
+    /// Note that this method should respect compatibility.
+    virtual void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+    {
+        serializeBinary(column, row_num, ostr, {});
+    }
+
     /** Text serialization with escaping but without quoting.
       */
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;

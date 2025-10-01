@@ -20,12 +20,12 @@ namespace ErrorCodes
 
 template <typename Parser>
 SerializationJSON<Parser>::SerializationJSON(
-    std::unordered_map<String, SerializationPtr> typed_paths_serializations_,
+    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
+    : SerializationObject(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -37,7 +37,7 @@ namespace
 /// "a.b.c" -> ["a", "b", "c"]
 struct PathElements
 {
-    explicit PathElements(const String & path)
+    explicit PathElements(std::string_view path)
     {
         const char * start = path.data();
         const char * end = start + path.size();
@@ -113,47 +113,23 @@ template <typename Parser>
 void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent) const
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);
-    const auto & typed_paths = column_object.getTypedPaths();
-    const auto & dynamic_paths = column_object.getDynamicPaths();
-    const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    size_t shared_data_offset = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
-    size_t shared_data_end = shared_data_offsets[static_cast<ssize_t>(row_num)];
 
     /// We need to convert the set of paths in this row to a JSON object.
-    /// To do it, we first collect all the paths from current row, then we sort them
-    /// and construct the resulting JSON object by iterating over sorted list of paths.
+    /// To do it, we construct the resulting JSON object by iterating over sorted list of paths in current row.
     /// For example:
     /// b.c, a.b, a.a, b.e, g, h.u.t -> a.a, a.b, b.c, b.e, g, h.u.t -> {"a" : {"a" : ..., "b" : ...}, "b" : {"c" : ..., "e" : ...}, "g" : ..., "h" : {"u" : {"t" : ...}}}.
-    std::vector<String> sorted_paths;
-    sorted_paths.reserve(typed_paths.size() + dynamic_paths.size() + (shared_data_end - shared_data_offset));
-    for (const auto & [path, _] : typed_paths)
-        sorted_paths.emplace_back(path);
-    for (const auto & [path, dynamic_column] : dynamic_paths)
-    {
-        /// We consider null value and absence of the path in a row as equivalent cases, because we cannot actually distinguish them.
-        /// So, we don't output null values at all.
-        if (!dynamic_column->isNullAt(row_num))
-            sorted_paths.emplace_back(path);
-    }
-    for (size_t i = shared_data_offset; i != shared_data_end; ++i)
-    {
-        auto path = shared_data_paths->getDataAt(i).toString();
-        sorted_paths.emplace_back(path);
-    }
-
-    std::sort(sorted_paths.begin(), sorted_paths.end());
 
     if (pretty)
         writeCString("{\n", ostr);
     else
         writeChar('{', ostr);
-    size_t index_in_shared_data_values = shared_data_offset;
+
     /// current_prefix represents the path of the object we are currently serializing keys in.
     Prefix current_prefix;
-    for (const auto & path : sorted_paths)
+    for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        PathElements path_elements(path);
+        auto path_info = it.getCurrentPathInfo();
+        PathElements path_elements(path_info.path);
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
         /// For example:
@@ -251,31 +227,19 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         }
 
         /// Serialize value of current path.
-        if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
+        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
             if (pretty)
-                typed_path_serializations.at(path)->serializeTextJSONPretty(*typed_it->second, row_num, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(path_info.path)->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                typed_path_serializations.at(path)->serializeTextJSON(*typed_it->second, row_num, ostr, settings);
-        }
-        else if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
-        {
-            if (pretty)
-                dynamic_serialization->serializeTextJSONPretty(*dynamic_it->second, row_num, ostr, settings, indent + current_prefix.size() + 1);
-            else
-                dynamic_serialization->serializeTextJSON(*dynamic_it->second, row_num, ostr, settings);
+                typed_paths_serializations.at(path_info.path)->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
         }
         else
         {
-            /// To serialize value stored in shared data we should first deserialize it from binary format.
-            auto tmp_dynamic_column = ColumnDynamic::create();
-            tmp_dynamic_column->reserve(1);
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
-
             if (pretty)
-                dynamic_serialization->serializeTextJSONPretty(*tmp_dynamic_column, 0, ostr, settings, indent + current_prefix.size() + 1);
+                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                dynamic_serialization->serializeTextJSON(*tmp_dynamic_column, 0, ostr, settings);
+                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
         }
     }
 

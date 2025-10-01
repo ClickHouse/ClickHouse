@@ -63,6 +63,15 @@ void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num,
     }
 }
 
+void SerializationTuple::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
+    {
+        const auto & serialization = elems[element_index];
+        serialization->serializeForHashCalculation(extractElementColumn(column, element_index), row_num, ostr);
+    }
+}
+
 
 template <typename ReturnType, typename F>
 static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
