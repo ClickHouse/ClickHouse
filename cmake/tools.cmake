@@ -25,9 +25,9 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 option (LINKER_NAME "Linker name or full path")
 
 if (ARCH_AMD64)
-    set(LINKER_NAME "/usr/bin/mold")
+    set(LINKER_NAME mold)
 elseif (ARCH_AARCH64)
-    set(LINKER_NAME "/usr/bin/mold-aarch64")
+    set(LINKER_NAME mold-aarch64)
 endif ()
 
 if (LINKER_NAME MATCHES "gold")
