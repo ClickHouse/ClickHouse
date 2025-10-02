@@ -2357,8 +2357,8 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
         NamesAndTypesList columns = block.getNamesAndTypesList();
         auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription{columns}, {});
-        state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         auto storage = temporary_table.getTable();
+        state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
 
         // auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
         // StoragePtr storage;
