@@ -154,10 +154,10 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False
                     )
-                    spark_elements.append(f"_{i}: {next_tp}")
+                    spark_elements.append(f"`{i + 1}`: {next_tp}")
                     struct_fields.append(
                         StructField(
-                            name=f"_{i}", dataType=next_spark, nullable=next_null
+                            name=f"{i + 1}", dataType=next_spark, nullable=next_null
                         )
                     )
 
@@ -191,7 +191,10 @@ class ClickHouseSparkTypeMapper:
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
         if decimal_match:
             nprecision = min(38, int(decimal_match.group(1)))
-            nscale = min(nprecision, int(decimal_match.group(2) if decimal_match.group(2) else "0"))
+            nscale = min(
+                nprecision,
+                int(decimal_match.group(2) if decimal_match.group(2) else "0"),
+            )
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,

@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -39,7 +40,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
 }
@@ -59,11 +59,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
-}
-
-namespace Setting
-{
-    extern const SettingsString datalake_disk_name;
 }
 
 template <typename T>
@@ -88,31 +83,19 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata) override
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
-            return false;
+            return;
 
-        BaseStorageConfiguration::update(
-            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
-
-        const bool changed = updateMetadataIfChanged(object_storage, local_context);
-        if (!changed)
-            return true;
-
-        if (check_consistent_with_previous_metadata && hasExternalDynamicMetadata() && updated_before)
+        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
+        if (current_metadata && current_metadata->supportsUpdate())
         {
-            throw Exception(
-                ErrorCodes::FORMAT_VERSION_TOO_OLD,
-                "Metadata is not consinsent with the one which was used to infer table schema. "
-                "Please, retry the query.");
+            current_metadata->update(local_context);
+            return;
         }
-        return true;
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
     void create(
@@ -128,21 +111,13 @@ public:
         {
             auto user_files_path = local_context->getUserFilesPath();
             if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
-        BaseStorageConfiguration::create(
-            object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
+        BaseStorageConfiguration::update(object_storage, local_context, true);
 
         DataLakeMetadata::createInitial(
-            object_storage,
-            weak_from_this(),
-            local_context,
-            columns,
-            partition_by,
-            if_not_exists,
-            catalog,
-            table_id_
-        );
+            object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
     }
 
     bool supportsDelete() const override
@@ -188,10 +163,10 @@ public:
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
     }
 
-    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         assertInitialized();
-        if (auto schema = current_metadata->getTableSchema(); !schema.empty())
+        if (auto schema = current_metadata->getTableSchema(local_context); !schema.empty())
             return ColumnsDescription(std::move(schema));
         return std::nullopt;
     }
@@ -220,10 +195,19 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    bool hasExternalDynamicMetadata() override
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->supportsSchemaEvolution();
+        return current_metadata->getStorageSnapshotMetadata(context);
+    }
+
+    /// This method should work even if metadata is not initialized
+    bool needsUpdateForSchemaConsistency() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
+#endif
+        return false;
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -244,10 +228,11 @@ public:
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
+        StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
 #if USE_PARQUET
@@ -266,10 +251,10 @@ public:
     }
 #endif
 
-    void modifyFormatSettings(FormatSettings & settings_) const override
+    void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
         assertInitialized();
-        current_metadata->modifyFormatSettings(settings_);
+        current_metadata->modifyFormatSettings(settings_, local_context);
     }
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
@@ -277,10 +262,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema();
+        return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
     void drop(ContextPtr local_context) override
@@ -396,36 +381,6 @@ private:
         }
         return current_metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
-    }
-
-    bool updateMetadataIfChanged(
-        ObjectStoragePtr object_storage,
-        ContextPtr context)
-    {
-        if (!current_metadata)
-        {
-            current_metadata = DataLakeMetadata::create(
-                object_storage,
-                weak_from_this(),
-                context);
-            return true;
-        }
-
-        if (current_metadata->supportsUpdate())
-        {
-            return current_metadata->update(context);
-        }
-
-        auto new_metadata = DataLakeMetadata::create(
-            object_storage,
-            weak_from_this(),
-            context);
-
-        if (*current_metadata == *new_metadata)
-            return false;
-
-        current_metadata = std::move(new_metadata);
-        return true;
     }
 };
 

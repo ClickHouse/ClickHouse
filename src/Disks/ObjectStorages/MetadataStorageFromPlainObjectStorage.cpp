@@ -221,7 +221,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     }
     else
     {
-        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
+        operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
             normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
 }
@@ -231,7 +231,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std:
     if (metadata_storage.object_storage->isWriteOnce())
         throwNotImplemented();
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
         path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
 
@@ -246,7 +246,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::strin
         return;
     }
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
 
@@ -264,24 +264,17 @@ void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::st
     if (metadata_storage.existsDirectory(path_to))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
 
-
-void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & /* objects */)
 {
     if (metadata_storage.object_storage->isWriteOnce())
         return;
 
-    addOperation(
+    operations.addOperation(
         std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
-    const std::string & path, ObjectStorageKey /*object_key*/, uint64_t /* size_in_bytes */)
-{
-    createEmptyMetadataFile(path);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
@@ -304,7 +297,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
         *metadata_storage.getPathMap(),
         object_storage,
         metadata_storage.getMetadataKeyPrefix());
-    addOperation(std::move(op));
+    operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
@@ -317,7 +310,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::
     if (metadata_storage.object_storage->isWriteOnce())
         throwNotImplemented();
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
         normalizeDirectoryPath(path_to),
         *metadata_storage.getPathMap(),
@@ -338,14 +331,22 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
 
     auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
     if (!metadata_storage.object_storage->isWriteOnce())
-        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
+        operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
             path, *metadata_storage.getPathMap(), object_storage));
     return result;
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
-    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
+    if (!std::holds_alternative<NoCommitOptions>(options))
+        throwNotImplemented();
+
+    {
+        std::unique_lock lock(metadata_storage.metadata_mutex);
+        operations.commit();
+    }
+
+    operations.finalize();
 }
 
 std::optional<StoredObjects>
