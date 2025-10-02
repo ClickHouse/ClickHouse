@@ -1,7 +1,6 @@
 <test>
-
     <create_query>
-        create or replace table webpages (
+        create table webpages (
             url String,
             title SimpleAggregateFunction(anyLast, Nullable(String)),
             content SimpleAggregateFunction(anyLast, Nullable(String))
