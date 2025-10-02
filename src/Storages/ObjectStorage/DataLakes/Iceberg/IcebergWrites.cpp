@@ -433,6 +433,9 @@ void generateManifestFile(
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
+    if (schema.root()->type() != avro::AVRO_RECORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
+
     const avro::NodePtr & root_schema = schema.root();
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -617,7 +620,11 @@ void generateManifestList(
         schema_representation = manifest_list_v2_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
+
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
+
+    if (schema.root()->type() != avro::AVRO_RECORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest list schema must be record");
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
