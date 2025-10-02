@@ -64,7 +64,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
     {
-        function = function_->getAggregateFunctionForMergingFinal();
+        function = std::move(function_);
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
         is_simple_agg_func_type = is_simple_agg_func_type_;

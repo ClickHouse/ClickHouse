@@ -40,7 +40,7 @@ public:
         /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
         const auto which = WhichDataType(argument_types[0]);
         auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
-        if (which.isString() || which.isFixedString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
             || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() > 20))
         {
             return std::make_shared<AggregateFunctionAny<SingleValueReference>>(argument_types);
@@ -226,7 +226,7 @@ public:
         /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
         const auto which = WhichDataType(argument_types[0]);
         auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
-        if (which.isString() || which.isFixedString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
             || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() >= 20))
         {
             return std::make_shared<AggregateFunctionAnyLast<SingleValueReference>>(argument_types);
