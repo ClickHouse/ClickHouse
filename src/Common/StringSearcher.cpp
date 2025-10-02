@@ -24,10 +24,13 @@
 #if USE_MULTITARGET_CODE
 #    define SZ_USE_SKYLAKE 1
 #    define SZ_USE_HASWELL 1
+#    define SZ_USE_WESTMERE 1
 #elif defined(__x86_64__) && defined(__AVX512__)
 #    define SZ_USE_SKYLAKE 1
 #elif defined(__x86_64__) && defined(__AVX2__)
 #    define SZ_USE_HASWELL 1
+#elif defined(__x86_64__) && defined(__SSE4_2__)
+#    define SZ_USE_WESTMERE 1
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
 #    define SZ_USE_SVE 1
 #elif defined(__aarch64__) && defined(__ARM_NEON)
@@ -75,10 +78,22 @@ public:
             find = sz_find_haswell;
             equal = sz_equal_haswell;
         }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            find = sz_find_westmere;
+            equal = sz_equal_westmere;
+        }
         else
         {
             find = sz_find_serial;
             equal = sz_equal_serial;
+        }
+#elif defined(__x86_64__) && defined(__SSE4_2__)
+        /// Added to keep the old behavior, where we had a custom SSE code as default and no dynamic dispatch
+        /// This is faster
+        {
+            find = sz_find_westmere;
+            equal = sz_equal_westmere;
         }
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
         {
