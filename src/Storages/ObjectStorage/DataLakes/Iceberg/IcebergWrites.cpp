@@ -104,6 +104,9 @@ namespace FailPoints
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
+// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
+// We work a lot with avro library. Clang analyzer is about GenericDatum structure. It thinks that value in generic datum can be uninitialized.
+// No idea why
 namespace
 {
 
@@ -405,9 +408,6 @@ void extendSchemaForPartitions(
     }
 }
 
-// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
-// Clang analyzer is wrong here, it thinks that value in generic datum can be uninitialized.
-// No idea why
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -733,7 +733,6 @@ void generateManifestList(
 
     writer.close();
 }
-// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
     : metadata_object(metadata_object_)
@@ -1623,4 +1622,5 @@ bool IcebergStorageSink::initializeMetadata()
 
 }
 
+// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 #endif
