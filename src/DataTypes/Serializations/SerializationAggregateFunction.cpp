@@ -1,17 +1,18 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Formats/FormatFactory.h"
 
 namespace DB
 {
@@ -308,35 +309,43 @@ void SerializationAggregateFunction::serializeText(const IColumn & column, size_
 }
 
 
-void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationAggregateFunction::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
-void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, String s) const
 {
-    String s;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
-    // Add the same logic as deserializeTextCSV:
-    if (settings.aggregate_function_input_format == "state")
+    if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE)
     {
         deserializeFromString(function, column, s, version);
     }
-    else if (settings.aggregate_function_input_format == "value")
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE)
     {
         deserializeFromValue(function, column, s, settings);
     }
-    else if (settings.aggregate_function_input_format == "array")
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY)
     {
         deserializeFromArray(function, column, s, settings);
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
-            settings.aggregate_function_input_format);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid value for aggregate_function_input_format: '{}'. Expected '{}', '{}', or '{}'",
+            settings.aggregate_function_input_format,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY);
     }
+}
+void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -350,26 +359,7 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
-    
-    // Check the aggregate_function_input_format setting
-    if (settings.aggregate_function_input_format == "state")
-    {
-        deserializeFromString(function, column, s, version);
-    }
-    else if (settings.aggregate_function_input_format == "value")
-    {
-        deserializeFromValue(function, column, s, settings);
-    }
-    else if (settings.aggregate_function_input_format == "array")
-    {
-        deserializeFromArray(function, column, s, settings);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
-            settings.aggregate_function_input_format);
-    }
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -377,26 +367,7 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
 {
     String s;
     readStringUntilEOF(s, istr);
-    
-    // Check the aggregate_function_input_format setting
-    if (settings.aggregate_function_input_format == "state")
-    {
-        deserializeFromString(function, column, s, version);
-    }
-    else if (settings.aggregate_function_input_format == "value")
-    {
-        deserializeFromValue(function, column, s, settings);
-    }
-    else if (settings.aggregate_function_input_format == "array")
-    {
-        deserializeFromArray(function, column, s, settings);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
-            settings.aggregate_function_input_format);
-    }
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -410,26 +381,7 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
 {
     String s;
     readJSONString(s, istr, settings.json);
-    
-    // Check the aggregate_function_input_format setting
-    if (settings.aggregate_function_input_format == "state")
-    {
-        deserializeFromString(function, column, s, version);
-    }
-    else if (settings.aggregate_function_input_format == "value")
-    {
-        deserializeFromValue(function, column, s, settings);
-    }
-    else if (settings.aggregate_function_input_format == "array")
-    {
-        deserializeFromArray(function, column, s, settings);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
-            settings.aggregate_function_input_format);
-    }
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -449,26 +401,7 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
 {
     String s;
     readCSV(s, istr, settings.csv);
-
-    // Check the aggregate_function_input_format setting
-    if (settings.aggregate_function_input_format == "state")
-    {
-        deserializeFromString(function, column, s, version);
-    }
-    else if (settings.aggregate_function_input_format == "value")
-    {
-        deserializeFromValue(function, column, s, settings);
-    }
-    else if (settings.aggregate_function_input_format == "array")
-    {
-        deserializeFromArray(function, column, s, settings);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
-            settings.aggregate_function_input_format);
-    }
+    deserializeBasedOnInput(column, settings, s);
 }
 
 }
