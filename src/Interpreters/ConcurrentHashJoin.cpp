@@ -44,9 +44,9 @@ using namespace DB;
     case HashJoin::Type::TYPE:         \
         return f(*(maps).TYPE);
 
-// #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-//     case HashJoin::Type::TYPE:                        \
-//         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
+#define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
+    case HashJoin::Type::TYPE:                        \
+        return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
 #define APPLY_TO_MAP(M, type, ...)                        \
     switch (type)                                         \
@@ -79,23 +79,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    // TODO
-    // Different shards may legitimately have different sizes.
-    // Use the maximum observed size for reporting instead of enforcing equality.
-    size_t total_ht_size = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        size_t size = hash_join->data->getTotalRowCount();
-        total_ht_size += size;
-    }
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (total_ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = total_ht_size, .source_rows = source_rows}, params);
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -175,12 +169,16 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 {
     hash_joins.resize(slots);
 
+    /// a single shared flags map for all HashJoin slots
+    shared_used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
+    auto shared_used_flags_local = shared_used_flags;
+
     try
     {
         for (size_t i = 0; i < slots; ++i)
         {
             pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup()]()
+                [&, i, thread_group = CurrentThread::getGroup(), shared_used_flags_local]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
@@ -194,7 +192,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         any_take_last_row_,
                         reserve_size,
                         fmt::format("concurrent{}", i),
-                        /*use_two_level_maps*/ true);
+                        /*use_two_level_maps*/ true,
+                        shared_used_flags_local);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
                     hash_joins[i] = std::move(inner_hash_join);
@@ -314,22 +313,22 @@ public:
     explicit ConcatStreams(std::vector<IBlocksStreamPtr> children_)
         : children(std::move(children_)) {}
 
-    Block nextImpl() override
-    {
-        while (!children.empty())
-        {
-            auto & child = children.front();
-            if (!child)
-                continue;
-            Block b = child->next();
-            if (!b.empty()) return b;
-              children.erase(children.begin());
-        }
-        return {};
-    }
+   Block nextImpl() override
+   {
+       while (idx < children.size())
+       {
+           auto & child = children[idx];
+           if (!child) { ++idx; continue; }
+           Block b = child->next();
+           if (!b.empty()) return b;
+           ++idx;
+       }
+       return {};
+   }
 
 private:
-    std::vector<IBlocksStreamPtr> children;
+   std::vector<IBlocksStreamPtr> children;
+   size_t idx = 0;
 };
 
 class ConcurrentHashJoinResult : public IJoinResult
@@ -432,6 +431,32 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
+
+bool ConcurrentHashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(table_join->kind()))
+        return false;
+
+    /// Check if any shard has non-joined rows
+    bool found_non_joined = false;
+    for (const auto & hash_join_ptr : hash_joins)
+    {
+        std::lock_guard lock(hash_join_ptr->mutex);
+        if (hash_join_ptr->data->hasNonJoinedRows() || hash_join_ptr->has_non_joined_rows.load(std::memory_order_relaxed))
+        {
+            found_non_joined = true;
+            break;
+        }
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
+    return found_non_joined;
+}
+
 bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
 {
     return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
@@ -446,7 +471,7 @@ bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJ
 {
     if (!table_join_->oneDisjunct())
         return true;
-    /// if it'a a all right join with inequal conditions, we need to mark each row
+    /// If it'a a all right join with inequal conditions, we need to mark each row
     if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
@@ -466,13 +491,36 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 
     /// Collect non-joined streams from each slot
     std::vector<IBlocksStreamPtr> streams;
-    for (const auto & hj : hash_joins)
+    streams.reserve(slots);
+
+    // Special handling for joins with always false condition
+    if (table_join->getOnlyClause().key_names_right.empty())
     {
-        std::lock_guard lock(hj->mutex);
-        if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+        /// for RIGHT/FULL joins with always false condition, all rows should be considered non-joined
+        /// we need to return all rows from the right table
+        std::lock_guard lock(hash_joins[0]->mutex);
+        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
+                left_sample_block, result_sample_block, max_block_size))
             streams.push_back(std::move(s));
-        if (hj->data->twoLevelMapIsUsed()) // If firts hash join uses two level map, we use only first hash join
-            break;
+    }
+    else
+    {
+        /// for regular joins, we need to deduplicate NULL values
+        std::unordered_set<size_t> processed_rows;
+        for (const auto & hash_join : hash_joins)
+        {
+            std::lock_guard lock(hash_join->mutex);
+
+            if (hash_join->data->hasNonJoinedRows() || 
+                hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
+            {
+                if (auto s = hash_join->data->getNonJoinedBlocks(
+                        left_sample_block, result_sample_block, max_block_size))
+                {
+                    streams.push_back(std::move(s));
+                }
+            }
+        }
     }
 
     if (streams.empty())
@@ -674,28 +722,70 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
     return hash.get64();
 }
 
-void ConcurrentHashJoin::finalizeSlots()
-{
-    if (hash_joins.empty())
-        return;
-
-    // Finalize each slot sequentially under its own lock.
-    // This avoids races while ensuring per-slot internal structures are ready.
-    for (auto & hj : hash_joins)
-    {
-        std::lock_guard lock(hj->mutex);
-        hj->data->onBuildPhaseFinish();
-    }
-}
-
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
-    /// Finalize each slot after build
-    finalizeSlots();
-    build_phase_finished.store(true, std::memory_order_release);
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
+        // It is done in two steps:
+        //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
+            {
+                APPLY_TO_MAP(
+                    INVOKE_WITH_MAPS,
+                    type,
+                    lhs_maps,
+                    rhs_maps,
+                    [&](auto & lhs_map, auto & rhs_map)
+                    {
+                        for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
+                        {
+                            if (!lhs_map.impls[j].empty())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                            lhs_map.impls[j] = std::move(rhs_map.impls[j]);
+                        }
+                    })
+            };
+
+            std::visit(
+                [&](auto & lhs_map)
+                {
+                    using T = std::decay_t<decltype(lhs_map)>;
+                    move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
+                },
+                getData(hash_joins[0])->maps.at(0));
+        }
+    }
+
+    /// Synchronize all `HashJoin`s on the `all_values_unique` flag.
+    bool all_values_unique = true;
+    for (const auto & hash_join : hash_joins)
+        all_values_unique &= hash_join->data->all_values_unique;
+
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->all_values_unique = all_values_unique;
+
+    // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
+    // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->onBuildPhaseFinish();
+
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        }
+    }
+
+    build_phase_finished = true;
 }
 }
 
 #undef INVOKE_WITH_MAP
-// #undef INVOKE_WITH_MAPS
+#undef INVOKE_WITH_MAPS
 #undef APPLY_TO_MAP

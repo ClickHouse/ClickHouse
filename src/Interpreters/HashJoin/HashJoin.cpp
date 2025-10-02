@@ -126,7 +126,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -160,7 +161,11 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
+    /// use shared instance if provided, else create a new one
+    if (shared_used_flags_)
+        used_flags = shared_used_flags_;
+    else
+        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1182,6 +1187,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1251,10 +1257,21 @@ HashJoin::~HashJoin()
 
 bool HashJoin::hasNonJoinedRows() const
 {
-    if (!isRightOrFull(kind)) return false;
-    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty()) return false;
-    // precise check
-    return used_flags && used_flags->hasUnused();
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(kind))
+        return false;
+
+    if (!needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+
+    /// if the hash table is empty, we have no non-joined rows
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
+        return false;
+
+    updateNonJoinedRowsStatus();
+    return has_non_joined_rows.load(std::memory_order_acquire);
 }
 
 void HashJoin::updateNonJoinedRowsStatus() const
@@ -1374,34 +1391,27 @@ private:
         size_t rows_added = 0;
         for (; block_it != end; ++block_it)
         {
-            const auto & cols = block_it->columns;
-            const auto & sel  = block_it->selector;
-
-            auto emit_row = [&](size_t row)
+            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns.at(0)->size() - current_block_start);
+            for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                    columns_right[j]->insertFrom(*cols[j], row);
-                ++rows_added;
-            };
-
-            if (sel.isContinuousRange())
-            {
-                auto [beg, end_row] = sel.getRange();
-                for (size_t row = beg; row < end_row && rows_added < max_block_size; ++row)
-                    emit_row(row);
+                const auto & col = block_it->columns[j];
+                columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
             }
-            else
-            {
-                const auto & idxs = sel.getIndexes().getData();
-                for (size_t row : idxs)
-                {
-                    if (rows_added >= max_block_size) break;
-                    emit_row(row);
-                }
-            }
+            rows_added += rows_from_block;
 
             if (rows_added >= max_block_size)
+            {
+                /// How many rows have been read
+                current_block_start += rows_from_block;
+                if (block_it->columns.at(0)->size() <= current_block_start)
+                {
+                    /// current block was fully read
+                    ++block_it;
+                    current_block_start = 0;
+                }
                 break;
+            }
+            current_block_start = 0;
         }
         return rows_added;
     }
@@ -1436,31 +1446,18 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                // size_t rows = mapped_block.columns.at(0)->size();
+                size_t rows = mapped_block.columns.at(0)->size();
 
-                const auto & sel = mapped_block.selector;
-                auto try_emit = [&](size_t row)
+                for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                        {
                             columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
+                        }
+
                         ++rows_added;
-                    }
-                };
-                if (sel.isContinuousRange())
-                {
-                    auto [range_beg, range_end] = sel.getRange();
-                    for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
-                        try_emit(row);
-                }
-                else
-                {
-                    const auto & idxs = sel.getIndexes().getData();
-                    for (size_t row : idxs)
-                    {
-                        if (rows_added >= max_block_size) break;
-                        try_emit(row);
                     }
                 }
             }
@@ -1511,33 +1508,19 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            const auto & sel = columns->selector;
-            auto consume_row = [&](size_t row)
+            size_t rows = columns->columns.at(0)->size();
+            size_t limit = nullmap ? std::min(rows, nullmap->size()) : rows;
+            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
             {
-                if (!nullmap || !(*nullmap)[row])
-                    return;
-                for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                if (!nullmap || (*nullmap)[row])
                 {
-                    if (col < columns->columns.size())
+                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                }
-                ++rows_added;
-            };
-            if (sel.isContinuousRange())
-            {
-                auto [range_beg, range_end] = sel.getRange();
-                for (size_t row = range_beg; row < range_end && rows_added < max_block_size; ++row)
-                    consume_row(row);
-            }
-            else
-            {
-                const auto & idxs = sel.getIndexes().getData();
-                for (size_t row : idxs)
-                {
-                    if (rows_added >= max_block_size) break;
-                    consume_row(row);
+                    ++rows_added;
                 }
             }
+            if (rows_added >= max_block_size)
+                break;
         }
     }
 };
