@@ -1,8 +1,7 @@
--- Provide list of secondary indexes to skip on merge
+SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;
-SET use_query_condition_cache = 0;
 SET materialize_skip_indexes_on_insert = 0;
-SET mutations_sync = 2;
+SET mutations_sync = 2; -- disable asynchronous mutations
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
