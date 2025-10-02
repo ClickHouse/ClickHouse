@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <Interpreters/StorageID.h>
 #include <Common/TransactionID.h>
 
@@ -49,43 +50,31 @@ public:
     bool isVisible(const MergeTreeTransaction & txn);
     bool isVisible(CSN snapshot_version, TransactionID current_tid = Tx::EmptyTID);
 
-    void setCreationCSN(CSN csn) { creation_csn.store(csn); }
+    /**
+    * @brief Set creation_csn and store it to the stored data.
+    */
+    void storeCreationCSN(CSN csn);
+    void setCreationCSN(CSN csn) { creation_csn.store(csn, std::memory_order_relaxed); }
     CSN getCreationCSN() const { return creation_csn.load(); }
 
+    /**
+    * @brief Set removal_csn and store it to the stored data.
+    */
+    void storeRemovalCSN(CSN csn);
     void setRemovalCSN(CSN csn);
     CSN getRemovalCSN() const { return removal_csn.load(); }
 
     /**
-    * @brief Append `creation_csn` to the stored metadata
+    * @brief Set removal_tid and store it to the stored data.
     */
-    void appendCreationCSNToStoredMetadata();
-    /**
-    * @brief Append `removal_csn` to the stored metadata
-    */
-    void appendRemovalCSNToStoredMetadata();
+    void storeRemovalTID(const TransactionID & tid);
 
     /**
-    * @brief Set a removal ID.
+    * @brief  removal_tid a removal ID.
     *
     * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back.
     */
     void setRemovalTID(const TransactionID & tid);
-
-    /**
-    * @brief Appends removal_tid to the stored data.
-    *
-    * This function appends a removal transaction ID to the metadata being persisted.
-    * The removal ID can be either `removal_tid` or `Tx::EmptyTID`.
-    *
-    * If the `creation_tid` is pre-historic and tid is not `Tx::EmptyTID`, the metadata is not yet
-    * stored in persistent storage. This can occur in the following cases:
-    * - The data has not been written to storage yet.
-    * - The data was created without an associated transaction.
-    *
-    * In such cases, the function will first persist the data to storage,
-    * then append the removal ID.
-    */
-    void appendRemovalTIDToStoredMetadata();
 
     TransactionID getRemovalTID() const { return removal_tid; }
     TransactionID getRemovalTIDForLogging() const;
@@ -141,7 +130,6 @@ public:
     */
     virtual bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id) = 0;
 
-
     /**
     * @brief Unlocks the object previously locked for removal.
     *
@@ -168,7 +156,35 @@ public:
     */
     virtual bool hasStoredMetadata() const = 0;
 
+    inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+
 protected:
+    /**
+    * @brief Store `creation_csn` to the stored metadata
+    */
+    void storeCreationCSNToStoredMetadata();
+
+    /**
+    * @brief Store `removal_csn` to the stored metadata
+    */
+    void storeRemovalCSNToStoredMetadata();
+
+    /**
+    * @brief Store removal_tid to the stored data.
+    *
+    * This function appends a removal transaction ID to the metadata being persisted.
+    * The removal ID can be either `removal_tid` or `Tx::EmptyTID`.
+    *
+    * If the `creation_tid` is pre-historic and tid is not `Tx::EmptyTID`, the metadata is not yet
+    * stored in persistent storage. This can occur in the following cases:
+    * - The data has not been written to storage yet.
+    * - The data was created without an associated transaction.
+    *
+    * In such cases, the function will first persist the data to storage,
+    * then append the removal ID.
+    */
+    void storeRemovalTIDToStoredMetadata();
+
     String getObjectName() const;
 
     bool canBeRemovedImpl(CSN oldest_snapshot_version);
@@ -230,27 +246,27 @@ protected:
     virtual void loadMetadata() = 0;
 
     /**
-    * @brief Set the hash of the TID which locks the object for removal.
+    * @brief  removal_tid the hash of the TID which locks the object for removal.
     *
     * @param removal_tid_lock_hash The target TID hash
     */
     virtual void setRemovalTIDLock(TIDHash removal_tid_lock_hash) = 0;
 
     /**
-    * @brief The implementation to append `creation_csn` to the stored metadata. Called by `appendCreationCSNToStoredMetadata`
+    * @brief The implementation to store `creation_csn` to the stored metadata. Called by `storeCreationCSNToStoredMetadata`
     */
-    virtual void appendCreationCSNToStoredMetadataImpl() = 0;
+    virtual void storeCreationCSNToStoredMetadataImpl() = 0;
 
     /**
-    * @brief The implementation to append `removal_csn` to the stored metadata. Called by `appendRemovalCSNToStoredMetadata`
+    * @brief The implementation to store `removal_csn` to the stored metadata. Called by `storeRemovalCSNToStoredMetadata`
     */
-    virtual void appendRemovalCSNToStoredMetadataImpl() = 0;
+    virtual void storeRemovalCSNToStoredMetadataImpl() = 0;
 
     /**
-    * @brief The implementation to append a removal ID to the stored data. Called by `appendRemovalTIDToStoredMetadata`.
+    * @brief The implementation to store a removal ID to the stored data. Called by `storeRemovalTIDToStoredMetadata`.
     *
     */
-    virtual void appendRemovalTIDToStoredMetadataImpl() = 0;
+    virtual void storeRemovalTIDToStoredMetadataImpl() = 0;
 
     /**
     * @brief Read info from the stored metadata
@@ -280,7 +296,7 @@ protected:
 
 private:
     /**
-    * @brief Set `removal_tid` and `removal_tid_hash`
+    * @brief  removal_tid `removal_tid` and `removal_tid_hash`
     *
     * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back, and removal_tid_hash will be reset to 0.
     */

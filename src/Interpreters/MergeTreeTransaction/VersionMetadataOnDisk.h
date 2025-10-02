@@ -22,20 +22,22 @@ public:
 
     bool hasStoredMetadata() const override;
 
-    inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
-
 protected:
     void setRemovalTIDLock(TIDHash removal_tid_lock_hash) override;
-    void appendCreationCSNToStoredMetadataImpl() override;
-    void appendRemovalCSNToStoredMetadataImpl() override;
-    void appendRemovalTIDToStoredMetadataImpl() override;
+    void storeCreationCSNToStoredMetadataImpl() override;
+    void storeRemovalCSNToStoredMetadataImpl() override;
+    void storeRemovalTIDToStoredMetadataImpl() override;
     Info readStoredMetadata(String & content) const override;
 
 private:
+    void storeMetadataHelper(std::function<void(WriteBuffer & buf)> write_func, bool sync);
+
     /// Hash of removal_tid, used to lock the object for removal
     std::atomic<TIDHash> removal_tid_lock = 0;
+    /// If supported, try to append info to metadata instead of rewriting it.
     const bool support_writing_with_append;
     const bool can_write_metadata;
+    /// If the object is not involved in transaction, delay the metadata storing if possible.
     bool pending_store_metadata{false};
 };
 
