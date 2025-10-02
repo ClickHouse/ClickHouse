@@ -25,4 +25,16 @@ Must be created on single column.
 A column must not have >1 text index
 -- CREATE TABLE
 -- ALTER TABLE
-Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.
+Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.
+-- Negative tests
+-- Positive tests
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
