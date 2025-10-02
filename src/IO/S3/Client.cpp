@@ -149,7 +149,7 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
 {
     if (!httpResponseOutcome.IsSuccess())
     {
-        auto error = httpResponseOutcome.GetError();
+        const auto & error = httpResponseOutcome.GetError();
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
@@ -173,7 +173,7 @@ void Client::RetryStrategy::RequestBookkeeping(
             static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
             static_cast<size_t>(lastError.GetResponseCode()),
             lastError.GetMessage());
-    return RequestBookkeeping(httpResponseOutcome);
+    RequestBookkeeping(httpResponseOutcome);
 }
 
 namespace
