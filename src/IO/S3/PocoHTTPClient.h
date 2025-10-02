@@ -61,6 +61,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
+    std::optional<std::string> opt_disk_name;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
 
@@ -94,6 +95,7 @@ private:
         bool s3_slow_all_threads_after_retryable_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
+        std::optional<std::string> opt_disk_name_,
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,

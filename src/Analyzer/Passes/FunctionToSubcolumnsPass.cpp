@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeQBit.h>
 
 #include <Storages/IStorage.h>
 
@@ -114,6 +116,21 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return {};
 
     return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
+}
+
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
+{
+    size_t index;
+
+    if (value.getType() == Field::Types::UInt64)
+        index = value.safeGet<UInt64>();
+    else
+        return {};
+
+    if (index == 0 || index > data_type_qbit.getElementSize())
+        return {};
+
+    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
 }
 
 template <typename DataType>
@@ -244,6 +261,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
+    },
+    {
+        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
 };
 

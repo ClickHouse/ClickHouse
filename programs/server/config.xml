@@ -26,10 +26,10 @@
         <!-- Startup level is used to set the root logger level at server startup.
              It is useful for debugging startup issues.
              The root logger level will be reset to the default level after the server is fully initialized -->
-        <!-- <startupLevel>trace</startupLevel> -->
+        <!-- <startup_level>trace</startup_level> -->
        <!-- Shutdown level is used to set the root logger level at server Shutdown.
              It is useful for debugging shutdown issues -->
-        <!-- <shutdownLevel>trace</shutdownLevel> -->
+        <!-- <shutdown_level>trace</shutdown_level> -->
 
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
@@ -1305,6 +1305,15 @@
         <flush_on_crash>false</flush_on_crash>
     </iceberg_metadata_log>
 
+    <delta_lake_metadata_log>
+        <database>system</database>
+        <table>delta_lake_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </delta_lake_metadata_log>
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
 

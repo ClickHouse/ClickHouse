@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool use_join_disjunctions_push_down;
 }
 
 namespace ErrorCodes
@@ -577,6 +578,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
+    const PrewhereInfoPtr & prewhere_info,
     PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -616,7 +618,13 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
         return {};
 
     table_expression_query_info.additional_filter_ast = additional_filter_ast;
-    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    if (prewhere_info)
+    {
+        for (const auto * input : filter_info.actions.getInputs())
+            prewhere_info->prewhere_actions.tryRestoreColumn(input->result_name);
+    }
+    return filter_info;
 }
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
@@ -870,6 +878,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             if (!select_query_options.only_analyze)
             {
+                auto & row_level_filter = table_expression_query_info.row_level_filter;
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
                 const auto & columns_names = table_expression_data.getColumnNames();
@@ -898,52 +907,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                const auto add_filter = [&](FilterDAGInfo & filter_info, DescriptionHolderPtr description)
-                {
-                    bool is_final = table_expression_query_info.table_expression_modifiers
-                        && table_expression_query_info.table_expression_modifiers->hasFinal();
-                    bool optimize_move_to_prewhere
-                        = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
-
-                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    bool has_table_virtual_column =
-                        filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
-                    if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
-                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
-                        && !has_table_virtual_column)
-                    {
-                        if (!prewhere_info)
-                        {
-                            prewhere_info = std::make_shared<PrewhereInfo>();
-                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
-                            prewhere_info->prewhere_column_name = filter_info.column_name;
-                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
-                            prewhere_info->need_filter = true;
-                        }
-                        else if (!prewhere_info->row_level_filter)
-                        {
-                            prewhere_info->row_level_filter = std::move(filter_info.actions);
-                            prewhere_info->row_level_column_name = filter_info.column_name;
-                            prewhere_info->need_filter = true;
-                        }
-                        else
-                        {
-                            where_filters.emplace_back(std::move(filter_info), std::move(description));
-                        }
-
-                    }
-                    else
-                    {
-                        where_filters.emplace_back(std::move(filter_info), std::move(description));
-                    }
-                };
-
                 auto row_policy_filter_info
                     = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"));
+                    /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
+                    if (storage->supportsPrewhere())
+                        row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
+                    else
+                        where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -951,7 +924,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (settings[Setting::parallel_replicas_count] > 1)
                     {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
-                            add_filter(*parallel_replicas_custom_key_filter_info, makeDescription("Parallel replicas custom key filter"));
+                            where_filters.emplace_back(std::move(*parallel_replicas_custom_key_filter_info), makeDescription("Parallel replicas custom key filter"));
                     }
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
@@ -966,10 +939,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
-                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
+                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
-                    add_filter(*additional_filters_info, makeDescription("additional filter"));
+                    where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
                 if (!select_query_options.build_logical_plan)
@@ -1725,7 +1698,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             settings[Setting::max_threads],
             required_columns_after_join,
             false /*optimize_read_in_order*/,
-            true /*optimize_skip_unused_shards*/);
+            true /*optimize_skip_unused_shards*/,
+            settings[Setting::use_join_disjunctions_push_down]);
 
         auto setting_swap = settings[Setting::query_plan_join_swap_table];
         join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
@@ -2403,6 +2377,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     size_t joins_count = 0;
     bool is_full_join = false;
     bool is_global_join = false;
+    int first_left_or_inner_join_pos = -1;
+    int first_right_join_pos = -1;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -2427,15 +2403,34 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
 
+            // if right join position is after left/inner join then we can't parallelize the left/inner join
+            if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
+                first_left_or_inner_join_pos = i;
+            if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
+                first_right_join_pos = i;
+
             continue;
         }
 
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
 
-    /// disable parallel replicas for n-way join with FULL JOIN or GLOBAL JOINS
-    if (joins_count > 1 && (is_full_join || is_global_join))
+    auto should_disable_parallel_replicas = [&]() -> bool
+    {
+        /// n-way join like LEFT/INNER ... RIGHT ...
+        if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
+            return true;
+
+        /// for n-way join with FULL JOIN or GLOBAL JOINS
+        if (joins_count > 1 && (is_full_join || is_global_join))
+            return true;
+
+        return false;
+    };
+
+    if (should_disable_parallel_replicas())
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
 
     // in case of n-way JOINs the table expression stack contains several join nodes
     // so, we need to find right parent node for a table expression to pass into buildQueryPlanForTableExpression()
