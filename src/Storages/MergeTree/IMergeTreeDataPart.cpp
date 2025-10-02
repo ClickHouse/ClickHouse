@@ -1775,15 +1775,10 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
-    auto creation_tid = version->getCreationTID();
-    auto removal_csn = version->getRemovalCSN();
     assert(
-        !storage.data_parts_loading_finished || !creation_tid.isEmpty()
+        !storage.data_parts_loading_finished || !version->getCreationTID().isEmpty()
         || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
-    bool created_by_transaction = !creation_tid.isPrehistoric();
-    bool removed_by_transaction = (removal_csn != Tx::PrehistoricCSN) && ((removal_csn != 0)
-        || (version->isRemovalTIDLocked() && version->getRemovalTIDLock() != Tx::PrehistoricTID.getHash()));
-    return created_by_transaction || removed_by_transaction;
+    return version->wasInvolvedInTransaction();
 }
 
 bool IMergeTreeDataPart::assertHasValidVersionMetadata() const

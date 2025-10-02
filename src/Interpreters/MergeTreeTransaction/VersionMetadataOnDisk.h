@@ -13,7 +13,7 @@ public:
     explicit VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, bool support_writing_with_append_);
 
     void loadMetadata() override;
-    void storeMetadata(bool force) override;
+    void storeMetadata(bool force) const override;
 
     bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id) override;
     void unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context) override;
@@ -38,7 +38,7 @@ private:
     const bool support_writing_with_append;
     const bool can_write_metadata;
     /// If the object is not involved in transaction, delay the metadata storing if possible.
-    bool pending_store_metadata{false};
+    mutable bool pending_store_metadata{false};
 };
 
 }

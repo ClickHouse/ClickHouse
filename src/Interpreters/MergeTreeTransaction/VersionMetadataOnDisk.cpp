@@ -121,7 +121,7 @@ catch (Exception & e)
     throw;
 }
 
-void VersionMetadataOnDisk::storeMetadata(bool force)
+void VersionMetadataOnDisk::storeMetadata(bool force) const
 {
     LOG_DEBUG(log, "Object {}, store metadata", getObjectName());
     if (!can_write_metadata)
@@ -348,6 +348,9 @@ void VersionMetadataOnDisk::storeRemovalTIDToStoredMetadataImpl()
 
 VersionMetadata::Info VersionMetadataOnDisk::readStoredMetadata(String & content) const
 {
+    if (pending_store_metadata)
+        storeMetadata(true);
+
     size_t small_file_size = 4096;
     auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
     /// Avoid cannot allocated thread error. No need in threadpool read method here.
