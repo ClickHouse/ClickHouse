@@ -419,6 +419,7 @@ void copyAzureBlobStorageFile(
                         operation.IsDone());
                 }
             }
+            return;
         }
         catch (const Azure::Storage::StorageException & e)
         {
@@ -431,8 +432,6 @@ void copyAzureBlobStorageFile(
             else
                 throw;
         }
-
-
     }
     LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
     auto create_read_buffer = [&]
