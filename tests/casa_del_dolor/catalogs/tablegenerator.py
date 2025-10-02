@@ -538,31 +538,27 @@ class IcebergTableGenerator(LakeTableGenerator):
                     "rewrite-job-order": random.choice(
                         ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
                     ),
-                    "target-file-size-bytes": lambda: str(
-                        random.choice(
-                            [
-                                1048576,  # 1MB
-                                2097152,  # 2MB
-                                134217728,  # 128MB
-                                268435456,  # 256MB
-                                536870912,  # 512MB
-                                1073741824,  # 1GB
-                            ]
-                        )
+                    "target-file-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
                     ),
                     "min-input-files": lambda: random.randint(0, 20),
                     "rewrite-all": true_false_lambda,
-                    "max-file-group-size-bytes": lambda: str(
-                        random.choice(
-                            [
-                                1048576,  # 1MB
-                                2097152,  # 2MB
-                                134217728,  # 128MB
-                                268435456,  # 256MB
-                                536870912,  # 512MB
-                                1073741824,  # 1GB
-                            ]
-                        )
+                    "max-file-group-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
                     ),
                     "max-files-to-rewrite": lambda: random.randint(0, 100),
                 }
@@ -630,31 +626,27 @@ class IcebergTableGenerator(LakeTableGenerator):
                     "rewrite-job-order": random.choice(
                         ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
                     ),
-                    "target-file-size-bytes": lambda: str(
-                        random.choice(
-                            [
-                                1048576,  # 1MB
-                                2097152,  # 2MB
-                                134217728,  # 128MB
-                                268435456,  # 256MB
-                                536870912,  # 512MB
-                                1073741824,  # 1GB
-                            ]
-                        )
+                    "target-file-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
                     ),
                     "min-input-files": lambda: random.randint(0, 20),
                     "rewrite-all": true_false_lambda,
-                    "max-file-group-size-bytes": lambda: str(
-                        random.choice(
-                            [
-                                1048576,  # 1MB
-                                2097152,  # 2MB
-                                134217728,  # 128MB
-                                268435456,  # 256MB
-                                536870912,  # 512MB
-                                1073741824,  # 1GB
-                            ]
-                        )
+                    "max-file-group-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
                     ),
                     "delete-file-threshold": lambda: random.randint(0, 10000),
                     "delete-ratio-threshold": lambda: random.uniform(0, 1),
@@ -673,17 +665,15 @@ class IcebergTableGenerator(LakeTableGenerator):
                     options.update(
                         {
                             "var-length-contribution": lambda: random.randint(0, 100),
-                            "max-output-size": lambda: str(
-                                random.choice(
-                                    [
-                                        1048576,  # 1MB
-                                        2097152,  # 2MB
-                                        134217728,  # 128MB
-                                        268435456,  # 256MB
-                                        536870912,  # 512MB
-                                        1073741824,  # 1GB
-                                    ]
-                                )
+                            "max-output-size": lambda: random.choice(
+                                [
+                                    1048576,  # 1MB
+                                    2097152,  # 2MB
+                                    134217728,  # 128MB
+                                    268435456,  # 256MB
+                                    536870912,  # 512MB
+                                    1073741824,  # 1GB
+                                ]
                             ),
                         }
                     )
