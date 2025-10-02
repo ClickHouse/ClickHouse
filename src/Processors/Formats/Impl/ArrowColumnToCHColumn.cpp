@@ -1443,9 +1443,9 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
+    /// default_memory_pool() uses posix_memalign which is intercepted and counted in MemoryTracker.
+    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;
