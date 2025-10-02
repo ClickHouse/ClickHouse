@@ -564,7 +564,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     if (processServerQuery(
             true,
             fmt::format(
-                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 detached_tbl,
                 db_clause,
                 table,
@@ -586,7 +586,8 @@ bool FuzzConfig::hasMutations()
     if (processServerQuery(
             false,
             fmt::format(
-                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -607,7 +608,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
-                "FORMAT CSV;",
+                "FORMAT TabSeparated;",
                 rand_val,
                 fuzz_server_out.generic_string())))
     {
@@ -625,7 +626,7 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT CSV;",
+                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 property,
                 fuzz_server_out.generic_string())))
     {
@@ -650,7 +651,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT CSV;",
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
