@@ -24,7 +24,7 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Linker
 option (LINKER_NAME "Linker name or full path")
 
-set (LINKER_NAME /home/ubuntu/Downloads/mold)
+set (LINKER_NAME mold)
 
 if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
