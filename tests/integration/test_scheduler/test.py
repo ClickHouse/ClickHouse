@@ -73,7 +73,7 @@ def set_default_configs():
 
 
 @pytest.fixture(scope="function", autouse=True)
-def clear_workloads_and_resources():
+def clear_workloads_and_resources(set_default_configs):
     node.query(
         f"""
         drop workload if exists production;
@@ -1102,3 +1102,6 @@ def test_config_based_workloads_and_resources():
         )
         == "2\n"
     )
+
+    # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
+    node.query("DROP WORKLOAD development")
