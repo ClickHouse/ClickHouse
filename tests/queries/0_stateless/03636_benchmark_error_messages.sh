@@ -8,3 +8,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_BENCHMARK --bad-option |& grep -v "DB::Exception: Unrecognized option '--bad-option'"
 $CLICKHOUSE_BENCHMARK --timelimit "bad value" |& grep -v "Bad arguments: the argument ('bad value') for option '--timelimit' is invalid"
 $CLICKHOUSE_BENCHMARK --user "invalid user" --query "SELECT 1" |& grep -v -e "DB::Exception: invalid user: Authentication failed" -e "Loaded 1 queries"
+
+exit 0
