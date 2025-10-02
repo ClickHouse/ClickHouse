@@ -9,6 +9,8 @@
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Interpreters/TableJoin.h>
+#include <atomic>
 
 namespace DB
 {
@@ -87,15 +89,19 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+        std::atomic<bool> has_non_joined_rows{false};
     };
 
+    friend class NotJoinedHash;
+
 private:
+    void finalizeSlots();
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    bool build_phase_finished = false;
+    mutable std::atomic<bool> build_phase_finished{false};
 
     StatsCollectingParams stats_collecting_params;
 
@@ -103,6 +109,11 @@ private:
     Block totals;
 
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    ScatteredBlocks dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block);
+
+    bool isUsedByAnotherAlgorithm() const;
+    bool canRemoveColumnsFromLeftBlock() const;
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.
