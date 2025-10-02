@@ -24,10 +24,12 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Linker
 option (LINKER_NAME "Linker name or full path")
 
-if (ARCH_AMD64)
-    set(LINKER_NAME mold)
-elseif (ARCH_AARCH64)
-    set(LINKER_NAME mold-aarch64)
+if (OS_LINUX)
+    if (ARCH_AMD64)
+        set(LINKER_NAME mold)
+    elseif (ARCH_AARCH64)
+        set(LINKER_NAME mold-aarch64)
+    endif ()
 endif ()
 
 if (LINKER_NAME MATCHES "gold")
