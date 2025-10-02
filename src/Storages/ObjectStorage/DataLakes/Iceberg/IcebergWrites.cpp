@@ -433,10 +433,11 @@ void generateManifestFile(
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
-    if (schema.root()->type() != avro::AVRO_RECORD)
+    const avro::NodePtr & root_schema = schema.root();
+
+    if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    const avro::NodePtr & root_schema = schema.root();
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
