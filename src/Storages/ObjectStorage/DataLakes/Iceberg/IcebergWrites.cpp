@@ -456,7 +456,8 @@ void generateManifestFile(
     for (const auto & data_file_name : data_file_names)
     {
         avro::GenericDatum manifest_datum(root_schema);
-        avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
+        /// Clang tidy doesn't understand avro code (me either), so NOLINT
+        avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>(); // NOLINT
 
         manifest.field(Iceberg::f_status) = avro::GenericDatum(1);
         Int64 snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
@@ -633,7 +634,8 @@ void generateManifestList(
     for (const auto & manifest_entry_name : manifest_entry_names)
     {
         avro::GenericDatum entry_datum(schema.root());
-        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
+        /// Clang tidy doesn't understand avro code (me either), so NOLINT
+        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>(); // NOLINT
 
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
