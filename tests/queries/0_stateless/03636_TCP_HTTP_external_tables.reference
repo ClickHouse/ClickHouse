@@ -1,0 +1,9 @@
+HTTP POST with external table
+Code: 57. ... Temporary table external_table already exists. (TABLE_ALREADY_EXISTS) (version 25.10.1.1)
+TCP POST with external table
+1	John	30
+2	Jane	25
+3	Bob	40
+1	John	30
+2	Jane	25
+3	Bob	40
