@@ -1468,6 +1468,18 @@ static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionFor
     return {std::make_shared<ExpressionActions>(std::move(actions)), sign_filter->getColumnName()};
 }
 
+static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
+{
+    ASTPtr is_deleted_identifier = std::make_shared<ASTIdentifier>(is_deleted_column_name);
+    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(0))));
+
+    const auto & is_deleted_column = header.getByName(is_deleted_column_name);
+
+    auto syntax_result = TreeRewriter(context).analyze(is_deleted_filter, {{is_deleted_column.name, is_deleted_column.type}});
+    auto actions = ExpressionAnalyzer(is_deleted_filter, syntax_result, context).getActionsDAG(false);
+    return {std::make_shared<ExpressionActions>(std::move(actions)), is_deleted_filter->getColumnName()};
+}
+
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 {
     const auto & settings = context->getSettingsRef();
@@ -1566,7 +1578,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+            !reader_settings.read_in_order;
 
         if (no_merging_final)
         {
@@ -1696,6 +1708,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             pipe = spreadMarkRangesAmongStreams(
                 std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, columns_with_sign);
             auto [expression, filter_name] = createExpressionForPositiveSign(data.merging_params.sign_column, pipe.getHeader(), context);
+
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header, expression, filter_name, true);
+            });
+        }
+        else if (!data.merging_params.is_deleted_column.empty())
+        {
+            auto columns_with_is_deleted = origin_column_names;
+            if (std::ranges::find(columns_with_is_deleted, data.merging_params.is_deleted_column) == columns_with_is_deleted.end())
+                columns_with_is_deleted.push_back(data.merging_params.is_deleted_column);
+
+            pipe = spreadMarkRangesAmongStreams(
+                std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, columns_with_is_deleted);
+            auto [expression, filter_name] = createExpressionForIsDeleted(data.merging_params.is_deleted_column, pipe.getHeader(), context);
 
             pipe.addSimpleTransform([&](const SharedHeader & header)
             {
