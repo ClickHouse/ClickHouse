@@ -225,6 +225,7 @@ namespace CurrentMetrics
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
+    extern const Metric ZooKeeperSessionExpired;
 }
 
 
@@ -1135,7 +1136,6 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -4311,6 +4311,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (shared->zookeeper->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
 
@@ -4540,6 +4542,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     }
     else if (zookeeper->second->expired())
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
         auto old_zookeeper = zookeeper->second;
         zookeeper->second = zookeeper->second->startNewSession();
 
@@ -5031,9 +5035,15 @@ void Context::handleCrash() const
     if (!shared)
         return;
 
-    SharedLockGuard lock2(shared->mutex);
-    if (shared->system_logs)
-        shared->system_logs->handleCrash();
+    std::optional<SystemLogs> system_logs;
+    {
+        SharedLockGuard lock2(shared->mutex);
+        if (!shared->system_logs)
+            return;
+        system_logs.emplace(*shared->system_logs);
+    }
+
+    system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
@@ -6855,16 +6865,6 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
-}
-
-void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
-{
-    storage_alias_behaviour = storage_alias_behaviour_;
-}
-
-uint8_t Context::getStorageAliasBehaviour() const
-{
-    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const

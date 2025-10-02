@@ -1,4 +1,28 @@
 Negative tests
+Test what happens searchAny/All are called on columns without index
+-- It is expected that the default tokenizer is used
+-- { echoOn }
+SELECT searchAny('a b', ['b']);
+1
+SELECT searchAny('a b', ['c']);
+0
+SELECT searchAny(materialize('a b'), ['b']);
+1
+SELECT searchAny(materialize('a b'), ['c']);
+0
+--
+SELECT searchAll('a b', ['a', 'b']);
+1
+SELECT searchAll('a b', ['a', 'c']);
+0
+SELECT searchAll(materialize('a b'), ['a', 'b']);
+1
+SELECT searchAll(materialize('a b'), ['a', 'c']);
+0
+1
+2
+1
+2
 FixedString input columns
 [1]
 [1]
