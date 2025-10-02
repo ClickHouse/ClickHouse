@@ -226,47 +226,88 @@ struct AggregateFunctionSumData
         //     Impl::add(sum, result);
         //     return;
         // }
-        else if constexpr (std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>)
+        // else if constexpr (std::is_same_v<T, Int256> || std::is_same_v<T, UInt256>)
+        else if constexpr (is_over_big_int<T>)
         {
             T local_sum{};
 
-            _Pragma("clang loop unroll_count(8)")
             for (size_t i = 0; i < count; ++i)
             {
-                auto flag = (!condition_map[i] == add_if_zero);
-                Impl::add(local_sum, ptr[i] * flag);
+                uint8_t flag = (condition_map[i] != add_if_zero);
+
+                T mask{};
+                std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+
+                Impl::add(local_sum, ptr[i]);
             }
 
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Int256>)
-        {
-            T local_sum{};
-
-            _Pragma("clang loop unroll_count(8)")
-            for (size_t i = 0; i < count; ++i)
-            {
-                auto flag = (!condition_map[i] == add_if_zero);
-                Impl::add(local_sum, ptr[i] * flag);
-            }
-
-            Impl::add(sum, local_sum);
-            return;
-        }
-        // else if constexpr (is_over_big_int<T>)
+        // else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>)
         // {
-        //     /// Use a mask to discard or keep the value to reduce branch miss.
         //     T local_sum{};
         //
         //     for (size_t i = 0; i < count; ++i)
         //     {
-        //         auto flag = (!condition_map[i] == add_if_zero);
+        //         uint8_t flag = (condition_map[i] != add_if_zero);
+        //
         //         T mask{};
         //         std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
-        //         sum += ptr[i] & mask;
+        //
+        //         Impl::add(local_sum, ptr[i]);
         //     }
         //
+        //     Impl::add(sum, local_sum);
+        //     return;
+        // }
+        // else if constexpr (std::is_same_v<T, Decimal128> || std::is_same_v<T, Decimal256>)
+        // {
+        //     T local_sum{};
+        //
+        //     for (size_t i = 0; i < count; ++i)
+        //     {
+        //         uint8_t flag = (condition_map[i] != add_if_zero);
+        //
+        //         T mask{};
+        //         std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+        //
+        //         Impl::add(local_sum, ptr[i]);
+        //     }
+        //
+        //     Impl::add(sum, local_sum);
+        //     return;
+        // }
+        // else if constexpr (is_over_big_int<T>)
+        // {
+        //     /// Use a mask to discard or keep the value to reduce branch miss.
+        //     /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
+        //     using MaskType = std::conditional_t<sizeof(T) == 16, Int8, Int64>;
+        //     // using MaskType = Int64;
+        //     alignas(64) const MaskType masks[2] = {0, -1};
+        //     T local_sum{};
+        //     while (ptr < end_ptr)
+        //     {
+        //         Value v = *ptr;
+        //         if constexpr (!add_if_zero)
+        //         {
+        //             if constexpr (is_integer<T>)
+        //                 v &= masks[!!*condition_map];
+        //             else
+        //                 v.value &= masks[!!*condition_map];
+        //         }
+        //         else
+        //         {
+        //             if constexpr (is_integer<T>)
+        //                 v &= masks[!*condition_map];
+        //             else
+        //                 v.value &= masks[!*condition_map];
+        //         }
+        //
+        //         Impl::add(local_sum, v);
+        //         ++ptr;
+        //         ++condition_map;
+        //     }
         //     Impl::add(sum, local_sum);
         //     return;
         // }
