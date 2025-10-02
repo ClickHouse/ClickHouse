@@ -842,75 +842,79 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 getData(hash_joins[0])->maps.at(0));
         }
 
-        // Additionally, merge per-slot right-side nullmaps into slot 0 so that
+        // Additionally, rebuild per-slot right-side nullmaps into slot 0 so that
         // non-joined rows saved due to NULL keys or ON-filtered rows are emitted exactly once.
         // We keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
         // in their respective slots for the lifetime of the join.
         {
-            auto dst = getData(hash_joins[0]);
-            for (size_t i = 1; i < slots; ++i)
+            HashJoin::NullmapList combined;
+            size_t combined_allocated = 0;
+
+            auto filter_holder_by_selector = [&](const HashJoin::NullMapHolder & holder)
             {
-                auto src = getData(hash_joins[i]);
-                if (src->nullmaps.empty())
-                    continue;
+                const auto * sc = holder.columns;
+                if (!sc)
+                    return; // skip broken holder
 
-                for (auto & holder : src->nullmaps)
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
+
+                auto apply_range = [&](size_t start, size_t end)
                 {
-                    const auto * sc = holder.columns;
-                    if (!sc)
-                        continue;
-
-                    // Build a filtered mask that keeps only rows from this slot's selector
-                    ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
-
-                    auto apply_range = [&](size_t start, size_t end)
+                    if (holder.column)
                     {
-                        if (holder.column)
-                        {
-                            const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                            end = std::min(end, src_mask.size());
-                            for (size_t r = start; r < end; ++r)
-                                filtered->getData()[r] = src_mask[r];
-                        }
-                        else
-                        {
-                            for (size_t r = start; r < end; ++r)
-                                filtered->getData()[r] = 1;
-                        }
-                    };
-
-                    if (sc->selector.isContinuousRange())
-                    {
-                        const auto range = sc->selector.getRange();
-                        apply_range(range.first, range.second);
+                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                        end = std::min(end, src_mask.size());
+                        for (size_t r = start; r < end; ++r)
+                            filtered->getData()[r] = src_mask[r];
                     }
                     else
                     {
-                        const auto & idxs = sc->selector.getIndexes().getData();
-                        if (holder.column)
+                        for (size_t r = start; r < end; ++r)
+                            filtered->getData()[r] = 1;
+                    }
+                };
+
+                if (sc->selector.isContinuousRange())
+                {
+                    const auto range = sc->selector.getRange();
+                    apply_range(range.first, range.second);
+                }
+                else
+                {
+                    const auto & idxs = sc->selector.getIndexes().getData();
+                    if (holder.column)
+                    {
+                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
                         {
-                            const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                            for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
-                            {
-                                size_t idx = static_cast<size_t>(idxs[pos]);
-                                if (idx < src_mask.size())
-                                    filtered->getData()[idx] = src_mask[idx];
-                            }
-                        }
-                        else
-                        {
-                            for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
-                                filtered->getData()[static_cast<size_t>(idxs[pos])] = 1;
+                            size_t idx = static_cast<size_t>(idxs[pos]);
+                            if (idx < src_mask.size())
+                                filtered->getData()[idx] = src_mask[idx];
                         }
                     }
-
-                    dst->nullmaps.emplace_back(sc, std::move(filtered));
-                    dst->nullmaps_allocated_size += dst->nullmaps.back().allocatedBytes();
+                    else
+                    {
+                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
+                            filtered->getData()[static_cast<size_t>(idxs[pos])] = 1;
+                    }
                 }
 
+                combined.emplace_back(sc, std::move(filtered));
+                combined_allocated += combined.back().allocatedBytes();
+            };
+
+            for (size_t i = 0; i < slots; ++i)
+            {
+                auto src = getData(hash_joins[i]);
+                for (const auto & holder : src->nullmaps)
+                    filter_holder_by_selector(holder);
                 src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }
+
+            auto dst = getData(hash_joins[0]);
+            dst->nullmaps = std::move(combined);
+            dst->nullmaps_allocated_size = combined_allocated;
         }
     }
 
