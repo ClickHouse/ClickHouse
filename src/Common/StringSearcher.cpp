@@ -19,6 +19,7 @@
 #define SZ_AVOID_LIBC 1
 #define SZ_DEBUG 0
 #define SZ_DYNAMIC_DISPATCH 0
+#define SZ_IS_BIG_ENDIAN_ __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
 
 #if USE_MULTITARGET_CODE
 #    define SZ_USE_SKYLAKE 1
@@ -82,7 +83,7 @@ public:
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
         {
             find = sz_find_sve;
-            equal = sz_equal_neon; /// No SVE specific implementation
+            equal = sz_equal_sve;
         }
 #elif defined(__aarch64__) && defined(__ARM_NEON)
         {
