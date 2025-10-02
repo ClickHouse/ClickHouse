@@ -32,14 +32,6 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# Download and install mold 2.40.4
-RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.40.4/mold-2.40.4-x86_64-linux.tar.gz" \
-    && mkdir /tmp/mold \
-    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
-    && cp -r /tmp/mold/mold*/* /usr \
-    && rm -rf /tmp/mold \
-    && rm /tmp/mold.tar.gz
-
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
 ARG NFPM_VERSION=2.20.0
@@ -73,3 +65,11 @@ RUN curl -Lo /usr/bin/clang-tidy-cache.py \
     && chmod +x /usr/bin/clang-tidy-cache.py
 
 COPY clang-tidy-cache.sh /usr/bin/clang-tidy-cache
+
+# x86_64 wild linker
+RUN curl -L https://github.com/rui314/mold/releases/download/v2.40.4/mold-2.40.4-x86_64-linux.tar.gz \
+    | tar xvz --strip-components=2 mold-2.40.4-x86_64-linux/bin/mold && mv mold /usr/bin/mold
+
+# aarch64 wild linker
+RUN curl -L https://github.com/rui314/mold/releases/download/v2.40.4/mold-2.40.4-aarch64-linux.tar.gz \
+    | tar xvz --strip-components=2 mold-2.40.4-aarch64-linux/bin/mold && mv mold /usr/bin/mold-aarch64
