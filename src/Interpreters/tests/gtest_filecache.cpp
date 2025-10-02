@@ -1515,16 +1515,16 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
 
     auto key = DB::FileCacheKey::fromPath("evict_key");
-    auto user = FileCache::getCommonUser();
+    auto origin = FileCache::getCommonOrigin();
 
     CachePriorityGuard cache_guard;
     auto cache_lock = cache_guard.lock();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
-        auto it = priority.add(key_metadata, offset, size, user, cache_lock);
-        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
+        auto it = priority.add(key_metadata, offset, size, origin, cache_lock);
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
 
         if (std::filesystem::exists(path))
             std::filesystem::remove(path);
@@ -1556,7 +1556,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     FileCacheReserveStat stat;
     auto evicted = std::make_unique<EvictionCandidates>();
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, user.user_id, cache_lock);
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, origin, cache_lock);
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
     ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
@@ -1569,7 +1569,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, origin, cache_lock);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
@@ -1594,7 +1594,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, origin, cache_lock);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(cache_lock), 3);

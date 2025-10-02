@@ -67,6 +67,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const OriginInfo & origin,
         const CachePriorityGuard::Lock &) override;
 
@@ -90,6 +91,8 @@ public:
         priorities_holder[SegmentType::Data]->iterate(func, lock);
         priorities_holder[SegmentType::System]->iterate(func, lock);
     }
+
+    void resetEvictionPos(const CachePriorityGuard::Lock & lock) override;
 
 private:
     PriorityPerType priorities_holder;

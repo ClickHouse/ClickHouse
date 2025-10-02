@@ -148,6 +148,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
+    bool continue_from_last_eviction_pos,
     const OriginInfo & origin,
     const CachePriorityGuard::Lock & lock)
 {
@@ -172,6 +173,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
                                            system_stat,
                                            res,
                                            reservee,
+                                           continue_from_last_eviction_pos,
                                            origin,
                                            lock);
         stat += system_stat;
@@ -193,10 +195,16 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     if (size || elements)
     {
         FileCacheReserveStat data_stat;
-        data_collection_status
-            = priorities_holder.at(FileSegmentKeyType::Data)
-                  ->collectCandidatesForEviction(
-                      size + max_system_segment_size, elements + max_system_segment_elements, data_stat, res, reservee, origin, lock);
+        data_collection_status = priorities_holder.at(FileSegmentKeyType::Data)
+                                     ->collectCandidatesForEviction(
+                                         size + max_system_segment_size,
+                                         elements + max_system_segment_elements,
+                                         data_stat,
+                                         res,
+                                         reservee,
+                                         continue_from_last_eviction_pos,
+                                         origin,
+                                         lock);
         stat += data_stat;
         LOG_TEST(
             log,
@@ -280,6 +288,12 @@ IFileCachePriority::CollectStatus SplitFileCachePriority::collectCandidatesForEv
         return system_size_status;
 
     return data_size_status;
+}
+
+void SplitFileCachePriority::resetEvictionPos(const CachePriorityGuard::Lock & lock)
+{
+    priorities_holder[SegmentType::Data]->resetEvictionPos(lock);
+    priorities_holder[SegmentType::System]->resetEvictionPos(lock);
 }
 
 SplitFileCachePriority::SplitIterator::SplitIterator(
