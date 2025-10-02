@@ -15,11 +15,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
     storage_encoding = std::move(storage_encoding_);
+    for (const auto & [column_name, field_id] : storage_encoding)
+        if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
@@ -43,19 +47,19 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
-    FormatFilterInfo::FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_)
-        : filter_actions_dag(filter_actions_dag_)
-        , context(context_)
-        , column_mapper(column_mapper_)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_)
+    : filter_actions_dag(filter_actions_dag_)
+    , context(context_)
+    , column_mapper(column_mapper_)
+{
+}
 
-    FormatFilterInfo::FormatFilterInfo()
-        : filter_actions_dag(nullptr)
-        , context(static_cast<const ContextPtr &>(nullptr))
-        , column_mapper(nullptr)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo()
+    : filter_actions_dag(nullptr)
+    , context(static_cast<const ContextPtr &>(nullptr))
+    , column_mapper(nullptr)
+{
+}
 
 
 bool FormatFilterInfo::hasFilter() const
