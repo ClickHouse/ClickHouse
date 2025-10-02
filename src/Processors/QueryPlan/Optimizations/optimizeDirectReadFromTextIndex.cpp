@@ -13,6 +13,29 @@ namespace DB::QueryPlanOptimizations
 
 using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionText *>;
 
+String getNameWithoutAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children[0];
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+    {
+        String result_name = node->function_base->getName() + "(";
+        for (size_t i = 0; i < node->children.size(); ++i)
+        {
+            if (i)
+                result_name += ", ";
+
+            result_name += getNameWithoutAliases(node->children[i]);
+        }
+
+        result_name += ")";
+        return result_name;
+    }
+
+    return node->result_name;
+}
+
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
@@ -84,13 +107,20 @@ private:
 
     bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition) const
     {
+        using enum ActionsDAG::ActionType;
         const auto & header = condition.getHeader();
 
-        if (lhs_arg.type == ActionsDAG::ActionType::INPUT && rhs_arg.type == ActionsDAG::ActionType::COLUMN)
-            return header.has(lhs_arg.result_name);
+        if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
+        {
+            auto lhs_name_without_aliases = getNameWithoutAliases(&lhs_arg);
+            return header.has(lhs_name_without_aliases);
+        }
 
-        if (lhs_arg.type == ActionsDAG::ActionType::COLUMN && rhs_arg.type == ActionsDAG::ActionType::INPUT)
-            return header.has(rhs_arg.result_name);
+        if (lhs_arg.type == COLUMN && (rhs_arg.type == INPUT || rhs_arg.type == FUNCTION))
+        {
+            auto rhs_name_without_aliases = getNameWithoutAliases(&rhs_arg);
+            return header.has(rhs_name_without_aliases);
+        }
 
         return false;
     }

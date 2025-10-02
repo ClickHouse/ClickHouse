@@ -534,28 +534,30 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         return fmt::format("WriteFileObjectStorageOperation (path {}, blob {}, mode {})", object->local_path, object->remote_path, mode);
     }
 
-
     void execute(MetadataTransactionPtr tx) override
     {
         chassert(object->bytes_size != std::numeric_limits<uint64_t>::max());
 
         if (mode == WriteMode::Rewrite)
         {
+            StoredObjects written_objects;
+
             if (object->bytes_size > 0 || create_blob_if_empty)
             {
                 LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
-                tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
+                written_objects.push_back(*object);
             }
             else
             {
                 LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
-                tx->createEmptyMetadataFile(object->local_path);
             }
+
+            tx->createMetadataFile(object->local_path, written_objects);
         }
         else
         {
             /// Even if not create_blob_if_empty and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
-            tx->addBlobToMetadata(object->local_path, remote_key, object->bytes_size);
+            tx->addBlobToMetadata(object->local_path, *object);
         }
     }
 
@@ -608,7 +610,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        tx->createEmptyMetadataFile(to_path);
+        /// We need this call to clear to_path metadata file if it exists
+        tx->createMetadataFile(to_path, /*objects=*/{});
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
         if (source_blobs.empty())
@@ -651,9 +654,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         created_objects.push_back(object_to);
 
         if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
+            tx->addBlobToMetadata(to_path, StoredObject(object_key.serialize(), to_path, object_from.bytes_size));
         else
-            tx->createMetadataFile(to_path, object_key, object_from.bytes_size);
+            tx->createMetadataFile(to_path, {StoredObject(object_key.serialize(), to_path, object_from.bytes_size)});
     }
 };
 
@@ -804,15 +807,6 @@ void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, co
     operations_to_execute.emplace_back(std::move(operation));
 }
 
-void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
-{
-    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-    {
-        if (metadata_storage.existsFile(it->path()))
-            removeFile(it->path());
-    }
-}
-
 void DiskObjectStorageTransaction::removeFile(const std::string & path)
 {
     removeSharedFile(path, false);
@@ -827,6 +821,7 @@ void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bo
 void DiskObjectStorageTransaction::removeSharedRecursive(
     const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
+    chassert(metadata_storage.getType() != MetadataStorageType::Keeper || (file_names_remove_metadata_only.empty() && !keep_all_shared_data));
     auto operation = std::make_shared<RemoveRecursiveObjectStorageOperation>(
         object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only);
     operations_to_execute.emplace_back(std::move(operation));
@@ -862,6 +857,7 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 void DiskObjectStorageTransaction::removeSharedFiles(
     const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
+    chassert(metadata_storage.getType() != MetadataStorageType::Keeper || file_names_remove_metadata_only.empty());
     auto operation = std::make_shared<RemoveManyObjectStorageOperation>(object_storage, metadata_storage, files, keep_all_batch_data, file_names_remove_metadata_only);
     operations_to_execute.emplace_back(std::move(operation));
 }
@@ -948,7 +944,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
     {
-        auto connection_info = object_storage.getConnectionInfo();
+        auto connection_info = DistributedCache::getConnectionInfo(object_storage);
         if (connection_info)
         {
             auto global_context = Context::getGlobalContextInstance();
@@ -1047,7 +1043,7 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
     operations_to_execute.emplace_back(
         std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
-            tx->createEmptyMetadataFile(path);
+            tx->createMetadataFile(path, /*objects=*/{});
         }));
 }
 

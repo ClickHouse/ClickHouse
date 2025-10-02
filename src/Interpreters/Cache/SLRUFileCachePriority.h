@@ -59,6 +59,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const OriginInfo & origin,
         const CachePriorityGuard::Lock &) override;
 
@@ -69,6 +70,8 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         const CachePriorityGuard::Lock &) override;
+
+    void resetEvictionPos(const CachePriorityGuard::Lock &) override;
 
     void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
 
@@ -104,6 +107,7 @@ private:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const OriginInfo & origin,
         const CachePriorityGuard::Lock & lock);
 
