@@ -318,7 +318,25 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 {
     String s;
     settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
-    deserializeFromString(function, column, s, version);
+    // Add the same logic as deserializeTextCSV:
+    if (settings.aggregate_function_input_format == "state")
+    {
+        deserializeFromString(function, column, s, version);
+    }
+    else if (settings.aggregate_function_input_format == "value")
+    {
+        deserializeFromValue(function, column, s, settings);
+    }
+    else if (settings.aggregate_function_input_format == "array")
+    {
+        deserializeFromArray(function, column, s, settings);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Invalid value for aggregate_function_input_format: '{}'. Expected 'state', 'value', or 'array'",
+            settings.aggregate_function_input_format);
+    }
 }
 
 
