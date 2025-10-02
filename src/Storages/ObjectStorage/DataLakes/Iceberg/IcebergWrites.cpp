@@ -625,9 +625,6 @@ void generateManifestList(
 
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
-    if (schema.root()->type() != avro::AVRO_RECORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest list schema must be record");
-
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
