@@ -1,15 +1,16 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/Context.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Interpreters/Context.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <utility>
 
@@ -96,6 +97,8 @@ MergeTreeMarksLoader::~MergeTreeMarksLoader()
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 {
+    OpenTelemetry::SpanHolder span("MergeTreeMarksLoader::loadMarks");
+
     std::lock_guard lock(load_mutex);
 
     if (marks)
