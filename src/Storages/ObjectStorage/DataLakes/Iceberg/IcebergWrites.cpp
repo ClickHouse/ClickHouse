@@ -433,11 +433,10 @@ void generateManifestFile(
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
-    const avro::NodePtr & root_schema = schema.root();
+    const avro::NodePtr & root_schema = schema.root(); // NOLINT
 
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
-
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
@@ -455,7 +454,7 @@ void generateManifestFile(
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
     for (const auto & data_file_name : data_file_names)
     {
-        avro::GenericDatum manifest_datum(root_schema);
+        avro::GenericDatum manifest_datum(root_schema); // NOLINT
         /// Clang tidy doesn't understand avro code (me either), so NOLINT
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>(); // NOLINT
 
@@ -623,14 +622,14 @@ void generateManifestList(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
-    auto schema = avro::compileJsonSchemaFromString(schema_representation);
+    auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
     for (const auto & manifest_entry_name : manifest_entry_names)
     {
-        avro::GenericDatum entry_datum(schema.root());
+        avro::GenericDatum entry_datum(schema.root()); // NOLINT
         /// Clang tidy doesn't understand avro code (me either), so NOLINT
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>(); // NOLINT
 
