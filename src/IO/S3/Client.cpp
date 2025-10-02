@@ -289,7 +289,6 @@ Client::Client(
 
     if (client_configuration.for_disk_s3)
     {
-        chassert(client_configuration.opt_disk_name.has_value());
         LOG_TRACE(
             log,
             "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
@@ -303,7 +302,6 @@ Client::Client(
     }
     else
     {
-        chassert(!client_configuration_.opt_disk_name.has_value());
         LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
         LOG_TRACE(
             log,
