@@ -59,7 +59,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT '-- tokenizer can identifier or function.';
+SELECT '-- tokenizer can be identifier or function.';
 
 CREATE TABLE tab
 (
