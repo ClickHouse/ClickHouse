@@ -19,6 +19,9 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        JobConfigs.fuzzers_objects_build_job.set_dependency(
+            REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
+        ),
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,

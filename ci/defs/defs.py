@@ -302,6 +302,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
     FUZZERS = "fuzzers"
+    FUZZERS_OBJECTS = "fuzzers_objects"
 
 
 class JobNames:
