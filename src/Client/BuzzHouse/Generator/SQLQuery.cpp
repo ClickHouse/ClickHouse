@@ -511,6 +511,8 @@ auto StatementGenerator::getQueryTableLambda()
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic)
+            /* Don't use tables with Dolor integration when async requests can insert between oracle queries */
+            && (tt.integration != IntegrationCall::Dolor || !fc.allow_async_requests || this->allow_not_deterministic)
             /* May require MergeTree table */
             && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
