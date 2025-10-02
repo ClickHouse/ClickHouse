@@ -32,7 +32,7 @@ using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMat
 
 Tuple parseTextIndexArgumentFromAST(const ASTPtr & arguments)
 {
-    Tuple parameter{};
+    Tuple parameter;
 
     /// Parse parameter name. It can be Identifier.
     {
@@ -45,13 +45,30 @@ Tuple parseTextIndexArgumentFromAST(const ASTPtr & arguments)
     /// Parse parameter value. It can be Literal, Identifier or Function.
     {
         if (const auto * literal = arguments->children[1]->as<ASTLiteral>(); literal != nullptr)
+        {
             parameter.emplace_back(literal->value);
+        }
         else if (const auto * identifier = arguments->children[1]->as<ASTIdentifier>(); identifier != nullptr)
+        {
             parameter.emplace_back(identifier->name());
+        }
         else if (const auto * function = arguments->children[1]->as<ASTFunction>(); function != nullptr)
-            parameter.emplace_back(function->name);
+        {
+            Tuple tuple;
+            tuple.emplace_back(function->name);
+            for (const auto & argument : function->arguments->children)
+            {
+                if (const auto * arg = argument->as<ASTLiteral>(); arg != nullptr)
+                    tuple.emplace_back(arg->value);
+                else
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+            }
+            parameter.emplace_back(tuple);
+        }
         else
+        {
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+        }
     }
 
     return parameter;
@@ -63,7 +80,7 @@ bool parseTextIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & pars
 
     for (const auto & argument : arguments->children)
     {
-        if (const auto * ast_function = argument->template as<ASTFunction>();
+        if (const auto * ast_function = argument->as<ASTFunction>();
             ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
         {
             parsed_arguments.emplace_back(parseTextIndexArgumentFromAST(ast_function->arguments));

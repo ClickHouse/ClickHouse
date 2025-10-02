@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     str String,
-    INDEX text_idx str TYPE text(tokenizer = 'ngrams', ngram_size = 3) GRANULARITY 1,
+    INDEX text_idx str TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
     INDEX set_idx str TYPE set(10) GRANULARITY 1
 )
 ENGINE = MergeTree

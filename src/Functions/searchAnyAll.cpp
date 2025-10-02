@@ -261,7 +261,7 @@ Each element in the `needle` array is treated as a complete, individual token â€
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngrams', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -285,7 +285,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\'])
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -333,7 +333,7 @@ Each element in the `needle` array is treated as a complete, individual token â€
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngrams', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -357,7 +357,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\']) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id;

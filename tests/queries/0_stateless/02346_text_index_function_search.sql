@@ -139,7 +139,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'ngrams', ngram_size = 4),
+    INDEX idx(`message`) TYPE text(tokenizer = ngrams(4)),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -174,7 +174,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\']),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\'])),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -304,7 +304,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'ngrams', ngram_size = 4),
+    INDEX idx(`message`) TYPE text(tokenizer = ngrams(4)),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -339,7 +339,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByString', separators = ['()', '\\']),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\'])),
 )
 ENGINE = MergeTree
 ORDER BY (id);

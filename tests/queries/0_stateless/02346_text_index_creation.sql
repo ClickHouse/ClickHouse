@@ -133,12 +133,12 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT 'Test ngram_size argument.';
+SELECT 'Test ngram size.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngrams', ngram_size = 4)
+    INDEX idx str TYPE text(tokenizer = ngrams(4))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -149,7 +149,7 @@ SELECT '-- ngram size must be between 2 and 8.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngrams', ngram_size = 1)
+    INDEX idx str TYPE text(tokenizer = ngrams(1))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -157,7 +157,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngrams', ngram_size = 9)
+    INDEX idx str TYPE text(tokenizer = ngrams(9))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -167,7 +167,7 @@ SELECT 'Test separators argument.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByString', separators = ['\n', '\\'])
+    INDEX idx str TYPE text(tokenizer = splitByString(['\n', '\\']))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -178,7 +178,7 @@ SELECT '-- separators must be array.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByString', separators = '\n')
+    INDEX idx str TYPE text(tokenizer = splitByString('\n'))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -188,7 +188,7 @@ SELECT '-- separators must be an array of strings.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByString', separators = [1, 2])
+    INDEX idx str TYPE text(tokenizer = splitByString([1, 2]))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -377,7 +377,7 @@ SELECT 'Parameters are shuffled.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(ngram_size = 4, tokenizer = 'ngrams')
+    INDEX idx str TYPE text(max_cardinality_for_embedded_postings = 1024, tokenizer = ngrams(4))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -404,7 +404,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(ngram_size)
+    INDEX idx str TYPE text(ngrams)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -412,7 +412,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(ngram_size = '4')
+    INDEX idx str TYPE text(tokenizer = ngrams('4'))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -422,7 +422,7 @@ SELECT 'Same argument appears >1 times.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', tokenizer = 'ngrams', ngram_size = 3)
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', tokenizer = ngrams(3))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -430,7 +430,7 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngrams', ngram_size = 3, ngram_size = 4)
+    INDEX idx str TYPE text(tokenizer = ngrams(3), tokenizer = ngrams(4))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -471,7 +471,7 @@ SELECT '-- CREATE TABLE';
 CREATE TABLE tab(
     s String,
     INDEX idx_1(s) TYPE text(tokenizer = 'splitByNonAlpha'),
-    INDEX idx_2(s) TYPE text(tokenizer = 'ngrams', ngram_size = 3)
+    INDEX idx_2(s) TYPE text(tokenizer = ngrams(3))
 )
 Engine = MergeTree()
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
@@ -485,10 +485,10 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-ALTER TABLE tab ADD INDEX idx_2(str) TYPE text(tokenizer = 'ngrams', ngram_size = 3); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE tab ADD INDEX idx_2(str) TYPE text(tokenizer = ngrams(3)); -- { serverError BAD_ARGUMENTS }
 
 -- It must still be possible to create a column on the same column with a different expression
-ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngrams', ngram_size = 3);
+ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = ngrams(3));
 
 DROP TABLE tab;
 

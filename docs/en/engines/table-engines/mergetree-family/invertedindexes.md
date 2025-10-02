@@ -38,10 +38,8 @@ CREATE TABLE tab
     `str` String,
     INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
-                                tokenizer = 'splitByNonAlpha|splitByString|ngrams|array'
+                                tokenizer = splitByNonAlpha|splitByString|ngrams|array
                                 -- Optional parameters:
-                                [, ngram_size = N]
-                                [, separators = []]
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
@@ -75,14 +73,15 @@ returns
 +---------------------------------+
 ```
 
-If you chose the `ngrams` tokenizer, you can set the ngram length using the (optional) parameter `ngram_size`.
-If `ngram_size` is not specified, the default ngram size is 3.
+If you chose the `ngrams` tokenizer, you can set the ngram length using the (optional) parameter to the `ngrams` function.
+The parameter expects a single integer, for example, `tokenizer = ngrams(3)`.
+If ngram size is not specified, the default ngram size is 3.
 The smallest and largest possible ngram size are 2 and 8.
 
-If you chose the `splitByString` tokenizer, you can set the separators using the (optional) parameter `separators`.
-The parameter expects a list of strings, for example, `separators = [', ', '; ', '\n', '\\']`.
+If you chose the `splitByString` tokenizer, you can set the separators using the (optional) parameter to the `splitByString` function.
+The parameter expects a list of strings, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
 Note that each string can consist of multiple characters (`', '` in the example).
-If parameter `separators` is not specified, a single whitespace `[' ']` is used by default.
+If parameter separators is not specified, a single whitespace `[' ']` is used by default.
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.

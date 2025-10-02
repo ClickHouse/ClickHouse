@@ -864,8 +864,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
-static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
-static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
@@ -875,30 +873,43 @@ namespace
 {
 
 template <typename Type>
-std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option)
+std::optional<Type> castAs(const std::optional<Field> & option, bool throw_on_unexpected_type = true)
+{
+    if (!option.has_value())
+        return {};
+
+    Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
+    if (option->getType() != expected_type)
+    {
+        if (throw_on_unexpected_type)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index argument expected to be {}, but got {}",
+                fieldTypeToString(expected_type),
+                option->getTypeName());
+        return {};
+    }
+    return option->safeGet<Type>();
+}
+
+template <typename Type>
+std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option, bool throw_on_unexpected_type = true)
 {
     if (auto it = options.find(option); it != options.end())
     {
-        Field value = std::move(it->second);
-        Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
-
-        if (value.getType() != expected_type)
+        if (castAs<Type>(it->second, throw_on_unexpected_type))
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}' expected to be {}, but got {}",
-                option, fieldTypeToString(expected_type), value.getTypeName());
+            Field value = std::move(it->second);
+            options.erase(it);
+            return value.safeGet<Type>();
         }
-
-        options.erase(it);
-        return value.safeGet<Type>();
     }
     return {};
 }
 
-std::optional<std::vector<String>> extractOptionAsStringArray(std::unordered_map<String, Field> & options, const String & option)
+std::optional<std::vector<String>> castAsStringArray(const std::optional<Field> & option)
 {
-    auto array = extractOption<Array>(options, option);
+    auto array = castAs<Array>(option);
     if (array.has_value())
     {
         std::vector<String> values;
@@ -918,7 +929,7 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
         if (argument.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of text index must be key-value pair (identifier = literal)");
 
-        Tuple tuple = argument.template safeGet<Tuple>();
+        Tuple tuple = argument.safeGet<Tuple>();
         String key = tuple[0].safeGet<String>();
 
         if (options.contains(key))
@@ -929,13 +940,63 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
     return options;
 }
 
+/**
+ * Tokenizer option can be String literal, identifier or function.
+ * In case of a function, tokenizer specific argument is provided as parameter of the function.
+ * This function is responsible to extract the tokenizer name and parameter if provided.
+ */
+std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<String, Field> & options)
+{
+    /// Check that tokenizer is present
+    if (!options.contains(ARGUMENT_TOKENIZER))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
+
+    /// Tokenizer is provided as Literal or Identifier.
+    if (auto tokenizer_str = extractOption<String>(options, ARGUMENT_TOKENIZER, false); tokenizer_str)
+    {
+        return {tokenizer_str.value(), {}};
+    }
+
+    /// Tokenizer is provided as Function.
+    if (auto tokenizer_tuple = extractOption<Tuple>(options, ARGUMENT_TOKENIZER, false); tokenizer_tuple)
+    {
+        /// Functions are converted into Tuples as the first entry is the name of the function and rest is parameters.
+        chassert(!tokenizer_tuple->empty());
+
+        const auto & function_name = tokenizer_tuple->at(0);
+        if (function_name.getType() != Field::Types::Which::String)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index argument '{}': function name expected to be String, but got {}",
+                ARGUMENT_TOKENIZER,
+                function_name.getTypeName());
+
+        /// Only a single parameter is supported.
+        if (tokenizer_tuple->size() > 2)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index argument '{}': function accepts at most one parameter, but got {}",
+                ARGUMENT_TOKENIZER,
+                tokenizer_tuple->size() - 1);
+
+        if (tokenizer_tuple->size() == 2)
+            return {function_name.safeGet<String>(), tokenizer_tuple->at(1)};
+        return {function_name.safeGet<String>(), {}};
+    }
+
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "Text index argument '{}' expected to be either String or Function, but got {}",
+        ARGUMENT_TOKENIZER,
+        options.at(ARGUMENT_TOKENIZER).getTypeName());
+}
 }
 
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
-    String tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER).value();
+    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
 
     std::unique_ptr<ITokenExtractor> token_extractor;
 
@@ -945,12 +1006,12 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        auto ngram_size = castAs<UInt64>(tokenizer_param);
         token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
     }
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
-        auto separators = extractOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        auto separators = castAsStringArray(tokenizer_param).value_or(std::vector<String>{" "});
         token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
@@ -980,38 +1041,36 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
-    /// Check that tokenizer is present and supported
-    std::optional<String> tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER);
-    if (!tokenizer)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
+    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
 
-    const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NgramTokenExtractor::getExternalName()
-                                      || tokenizer.value() == SplitTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName());
+    /// Check that tokenizer is supported
+    const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
+                                      || tokenizer == NgramTokenExtractor::getExternalName()
+                                      || tokenizer == SplitTokenExtractor::getExternalName()
+                                      || tokenizer == NoOpTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', and 'array', but got {}",
             ARGUMENT_TOKENIZER,
-            tokenizer.value());
+            tokenizer);
     }
 
-    std::optional<UInt64> ngram_size;
-    if (tokenizer.value() == NgramTokenExtractor::getExternalName())
+    if (tokenizer == NgramTokenExtractor::getExternalName() && tokenizer_param.has_value())
     {
-        ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        auto ngram_size = castAs<UInt64>(tokenizer_param);
         if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}' must be between 2 and 8, but got {}",
-                ARGUMENT_NGRAM_SIZE,
+                "Text index '{}': function '{}' parameter must be between 2 and 8, but got {}",
+                ARGUMENT_TOKENIZER,
+                tokenizer,
                 *ngram_size);
     }
-    else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitTokenExtractor::getExternalName() && tokenizer_param.has_value())
     {
-        std::optional<DB::FieldVector> separators = extractOption<Array>(options, ARGUMENT_SEPARATORS);
+        auto separators = castAs<Array>(tokenizer_param);
         if (separators.has_value())
         {
             for (const auto & separator : separators.value())
@@ -1019,8 +1078,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 if (separator.getType() != Field::Types::String)
                     throw Exception(
                         ErrorCodes::INCORRECT_QUERY,
-                        "Element of text index argument '{}' expected to be String, but got {}",
-                        ARGUMENT_SEPARATORS,
+                        "Element of text index '{}' function '{}' parameter expected to be String, but got {}",
+                        ARGUMENT_TOKENIZER,
+                        tokenizer,
                         separator.getTypeName());
             }
         }
