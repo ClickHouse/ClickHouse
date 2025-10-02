@@ -287,15 +287,29 @@ Client::Client(
 
     LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
-    LOG_TRACE(
-        log,
-        "Slowing down threads on retryable errors is {}",
-        client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
-
-    LOG_TRACE(
-        log,
-        "Slowing down threads on network errors is {}",
-        client_configuration.s3_slow_all_threads_after_network_error ? "enabled" : "disabled");
+    if (client_configuration.for_disk_s3)
+    {
+        chassert(client_configuration.opt_disk_name.has_value());
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+    else
+    {
+        chassert(!client_configuration_.opt_disk_name.has_value());
+        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client: slowing down threads on retryable errors is {}",
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -1183,6 +1197,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
+    std::optional<std::string> opt_disk_name,
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler,
     const String & protocol)
@@ -1204,6 +1219,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         for_disk_s3,
+        opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         get_request_throttler,
         put_request_throttler,
