@@ -1440,6 +1440,15 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
+    <!-- ZooKeeper connection log.
+    -->
+    <zookeeper_connection_log>
+        <database>system</database>
+        <table>zookeeper_connection_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </zookeeper_connection_log>
+
     <!-- Configure system.dashboards for dashboard.html.
 
          Could have any query parameters, for which there will be an input on the page.
