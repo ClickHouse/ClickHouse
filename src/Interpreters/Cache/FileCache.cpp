@@ -1108,6 +1108,7 @@ bool FileCache::tryReserve(
                         reserve_stat,
                         eviction_candidates,
                         {},
+                        false,
                         user.user_id,
                         cache_read_lock))
                 {
@@ -1243,7 +1244,7 @@ bool FileCache::tryReserve(
 
     if (cache_reserve_active_threads.load(std::memory_order_relaxed) == 1)
     {
-        main_priority->resetEvictionPos(cache_lock);
+        //main_priority->resetEvictionPos(cache_read_lock);
     }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
@@ -1320,9 +1321,11 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             stat,
             eviction_candidates,
             nullptr,
+            false,
             {},
             cache_guard.readLock()))
     {
+
         //LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
         //        "(trying to keep size ratio at {} and elements ratio at {}). "
         //        "Collected {} eviction candidates, "
@@ -1343,6 +1346,9 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     /// e.g. to update the in-memory state.
     cache_write_lock.lock();
     eviction_candidates.finalize(nullptr, cache_write_lock);
+
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments, eviction_candidates.size());
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, eviction_candidates.bytes());
 
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());

@@ -241,6 +241,8 @@ public:
         double size_ratio_,
         const CachePriorityGuard::WriteLock &) = 0;
 
+    virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
+
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 

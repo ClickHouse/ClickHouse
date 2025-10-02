@@ -77,9 +77,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void resetEvictionPos(const CachePriorityGuard::WriteLock &) override;
-
-    void iterate(IterateFunc func, const CachePriorityGuard::WriteLock &) override;
+    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 

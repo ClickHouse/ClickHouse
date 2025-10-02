@@ -102,7 +102,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     return LRUIterator(this, iterator);
 }
 
-void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &)
+void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     if (eviction_pos == it)
         eviction_pos = std::next(it);
@@ -366,7 +366,13 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto start_pos = queue.begin();
+    if (continue_from_last_eviction_pos && eviction_pos != queue.end() && start_pos != eviction_pos)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+        start_pos = eviction_pos;
+    }
+    auto iteration_pos = iterateImpl(start_pos, [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
             return IterationResult::BREAK;
@@ -394,6 +400,9 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         return IterationResult::CONTINUE;
     }, stat, lock);
 
+    if (continue_from_last_eviction_pos)
+        eviction_pos = iteration_pos;
+
     const bool success = (!size || stat.total_stat.releasable_size >= size)
         && (!elements || stat.total_stat.releasable_count >= elements);
 
@@ -405,18 +414,6 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
             size, elements, getSize(lock), getElementsCount(lock), stat.total_stat.toString());
     }
     return success;
-        if (stop_condition())
-            return IterationResult::BREAK;
-        iterate_func(locked_key, segment_metadata);
-        return stop_condition() ? IterationResult::BREAK : IterationResult::CONTINUE;
-    auto start_pos = queue.begin();
-    if (continue_from_last_eviction_pos && eviction_pos != queue.end() && start_pos != eviction_pos)
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
-        start_pos = eviction_pos;
-    }
-    if (continue_from_last_eviction_pos)
-        eviction_pos = iteration_pos;
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
