@@ -281,22 +281,24 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         else if (!endpoint.empty() && !endpoint.starts_with('/'))
             url.push_back('/');
 
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        auto uri = url + endpoint;
+        if (created_from_ddl)
+        {
+            context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+        }
+
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = url + endpoint,
+            .url = uri,
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .header_entries = std::move(header_entries)
         };
-
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        if (created_from_ddl)
-        {
-            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-            context->getHTTPHeaderFilter().checkHeaders(configuration.header_entries);
-        }
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
