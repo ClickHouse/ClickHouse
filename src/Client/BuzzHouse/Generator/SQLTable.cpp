@@ -1690,7 +1690,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                         buf += "'";
                     }
                     buf += "]";
-                    idef->add_params()->set_unescaped_sval(fmt::format("tokenizer = splitByString({})", std::move(buf));
+                    idef->add_params()->set_unescaped_sval(fmt::format("tokenizer = splitByString({})", std::move(buf)));
                 }
                 else
                 {
