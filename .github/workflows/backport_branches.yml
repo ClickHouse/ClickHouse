@@ -2,6 +2,8 @@
 
 name: BackportPR
 
+if: github.repository == 'ClickHouse/ClickHouse'   # do not run in forks
+
 on:
   pull_request:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']

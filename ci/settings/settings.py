@@ -50,3 +50,4 @@ DISABLED_WORKFLOWS = [
 
 DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
 READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
+REPO_NAME = "ClickHouse/ClickHouse"

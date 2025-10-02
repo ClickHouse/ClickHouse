@@ -2,6 +2,8 @@
 
 name: PR
 
+if: github.repository == 'ClickHouse/ClickHouse'   # do not run in forks
+
 on:
   pull_request:
     branches: ['master']

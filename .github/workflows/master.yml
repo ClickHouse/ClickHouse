@@ -2,6 +2,8 @@
 
 name: MasterCI
 
+if: github.repository == 'ClickHouse/ClickHouse'   # do not run in forks
+
 on:
   push:
     branches: ['master']

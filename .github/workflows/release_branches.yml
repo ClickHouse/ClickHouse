@@ -2,6 +2,8 @@
 
 name: ReleaseBranchCI
 
+if: github.repository == 'ClickHouse/ClickHouse'   # do not run in forks
+
 on:
   push:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']

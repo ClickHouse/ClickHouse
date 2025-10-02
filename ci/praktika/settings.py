@@ -9,6 +9,7 @@ class _Settings:
     ######################################
     #    Pipeline generation settings    #
     ######################################
+    REPO_NAME = ""
     MAIN_BRANCH = "main"
     CI_PATH = "./ci"
     WORKFLOW_PATH_PREFIX: str = "./.github/workflows"
@@ -104,6 +105,7 @@ class _Settings:
 
 
 _USER_DEFINED_SETTINGS = [
+    "REPO_NAME",
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
