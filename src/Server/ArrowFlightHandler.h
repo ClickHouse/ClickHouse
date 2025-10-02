@@ -52,11 +52,6 @@ public:
 
     size_t currentConnections() const override { return 0; } // TODO
 
-    arrow::Status ListFlights(
-        const arrow::flight::ServerCallContext &,
-        const arrow::flight::Criteria *,
-        std::unique_ptr<arrow::flight::FlightListing> * listings) override;
-
     arrow::Status GetFlightInfo(
         const arrow::flight::ServerCallContext & context,
         const arrow::flight::FlightDescriptor & request,
@@ -82,25 +77,26 @@ public:
         std::unique_ptr<arrow::flight::FlightMessageReader> reader,
         std::unique_ptr<arrow::flight::FlightMetadataWriter> writer) override;
 
-    arrow::Status DoExchange(
-        const arrow::flight::ServerCallContext & context,
-        std::unique_ptr<arrow::flight::FlightMessageReader> reader,
-        std::unique_ptr<arrow::flight::FlightMessageWriter> writer) override;
-
     arrow::Status DoAction(
         const arrow::flight::ServerCallContext & context,
         const arrow::flight::Action & action,
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
 
-    arrow::Status ListActions(const arrow::flight::ServerCallContext & context, std::vector<arrow::flight::ActionType> * actions) override;
-
 private:
+    arrow::Status evaluatePollDescriptor(const String & poll_descriptor);
+
     IServer & server;
     LoggerPtr log;
     const Poco::Net::SocketAddress address_to_listen;
     std::optional<ThreadFromGlobalPool> server_thread;
+    std::optional<ThreadFromGlobalPool> cleanup_thread;
     bool initialized = false;
     std::atomic<bool> stopped = false;
+
+    const UInt64 tickets_lifetime_seconds;
+    const UInt64 poll_descriptors_lifetime_seconds;
+    const bool forget_tickets_after_do_get;
+    const bool forget_poll_descriptors_after_poll_flight_info;
 
     class CallsData;
     std::unique_ptr<CallsData> calls_data;

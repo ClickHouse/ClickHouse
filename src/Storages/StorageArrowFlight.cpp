@@ -56,6 +56,7 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
     StorageArrowFlight::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_))
     {
+        LOG_INFO(getLogger("!!!"), "named_collection = {}", named_collection->dumpStructure());
         configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
     }
     else
@@ -96,6 +97,8 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
 
     configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
+
+    configuration.dataset_name = named_collection.get<String>("dataset");
 
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
@@ -151,6 +154,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     auto client = connection_->getClient();
     auto options = connection_->getOptions();
 
+    LOG_INFO(getLogger("!!!"), "Calling client->GetSchema: dataset = {}", dataset_name_);
     arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     auto status = client->GetSchema(*options, descriptor);
     if (!status.ok())
@@ -166,6 +170,9 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     auto schema = std::move(schema_result).ValueOrDie();
                                     
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
+
+    LOG_INFO(getLogger("!!!"), "getTableStructureFromData: header = {}", header.dumpStructure());
+
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
