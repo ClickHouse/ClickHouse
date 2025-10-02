@@ -189,15 +189,9 @@ public:
             runBenchmark();
             return 0;
         }
-        catch (Exception & e)
-        {
-            log << getExceptionMessageForLogging(e, print_stacktrace, true) << '\n';
-            auto code = getCurrentExceptionCode();
-            return static_cast<UInt8>(code) ? code : 1;
-        }
         catch (...)
         {
-            log << getCurrentExceptionMessage(false) << '\n';
+            log << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
             auto code = getCurrentExceptionCode();
             return static_cast<UInt8>(code) ? code : 1;
         }
@@ -968,12 +962,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::move(settings));
         return benchmark.run();
     }
-    catch (Exception & e)
-    {
-        std::cerr << getExceptionMessageForLogging(e, print_stacktrace, true) << std::endl;
-        auto code = getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
-    }
     catch (const po::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
@@ -981,7 +969,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false) << '\n';
+        std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
         auto code = getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }
