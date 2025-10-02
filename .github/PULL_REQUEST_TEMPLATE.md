@@ -1,9 +1,6 @@
-<!---
-A technical comment, you are free to remove or leave it as it is when PR is created
-The following categories are used in the next scripts, update them accordingly
-utils/changelog/changelog.py
-tests/ci/cancel_and_rerun_workflow_lambda/app.py
--->
+<!--- LLM-generated Change Description BEGIN enabled=false format_only=false -->
+<!--- LLM-generated Change Description END -->
+
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature
@@ -19,7 +16,8 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 
 
 ### Changelog entry (a [user-readable short description](https://github.com/ClickHouse/ClickHouse/blob/master/docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):
-...
+<!--- LLM-generated Changelog Entry BEGIN enabled=true format_only=false -->
+<!--- LLM-generated Changelog Entry END -->
 
 ### Documentation entry for user-facing changes
 
