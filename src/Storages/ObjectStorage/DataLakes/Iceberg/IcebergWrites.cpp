@@ -405,7 +405,7 @@ void extendSchemaForPartitions(
     }
 }
 
-// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
+// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
 // Clang analyzer is wrong here, it thinks that value in generic datum can be uninitialized.
 // No idea why
 void generateManifestFile(
