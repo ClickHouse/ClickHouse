@@ -1656,7 +1656,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "ngrams", "splitByString", "array"};
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
-            if (next_tokenizer == "ngrams" )
+            if (next_tokenizer == "ngrams")
             {
                 if (rg.nextBool())
                 {
