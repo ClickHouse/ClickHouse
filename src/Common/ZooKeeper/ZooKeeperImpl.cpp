@@ -1844,15 +1844,6 @@ std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
         return maybe_zk_log;
     }
 
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
-        {
-            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
-            return maybe_zk_log;
-        }
-    }
-
     return nullptr;
 }
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
@@ -1860,15 +1851,6 @@ std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
     if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
     {
         return maybe_aggregated_zookeeper_log;
-    }
-
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
-        {
-            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
-            return maybe_aggregated_zookeeper_log;
-        }
     }
 
     return nullptr;
