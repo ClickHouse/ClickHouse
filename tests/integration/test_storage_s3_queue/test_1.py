@@ -330,10 +330,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 def test_max_set_age(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "max_set_age"
+    table_name = f"max_set_age_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     max_age = 20
     files_to_generate = 10

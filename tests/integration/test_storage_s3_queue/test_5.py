@@ -1452,13 +1452,6 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
 
     nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
-    if is_ordered:
-        for id in range(processing_threads):
-            try:
-                zk.get(f"{keeper_path}/buckets/{id}/lock")
-                assert False
-            except NoNodeError:
-                pass
 
     node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
     insert()
@@ -1490,3 +1483,10 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     assert found, f"Nodes: {nodes}"
 
     node.query(f"DROP TABLE default.{table_name} SYNC")
+    if is_ordered:
+        for id in range(processing_threads):
+            try:
+                zk.get(f"{keeper_path}/buckets/{id}/lock")
+                assert False
+            except NoNodeError:
+                pass
