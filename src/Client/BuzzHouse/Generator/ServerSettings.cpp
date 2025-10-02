@@ -979,11 +979,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_cache_compress_entries", trueOrFalseSetting},
     {"query_cache_share_between_users", trueOrFalseSettingNoOracle},
     {"query_cache_squash_partial_results", trueOrFalseSetting},
-    {"query_condition_cache_selectivity_threshold",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
-         {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
-         false)},
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
     {"query_plan_max_step_description_length",
