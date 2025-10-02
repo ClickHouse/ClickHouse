@@ -291,11 +291,6 @@ class JobConfigs:
             provides=[ArtifactNames.CH_LOONGARCH64],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
-        Job.ParamSet(
-            parameter=BuildTypes.FUZZERS,
-            provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
     )
     fuzzers_build_job = common_build_job_config.set_post_hooks(
         post_hooks=[
