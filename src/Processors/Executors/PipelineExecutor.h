@@ -7,9 +7,10 @@
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
-#include <deque>
 #include <queue>
 #include <memory>
+
+#include <boost/container/devector.hpp>
 
 
 namespace DB
@@ -106,12 +107,11 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
@@ -119,6 +119,10 @@ private:
     void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
+
+    // Methods for CPU scheduling
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
+    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);

@@ -63,7 +63,7 @@ class Result(MetaClasses.Serializable):
     start_time: Optional[float] = None
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
-    files: List[str] = dataclasses.field(default_factory=list)
+    files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -176,6 +176,9 @@ class Result(MetaClasses.Serializable):
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
         )
+
+    def is_failure(self):
+        return self.status in (Result.Status.FAILED)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
@@ -417,26 +420,39 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+    def from_gtest_run(
+        cls, unit_tests_path, name="", with_log=False, command_launcher=""
+    ):
         """
-        Runs gtest and generates praktika Result
-        :param unit_tests_path:
+        Runs gtest and generates praktika Result from results
+        :param unit_tests_path: path to gtest binary
         :param name: Should be set if executed as a job subtask with name @name.
         If it's a job itself job.name will be taken as name by default
-        :param with_log:
-        :return:
+        :param with_log: whether to log gtest output into separate file
+        :param command_prefix: prefix to add to gtest command
+        :return: Result
         """
+
+        command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+        if command_launcher:
+            command = f"{command_launcher} {command}"
+
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
             command=[
                 f"chmod +x {unit_tests_path}",
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'",
+                command,
             ],
             with_log=with_log,
         )
+        is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
+        if is_error:
+            # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
+            result.set_info("gtest binary run has non-zero exit code - see logs")
+            result.set_status(Result.Status.FAILED)
         return result
 
     @classmethod
@@ -452,19 +468,22 @@ class Result(MetaClasses.Serializable):
         command_args=None,
         command_kwargs=None,
         retries=1,
+        retry_errors: Union[List[str], str] = "",
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
 
-        :param name: Check name
-        :param command: Shell command (str) or Python callable, or list of them.
+        :param name: The name of the check.
+        :param command: A shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
-        :param with_log: Boolean flag to log output to a file.
-        :param with_info: Fill in Result.info from command output
-        :param with_info_on_failure: Fill in Result.info from command output on failure only
-        :param fail_fast: Boolean flag to stop execution if one command fails.
+        :param with_log: Whether to log output to a file.
+        :param with_info: Whether to fill in Result.info from command output.
+        :param with_info_on_failure: Whether to fill in Result.info from command output on failure only.
+        :param fail_fast: Whether to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
+        :param retries: The number of times to retry the command if it fails.
+        :param retry_errors: The errors to retry on. Support for shell command(s) only.
         :return: Result object with status and optional log file.
         """
 
@@ -474,10 +493,8 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        if with_log:
+        if with_log or with_info or with_info_on_failure:
             log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info or with_info_on_failure:
-            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
         else:
             log_file = None
 
@@ -488,7 +505,8 @@ class Result(MetaClasses.Serializable):
 
         print(f"> Start execution for [{name}]")
         res = True  # Track success/failure status
-        error_infos = []
+        info_lines = []
+        MAX_LINES_IN_INFO = 300
         with ContextManager.cd(workdir):
             for command_ in command:
                 if callable(command_):
@@ -505,19 +523,23 @@ class Result(MetaClasses.Serializable):
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            error_infos = buffer.getvalue().splitlines()
+                            info_lines = buffer.getvalue().splitlines()
                         else:
-                            error_infos = str(result).splitlines()
+                            info_lines = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
-                        command_, verbose=True, log_file=log_file, retries=retries
+                        command_,
+                        verbose=True,
+                        log_file=log_file,
+                        retries=retries,
+                        retry_errors=retry_errors,
+                    )
+                    log_output = Shell.get_output(
+                        f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
                     )
                     if with_info or (with_info_on_failure and exit_code != 0):
-                        with open(
-                            log_file, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            error_infos.append(f.read().strip())
+                        info_lines += log_output.splitlines()
                     res = exit_code == 0
 
                 # If fail_fast is enabled, stop on first failure
@@ -526,33 +548,36 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
-        MAX_LINES_IN_INFO = 100
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
             info=(
-                error_infos
-                if len(error_infos) < MAX_LINES_IN_INFO
+                info_lines
+                if len(info_lines) < MAX_LINES_IN_INFO
                 else [
-                    f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"
+                    f"~~~~~ truncated {len(info_lines)-MAX_LINES_IN_INFO} lines ~~~~~"
                 ]
-                + error_infos[-MAX_LINES_IN_INFO:]
+                + info_lines[-MAX_LINES_IN_INFO:]
             ),
-            files=[log_file] if with_log else None,
+            files=(
+                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
+            ),
         )
 
-    def skip_dependee_jobs_dropping(self):
-        return self.ext.get("skip_dependee_jobs_dropping", False)
+    def do_not_block_pipeline_on_failure(self):
+        return self.ext.get("do_not_block_pipeline_on_failure", False)
 
-    def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
+    def complete_job(
+        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
+    ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
-        if force_ok_exit:
-            self.ext["skip_dependee_jobs_dropping"] = True
+        if do_not_block_pipeline_on_failure and not self.is_ok():
+            self.ext["do_not_block_pipeline_on_failure"] = True
         self.dump()
         print(self.to_stdout_formatted())
-        if not self.is_ok() and not force_ok_exit:
+        if not self.is_ok():
             sys.exit(1)
         else:
             sys.exit(0)
@@ -703,7 +728,16 @@ class _ResultS3:
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
+        # Deduplicate files by normalizing paths to absolute strings
+        unique_files = {}
         for file in result.files:
+            # Convert to Path and resolve to absolute path
+            file_path = Path(file).resolve()
+            file_str = str(file_path)
+            if file_str not in unique_files:
+                unique_files[file_str] = file  # Keep original file reference
+
+        for file_str, file in unique_files.items():
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")

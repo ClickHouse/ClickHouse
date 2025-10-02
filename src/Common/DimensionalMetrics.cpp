@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <mutex>
+#include <shared_mutex>
 
 namespace DB::DimensionalMetrics
 {
@@ -62,6 +63,12 @@ namespace DB::DimensionalMetrics
         std::lock_guard lock(mutex);
         auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>());
         return *it->second;
+    }
+
+    void MetricFamily::unregister(LabelValues label_values) noexcept
+    {
+        std::lock_guard lock(mutex);
+        metrics.erase(label_values);
     }
 
     MetricFamily::MetricsMap MetricFamily::getMetrics() const

@@ -7,10 +7,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
-#include <algorithm>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
@@ -23,7 +22,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -40,14 +38,32 @@ FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters & params)
+void FunctionSearchImpl<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
     /// This is fine because the parameters would be same.
-    if (parameters.has_value() && params != parameters.value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': Different index parameters are set.", getName());
-    parameters = params;
+    if (token_extractor != nullptr)
+        return;
+
+    token_extractor = std::move(new_token_extractor_);
+}
+
+template <class SearchTraits>
+void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
+{
+    static constexpr size_t supported_number_of_needles = 64;
+
+    if (needles.has_value())
+        return;
+
+    needles = Needles();
+    for (UInt64 pos = 0; const auto & token : tokens)
+        if (auto [_, inserted] = needles->emplace(token, pos); inserted)
+            ++pos;
+
+    if (needles->size() > supported_number_of_needles)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 }
 
 template <class SearchTraits>
@@ -71,25 +87,27 @@ namespace
 {
 constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
-constexpr size_t supported_number_of_needles = 64;
 
-template <typename StringColumnType>
+template <typename T>
+concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
+
 void executeSearchAny(
-    std::unique_ptr<ITokenExtractor> token_extractor,
-    StringColumnType & col_input,
+    const ITokenExtractor * token_extractor,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const std::vector<String> & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
-            if (std::ranges::any_of(needles, [&token](const auto & needle) { return needle == token; }))
+            if (needles.contains(token))
             {
                 col_result[i] = true;
                 break;
@@ -98,12 +116,11 @@ void executeSearchAny(
     }
 }
 
-template <typename StringColumnType>
 void executeSearchAll(
-    std::unique_ptr<ITokenExtractor> token_extractor,
-    StringColumnType & col_input,
+    const ITokenExtractor * token_extractor,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const std::vector<String> & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -111,18 +128,18 @@ void executeSearchAll(
     const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
     UInt64 mask;
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
         mask = 0;
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
-            for (size_t pos = 0; pos < needles.size(); ++pos)
-                if (token == needles[pos])
-                    mask |= (1 << pos);
+            if (auto it = needles.find(token); it != needles.end())
+                mask |= (1ULL << it->second);
 
             if (mask == expected_mask)
             {
@@ -133,25 +150,28 @@ void executeSearchAll(
     }
 }
 
-template <class SearchTraits, typename StringColumnType>
+template <class SearchTraits>
 void execute(
-    std::unique_ptr<ITokenExtractor> token_extractor,
-    StringColumnType & col_input,
+    const ITokenExtractor * token_extractor,
+    const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const std::vector<String> & needles,
+    const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    col_result.resize(input_rows_count);
-
-    switch (SearchTraits::search_mode)
+    if (needles.empty())
     {
-        case GinSearchMode::Any:
-            executeSearchAny(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
-            break;
-        case GinSearchMode::All:
-            executeSearchAll(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
-            break;
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result[i] = true;
+        return;
     }
+
+    if constexpr (SearchTraits::mode == SearchAnyAllMode::Any)
+        executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
+    else if constexpr (SearchTraits::mode == SearchAnyAllMode::All)
+        executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
+    else
+        static_assert(false, "Unknown search mode value detected");
 }
 }
 
@@ -162,63 +182,64 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    if (!parameters.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' should be used with the index column, but got column '{}'",
-            getName(),
-            arguments[arg_input].name);
-
-    auto col_input = arguments[arg_input].column;
-    auto col_needles = arguments[arg_needles].column;
+    ColumnPtr col_input = arguments[arg_input].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    std::unique_ptr<ITokenExtractor> token_extractor;
-    if (parameters->tokenizer == DefaultTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (parameters->tokenizer == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = parameters->ngram_size.value_or(DEFAULT_NGRAM_SIZE);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    else if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        const auto & separators = parameters->separators.value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
-    }
-    else if (parameters->tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+    col_result->getData().resize(input_rows_count);
 
-    std::vector<String> needles;
-    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+    /// If token_extractor == nullptr, we do a brute force scan on a column without index
+    if (token_extractor == nullptr)
     {
-        for (const auto & needle_field : col_needles_const->getValue<Array>())
+        chassert(!needles.has_value());
+
+        /// Populate needles from function arguments
+        Needles needles_tmp;
+        const ColumnPtr col_needles = arguments[arg_needles].column;
+
+        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
-            const auto & needle = needle_field.safeGet<String>();
-            const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
-            for (const auto & token : tokens)
-                needles.emplace_back(token);
+            const Array & array = col_needles_const->getValue<Array>();
+
+            for (size_t i = 0; i < array.size(); ++i)
+                needles_tmp.emplace(array.at(i).safeGet<String>(), i);
+
         }
+        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
+        {
+            const IColumn & needles_data = col_needles_vector->getData();
+            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
+
+            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+
+            for (size_t i = 0; i < needles_offsets[0]; ++i)
+                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
+
+        DefaultTokenExtractor default_token_extractor;
+
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+
     }
     else
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Needles argument of function '{}' should be Array(String), got: {}",
-            name,
-            col_needles->getFamilyName());
+    {
+        /// If token_extractor != nullptr, we are doing text index lookups
+        if (!needles.has_value())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' must be used with the index column, but got column '{}'",
+                getName(),
+                arguments[arg_input].name);
 
-    if (needles.size() > supported_number_of_needles)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
-
-    if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        execute<SearchTraits>(std::move(token_extractor), *column_string, input_rows_count, needles, col_result->getData());
-    else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        execute<SearchTraits>(std::move(token_extractor), *column_fixed_string, input_rows_count, needles, col_result->getData());
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    }
 
     return col_result;
 }
@@ -226,24 +247,147 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 template class FunctionSearchImpl<traits::SearchAnyTraits>;
 template class FunctionSearchImpl<traits::SearchAllTraits>;
 
-FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
-FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-
 REGISTER_FUNCTION(SearchAny)
 {
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if any needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
+    FunctionDocumentation::Description description_searchAny = R"(
+Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
+
+The `input` column should have a text index defined for optimal performance.
+Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
+
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
+Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+
+**Example**
+
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+
+```sql
+['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
+```
+
+:::note
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_searchAny = "searchAny(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_searchAny = {
+        {"input", "The input column.", {"String", "FixedString"}},
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_searchAny = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_searchAny = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']
+        )",
+        R"(
+┌─count()─┐
+│       3 │
+└─────────┘
+        )"
+    },
+    {
+        "Generate needles using the `tokens` function",
+        R"(
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+        )",
+        R"(
+┌─count()─┐
+│       3 │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_searchAny = {25, 7};
+    FunctionDocumentation::Category category_searchAny = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_searchAny = {description_searchAny, syntax_searchAny, arguments_searchAny, returned_value_searchAny, examples_searchAny, introduced_in_searchAny, category_searchAny};
+
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation_searchAny);
 }
 
 REGISTER_FUNCTION(SearchAll)
 {
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if all needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
+    FunctionDocumentation::Description description_searchAll = R"(
+Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
+
+The `input` column should have a text index defined for optimal performance.
+Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
+
+When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+If the column lacks a text index, the `default` tokenizer is used instead.
+Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+
+**Example**
+
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+
+```sql
+['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
+```
+
+:::note
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_searchAll = "searchAll(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_searchAll = {
+        {"input", "The input column.", {"String", "FixedString"}},
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_searchAll = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_searchAll = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Generate needles using the `tokens` function",
+        R"(
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_searchAll = {25, 7};
+    FunctionDocumentation::Category category_searchAll = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, arguments_searchAll, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
+
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation_searchAll);
 }
 }

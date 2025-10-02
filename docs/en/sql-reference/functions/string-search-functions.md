@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Searching in Strings'
 sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
+doc_type: 'reference'
 ---
 
 # Functions for Searching in Strings
@@ -757,7 +758,7 @@ Result:
 ## searchAny {#searchany}
 
 :::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
 :::
 
 Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
@@ -771,18 +772,18 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
 :::
 
-:::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
-:::
+The `input` string is tokenized by the tokenizer from the index definition.
+
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
 **Returned value**
 
@@ -794,7 +795,7 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE text_table (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
@@ -802,9 +803,23 @@ CREATE TABLE text_table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
+SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+3
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
@@ -816,7 +831,7 @@ Result:
 ## searchAll {#searchall}
 
 :::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
 :::
 
 Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
@@ -830,18 +845,18 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
 :::
 
-:::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
-:::
+The `input` string is tokenized by the tokenizer from the index definition.
+
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
 **Returned value**
 
@@ -853,7 +868,7 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE text_table (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
@@ -861,9 +876,23 @@ CREATE TABLE text_table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
+SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+1
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
@@ -1244,8 +1273,6 @@ Result:
 ```
 
 The less similar two strings are to each, the larger the result will be.
-
-
 Query:
 
 ```sql
@@ -1801,8 +1828,6 @@ Result:
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
-
-
 **Syntax**
 
 ```sql
@@ -2070,8 +2095,6 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 Token must be a constant string. Supported by tokenbf_v1 index specialization.
 
 **Example**
-
-
 Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
 
 Query:

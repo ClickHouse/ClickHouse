@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Dictionaries'
 sidebar_label: 'Dictionaries'
 slug: /sql-reference/functions/ext-dict-functions
 title: 'Functions for Working with Dictionaries'
+doc_type: 'reference'
 ---
 
 # Functions for Working with Dictionaries

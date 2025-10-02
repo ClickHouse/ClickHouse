@@ -593,6 +593,18 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
         {
             LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
+
+            for (auto & [bucket, bucket_info] : listed_keys_cache)
+            {
+                /// Reset current processor for the keys
+                /// to avoid the above error "Expected current processor {} to be equal to {} for bucket {}".
+                if (bucket_info.processor.has_value() && bucket_info.processor.value() == current_processor)
+                {
+                    LOG_DEBUG(log, "Resetting processor ({}) for bucket {}", current_processor, bucket);
+                    bucket_info.processor.reset();
+                }
+            }
+
             current_bucket_holder = {};
         }
 
@@ -727,7 +739,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
@@ -748,7 +760,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
@@ -892,7 +904,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 nullptr,
                 log,
                 max_block_size,
-                parser_group,
+                parser_shared_resources,
+                nullptr,
                 /* need_only_count */ false);
 
             if (!reader)

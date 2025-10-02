@@ -107,6 +107,15 @@ class Workflow:
             print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
             raise
 
+        def _enabled_workflow_config(self):
+            return (
+                self.enable_cache
+                or self.enable_report
+                or self.dockers
+                or self.enable_merge_ready_status
+                or self.pre_hooks
+            )
+
         @dataclass
         class InputConfig:
             name: str

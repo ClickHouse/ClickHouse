@@ -737,10 +737,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
+                configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
+                configuration.opt_disk_name,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler);
             AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
@@ -753,10 +755,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
+                configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
+                configuration.opt_disk_name,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler);
             AddProvider(std::make_shared<SSOCredentialsProvider>(
@@ -804,10 +808,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
+                configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
+                configuration.opt_disk_name,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
@@ -840,7 +846,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
     }
 
-    /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
+    /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
