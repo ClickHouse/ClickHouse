@@ -4,8 +4,14 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,6 +19,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_erase.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
 
 namespace
 {
@@ -152,9 +160,17 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "in")
+        if (!function_node)
             return;
 
+        if (function_node->getFunctionName() == "in" && data.allow_rewrite_in)
+            rewriteInPredicate(function_node);
+        else if (function_node->getFunctionName() == "globalIn" && data.allow_rewrite_global_in)
+            rewriteGlobalInPredicate(function_node);
+    }
+
+    void rewriteInPredicate(FunctionNode * function_node)
+    {
         auto & arguments = function_node->getArguments().getNodes();
         auto * column = arguments[0]->as<ColumnNode>();
         if (!column)
@@ -189,6 +205,57 @@ public:
                 rerunFunctionResolve(function_node, getContext());
             }
         }
+    }
+
+    void rewriteGlobalInPredicate(FunctionNode * function_node)
+    {
+        auto & arguments = function_node->getArguments().getNodes();
+
+        const auto & required_columns = data.sharding_key_expr->getRequiredColumnsWithTypes();
+        if (required_columns.size() != 1)
+            return;
+
+        const auto & required_column = required_columns.front();
+
+        auto * column_in = arguments[0]->as<ColumnNode>();
+        if (!column_in || column_in->getColumnName() != required_column.name)
+            return;
+
+        const auto & source_table = arguments[1];
+        if (!source_table->as<TableNode>())
+            return;
+
+        const auto * sharding_key_expr_node = data.sharding_key_expr->getActionsDAG().tryFindInOutputs(data.sharding_key_column_name);
+        if (!sharding_key_expr_node)
+            return;
+
+        const auto & subquery = buildSubqueryToReadColumnsFromTableExpression(source_table, getContext());
+        const auto & subquery_column = subquery->as<QueryNode &>().getProjection().getNodes().front();
+
+        ColumnsDescription dummy_columns;
+        dummy_columns.add(ColumnDescription(required_column.name, required_column.type));
+        const auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, dummy_columns);
+        const auto dummy_table_expression = std::make_shared<TableNode>(dummy_storage, getContext());
+
+        QueryAnalysisPass query_analysis_pass(dummy_table_expression);
+        auto sharding_key_expr = buildQueryTree(data.sharding_key_ast, getContext());
+        query_analysis_pass.run(sharding_key_expr, getContext());
+
+        std::unordered_map<std::string, QueryTreeNodePtr> inputs_map = {{required_column.name, subquery_column}};
+        replaceColumns(sharding_key_expr, dummy_table_expression, inputs_map);
+
+        const auto target_shard_expr = std::make_shared<FunctionNode>("modulo");
+        target_shard_expr->getArguments().getNodes().push_back(sharding_key_expr);
+        target_shard_expr->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(data.slots.size()));
+
+        const auto shard_filter_expr = std::make_shared<FunctionNode>("equals");
+        shard_filter_expr->getArguments().getNodes().push_back(target_shard_expr);
+        shard_filter_expr->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(data.shard_info.shard_num - 1));
+
+        subquery->as<QueryNode &>().getWhere() = shard_filter_expr;
+
+        arguments[1] = subquery;
+        rerunFunctionResolve(function_node, getContext());
     }
 
     OptimizeShardingKeyRewriteInVisitor::Data data;
