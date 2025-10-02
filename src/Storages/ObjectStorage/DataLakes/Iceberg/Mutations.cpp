@@ -499,7 +499,6 @@ static bool writeMetadataFiles(
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
                     cleanup();
-                    object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
                     return false;
                 }
             }
@@ -585,6 +584,7 @@ void mutate(
                 }
             }
         }
+        break;
     }
 
     if (max_retries == 0)
@@ -603,7 +603,6 @@ void alter(
     size_t i = 0;
     while (i++ < MAX_TRANSACTION_RETRIES)
     {
-
         FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method]

@@ -75,6 +75,9 @@ namespace DB::Setting
     extern const SettingsUInt64 output_format_compression_level;
 }
 
+/// Hard to imagine a hint file larger than 10 MB
+static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
+
 namespace DB::Iceberg
 {
 
@@ -139,7 +142,7 @@ bool writeMetadataFileAndVersionHint(
             std::string etag = "*";
             if (object_storage->exists(object_info))
             {
-                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), 100);
+                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
                 version_hint_value = object_data;
                 etag = object_metadata.etag;
             }
