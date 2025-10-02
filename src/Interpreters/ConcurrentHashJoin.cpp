@@ -79,17 +79,23 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
-    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
+    // TODO
+    // Different shards may legitimately have different sizes.
+    // Use the maximum observed size for reporting instead of enforcing equality.
+    size_t total_ht_size = 0;
+    for (const auto & hash_join : hash_joins)
+    {
+        size_t size = hash_join->data->getTotalRowCount();
+        total_ht_size += size;
+    }
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
+    if (total_ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = total_ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -313,22 +319,22 @@ public:
     explicit ConcatStreams(std::vector<IBlocksStreamPtr> children_)
         : children(std::move(children_)) {}
 
-   Block nextImpl() override
-   {
-       while (idx < children.size())
-       {
-           auto & child = children[idx];
-           if (!child) { ++idx; continue; }
-           Block b = child->next();
-           if (!b.empty()) return b;
-           ++idx;
-       }
-       return {};
-   }
+    Block nextImpl() override
+    {
+        while (!children.empty())
+        {
+            auto & child = children.front();
+            if (!child)
+                continue;
+            Block b = child->next();
+            if (!b.empty()) return b;
+              children.erase(children.begin());
+        }
+        return {};
+    }
 
 private:
-   std::vector<IBlocksStreamPtr> children;
-   size_t idx = 0;
+    std::vector<IBlocksStreamPtr> children;
 };
 
 class ConcurrentHashJoinResult : public IJoinResult
@@ -488,6 +494,15 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             ErrorCodes::LOGICAL_ERROR,
             "Invalid join type for non-joined blocks: kind={}, strictness={}",
             table_join->kind(), table_join->strictness());
+
+    // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
+    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances.
+    // Emitting non-joined rows from multiple slots would duplicate the same right rows.
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        std::lock_guard lock(hash_joins[0]->mutex);
+        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
 
     /// Collect non-joined streams from each slot
     std::vector<IBlocksStreamPtr> streams;
