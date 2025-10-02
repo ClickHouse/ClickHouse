@@ -1,5 +1,8 @@
 #include <Client/BuzzHouse/Utils/BackgroundWorker.h>
 
+namespace BuzzHouse
+{
+
 /// Enqueue a function to be executed
 void BackgroundWorker::enqueue(BackgroundWorkerTask task)
 {
@@ -68,8 +71,10 @@ void BackgroundWorker::worker_loop()
             }
             catch (const std::exception & e)
             {
-                std::cerr << "Error executing task: " << e.what() << std::endl;
+                LOG_ERROR(log, "Error while executing background task {}", e.what());
             }
         }
     }
+}
+
 }

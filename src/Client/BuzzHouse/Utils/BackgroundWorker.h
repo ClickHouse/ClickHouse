@@ -1,3 +1,5 @@
+#pragma once
+
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -5,6 +7,11 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+
+#include <Common/logger_useful.h>
+
+namespace BuzzHouse
+{
 
 class BackgroundWorker
 {
@@ -14,6 +21,7 @@ public:
     BackgroundWorker()
         : stop_(false)
         , worker_thread_(&BackgroundWorker::worker_loop, this)
+        , log(getLogger("BackgroundWorker"))
     {
     }
 
@@ -36,4 +44,7 @@ private:
     std::condition_variable cv_;
     std::atomic<bool> stop_;
     std::thread worker_thread_;
+    LoggerPtr log;
 };
+
+}
