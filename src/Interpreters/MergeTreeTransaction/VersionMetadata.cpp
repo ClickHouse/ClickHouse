@@ -122,59 +122,37 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     return creation <= snapshot_version && (!removal || snapshot_version < removal);
 }
 
+void VersionMetadata::storeRemovalCSN(CSN csn)
+{
+    setRemovalCSN(csn);
+    storeRemovalCSNToStoredMetadata();
+}
+
 void VersionMetadata::setRemovalCSN(CSN csn)
 {
-    LOG_TEST(log, "Object {}, setRemovalCSN {}", getObjectName(), csn);
+    LOG_DEBUG(log, "Object {}, setRemovalCSN {}", getObjectName(), csn);
     chassert(!getRemovalTID().isEmpty());
     removal_csn.store(csn);
 }
 
-void VersionMetadata::appendCreationCSNToStoredMetadata()
+void VersionMetadata::storeCreationCSN(CSN csn)
 {
-    chassert(!creation_tid.isEmpty());
-    chassert(!creation_tid.isPrehistoric());
-    chassert(creation_csn != 0);
-    appendCreationCSNToStoredMetadataImpl();
+    LOG_DEBUG(log, "Object {}, storeCreationCSN {}", getObjectName(), csn);
+    setCreationCSN(csn);
+    storeCreationCSNToStoredMetadata();
 }
 
-void VersionMetadata::appendRemovalCSNToStoredMetadata()
+void VersionMetadata::storeRemovalTID(const TransactionID & tid)
 {
-    LOG_TEST(log, "Object {}, appendRemovalCSNToStoredMetadata {}", getObjectName(), getRemovalCSN());
-    chassert(!creation_tid.isEmpty());
-    chassert(!removal_tid.isEmpty());
-    if (removal_tid == Tx::PrehistoricTID)
-        chassert(removal_csn.load() == Tx::PrehistoricCSN);
-    chassert(removal_csn != 0);
-    appendRemovalCSNToStoredMetadataImpl();
+    setRemovalTID(tid);
+    storeRemovalTIDToStoredMetadata();
 }
 
 void VersionMetadata::setRemovalTID(const TransactionID & tid)
 {
-    LOG_TEST(log, "Object {}, setRemovalTID {}", getObjectName(), tid);
+    LOG_DEBUG(log, "Object {}, setRemovalTID {}", getObjectName(), tid);
     chassert(tid.isEmpty() || tid.getHash() == getRemovalTIDLock());
     setRemovalTIDAndHash(tid);
-}
-
-void VersionMetadata::appendRemovalTIDToStoredMetadata()
-{
-    LOG_TEST(log, "Object {}, appendRemovalTIDToStoredMetadata {}, removal_csn {}", getObjectName(), removal_tid, getRemovalCSN());
-    chassert(!creation_tid.isEmpty());
-    chassert(removal_csn == 0 || (removal_csn == Tx::PrehistoricCSN && removal_tid.isPrehistoric()));
-
-    if (creation_tid.isPrehistoric() && removal_tid != Tx::EmptyTID)
-    {
-        /// Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
-
-        /// It can happen that VersionMetadata::isVisible sets creation_csn to PrehistoricCSN when creation_tid is Prehistoric
-        /// In order to avoid a race always write creation_csn as PrehistoricCSN for Prehistoric creation_tid
-        assert(creation_csn == Tx::UnknownCSN || creation_csn == Tx::PrehistoricCSN);
-        creation_csn.store(Tx::PrehistoricCSN);
-
-        storeMetadata(false);
-        return;
-    }
-
-    appendRemovalTIDToStoredMetadataImpl();
 }
 
 /// It can be used for introspection purposes only
@@ -275,6 +253,51 @@ bool VersionMetadata::canBeRemoved()
     }
 
     return canBeRemovedImpl(TransactionLog::instance().getOldestSnapshot());
+}
+
+void VersionMetadata::storeCreationCSNToStoredMetadata()
+{
+    chassert(!creation_tid.isEmpty());
+    chassert(
+        creation_csn == Tx::RolledBackCSN || ///
+        Tx::PrehistoricCSN && creation_tid.isPrehistoric() || ///
+        creation_csn != Tx::PrehistoricCSN && !creation_tid.isPrehistoric());
+    chassert(creation_csn != 0);
+    storeCreationCSNToStoredMetadataImpl();
+}
+
+
+void VersionMetadata::storeRemovalCSNToStoredMetadata()
+{
+    LOG_DEBUG(log, "Object {}, storeRemovalCSNToStoredMetadata {}", getObjectName(), getRemovalCSN());
+    chassert(!creation_tid.isEmpty());
+    chassert(!removal_tid.isEmpty());
+    if (removal_tid == Tx::PrehistoricTID)
+        chassert(removal_csn.load() == Tx::PrehistoricCSN);
+    chassert(removal_csn != 0);
+    storeRemovalCSNToStoredMetadataImpl();
+}
+
+void VersionMetadata::storeRemovalTIDToStoredMetadata()
+{
+    LOG_DEBUG(log, "Object {}, storeRemovalTIDToStoredMetadata {}, removal_csn {}", getObjectName(), removal_tid, getRemovalCSN());
+    chassert(!creation_tid.isEmpty());
+    chassert(removal_csn == 0 || (removal_csn == Tx::PrehistoricCSN && removal_tid.isPrehistoric()));
+
+    if (creation_tid.isPrehistoric() && removal_tid != Tx::EmptyTID)
+    {
+        /// Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
+
+        /// It can happen that VersionMetadata::isVisible sets creation_csn to PrehistoricCSN when creation_tid is Prehistoric
+        /// In order to avoid a race always write creation_csn as PrehistoricCSN for Prehistoric creation_tid
+        assert(creation_csn == Tx::UnknownCSN || creation_csn == Tx::PrehistoricCSN);
+        creation_csn.store(Tx::PrehistoricCSN);
+
+        storeMetadata(false);
+        return;
+    }
+
+    storeRemovalTIDToStoredMetadataImpl();
 }
 
 String VersionMetadata::getObjectName() const

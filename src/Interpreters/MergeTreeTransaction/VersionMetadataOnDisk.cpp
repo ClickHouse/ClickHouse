@@ -75,7 +75,7 @@ try
             auto buf = openForReading(data_part_storage, TXN_VERSION_METADATA_FILE_NAME);
             String content;
             readStringUntilEOF(content, *buf);
-            LOG_TEST(log, "Object {}, load metadata content\n{}", getObjectName(), content);
+            LOG_DEBUG(log, "Object {}, load metadata content\n{}", getObjectName(), content);
         }
         auto buf = openForReading(data_part_storage, TXN_VERSION_METADATA_FILE_NAME);
         readFromBuffer(*buf);
@@ -85,7 +85,7 @@ try
         return;
     }
 
-    LOG_TEST(log, "Object {}, no metadata", getObjectName());
+    LOG_DEBUG(log, "Object {}, no metadata", getObjectName());
 
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
@@ -121,15 +121,15 @@ catch (Exception & e)
     throw;
 }
 
-void VersionMetadataOnDisk::storeMetadata(bool)
+void VersionMetadataOnDisk::storeMetadata(bool force)
 {
-    LOG_TEST(log, "Object {}, store metadata", getObjectName());
+    LOG_DEBUG(log, "Object {}, store metadata", getObjectName());
     if (!can_write_metadata)
         return;
 
-    if (!wasInvolvedInTransaction())
+    if (!force && !wasInvolvedInTransaction())
     {
-        LOG_TEST(log, "Object {}, pending store metadata", getObjectName());
+        LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
         pending_store_metadata = true;
         return;
     }
@@ -168,7 +168,7 @@ void VersionMetadataOnDisk::storeMetadata(bool)
             sync_guard = data_part_storage.getDirectorySyncGuard();
         data_part_storage.replaceFile(tmp_filename, filename);
 
-        LOG_TEST(log, "Object {}, store metadata content: {}", getObjectName(), toString());
+        LOG_DEBUG(log, "Object {}, store metadata content: {}", getObjectName(), toString());
     }
     catch (...)
     {
@@ -262,16 +262,11 @@ void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_lock_hash)
     removal_tid_lock = removal_tid_lock_hash;
 }
 
-void appendToMetadataHelper(
-    const String & metadata_file,
-    IDataPartStorage & storage,
-    bool support_writing_with_append,
-    std::function<void(WriteBuffer & buf)> write_func,
-    bool sync)
+void VersionMetadataOnDisk::storeMetadataHelper(std::function<void(WriteBuffer & buf)> write_func, bool sync)
 {
     if (support_writing_with_append)
     {
-        auto out = storage.writeTransactionFile(metadata_file, WriteMode::Append);
+        auto out = merge_tree_data_part->getDataPartStorage().writeTransactionFile(TXN_VERSION_METADATA_FILE_NAME, WriteMode::Append);
         write_func(*out);
         out->finalize();
         if (sync)
@@ -279,24 +274,10 @@ void appendToMetadataHelper(
         return;
     }
 
-    String content;
-    {
-        auto read_buf = openForReading(storage, metadata_file);
-        readStringUntilEOF(content, *read_buf);
-    }
-
-    WriteBufferFromString write_buf(content, AppendModeTag{});
-    write_func(write_buf);
-    write_buf.finalize();
-
-    auto out = storage.writeTransactionFile(metadata_file, WriteMode::Rewrite);
-    out->write(content.data(), content.size());
-    out->finalize();
-    if (sync)
-        out->sync();
+    storeMetadata(/*force=*/true);
 }
 
-void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
+void VersionMetadataOnDisk::storeCreationCSNToStoredMetadataImpl()
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
@@ -314,11 +295,10 @@ void VersionMetadataOnDisk::appendCreationCSNToStoredMetadataImpl()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append creation CSN to non-existing metadata");
 
     auto write_func = [this](WriteBuffer & buf) { writeCreationCSNToBuffer(buf); };
-    appendToMetadataHelper(
-        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, false);
+    storeMetadataHelper(write_func, false);
 }
 
-void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
+void VersionMetadataOnDisk::storeRemovalCSNToStoredMetadataImpl()
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
@@ -336,11 +316,10 @@ void VersionMetadataOnDisk::appendRemovalCSNToStoredMetadataImpl()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal CSN to non-existing metadata");
 
     auto write_func = [this](WriteBuffer & buf) { writeRemovalCSNToBuffer(buf); };
-    appendToMetadataHelper(
-        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, false);
+    storeMetadataHelper(write_func, false);
 }
 
-void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl()
+void VersionMetadataOnDisk::storeRemovalTIDToStoredMetadataImpl()
 {
     LOG_TEST(
         merge_tree_data_part->storage.log,
@@ -363,8 +342,7 @@ void VersionMetadataOnDisk::appendRemovalTIDToStoredMetadataImpl()
     auto write_func = [this](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, removal_tid); };
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
     auto sync = removal_tid != Tx::EmptyTID;
-    appendToMetadataHelper(
-        TXN_VERSION_METADATA_FILE_NAME, merge_tree_data_part->getDataPartStorage(), support_writing_with_append, write_func, sync);
+    storeMetadataHelper(write_func, sync);
 }
 
 

@@ -106,10 +106,8 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         if (!part_to_remove->version->getRemovalCSN())
         {
             part_to_remove->version->lockRemovalTID(Tx::PrehistoricTID, transaction_context);
-            part_to_remove->version->setRemovalTID(Tx::PrehistoricTID);
-            part_to_remove->version->appendRemovalTIDToStoredMetadata();
-            part_to_remove->version->setRemovalCSN(Tx::PrehistoricCSN);
-            part_to_remove->version->appendRemovalCSNToStoredMetadata();
+            part_to_remove->version->storeRemovalTID(Tx::PrehistoricTID);
+            part_to_remove->version->storeRemovalCSN(Tx::PrehistoricCSN);
         }
     }
 }
@@ -139,10 +137,8 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
             if (!covered->version->getRemovalCSN())
             {
                 covered->version->lockRemovalTID(tid, transaction_context);
-                covered->version->setRemovalTID(tid);
-                covered->version->appendRemovalTIDToStoredMetadata();
-                covered->version->setRemovalCSN(Tx::PrehistoricCSN);
-                covered->version->appendRemovalCSNToStoredMetadata();
+                covered->version->storeRemovalTID(tid);
+                covered->version->storeRemovalCSN(Tx::PrehistoricCSN);
                 covered->version->unlockRemovalTID(tid, transaction_context);
             }
         }
@@ -172,8 +168,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
             removing_parts.push_back(part_to_remove);
         });
     }
-    part_to_remove->version->setRemovalTID(tid);
-    part_to_remove->version->appendRemovalTIDToStoredMetadata();
+    part_to_remove->version->storeRemovalTID(tid);
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
@@ -253,14 +248,12 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     for (const auto & part : created_parts)
     {
-        part->version->setCreationCSN(csn);
-        part->version->appendCreationCSNToStoredMetadata();
+        part->version->storeCreationCSN(csn);
     }
 
     for (const auto & part : removed_parts)
     {
-        part->version->setRemovalCSN(csn);
-        part->version->appendRemovalCSNToStoredMetadata();
+        part->version->storeRemovalCSN(csn);
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
@@ -302,9 +295,8 @@ bool MergeTreeTransaction::rollback() noexcept
     /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : parts_to_remove)
     {
-        part->version->setCreationCSN(Tx::RolledBackCSN);
         /// Write special RolledBackCSN, so we will be able to cleanup transaction log
-        part->version->appendCreationCSNToStoredMetadata();
+        part->version->storeCreationCSN(Tx::RolledBackCSN);
     }
 
     for (const auto & part : parts_to_remove)
@@ -323,8 +315,7 @@ bool MergeTreeTransaction::rollback() noexcept
     {
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
-        part->version->setRemovalTID(Tx::EmptyTID);
-        part->version->appendRemovalTIDToStoredMetadata();
+        part->version->storeRemovalTID(Tx::EmptyTID);
         part->version->unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
