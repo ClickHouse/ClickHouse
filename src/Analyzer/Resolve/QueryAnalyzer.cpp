@@ -1949,7 +1949,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
-    /// Collect REPLACE transformer mappings to apply to WHERE and HAVING clauses
     std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
 
     QueryTreeNodesWithNames matched_expression_nodes_with_names;
@@ -2095,7 +2094,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
 
-                /// Collect mapping for WHERE and HAVING clause processing
                 replace_transformer_mappings[column_name] = replace_expression;
 
                 node = replace_expression->clone();
@@ -2215,12 +2213,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto * query_node = query_scope->scope_node->as<QueryNode>();
             if (query_node)
             {
-                /// Inline replacement function to avoid separate visitor class
                 auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void
                 {
                     if (!node) return;
 
-                    /// Simple recursive replacement logic
                     std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
                     {
                         if (!current) return;
@@ -2231,11 +2227,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             if (it != replace_transformer_mappings.end())
                             {
                                 current = it->second->clone();
-                                return; /// No need to recurse further after replacement
+                                return;
                             }
                         }
 
-                        /// Recursively process child nodes (for function calls, lists, etc.)
                         if (auto * function_node = current->as<FunctionNode>())
                         {
                             auto & arguments = function_node->getArguments().getNodes();
@@ -2263,7 +2258,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         }
                         else if (auto * window_node = current->as<WindowNode>())
                         {
-                            /// Process ORDER BY and PARTITION BY in window node
                             if (window_node->hasOrderBy())
                             {
                                 auto order_by_node = window_node->getOrderByNode();
@@ -2331,7 +2325,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     query_node->getWindowNode() = window_node;
                 }
 
-                /// Also process projection list for window functions in SELECT
                 {
                     auto projection_node = query_node->getProjectionNode();
                     replace_identifiers_in_node(projection_node);

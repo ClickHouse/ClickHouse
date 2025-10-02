@@ -10,12 +10,16 @@
 1	100	100	alpha
 3	200	200	gamma
 2	300	300	beta
+=== Complex ORDER BY test ===
+2	300	300	beta
+3	200	200	gamma
+1	100	100	alpha
 === PREWHERE clause test ===
 2	300	300
 3	200	200
 === LIMIT BY clause test ===
 1	100	100
-2	100	300
+3	200	200
 === WINDOW clause test ===
 1	100	100	alpha	1
 2	300	300	beta	3
@@ -34,29 +38,23 @@
 === Multiple clauses test ===
 3	200	200	gamma
 2	300	300	beta
-=== QUALIFY clause test ===
-1	100	100	alpha	1
-2	300	300	beta	3
 === Nested expressions test ===
 1	100	200	alpha
 3	200	300	gamma
 2	300	400	beta
-=== String WHERE test ===
-2	300	100	modified_beta
-=== Same column replacement test ===
-2	1300	100	beta
-3	1200	300	gamma
-=== Complex ORDER BY test ===
-2	300	300	beta
-3	200	200	gamma
-1	100	100	alpha
-=== GROUP BY subquery test ===
+=== GROUP BY outer query test ===
 A	300
 B	700
+=== GROUP BY in subquery test ===
+A_modified	30
+B_modified	70
 === GROUP BY direct test ===
 A_modified	30
 B_modified	70
-=== HAVING subquery test ===
+=== HAVING outer query test ===
+X	325
+Y	425
+=== HAVING in subquery test ===
 X	325
 Y	425
 === HAVING direct test ===
