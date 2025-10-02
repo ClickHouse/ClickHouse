@@ -746,6 +746,7 @@ logger.jetty.level = warn
             self.create_database(next_session, catalog_name)
         except Exception as e:
             saved_exception = e
+        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return True
@@ -774,6 +775,7 @@ logger.jetty.level = warn
                 self.create_database(next_session, catalog_name)
             except Exception as e:
                 saved_exception = e
+            next_session.stop()
             if saved_exception is not None:
                 raise saved_exception
         else:
@@ -816,6 +818,7 @@ logger.jetty.level = warn
                 self.data_generator.insert_random_data(next_session, next_table)
         except Exception as e:
             saved_exception = e
+        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return True
@@ -869,6 +872,7 @@ logger.jetty.level = warn
             saved_exception = e
         if run_background_worker:
             self.worker.pause()
+        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return res
