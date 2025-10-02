@@ -32,7 +32,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
-#include <Storages/MarkCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -68,6 +67,9 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
+
+class MarkCache;
+using MarkCachePtr = std::shared_ptr<MarkCache>;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -492,7 +494,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -704,6 +706,7 @@ public:
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
+    size_t getTotalUncompressedBytesInPatches() const;
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -743,6 +746,9 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.
     void delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+
+    /// If the table contains too many uncompressed bytes in patches, throw an exception.
+    void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -989,16 +995,20 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
     ColumnSizeByName getColumnSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return column_sizes;
     }
 
@@ -1008,8 +1018,10 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return secondary_index_sizes;
     }
 
@@ -1476,23 +1488,26 @@ protected:
         return [state] (const DataPartPtr & part) { part->setState(state); };
     }
 
-    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
+    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         if (!data_parts_by_state_and_info.modify(it, getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(DataPartIteratorByInfo it, DataPartState state)
+    void modifyPartState(DataPartIteratorByInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(const DataPartPtr & part, DataPartState state)
+    void modifyPartState(const DataPartPtr & part, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         auto it = data_parts_by_info.find(part->info);
-        if (it == data_parts_by_info.end() || (*it).get() != part.get())
+        if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist (info: {})", part->name, part->info.getPartNameForLogs());
+
+        if ((*it).get() != part.get())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify part state {} (info: {}) to {}, because there is another copy of the same part in {} state", part->name, part->info.getPartNameForLogs(), state, (*it)->getNameWithState());
 
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
@@ -1527,7 +1542,11 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
+    void calculateColumnAndSecondaryIndexSizesImpl() const;
+
+    /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
+    /// Call it with data_parts and columns_and_secondary_indices_sizes_mutex mutexes locked.
+    void calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
@@ -1571,6 +1590,7 @@ protected:
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
@@ -1822,11 +1842,15 @@ private:
     void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
+    void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+    void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
+    std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
@@ -1886,6 +1910,11 @@ private:
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
+
+    /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
+    ///   on disks that are not a part of storage policy of the table).
+    /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
+    bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

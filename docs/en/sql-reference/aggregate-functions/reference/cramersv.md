@@ -6,6 +6,7 @@ description: 'The result of the `cramersV` function ranges from 0 (corresponding
 sidebar_position: 127
 slug: /sql-reference/aggregate-functions/reference/cramersv
 title: 'cramersV'
+doc_type: 'reference'
 ---
 
 # cramersV

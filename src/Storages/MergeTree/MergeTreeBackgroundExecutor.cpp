@@ -198,7 +198,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        tasks_to_cancel = pending.cancelAndRemove(id);
+        tasks_to_cancel = pending.removeTasks(id);
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -250,18 +250,20 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         item_.reset();
     };
 
-    auto restart_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_)
+    /// No TSA because of unique_lock
+    auto restart_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        std::lock_guard guard(mutex);
+        std::unique_lock<std::mutex> guard(mutex);
         erase_from_active(item_);
 
         if (item_->is_currently_deleting)
         {
+            guard.unlock();
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 item_->task->cancel();
             }
-
+            guard.lock();
             release_task(std::move(item_));
             return;
         }
@@ -294,15 +296,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         release_task(std::move(item_));
     };
 
-    auto cancel_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_)
-    {
-        std::lock_guard guard(mutex);
-
-        erase_from_active(item_);
-        has_tasks.notify_one();
-        release_task(std::move(item_));
-    };
-
     bool need_execute_again = false;
 
     try
@@ -319,6 +312,9 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
+        /// Function __cxa_allocate_dependent_exception in
+        /// libcxxabi/src/cxa_exception.cpp calls malloc.
+        ALLOW_ALLOCATIONS_IN_SCOPE;
         if (item->task->printExecutionException())
             printExceptionWithRespectToAbort(log, query_id);
 
@@ -334,7 +330,10 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
-        cancel_task(std::move(item));
+        std::lock_guard guard(mutex);
+        erase_from_active(item);
+        has_tasks.notify_one();
+        release_task(std::move(item));
         return;
     }
 
@@ -346,6 +345,8 @@ template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
+
+    current_thread->flushUntrackedMemory();
 
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -374,6 +375,8 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             });
         }
+
+        current_thread->flushUntrackedMemory();
     }
 }
 

@@ -30,7 +30,6 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -105,6 +104,13 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
         if (!command.column_name.empty())
         {
             auto column = data_part->tryGetColumn(command.column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+                return true;
+        }
+
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+        {
+            auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -782,17 +788,11 @@ static NameSet collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
-        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
-        files_to_skip.insert(index->getFileName() + mrk_extension);
-
-        // Skip all text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
+        auto index_substreams = index->getSubstreams();
+        for (const auto & index_substream : index_substreams)
         {
-            auto index_filename = index->getFileName();
-            files_to_skip.insert(index_filename + ".gin_dict");
-            files_to_skip.insert(index_filename + ".gin_post");
-            files_to_skip.insert(index_filename + ".gin_sed");
-            files_to_skip.insert(index_filename + ".gin_sid");
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
         }
     }
 
@@ -871,8 +871,6 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index aka. text index
-
             for (const auto & suffix : suffixes)
             {
                 const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
@@ -883,12 +881,6 @@ static NameToNameVector collectFilesForRenames(
                     add_rename(filename, "");
                     add_rename(filename_mrk, "");
                 }
-            }
-            for (const auto & gin_suffix : gin_suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
-                if (source_part->checksums.has(filename))
-                    add_rename(filename, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)

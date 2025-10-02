@@ -105,7 +105,7 @@ add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
-list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -135,6 +135,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
+
+
+add_headers_and_sources(dbms Core/YTsaurus)
+add_headers_and_sources(dbms Storages/YTsaurus)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -214,7 +218,7 @@ set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-f
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
@@ -281,10 +285,11 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
+add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
 # https://github.com/ClickHouse/ClickHouse/issues/65745
-set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
+set_source_files_properties(Client/ClientApplicationBaseParser.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
 
 if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
@@ -384,6 +389,9 @@ target_link_libraries (clickhouse_compression
             ch_contrib::lz4
             ch_contrib::roaring
 )
+if (TARGET ch_contrib::fastpfor)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
 set_source_files_properties(
@@ -438,6 +446,9 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+if (TARGET ch_contrib::fastpfor)
+    dbms_target_link_libraries(PUBLIC ch_contrib::fastpfor)
+endif()
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
@@ -703,6 +714,10 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::arrow_flight)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
 endif()
 
 if (ENABLE_BUZZHOUSE)

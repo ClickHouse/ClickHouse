@@ -173,7 +173,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
     const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0);
     const uint32_t str_lit = 50;
-    const uint32_t special_val = 20;
+    const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
@@ -235,7 +235,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (date_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + 1))
@@ -244,7 +244,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
 
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (datetime_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + 1))
@@ -252,7 +252,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))
@@ -315,8 +315,14 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     {
         SpecialVal * val = lv->mutable_special_val();
         std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+        const SpecialVal_SpecialValEnum sval = static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator));
 
-        val->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+        /// Can't use `*` on query oracles
+        val->set_val(
+            (sval != SpecialVal_SpecialValEnum_VAL_STAR || this->allow_not_deterministic
+             || this->levels[this->current_level].inside_aggregate)
+                ? sval
+                : SpecialVal_SpecialValEnum_VAL_NULL);
         val->set_paren(complex && rg.nextBool());
         nested_prob = 3;
     }
@@ -401,13 +407,13 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * eq)
 {
+    this->current_level++;
     if (rg.nextMediumNumber() < 6)
     {
         prepareNextExplain(rg, eq);
     }
     else
     {
-        this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
 
         if (rg.nextBool())
@@ -426,9 +432,15 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             }
         }
         this->generateSelect(
-            rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
-        this->current_level--;
+            rg,
+            true,
+            false,
+            1,
+            std::numeric_limits<uint32_t>::max(),
+            std::nullopt,
+            eq->mutable_inner_query()->mutable_select()->mutable_sel());
     }
+    this->current_level--;
 }
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
@@ -990,9 +1002,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         * static_cast<uint32_t>((this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t lambda_expr = 3 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
+    const uint32_t projection_expr = 75 * static_cast<uint32_t>(this->inside_projection);
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr
-        + lambda_expr;
+        + lambda_expr + projection_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -1301,6 +1314,18 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->depth++;
         generateLambdaCall(rg, nexprs, expr->mutable_comp_expr()->mutable_lambda());
         this->depth--;
+    }
+    else if (
+        projection_expr
+        && noption
+            < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
+               + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + lambda_expr
+               + projection_expr + 1))
+    {
+        /// Use count(*) in projections more often
+        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCcount);
     }
     else
     {

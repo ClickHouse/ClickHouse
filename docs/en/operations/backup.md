@@ -4,6 +4,7 @@ sidebar_label: 'Backup and restore'
 sidebar_position: 10
 slug: /operations/backup
 title: 'Backup and restore'
+doc_type: 'guide'
 ---
 
 # Backup and restore
@@ -82,7 +83,8 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
-  - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+  - `id`: the identifier of a backup or restore operation. If it's unset or empty then a randomly generated UUID will be used.
+  If it's explicitly set to a nonempty string then it should be different each time. This `id` is used to find rows in table `system.backups` related to a specific backup or restore operation.
   - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
   - `password` for the file on disk
   - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`

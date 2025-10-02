@@ -90,7 +90,41 @@ public:
 
 REGISTER_FUNCTION(H3IsValid)
 {
-    factory.registerFunction<FunctionH3IsValid>();
+    FunctionDocumentation::Description description = R"(
+Verifies whether the number is a valid [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3IsValid(h3index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the number is a valid H3 index, `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check valid H3 index",
+            "SELECT h3IsValid(630814730351855103) AS isValid",
+            R"(
+┌─isValid─┐
+│       1 │
+└─────────┘
+            )"
+        },
+        {
+            "Check invalid H3 index",
+            "SELECT h3IsValid(12345) AS isValid",
+            R"(
+┌─isValid─┐
+│       0 │
+└─────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3IsValid>(documentation);
 }
 
 }

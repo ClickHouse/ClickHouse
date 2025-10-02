@@ -94,7 +94,7 @@ ObjectStoragePtr createObjectStorage(
                     .metadata_type = MetadataStorageType::PlainRewritable,
                     .description = "",
                     .zookeeper_name = ""}
-                    .toString());
+                    .name());
 
         auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<BaseObjectStorage, MetadataStorageType::PlainRewritable>();
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
@@ -303,7 +303,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, *azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
         };
 
         return createObjectStorage<AzureObjectStorage>(
@@ -393,4 +393,8 @@ void registerObjectStorages()
     registerLocalObjectStorage(factory);
 }
 
+void ObjectStorageFactory::clearRegistry()
+{
+    registry.clear();
+}
 }

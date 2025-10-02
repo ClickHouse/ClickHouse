@@ -383,20 +383,49 @@ void DiskEncrypted::copyDirectoryContent(
     IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
+void DiskEncrypted::copyFile(
+    const String & from_file_path,
+    IDisk & to_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    /// Check if we can copy the file without deciphering.
+    if (isSameDiskType(*this, to_disk))
+    {
+        /// Disk type is the same, check if the key is the same too.
+        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(&to_disk))
+        {
+            auto from_settings = current_settings.get();
+            auto to_settings = to_disk_enc->current_settings.get();
+            if (from_settings->all_keys == to_settings->all_keys)
+            {
+                /// Keys are the same so we can simply copy the encrypted file.
+                auto wrapped_from_path = wrappedPath(from_file_path);
+                auto to_delegate = to_disk_enc->delegate;
+                auto wrapped_to_path = to_disk_enc->wrappedPath(to_file_path);
+                delegate->copyFile(wrapped_from_path, *to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
+                return;
+            }
+        }
+    }
+
+    /// Copy the file through buffers with deciphering.
+    IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+}
+
+
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().

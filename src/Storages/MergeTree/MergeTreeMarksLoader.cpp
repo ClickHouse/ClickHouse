@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
     extern const Event LoadingMarksTasksCanceled;
+    extern const Event MarksTasksFromCache;
     extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
@@ -153,7 +154,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
-    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
     std::unique_ptr<ReadBuffer> reader;
     if (!index_granularity_info.mark_type.compressed)
         reader = std::move(buffer);
@@ -256,6 +257,17 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
+    /// Avoid queueing jobs into thread pool if marks are in cache
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
+    {
+        ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
+        auto promise = std::promise<MarkCache::MappedPtr>();
+        promise.set_value(std::move(loaded_marks));
+        return promise.get_future();
+    }
+
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {

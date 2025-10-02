@@ -100,7 +100,32 @@ public:
 
 REGISTER_FUNCTION(H3ToGeoBoundary)
 {
-    factory.registerFunction<FunctionH3ToGeoBoundary>();
+    FunctionDocumentation::Description description = R"(
+Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the provided H3 index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToGeoBoundary(h3Index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3Index", "H3 index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of coordinate pairs `(lat, lon)` that define the boundary of the H3 hexagon.",
+        {"Array(Tuple(Float64, Float64))"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get boundary coordinates for an H3 index",
+            "SELECT h3ToGeoBoundary(644325524701193974) AS coordinates",
+            R"(
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
 }
 
 }

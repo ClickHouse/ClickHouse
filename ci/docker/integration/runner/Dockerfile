@@ -61,7 +61,6 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && apt-get clean \
     && dockerd --version; docker --version
 
-
 # kazoo 2.10.0 is broken
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
@@ -75,8 +74,11 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
 RUN packages="io.delta:delta-spark_2.12:3.1.0,\
 org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3" \
-    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" > /dev/null \
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3,\
+org.apache.hadoop:hadoop-aws:3.3.4,\
+com.amazonaws:aws-java-sdk-bundle:1.12.262,\
+org.apache.spark:spark-avro_2.12:3.5.1"\
+    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
     && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
 RUN set -x \
@@ -99,12 +101,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/fips.so \
   \
   /etc/ssl/
-
-# Same options as in test/base/Dockerfile
-# (in case you need to override them in tests)
-ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
-ENV UBSAN_OPTIONS='print_stacktrace=1'
-ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
