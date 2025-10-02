@@ -1213,7 +1213,7 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsing(
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             const auto & columns = metadata_snapshot->getColumns();
             if (columns.hasDefaults())
-                adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+                adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
         }
 
         auto on_error = [&, executors_num](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
