@@ -4,14 +4,13 @@ description: 'Calculates the approximate number of different argument values, us
 sidebar_position: 208
 slug: /sql-reference/aggregate-functions/reference/uniqhll12
 title: 'uniqHLL12'
-doc_type: 'reference'
 ---
 
 # uniqHLL12
 
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-```sql
+``` sql
 uniqHLL12(x[, ...])
 ```
 
@@ -34,6 +33,7 @@ Function:
         2^12 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (&lt;10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 - Provides the determinate result (it does not depend on the query processing order).
+
 
 We do not recommend using this function. In most cases, use the [uniq](/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined) function.
 

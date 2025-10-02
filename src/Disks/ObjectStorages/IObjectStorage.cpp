@@ -44,6 +44,18 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
+std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    try
+    {
+        return getObjectMetadata(path);
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
@@ -72,7 +84,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
 const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -83,13 +95,6 @@ ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) c
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
     return write_settings;
-}
-
-std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
-{
-    if (isArchive())
-        return getPathToArchive();
-    return getPath();
 }
 
 }

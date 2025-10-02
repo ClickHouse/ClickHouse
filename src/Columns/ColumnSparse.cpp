@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <bit>
 
-
 namespace DB
 {
 
@@ -163,32 +162,15 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
-}
-
 char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return values->serializeValueIntoMemory(getValueIndex(n), memory);
-}
-
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
-{
-    return values->getSerializedValueSize(getValueIndex(n));
 }
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
     const char * res = nullptr;
     insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertFromArena(pos); });
-    return res;
-}
-
-const char * ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertAggregationStateValueFromArena(pos); });
     return res;
 }
 
@@ -207,7 +189,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         return;
 
     if (start + length > src.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in ColumnSparse::insertRangeFrom method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     auto & offsets_data = getOffsetsData();
 

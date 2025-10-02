@@ -1,16 +1,16 @@
 ---
 description: 'Documentation for Coordinates'
 sidebar_label: 'Geographical Coordinates'
+sidebar_position: 62
 slug: /sql-reference/functions/geo/coordinates
 title: 'Functions for Working with Geographical Coordinates'
-doc_type: 'reference'
 ---
 
 ## greatCircleDistance {#greatcircledistance}
 
 Calculates the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```sql
+``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -31,11 +31,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
 ```
 
-```text
+``` text
 ┌─greatCircleDistance─┐
 │            14128352 │
 └─────────────────────┘
@@ -48,7 +48,7 @@ The performance is the same as for `greatCircleDistance` (no performance drawbac
 
 Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
 
-```sql
+``` sql
 geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -69,11 +69,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-```sql
+``` sql
 SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 ```
 
-```text
+``` text
 ┌─geoDistance─┐
 │   212458.73 │
 └─────────────┘
@@ -83,7 +83,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 
 Calculates the central angle between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```sql
+``` sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -100,11 +100,11 @@ The central angle between two points in degrees.
 
 **Example**
 
-```sql
+``` sql
 SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 ```
 
-```text
+``` text
 ┌─arc─┐
 │  45 │
 └─────┘
@@ -115,7 +115,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
 
-```sql
+``` sql
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
@@ -133,11 +133,11 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
-```text
+``` text
 ┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
 │                                               1 │
 └─────────────────────────────────────────────────┘
@@ -147,7 +147,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 
 Checks whether the point belongs to the polygon on the plane.
 
-```sql
+``` sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
@@ -155,8 +155,7 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 - `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data-types/tuple.md) — A tuple of two numbers.
 - `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data-types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
-- The function supports polygon with holes (cut-out sections). Data type — [Polygon](../../data-types/geo.md/#polygon). Either pass the entire `Polygon` as the second argument, or pass the outer ring first and then each hole as separate additional arguments.
-- The function also supports multipolygon. Data type — [MultiPolygon](../../data-types/geo.md/#multipolygon). Either pass the entire `MultiPolygon` as the second argument, or list each component polygon as its own argument.
+- The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
 
 **Returned values**
 
@@ -165,16 +164,12 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-```text
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
 ```
-
-> **Note**  
-> • You can set `validate_polygons = 0` to bypass geometry validation.  
-> • `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.

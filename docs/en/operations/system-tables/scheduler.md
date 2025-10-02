@@ -4,7 +4,6 @@ description: 'System table containing information about and status of scheduling
 keywords: ['system table', 'scheduler']
 slug: /operations/system-tables/scheduler
 title: 'system.scheduler'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -18,14 +17,14 @@ This table can be used for monitoring. The table contains a row for every schedu
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.scheduler
 WHERE resource = 'network_read' AND path = '/prio/fair/prod'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 resource:          network_read

@@ -1,10 +1,9 @@
-#include <Interpreters/QueryThreadLog.h>
+#include "QueryThreadLog.h"
 #include <array>
 #include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeMap.h>

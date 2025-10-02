@@ -1,4 +1,4 @@
--- Tags: no-parallel, log-engine
+-- Tags: no-parallel
 
 set enable_json_type=1;
 set enable_dynamic_type=1;

@@ -40,7 +40,6 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
@@ -106,9 +105,6 @@ private:
                 function->toAST()->formatForErrorMessage(), pass_name);
 
         if (isNameOfInFunction(function->getFunctionName()))
-            return;
-
-        if (function->getFunctionName() == "exists")
             return;
 
         const auto & expected_argument_types = function->getArgumentTypes();
@@ -264,7 +260,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
-    manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
 
     manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
     manager.addPass(std::make_unique<CountDistinctPass>());
