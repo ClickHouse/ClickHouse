@@ -3,6 +3,8 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -19,7 +21,7 @@ class ActionsDAG;
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_);
+    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_, UpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -30,6 +32,8 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+
+    UpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform

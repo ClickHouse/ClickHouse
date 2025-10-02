@@ -12,6 +12,9 @@ struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
+
+    // I apologies for that.
+    bool skip_final_flag = false;
 };
 
 struct SerializedSetsRegistry;

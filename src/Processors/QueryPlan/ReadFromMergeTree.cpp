@@ -54,6 +54,8 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -465,7 +467,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), nullptr);
         pipes.emplace_back(std::move(source));
     }
 
@@ -557,6 +559,8 @@ Pipe ReadFromMergeTree::readFromPool(
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
@@ -573,7 +577,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), updater);
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -582,6 +586,7 @@ Pipe ReadFromMergeTree::readFromPool(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+    updater->setHeader(pipe.getHeader());
     if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
         pipe.resize(output_streams_limit);
     return pipe;
@@ -656,6 +661,8 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -692,7 +699,8 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), updater);
+
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
@@ -727,6 +735,7 @@ Pipe ReadFromMergeTree::readInOrder(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+    updater->setHeader(pipe.getHeader());
 
     if (read_type == ReadType::InReverseOrder)
     {
