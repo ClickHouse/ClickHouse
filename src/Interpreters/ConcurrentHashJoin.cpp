@@ -9,6 +9,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -337,6 +338,58 @@ private:
     std::vector<IBlocksStreamPtr> children;
 };
 
+/// Stream filler that emits only rows saved in `nullmaps` for RIGHT/FULL joins.
+/// It does NOT emit rows from hash maps (i.e. those controlled by used_flags),
+/// which allows us to avoid duplicates when maps are shared across slots.
+class NullmapsOnlyFiller final : public NotJoinedBlocks::RightColumnsFiller
+{
+public:
+    NullmapsOnlyFiller(const HashJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_) {}
+
+    Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
+
+    size_t fillColumns(MutableColumns & columns_right) override
+    {
+        size_t rows_added = 0;
+        const auto & right = parent.getJoinedData();
+        if (!nulls_position.has_value())
+            nulls_position = right->nullmaps.begin();
+
+        auto end = right->nullmaps.end();
+        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        {
+            const auto * columns = it->columns;
+            ConstNullMapPtr nullmap = nullptr;
+            if (it->column)
+                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
+
+            size_t rows = columns->columns.at(0)->size();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                if (nullmap && nullmap->size() == row)
+                    break;
+                if (!nullmap || (*nullmap)[row])
+                {
+                    for (size_t col = 0; col < columns_right.size(); ++col)
+                        columns_right[col]->insertFrom(*columns->columns[col], row);
+                    ++rows_added;
+                }
+            }
+
+            if (rows_added >= max_block_size)
+                break;
+        }
+
+        return rows_added;
+    }
+
+private:
+    const HashJoin & parent;
+    UInt64 max_block_size;
+    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
+};
+
 class ConcurrentHashJoinResult : public IJoinResult
 {
     const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins;
@@ -500,8 +553,41 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     // Emitting non-joined rows from multiple slots would duplicate the same right rows.
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        std::lock_guard lock(hash_joins[0]->mutex);
-        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        // Compose a stream as:
+        //  - full non-joined from slot 0 (maps + its own nullmaps)
+        //  - nullmaps-only from the remaining slots
+        std::vector<IBlocksStreamPtr> streams;
+        streams.reserve(slots);
+
+        {
+            std::lock_guard lock(hash_joins[0]->mutex);
+            if (auto s0 = hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                streams.emplace_back(std::move(s0));
+        }
+
+        size_t left_columns_count = left_sample_block.columns();
+        if (canRemoveColumnsFromLeftBlock())
+            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
+
+        for (size_t i = 1; i < slots; ++i)
+        {
+            std::lock_guard lock(hash_joins[i]->mutex);
+            // Skip if there is nothing to emit
+            const auto & right = hash_joins[i]->data->getJoinedData();
+            if (!right || right->nullmaps.empty())
+                continue;
+
+            auto filler = std::make_unique<NullmapsOnlyFiller>(*hash_joins[i]->data, max_block_size);
+            auto nb = std::make_shared<NotJoinedBlocks>(
+                std::move(filler), result_sample_block, left_columns_count, *table_join);
+            streams.emplace_back(std::move(nb));
+        }
+
+        if (streams.empty())
+            return {};
+        if (streams.size() == 1)
+            return streams[0];
+        return std::make_shared<ConcatStreams>(std::move(streams));
     }
 
     /// Collect non-joined streams from each slot
