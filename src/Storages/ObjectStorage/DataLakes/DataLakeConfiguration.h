@@ -235,6 +235,11 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
+    const DataLakeMetadataPtr & getMetadata() const override
+    {
+        return current_metadata;
+    }
+
 #if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -330,10 +335,15 @@ public:
         return nullptr;
     }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    bool optimize(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        const StorageID & storage_id) override
     {
         assertInitialized();
-        return current_metadata->optimize(metadata_snapshot, context, format_settings);
+        auto catalog = getCatalog(context, false);
+        return current_metadata->optimize(metadata_snapshot, context, format_settings, catalog, storage_id);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override

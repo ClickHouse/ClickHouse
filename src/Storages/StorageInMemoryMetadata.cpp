@@ -222,7 +222,7 @@ void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
     metadata_version = metadata_version_;
 }
 
-void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
+void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_) const
 {
     datalake_table_state = datalake_table_state_;
 }

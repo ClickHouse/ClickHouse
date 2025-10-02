@@ -99,7 +99,12 @@ public:
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+    bool optimize(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id) override;
     bool supportsDelete() const override { return true; }
     void mutate(const MutationCommands & commands,
         ContextPtr context,
@@ -124,6 +129,8 @@ public:
 
     void drop(ContextPtr context) override;
 
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
+
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
         IcebergMetadataFilesCachePtr cache_ptr,
@@ -139,7 +146,6 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
 
 

@@ -323,24 +323,25 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
 }
 
-
 bool IcebergMetadata::optimize(
-    const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings,
+    std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id)
 {
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         auto configuration_ptr = getConfiguration();
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
         compactIcebergTable(
-            snapshots_info,
-            persistent_components,
             object_storage,
             configuration_ptr,
             format_settings,
             sample_block,
             context,
-            persistent_components.metadata_compression_method);
+            catalog,
+            storage_id);
         return true;
     }
     else

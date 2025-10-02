@@ -243,12 +243,21 @@ public:
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        const StorageID & /*storage_id*/)
     {
         return false;
     }
 
     virtual void drop(ContextPtr) {}
+
+    virtual const DataLakeMetadataPtr & getMetadata() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can not get getMetadata");
+    }
 
     String format = "auto";
     String compression_method = "auto";

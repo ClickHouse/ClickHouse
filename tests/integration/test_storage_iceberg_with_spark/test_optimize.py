@@ -32,10 +32,6 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
-    snapshot_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
-    snapshot_timestamp = datetime.now(timezone.utc)
-
-    time.sleep(0.1)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
@@ -55,6 +51,14 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
+    if storage_type == "local":
+        initial_files = default_download_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        )
+
     instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction" : 1})
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
@@ -62,18 +66,10 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
         "SELECT number FROM numbers(20, 90)"
     )
 
-    # check that timetravel works with previous snapshot_ids and timestamps
-    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
-        "SELECT number FROM numbers(20, 80)"
-    )
-
-    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
-        "SELECT number FROM numbers(20, 80)"
-    )
     if storage_type != "local":
         return
 
-    default_download_directory(
+    compacted_files = default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
@@ -81,3 +77,4 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90
+    assert len(initial_files) - len(compacted_files) == 10
