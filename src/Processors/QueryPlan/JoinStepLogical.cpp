@@ -446,17 +446,12 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
     for (const auto & input_header : input_headers)
         new_input_headers.push_back(remove_unused_inputs_from_header(*input_header));
 
-    std::unordered_set<String> left_input_names;
-    for (const auto & column : *new_input_headers.at(0))
-        left_input_names.insert(column.name);
-
     JoinExpressionActions::NodeToSourceMapping node_sources;
-    for (const auto * input_node : actions_dag.getInputs())
+
+    for (const auto & node : actions_dag.getNodes())
     {
-        if (left_input_names.contains(input_node->result_name))
-            node_sources[input_node].set(0);
-        else
-            node_sources[input_node].set(1);
+        const auto action_ref = JoinActionRef(&node, expression_actions);
+        node_sources[&node] = action_ref.getSourceRelations();
     }
 
     expression_actions.resetNodeSources(std::move(node_sources));
