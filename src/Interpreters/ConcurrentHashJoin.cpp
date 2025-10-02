@@ -1,5 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
@@ -565,29 +566,11 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
                 streams.emplace_back(std::move(s0));
         }
 
-        size_t left_columns_count = left_sample_block.columns();
-        if (canRemoveColumnsFromLeftBlock())
-            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
-
-        for (size_t i = 1; i < slots; ++i)
-        {
-            std::lock_guard lock(hash_joins[i]->mutex);
-            // Skip if there is nothing to emit
-            const auto & right = hash_joins[i]->data->getJoinedData();
-            if (!right || right->nullmaps.empty())
-                continue;
-
-            auto filler = std::make_unique<NullmapsOnlyFiller>(*hash_joins[i]->data, max_block_size);
-            auto nb = std::make_shared<NotJoinedBlocks>(
-                std::move(filler), result_sample_block, left_columns_count, *table_join);
-            streams.emplace_back(std::move(nb));
-        }
-
+        // Per-slot nullmaps are already merged into slot 0 in onBuildPhaseFinish(),
+        // so non-joined rows must be produced only from slot 0 to avoid duplicates.
         if (streams.empty())
             return {};
-        if (streams.size() == 1)
-            return streams[0];
-        return std::make_shared<ConcatStreams>(std::move(streams));
+        return streams[0];
     }
 
     /// Collect non-joined streams from each slot
@@ -857,6 +840,77 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
                 },
                 getData(hash_joins[0])->maps.at(0));
+        }
+
+        // Additionally, merge per-slot right-side nullmaps into slot 0 so that
+        // non-joined rows saved due to NULL keys or ON-filtered rows are emitted exactly once.
+        // We keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
+        // in their respective slots for the lifetime of the join.
+        {
+            auto dst = getData(hash_joins[0]);
+            for (size_t i = 1; i < slots; ++i)
+            {
+                auto src = getData(hash_joins[i]);
+                if (src->nullmaps.empty())
+                    continue;
+
+                for (auto & holder : src->nullmaps)
+                {
+                    const auto * sc = holder.columns;
+                    if (!sc)
+                        continue;
+
+                    // Build a filtered mask that keeps only rows from this slot's selector
+                    ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
+
+                    auto apply_range = [&](size_t start, size_t end)
+                    {
+                        if (holder.column)
+                        {
+                            const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                            end = std::min(end, src_mask.size());
+                            for (size_t r = start; r < end; ++r)
+                                filtered->getData()[r] = src_mask[r];
+                        }
+                        else
+                        {
+                            for (size_t r = start; r < end; ++r)
+                                filtered->getData()[r] = 1;
+                        }
+                    };
+
+                    if (sc->selector.isContinuousRange())
+                    {
+                        const auto range = sc->selector.getRange();
+                        apply_range(range.first, range.second);
+                    }
+                    else
+                    {
+                        const auto & idxs = sc->selector.getIndexes().getData();
+                        if (holder.column)
+                        {
+                            const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
+                            for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
+                            {
+                                size_t idx = static_cast<size_t>(idxs[pos]);
+                                if (idx < src_mask.size())
+                                    filtered->getData()[idx] = src_mask[idx];
+                            }
+                        }
+                        else
+                        {
+                            for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
+                                filtered->getData()[static_cast<size_t>(idxs[pos])] = 1;
+                        }
+                    }
+
+                    dst->nullmaps.emplace_back(sc, std::move(filtered));
+                    dst->nullmaps_allocated_size += dst->nullmaps.back().allocatedBytes();
+                }
+
+                src->nullmaps.clear();
+                src->nullmaps_allocated_size = 0;
+            }
         }
     }
 
