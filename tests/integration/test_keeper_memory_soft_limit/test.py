@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-import random
-import string
-
 import pytest
 from kazoo.client import KazooClient
 from helpers.cluster import ClickHouseCluster
@@ -16,10 +13,6 @@ node = cluster.add_instance(
     with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
     main_configs=["configs/setting.xml"],
 )
-
-
-def random_string(length):
-    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 
 def get_connection_zk(nodename, timeout=30.0):
@@ -49,12 +42,16 @@ def test_soft_limit_create(started_cluster):
     node_zk = get_connection_zk("zoo1")
     try:
         loop_time = 100000
-        node_zk.create("/test_soft_limit", b"abc")
-        path = "/test_soft_limit"
+        batch_size = 10000
 
-        for i in range(loop_time):
-            name = "node_" + str(i)
-            node.query(f"INSERT INTO system.zookeeper (name, path, value) values ('{name}', '{path}', repeat('a', 3000))")
+        node_zk.create("/test_soft_limit", b"abc")
+
+        for i in range(0, loop_time, batch_size):
+            node.query(f"""
+            INSERT INTO system.zookeeper (name, path, value)
+            SELECT 'node_' || number::String, '/test_soft_limit', repeat('a', 3000)
+            FROM numbers({i}, {batch_size})
+            """)
     except Exception as e:
         # the message contains out of memory so the users will not be confused.
         assert 'out of memory' in str(e).lower()
@@ -64,7 +61,8 @@ def test_soft_limit_create(started_cluster):
 
         txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
         txn.commit()
-        assert "0\n"  == node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log")
+        node.query("system flush logs metric_log")
+        assert int(node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log").strip()) > 0
         return
 
     raise Exception("all records are inserted but no error occurs")

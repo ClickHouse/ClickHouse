@@ -84,6 +84,7 @@ void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey
     it->second.candidates.push_back(candidate);
     candidate->setEvictingFlag(locked_key);
     ++candidates_size;
+    candidates_bytes += candidate->size();
 }
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock & lock)

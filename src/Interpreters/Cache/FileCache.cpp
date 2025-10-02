@@ -31,17 +31,21 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
+    extern const Event FilesystemCacheReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
+    extern const Event FilesystemCacheBackgroundEvictedFileSegments;
+    extern const Event FilesystemCacheBackgroundEvictedBytes;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
+    extern const Metric FilesystemCacheReserveThreads;
 }
 
 namespace DB
@@ -969,7 +973,9 @@ bool FileCache::tryReserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason)
 {
+    CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAttempts);
 
     assertInitialized();
 
@@ -983,6 +989,11 @@ bool FileCache::tryReserve(
         failure_reason = "cache is being resized";
         return false;
     }
+
+    cache_reserve_active_threads.fetch_add(1, std::memory_order_relaxed);
+    SCOPE_EXIT({
+        cache_reserve_active_threads.fetch_sub(1, std::memory_order_relaxed);
+    });
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
@@ -1112,6 +1123,10 @@ bool FileCache::tryReserve(
                 reserve_stat.stat_by_kind.clear();
             }
 
+            bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
+            if (!continue_from_last_eviction_pos)
+                main_priority->resetEvictionPos(cache_read_lock);
+
             if (main_eviction_info.size_to_evict || main_eviction_info.elements_to_evict)
             {
                 if (!main_priority->collectCandidatesForEviction(
@@ -1120,6 +1135,7 @@ bool FileCache::tryReserve(
                         reserve_stat,
                         eviction_candidates,
                         queue_iterator,
+                        continue_from_last_eviction_pos,
                         user.user_id,
                         cache_read_lock))
                 {
@@ -1225,6 +1241,11 @@ bool FileCache::tryReserve(
 
     cache_write_lock.reset();
 
+    if (cache_reserve_active_threads.load(std::memory_order_relaxed) == 1)
+    {
+        main_priority->resetEvictionPos(cache_lock);
+    }
+
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
     {
         failure_reason = "not enough space on device";
@@ -1302,7 +1323,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             {},
             cache_guard.readLock()))
     {
-
         //LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
         //        "(trying to keep size ratio at {} and elements ratio at {}). "
         //        "Collected {} eviction candidates, "
@@ -2012,6 +2032,7 @@ bool FileCache::doDynamicResizeImpl(
                 stat,
                 eviction_candidates,
                 nullptr,
+                false,
                 {},
                 cache_guard.readLock()))
         {

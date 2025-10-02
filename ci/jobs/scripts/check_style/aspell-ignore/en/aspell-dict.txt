@@ -3002,6 +3002,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 throwif
 throwIf
+Tiering
 timeDiff
 TimescaleDB's
 timeseries

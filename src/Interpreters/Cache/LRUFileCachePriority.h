@@ -67,6 +67,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
@@ -86,6 +87,14 @@ public:
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
+    void resetEvictionPos(const CachePriorityGuard::Lock &) override { eviction_pos = queue.end(); }
+
+    /// Used only for unit test.
+    size_t getEvictionPos()
+    {
+        return std::distance(queue.begin(), eviction_pos);
+    }
+
 private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
@@ -95,6 +104,7 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
+    LRUQueue::iterator eviction_pos;
 
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);
@@ -117,6 +127,8 @@ private:
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::WriteLock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::WriteLock &);
+
+    void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
     void holdImpl(
         size_t size,

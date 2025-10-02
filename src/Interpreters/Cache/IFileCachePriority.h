@@ -220,6 +220,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) = 0;
 

@@ -254,6 +254,8 @@ private:
     std::atomic<bool> shutdown = false;
     std::atomic<bool> cache_is_being_resized = false;
 
+    std::atomic<size_t> cache_reserve_active_threads = 0;
+
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
