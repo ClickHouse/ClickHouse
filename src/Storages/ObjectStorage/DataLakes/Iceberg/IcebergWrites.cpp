@@ -405,7 +405,9 @@ void extendSchemaForPartitions(
     }
 }
 
-
+// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
+// Clang analyzer is wrong here, it thinks that value in generic datum can be uninitialized.
+// No idea why
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -456,8 +458,7 @@ void generateManifestFile(
     for (const auto & data_file_name : data_file_names)
     {
         avro::GenericDatum manifest_datum(root_schema);
-        /// Clang tidy doesn't understand avro code (me either), so NOLINT
-        avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>(); // NOLINT
+        avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
         manifest.field(Iceberg::f_status) = avro::GenericDatum(1);
         Int64 snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
@@ -631,8 +632,7 @@ void generateManifestList(
     for (const auto & manifest_entry_name : manifest_entry_names)
     {
         avro::GenericDatum entry_datum(schema.root());
-        /// Clang tidy doesn't understand avro code (me either), so NOLINT
-        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>(); // NOLINT
+        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
@@ -734,6 +734,7 @@ void generateManifestList(
 
     writer.close();
 }
+// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
     : metadata_object(metadata_object_)
