@@ -40,14 +40,16 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
     chassert(!creation_tid.isEmpty());
     CSN creation = getCreationCSN();
-    TIDHash removal_lock = getRemovalTIDLock();
+
+    TIDHash current_removal_tid_hash = getCurrentRemovalTIDHash();
+
     CSN removal = getRemovalCSN();
 
     [[maybe_unused]] bool had_creation_csn = creation;
-    [[maybe_unused]] bool had_removal_tid_lock = removal_lock;
+    [[maybe_unused]] bool had_removal_tid_lock = current_removal_tid_hash;
     [[maybe_unused]] bool had_removal_csn = removal;
 
-    chassert(!had_removal_csn || had_removal_csn && !getRemovalTID().isEmpty());
+    chassert(!had_removal_csn || had_removal_csn && had_removal_tid_lock);
     chassert(!had_removal_csn || had_creation_csn);
     chassert(creation == Tx::UnknownCSN || creation == Tx::PrehistoricCSN || Tx::MaxReservedCSN < creation);
     chassert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
@@ -66,14 +68,14 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
         return false;
     if (removal && removal <= snapshot_version)
         return false;
-    if (!current_tid.isEmpty() && removal_lock && removal_lock == current_tid.getHash())
+    if (!current_tid.isEmpty() && current_removal_tid_hash && current_removal_tid_hash == current_tid.getHash())
         return false;
 
     /// Otherwise, part is definitely visible if:
     /// - creation was committed before we took the snapshot and nobody tried to remove the part
     /// - creation was committed before and removal was committed after
     /// - current transaction is creating it
-    if (creation && creation <= snapshot_version && !removal_lock)
+    if (creation && creation <= snapshot_version && !current_removal_tid_hash)
         return true;
     if (creation && creation <= snapshot_version && removal && snapshot_version < removal)
         return true;
@@ -86,7 +88,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed or not.
     chassert(!had_creation_csn || (had_removal_tid_lock && !had_removal_csn));
-    chassert(current_tid.isEmpty() || (creation_tid != current_tid && removal_lock != current_tid.getHash()));
+    chassert(current_tid.isEmpty() || (creation_tid != current_tid && current_removal_tid_hash != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
@@ -112,9 +114,9 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     /// because once written CSN cannot be changed, so it's safe to overwrite it (with the same value).
     creation_csn.store(creation, std::memory_order_relaxed);
 
-    if (removal_lock)
+    if (current_removal_tid_hash)
     {
-        removal = TransactionLog::getCSN(removal_lock, &removal_csn);
+        removal = TransactionLog::getCSN(current_removal_tid_hash, &removal_csn);
         if (removal)
             setRemovalCSN(removal);
     }
@@ -246,9 +248,8 @@ bool VersionMetadata::canBeRemoved()
         if (removal_tid_hash == Tx::PrehistoricTID.getHash())
             return true;
 
-        TIDHash removal_lock = getRemovalTIDLock();
-
-        if (removal_lock == Tx::PrehistoricTID.getHash())
+        TIDHash current_removal_tid_hash = getCurrentRemovalTIDHash();
+        if (current_removal_tid_hash == Tx::PrehistoricTID.getHash())
             return true;
     }
 
@@ -300,6 +301,19 @@ void VersionMetadata::storeRemovalTIDToStoredMetadata()
     storeRemovalTIDToStoredMetadataImpl();
 }
 
+TIDHash VersionMetadata::getCurrentRemovalTIDHash() const
+{
+    // Check if the object is locked by any transaction first
+    TIDHash current_removal_tid_hash = getRemovalTIDLock();
+    if (!current_removal_tid_hash)
+    {
+        // The object might be unlocked, check removal_tid_hash
+        current_removal_tid_hash = removal_tid_hash;
+    }
+
+    return current_removal_tid_hash;
+}
+
 String VersionMetadata::getObjectName() const
 {
     return merge_tree_data_part->storage.getStorageID().getNameForLogs() + "|" + merge_tree_data_part->name;
@@ -330,15 +344,15 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
     if (removal && removal <= oldest_snapshot_version)
         return true;
 
-    TIDHash removal_lock = getRemovalTIDLock();
+    TIDHash current_removal_tid_hash = getCurrentRemovalTIDHash();
     /// Part is active
-    if (!removal_lock)
+    if (!current_removal_tid_hash)
         return false;
 
     if (!removal)
     {
         /// Part removal is not committed yet
-        removal = TransactionLog::getCSN(removal_lock, &removal_csn);
+        removal = TransactionLog::getCSN(current_removal_tid_hash, &removal_csn);
         if (removal)
             setRemovalCSN(removal);
         else
@@ -572,9 +586,10 @@ void VersionMetadata::loadAndVerifyMetadata(LoggerPtr logger)
 bool VersionMetadata::wasInvolvedInTransaction() const
 {
     auto removal = getRemovalCSN();
+    auto current_removal_tid_hash = getCurrentRemovalTIDHash();
     bool created_by_transaction = !getCreationTID().isPrehistoric();
     bool removed_by_transaction = (removal != Tx::PrehistoricCSN)
-        && ((removal != 0) || (isRemovalTIDLocked() && getRemovalTIDLock() != Tx::PrehistoricTID.getHash()));
+        && ((removal != 0) || (current_removal_tid_hash != Tx::PrehistoricTID.getHash() && current_removal_tid_hash != 0));
     return created_by_transaction || removed_by_transaction;
 }
 

@@ -119,7 +119,7 @@ public:
     /**
     * @brief Stores the metadata to persistent storage.
     */
-    virtual void storeMetadata(bool force) = 0;
+    virtual void storeMetadata(bool force) const = 0;
 
     /**
     * @brief Locks the object for removal. Return true if successfully locked, otherwise, return false.
@@ -184,6 +184,14 @@ protected:
     * then append the removal ID.
     */
     void storeRemovalTIDToStoredMetadata();
+
+    /**
+    * @brief Get the current removal TID hash.
+    * If the object is locked, return the locking transaction.
+    * If unlocked, return the `removal_tid_hash`.
+    * Return 0 if no removal TID
+    */
+    TIDHash getCurrentRemovalTIDHash() const;
 
     String getObjectName() const;
 
