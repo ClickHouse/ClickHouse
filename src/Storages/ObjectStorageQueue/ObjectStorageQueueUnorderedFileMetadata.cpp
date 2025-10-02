@@ -74,11 +74,14 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
         std::string data;
+        /// If it is a retry, we could have failed after actually successfully executing the requests.
+        /// So here we check if we succeeded by checking `processor_info` of the processing node.
         if (is_retry && zk_client->tryGet(processing_node_path, data))
         {
+            chassert(!data.empty());
             if (data == processor_info)
             {
-                LOG_TEST(log, "Operation succeeded");
+                LOG_TRACE(log, "Considering operation as succeeded");
                 code = Coordination::Error::ZOK;
                 return;
             }

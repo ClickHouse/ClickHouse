@@ -72,13 +72,14 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     Coordination::Error code;
     bool is_retry = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-        {
-            code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryRemove(bucket_info->bucket_lock_path);
-        },
-        [&]
-        {
-            is_retry = true;
-        });
+    {
+        /// FIXME: It is possible that we fail "after operation",
+        /// e.g. we successfully removed the node, but did not get confirmation,
+        /// but then if we retry - we can remove a newly recreated node :(
+        code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryRemove(bucket_info->bucket_lock_path);
+    },
+    /* iteration_cleanup */[&]{},
+    /* on_error */[&] { is_retry = true; });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -216,14 +217,22 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
         std::string data;
-        if (is_retry && zk_client->tryGet(bucket_lock_path, data) && data == processor_info)
+        /// If it is a retry, we could have failed after actually successfully executing the request.
+        /// So here we check if we succeeded by checking `processor_info` of the processing node.
+        if (is_retry && zk_client->tryGet(bucket_lock_path, data))
         {
-            LOG_TEST(log_, "Operation succeeded");
-            code = Coordination::Error::ZOK;
-            return;
+            chassert(!data.empty());
+            if (data == processor_info)
+            {
+                LOG_TRACE(log_, "Considering operation as succeeded");
+                code = Coordination::Error::ZOK;
+                return;
+            }
         }
         code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
-    }, [&] { is_retry = true; });
+    },
+    /* iteration_cleanup */[&]{},
+    /* on_error */[&] { is_retry = true; });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -348,35 +357,31 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
-        bool retry = false;
+        bool is_retry = false;
         zk_retries.retryLoop([&]
         {
             auto zk = ObjectStorageQueueMetadata::getZooKeeper(log);
-            if (retry)
+            /// If it is a retry, we could have failed after actually successfully executing the request.
+            /// So here we check if we succeeded by checking `processor_info` of the processing node.
+            if (is_retry)
             {
-                /// Check if we failed after successfully committing in keeper.
                 std::string data;
                 if (zk->tryGet(processing_node_path, data))
                 {
+                    chassert(!data.empty());
                     if (data == processor_info)
                     {
-                        LOG_TEST(log, "Operation succeeded");
+                        LOG_TRACE(log, "Considering operation as succeeded");
                         code = Coordination::Error::ZOK;
                         chassert(!zk->tryGet(failed_node_path, data));
                         return;
                     }
                 }
             }
-            try
-            {
-                code = zk->tryMulti(requests, responses);
-            }
-            catch (...)
-            {
-                retry = true;
-                throw;
-            }
-        });
+            code = zk->tryMulti(requests, responses);
+        },
+        /* iteration_cleanup */[]{},
+        /* on_error */[&] { is_retry = true; });
 
         if (code == Coordination::Error::ZOK)
         {
@@ -458,13 +463,13 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
         requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
     }
 
-    if (set_processing)
+    if (created_processing_node)
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
-    chassert(set_processing);
+    chassert(created_processing_node);
     doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false);
 }
 

@@ -151,7 +151,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
-    if (set_processing)
+    if (created_processing_node)
     {
         if (file_status->getException().empty())
         {
@@ -168,10 +168,15 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             bool is_retry = false;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
+                /// FIXME: It is possible that we fail "after operation",
+                /// e.g. we successfully removed the node, but did not get confirmation,
+                /// but then if we retry - we can remove a newly recreated node :(
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
                 code = zk_client->tryRemove(processing_node_path);
             }, [&] { is_retry = true; });
 
+            /// If it is a retry, we could have failed after actually successfully executing remove,
+            /// so ZNONONE is expected in this case.
             if (is_retry && code == Coordination::Error::ZNONODE)
                 return;
 
@@ -257,12 +262,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
-    afterSetProcessing(success);
-    if (!success)
-    {
-        LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state);
-        file_status->updateState(file_state);
-    }
+    afterSetProcessing(success, file_state);
 
     LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
@@ -303,18 +303,24 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     return prepareProcessingRequestsImpl(requests);
 }
 
-void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success)
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)
 {
     if (success)
     {
-        set_processing = true;
+        created_processing_node = true;
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
     }
     else
     {
-        chassert(!set_processing);
+        chassert(!created_processing_node);
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
+
+        if (file_state.has_value())
+        {
+            LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
+            file_status->updateState(file_state.value());
+        }
     }
 }
 
@@ -333,14 +339,22 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
     Coordination::Responses responses;
     Coordination::Error code;
+    bool is_retry = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        if (zk_client->exists(processing_node_path))
-            code = zk_client->tryMulti(requests, responses);
-        else
+        /// If it is a retry, we could have failed after successfully removing processing node.
+        /// FIXME: It is possible that we fail "after operation",
+        /// e.g. we successfully removed the node, but did not get confirmation,
+        /// but then if we retry - we can remove a newly recreated node :(
+        if (is_retry && !zk_client->exists(processing_node_path))
             code = Coordination::Error::ZOK;
-    });
+        else
+            code = zk_client->tryMulti(requests, responses);
+    },
+    /* iteration_cleanup */[]{},
+    /* on_error */[&] { is_retry = true; });
+
     if (code == Coordination::Error::ZOK)
         return;
 
@@ -436,7 +450,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
     file_status->onProcessed();
 
-    set_processing = false;
+    created_processing_node = false;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -464,7 +478,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
     file_status->onFailed(exception_message);
 
-    set_processing = false;
+    created_processing_node = false;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]

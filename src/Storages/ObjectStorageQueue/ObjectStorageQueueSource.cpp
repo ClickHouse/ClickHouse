@@ -322,7 +322,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         if (!new_batch[i])
                             continue;
 
-                        file_metadatas[i]->afterSetProcessing(/* success */true);
+                        file_metadatas[i]->afterSetProcessing(/* success */true, std::nullopt);
                     }
                 }
                 else
