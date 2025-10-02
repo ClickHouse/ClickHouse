@@ -28,7 +28,7 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
     for (size_t i = 0; i != columns.size(); ++i)
     {
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 
