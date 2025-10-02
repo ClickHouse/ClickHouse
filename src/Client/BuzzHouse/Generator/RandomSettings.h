@@ -28,10 +28,10 @@ const auto highRange = [](RandomGenerator & rg)
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
 };
 
-const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(8192))); };
+const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(8192))); };
 
 const auto bytesRange = [](RandomGenerator & rg)
-{ return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
+{ return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
@@ -100,6 +100,14 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
        {"fsync_after_insert", CHSetting(trueOrFalse, {}, false)},
        {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
        {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
+
+const std::unordered_map<String, CHSetting> icebergSettings
+    = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
+       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
+
+const std::unordered_map<String, CHSetting> dataLakeSettings
+    = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
+       {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)}};
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 

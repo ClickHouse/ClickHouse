@@ -7,7 +7,6 @@
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
-#include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -242,8 +241,9 @@ void ThreadStatus::flushUntrackedMemory()
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    Int64 current_untracked_memory = current_thread->untracked_memory;
     untracked_memory = 0;
+    memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
 bool ThreadStatus::isQueryCanceled() const
@@ -293,9 +293,10 @@ void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
-        RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        auto & counters = current_performance_counters ? *current_performance_counters : performance_counters;
+        RUsageCounters::updateProfileEvents(*last_rusage, counters);
         if (taskstats)
-            taskstats->updateCounters(performance_counters);
+            taskstats->updateCounters(counters);
     }
     catch (...)
     {
@@ -324,6 +325,7 @@ void ThreadStatus::onFatalError()
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
+std::atomic_flag MainThreadStatus::is_initialized;
 
 MainThreadStatus & MainThreadStatus::getInstance()
 {
@@ -334,6 +336,7 @@ MainThreadStatus & MainThreadStatus::getInstance()
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
+    is_initialized.test_and_set(std::memory_order_relaxed);
 }
 
 MainThreadStatus::~MainThreadStatus()

@@ -47,6 +47,13 @@
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
+
+namespace ProfileEvents
+{
+    extern const Event MutationAffectedRowsUpperBound;
+}
 
 namespace DB
 {
@@ -184,12 +191,19 @@ IsStorageTouched isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (storage_from_part->hasLightweightDeletedMask())
+            {
+                /// The precise number of rows is unknown.
+                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return some_rows;
+            }
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
+            {
+                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
+            }
 
             if (command.partition)
             {
@@ -243,6 +257,7 @@ IsStorageTouched isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
+    ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);
 
     IsStorageTouched result;
     result.any_rows_affected = (count != 0);
@@ -329,6 +344,11 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
 {
     return part;
+}
+
+bool MutationsInterpreter::Source::isMutatingDataPart() const
+{
+    return part != nullptr;
 }
 
 bool MutationsInterpreter::Source::supportsLightweightDelete() const
@@ -489,6 +509,7 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto & virtual_columns = *storage_snapshot->virtual_columns;
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     for (const auto & column_name : updated_columns)
     {
@@ -520,7 +541,7 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name))
+            else if (virtual_columns.tryGet(column_name) || common_virtual_columns.tryGet(column_name))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
@@ -565,6 +586,30 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
+}
+
+static bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    Names & extracted_column_names)
+{
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    return has_table_virtual_column;
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -1181,7 +1226,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
     /// Add persistent virtual columns if the whole part is rewritten,
     /// because we should preserve them in parts after mutation.
-    if (prepared_stages.back().isAffectingAllColumns(storage_columns))
+    if (source.isMutatingDataPart() && prepared_stages.back().isAffectingAllColumns(storage_columns))
     {
         for (const auto & column_name : available_columns)
         {
@@ -1287,7 +1332,7 @@ void MutationsInterpreter::Source::read(
 
     if (!mutation_settings.can_execute)
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_columns));
         auto callback = []()
         {
             return DB::Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute a mutation because can_execute flag set to false");
@@ -1366,12 +1411,30 @@ void MutationsInterpreter::Source::read(
         query_info.query = std::move(select);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
-        storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
+        Names extracted_column_names;
+        const auto has_table_virtual_column
+            = extractRequiredNonTableColumnsFromStorage(required_columns, storage, storage_snapshot, extracted_column_names);
+
+        storage->read(plan, has_table_virtual_column ? extracted_column_names : required_columns, storage_snapshot,
+            query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
+
+        if (has_table_virtual_column && plan.isInitialized())
+        {
+            const auto & table_name = storage->getStorageID().getTableName();
+            ColumnWithTypeAndName column;
+            column.name = "_table";
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            column.column = column.type->createColumnConst(0, Field(table_name));
+
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto expression_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(adding_column_dag));
+            plan.addStep(std::move(expression_step));
+        }
 
         if (!plan.isInitialized())
         {
             /// It may be possible when there is nothing to read from storage.
-            auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
+            auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_columns));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(header)));
             plan.addStep(std::move(read_from_pipe));
         }
@@ -1402,7 +1465,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
                 /// Execute DELETEs.
                 plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
             }
@@ -1410,7 +1473,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
                 /// Execute UPDATE or final projection.
                 plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
             }
@@ -1424,7 +1487,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
     auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
@@ -1483,7 +1546,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     /// in this case we don't read sorting key, so just we don't check anything.
     if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
     {
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });

@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Arithmetic Functions'
 sidebar_label: 'Arithmetic'
-sidebar_position: 5
 slug: /sql-reference/functions/arithmetic-functions
 title: 'Arithmetic Functions'
 ---
 
-# Arithmetic Functions
+# Arithmetic functions
 
 ## Overview {#overview}
 

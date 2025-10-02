@@ -159,7 +159,7 @@ Block NativeReader::read()
         rows = index_block_it->num_rows;
     }
 
-    if (columns == 0 && !header && rows != 0)
+    if (columns == 0 && header.empty() && rows != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
     for (size_t i = 0; i < columns; ++i)
@@ -256,7 +256,7 @@ Block NativeReader::read()
         column.column = std::move(read_column);
 
         bool use_in_result = true;
-        if (header)
+        if (!header.empty())
         {
             if (header.has(column.name))
             {
@@ -327,7 +327,7 @@ Block NativeReader::read()
             index_column_it = index_block_it->columns.begin();
     }
 
-    if (rows && header)
+    if (rows && !header.empty())
     {
         /// Allow to skip columns. We will fill them with default values later.
         Block tmp_res;

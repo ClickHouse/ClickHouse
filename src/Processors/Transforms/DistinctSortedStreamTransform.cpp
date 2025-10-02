@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 DistinctSortedStreamTransform::DistinctSortedStreamTransform(
-    const Block & header_,
+    SharedHeader header_,
     const SizeLimits & output_size_limits_,
     UInt64 limit_hint_,
     const SortDescription & sorted_columns_descr_,
@@ -24,7 +24,7 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     sorted_columns_pos.reserve(sorted_columns_descr.size());
     for (auto const & descr : sorted_columns_descr)
     {
-        size_t pos = header_.getPositionByName(descr.column_name);
+        size_t pos = header_->getPositionByName(descr.column_name);
         sorted_columns_pos.emplace_back(pos);
     }
 
@@ -32,11 +32,11 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     other_columns_pos.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        size_t pos = header_.getPositionByName(source_column);
+        size_t pos = header_->getPositionByName(source_column);
         if (std::find(sorted_columns_pos.begin(), sorted_columns_pos.end(), pos) != sorted_columns_pos.end())
             continue;
 
-        const auto & col = header_.getByPosition(pos).column;
+        const auto & col = header_->getByPosition(pos).column;
         if (col && !isColumnConst(*col))
             other_columns_pos.emplace_back(pos);
     }
