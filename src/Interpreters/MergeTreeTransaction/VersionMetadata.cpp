@@ -112,14 +112,10 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 
     /// We don't need to check if CSNs are already written or not,
     /// because once written CSN cannot be changed, so it's safe to overwrite it (with the same value).
-    creation_csn.store(creation, std::memory_order_relaxed);
+    setCreationCSN(creation);
 
     if (current_removal_tid_hash)
-    {
         removal = TransactionLog::getCSN(current_removal_tid_hash, &removal_csn);
-        if (removal)
-            setRemovalCSN(removal);
-    }
 
     return creation <= snapshot_version && (!removal || snapshot_version < removal);
 }
@@ -132,7 +128,7 @@ void VersionMetadata::storeRemovalCSN(CSN csn)
 
 void VersionMetadata::setRemovalCSN(CSN csn)
 {
-    LOG_DEBUG(log, "Object {}, setRemovalCSN {}", getObjectName(), csn);
+    LOG_DEBUG(log, "Object {}, setRemovalCSN {}, removal_tid {}", getObjectName(), csn, getRemovalTID());
     chassert(!getRemovalTID().isEmpty());
     removal_csn.store(csn);
 }
@@ -146,6 +142,7 @@ void VersionMetadata::storeCreationCSN(CSN csn)
 
 void VersionMetadata::storeRemovalTID(const TransactionID & tid)
 {
+    LOG_DEBUG(log, "Object {}, storeRemovalTID {}", getObjectName(), tid);
     setRemovalTID(tid);
     storeRemovalTIDToStoredMetadata();
 }
@@ -353,9 +350,7 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
     {
         /// Part removal is not committed yet
         removal = TransactionLog::getCSN(current_removal_tid_hash, &removal_csn);
-        if (removal)
-            setRemovalCSN(removal);
-        else
+        if (!removal)
             return false;
     }
 
