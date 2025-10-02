@@ -30,6 +30,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
@@ -65,7 +66,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement&& element)
+void SystemLogQueue<LogElement>::push(LogElement && element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -74,10 +75,11 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
-    /// Memory can be allocated while resizing on queue.push_back.
-    /// The size of allocation can be in order of a few megabytes.
-    /// But this should not be accounted for query memory usage.
-    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flaky.
+
+    /// Queue resize can allocate memory
+    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -308,6 +310,8 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
+    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
     queue->push(std::move(element));
 }
 
