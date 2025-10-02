@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
+            {"input_format_parquet_local_time_as_utc", false, true, "New setting."}
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {

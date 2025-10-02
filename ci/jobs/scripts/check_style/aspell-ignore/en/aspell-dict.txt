@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3452
 aarch
 AArch
 accurateCast
@@ -572,6 +572,7 @@ cosineDistance
 countDigits
 countDistinctIf
 countEqual
+counterintuitively
 countIf
 countMatches
 countMatchesCaseInsensitive
@@ -1354,6 +1355,7 @@ IProcessor
 IPTrie
 IPv
 irate
+isAdjustedToUTC
 isConstant
 isDecimalOverflow
 isFinite
@@ -2877,6 +2879,7 @@ Subqueries
 subquery
 subranges
 subreddits
+subsecond
 subseconds
 subsequence
 substream
