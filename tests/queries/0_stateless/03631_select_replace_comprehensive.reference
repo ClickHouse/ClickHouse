@@ -14,9 +14,8 @@
 2	300	300
 3	200	200
 === LIMIT BY clause test ===
-1	100	100	alpha
-2	300	300	beta
-3	200	200	gamma
+1	100	100
+2	100	300
 === WINDOW clause test ===
 1	100	100	alpha	1
 2	300	300	beta	3
@@ -51,9 +50,15 @@
 2	300	300	beta
 3	200	200	gamma
 1	100	100	alpha
-=== GROUP BY clause test ===
+=== GROUP BY subquery test ===
 A	300
 B	700
-=== HAVING clause test ===
+=== GROUP BY direct test ===
+A_modified	30
+B_modified	70
+=== HAVING subquery test ===
+X	325
+Y	425
+=== HAVING direct test ===
 X	325
 Y	425

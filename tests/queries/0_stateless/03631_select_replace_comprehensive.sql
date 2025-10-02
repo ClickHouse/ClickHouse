@@ -47,7 +47,11 @@ SELECT * REPLACE(a AS b) FROM test_replace_merge PREWHERE b > 150 ORDER BY id;
 
 -- Test 4: LIMIT BY clause - should group by replaced values
 SELECT '=== LIMIT BY clause test ===';
-SELECT * REPLACE(a AS b) FROM test_replace_main ORDER BY id LIMIT 1 BY b;
+DROP TABLE IF EXISTS test_limit_by;
+CREATE TABLE test_limit_by (id UInt32, a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO test_limit_by VALUES (1, 100, 200), (2, 100, 300), (3, 200, 400), (4, 200, 500);
+SELECT * REPLACE(a AS b) FROM test_limit_by ORDER BY id LIMIT 1 BY b < 200;
+DROP TABLE test_limit_by;
 
 -- Test 5: WINDOW clause - should order by replaced values in window
 SELECT '=== WINDOW clause test ===';
@@ -109,8 +113,8 @@ SELECT * REPLACE(a + 1000 AS a) FROM test_replace_main WHERE a > 1100 ORDER BY i
 SELECT '=== Complex ORDER BY test ===';
 SELECT * REPLACE(a AS b) FROM test_replace_main ORDER BY b DESC, id;
 
--- Test 16: GROUP BY clause with replaced values
-SELECT '=== GROUP BY clause test ===';
+-- Test 16: GROUP BY clause with replaced values in subquery
+SELECT '=== GROUP BY subquery test ===';
 DROP TABLE IF EXISTS test_group_by;
 CREATE TABLE test_group_by (id UInt32, category String, value UInt32) ENGINE = Memory;
 INSERT INTO test_group_by VALUES (1, 'A', 10), (2, 'A', 20), (3, 'B', 30), (4, 'B', 40);
@@ -120,8 +124,19 @@ GROUP BY category
 ORDER BY category;
 DROP TABLE test_group_by;
 
--- Test 17: HAVING clause with replaced values
-SELECT '=== HAVING clause test ===';
+-- Test 17: GROUP BY clause with replaced column directly
+SELECT '=== GROUP BY direct test ===';
+DROP TABLE IF EXISTS test_group_by_direct;
+CREATE TABLE test_group_by_direct (id UInt32, category String, value UInt32) ENGINE = Memory;
+INSERT INTO test_group_by_direct VALUES (1, 'A', 10), (2, 'A', 20), (3, 'B', 30), (4, 'B', 40);
+SELECT * REPLACE(category || '_modified' AS category), sum(value) as total
+FROM test_group_by_direct
+GROUP BY category
+ORDER BY category;
+DROP TABLE test_group_by_direct;
+
+-- Test 18: HAVING clause with replaced values in subquery
+SELECT '=== HAVING subquery test ===';
 DROP TABLE IF EXISTS test_having;
 CREATE TABLE test_having (id UInt32, category String, amount UInt32) ENGINE = Memory;
 INSERT INTO test_having VALUES (1, 'X', 50), (2, 'X', 75), (3, 'Y', 100), (4, 'Y', 125);
@@ -131,6 +146,18 @@ GROUP BY category
 HAVING total > 200
 ORDER BY category;
 DROP TABLE test_having;
+
+-- Test 19: HAVING clause with replaced column directly
+SELECT '=== HAVING direct test ===';
+DROP TABLE IF EXISTS test_having_direct;
+CREATE TABLE test_having_direct (id UInt32, category String, amount UInt32) ENGINE = Memory;
+INSERT INTO test_having_direct VALUES (1, 'X', 50), (2, 'X', 75), (3, 'Y', 100), (4, 'Y', 125);
+SELECT * REPLACE(amount + 100 AS amount), category, sum(amount) as total
+FROM test_having_direct
+GROUP BY category
+HAVING total > 200
+ORDER BY category;
+DROP TABLE test_having_direct;
 
 -- Cleanup
 DROP TABLE test_replace_main;
