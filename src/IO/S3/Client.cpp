@@ -85,6 +85,7 @@ namespace S3
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
+    , log(getLogger("S3ClientRetryStrategy"))
 {
     chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
     chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
@@ -134,7 +135,7 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     else
         res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
 
-    LOG_TEST(getLogger("RetryStrategy"), "Next retry in {} ms", res);
+    LOG_TEST(log, "Next retry in {} ms", res);
     return res;
 }
 
@@ -151,7 +152,7 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         auto error = httpResponseOutcome.GetError();
         if (error.ShouldRetry())
             LOG_TRACE(
-                getLogger("RetryStrategy"),
+                log,
                 "Attempt {}/{} failed with retryable error: {}, {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
@@ -165,7 +166,7 @@ void Client::RetryStrategy::RequestBookkeeping(
 {
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
-            getLogger("RetryStrategy"),
+            log,
             "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),

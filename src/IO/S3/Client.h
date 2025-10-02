@@ -183,6 +183,7 @@ public:
 
     private:
         PocoHTTPClientConfiguration::RetryStrategy config;
+        LoggerPtr log;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
