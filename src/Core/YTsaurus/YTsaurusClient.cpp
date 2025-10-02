@@ -211,11 +211,11 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     const auto & schema_json = schema.extract<Poco::JSON::Object::Ptr>();
 
     if (!schema_json->has("$attributes"))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$attributes\" property in yt table schema");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$attributes\" property in yt table schema");
 
     auto attributes = schema_json->get("$attributes").extract<Poco::JSON::Object::Ptr>();
     if (!attributes->has("strict"))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken YtSaurus schema json. Missing `strict` field in attributes.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `strict` field in attributes.");
 
     bool is_strict = attributes->getValue<bool>("strict");
 
@@ -225,7 +225,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
 
     if (!schema_json->has("$value"))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$value\" property in yt table schema");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$value\" property in yt table schema");
     }
 
     auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
@@ -234,7 +234,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     for (const auto& yt_column : *columns_array) {
         const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
         if (!yt_column_json->has("name"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken YtSaurus schema json. Missing `name` field.");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `name` field.");
 
         auto yt_column_name = yt_column_json->getValue<String>("name");
         auto data_type = convertYTSchema(yt_column_json);
