@@ -14,9 +14,9 @@ using GetZooKeeperFunc = std::function<zkutil::ZooKeeperPtr()>;
 class VersionMetadataOnKeeper : public VersionMetadata
 {
 public:
-    explicit VersionMetadataOnKeeper(
+    VersionMetadataOnKeeper(
         IMergeTreeDataPart * merge_tree_data_part_, GetZooKeeperFunc get_zk_func_, String metadata_path_, String lock_path_);
-
+    VersionMetadataOnKeeper(IMergeTreeDataPart * merge_tree_data_part_, GetZooKeeperFunc get_zk_func_);
     void loadMetadata() override;
     void storeMetadata(bool force) const override;
 
@@ -35,6 +35,7 @@ protected:
     Info readStoredMetadata(String & content) const override;
 
 private:
+    String txn_keeper_node;
     GetZooKeeperFunc get_zk_func{nullptr};
     String metadata_path;
     mutable std::optional<Int32> metadata_version;

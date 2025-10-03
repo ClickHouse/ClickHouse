@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
 
@@ -36,6 +37,47 @@ VersionMetadataOnKeeper::VersionMetadataOnKeeper(
 {
     log = ::getLogger("VersionMetadataOnKeeper");
     LOG_DEBUG(log, "Object {}, metadata_path {}, lock_path {}", getObjectName(), metadata_path, lock_path);
+    auto zookeeper = get_zk_func();
+    if (zookeeper->exists(metadata_path))
+        loadAndVerifyMetadata(log);
+}
+
+VersionMetadataOnKeeper::VersionMetadataOnKeeper(IMergeTreeDataPart * merge_tree_data_part_, GetZooKeeperFunc get_zk_func_)
+    : VersionMetadata(merge_tree_data_part_)
+    , get_zk_func(get_zk_func_)
+{
+    log = ::getLogger("VersionMetadataOnKeeper");
+    auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
+
+    LOG_DEBUG(
+        log,
+        "Object {}, TXN_VERSION_METADATA_FILE_NAME {}, exist: {}",
+        getObjectName(),
+        TXN_VERSION_METADATA_FILE_NAME,
+        data_part_storage.existsFile(TXN_VERSION_METADATA_FILE_NAME));
+    if (data_part_storage.existsFile(TXN_VERSION_METADATA_FILE_NAME))
+    {
+        auto buf = data_part_storage.readFile(
+            TXN_VERSION_METADATA_FILE_NAME, Context::getGlobalContextInstance()->getReadSettings(), std::nullopt);
+        readStringUntilEOF(txn_keeper_node, *buf);
+    }
+    else
+    {
+        txn_keeper_node = getRandomASCIIString(64);
+    }
+
+    metadata_path = fmt::format("/clickhouse/txn/version/{}/txn_metadata", txn_keeper_node);
+    lock_path = fmt::format("/clickhouse/txn/version/{}/lock", txn_keeper_node);
+
+    auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+    String version_path = fmt::format("/clickhouse/txn/version/{}", txn_keeper_node);
+    zookeeper->createAncestors("/clickhouse/txn/version");
+    zookeeper->createIfNotExists("/clickhouse/txn/version", "");
+    zookeeper->createIfNotExists(version_path, "");
+
+    LOG_DEBUG(log, "Object {}, metadata_path {}, lock_path {}", getObjectName(), metadata_path, lock_path);
+    if (zookeeper->exists(metadata_path))
+        loadAndVerifyMetadata(log);
 }
 
 void VersionMetadataOnKeeper::loadMetadata()
@@ -51,21 +93,25 @@ void VersionMetadataOnKeeper::loadMetadata()
         metadata_version = stat.version;
         return;
     }
+    LOG_TEST(log, "Object {}, no metadata", getObjectName());
     metadata_version = std::nullopt;
     setCreationTID(Tx::PrehistoricTID, nullptr);
     setCreationCSN(Tx::PrehistoricCSN);
 }
 
-void VersionMetadataOnKeeper::storeMetadata(bool force) const
+void VersionMetadataOnKeeper::storeMetadata(bool) const
 {
-    if (!merge_tree_data_part->wasInvolvedInTransaction() && !force)
-        return;
-    const auto & storage = merge_tree_data_part->storage;
-    if (!storage.supportsTransactions())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage does not support transaction. It is a bug");
+    if (!txn_keeper_node.empty() && !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
+    {
+        LOG_TEST(log, "Object {}, store {}, keeper_node {}", getObjectName(), TXN_VERSION_METADATA_FILE_NAME, txn_keeper_node);
+        auto out_metadata = merge_tree_data_part->getDataPartStorage().writeFile(
+            TXN_VERSION_METADATA_FILE_NAME, 4096, Context::getGlobalContextInstance()->getWriteSettings());
 
+        writeText(txn_keeper_node, *out_metadata);
+        out_metadata->finalize();
+        out_metadata->sync();
+    }
     auto zookeeper = get_zk_func();
-
 
     String content;
     WriteBufferFromString buf(content);
@@ -74,6 +120,7 @@ void VersionMetadataOnKeeper::storeMetadata(bool force) const
 
     if (!metadata_version.has_value())
     {
+        LOG_TEST(log, "Object {}, metadata_version {}, create metadata content,", getObjectName(), metadata_path);
         zookeeper->create(metadata_path, content, zkutil::CreateMode::Persistent);
         metadata_version = 0;
     }

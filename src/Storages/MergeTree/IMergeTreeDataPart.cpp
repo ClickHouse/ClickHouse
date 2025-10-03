@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadataOnKeeper.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -385,22 +386,30 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part_name(parent_part ? parent_part->name : "")
     , mutable_name(name_)
 {
-    bool support_writing_with_append = true;
-    auto disk_name = getDataPartStorage().getDiskName();
-    auto disks = storage.getStoragePolicy()->getVolumeByDiskName(disk_name)->getDisks();
-    for (auto & disk : disks)
+    if (Context::getGlobalContextInstance()->hasZooKeeper())
     {
-        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+        auto get_zk_func = []() { return Context::getGlobalContextInstance()->getZooKeeper(); };
+        version = std::make_unique<VersionMetadataOnKeeper>(this, get_zk_func);
+    }
+    else
+    {
+        bool support_writing_with_append = true;
+        auto disk_name = getDataPartStorage().getDiskName();
+        auto disks = storage.getStoragePolicy()->getVolumeByDiskName(disk_name)->getDisks();
+        for (auto & disk : disks)
         {
-            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
             {
-                support_writing_with_append = false;
-                break;
+                if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+                {
+                    support_writing_with_append = false;
+                    break;
+                }
             }
         }
+        version = std::make_unique<VersionMetadataOnDisk>(this, support_writing_with_append);
     }
-
-    version = std::make_unique<VersionMetadataOnDisk>(this, support_writing_with_append);
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
