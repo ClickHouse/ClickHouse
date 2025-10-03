@@ -127,21 +127,21 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
 void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
-    for (const auto & stat_ptr : stats)
-    {
-        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
-        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
-            stats_filename = sipHash128String(stats_filename);
+    // for (const auto & stat_ptr : stats)
+    // {
+    //     auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
+    //     if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+    //         stats_filename = sipHash128String(stats_filename);
 
-        stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_filename,
-                                       data_part_storage,
-                                       stats_filename,
-                                       STATS_FILE_SUFFIX,
-                                       default_codec,
-                                       settings.max_compress_block_size,
-                                       settings.query_write_settings));
-    }
+    //     stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
+    //                                    stats_filename,
+    //                                    data_part_storage,
+    //                                    stats_filename,
+    //                                    STATS_FILE_SUFFIX,
+    //                                    default_codec,
+    //                                    settings.max_compress_block_size,
+    //                                    settings.query_write_settings));
+    // }
 }
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
@@ -234,13 +234,14 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
 {
-    for (size_t i = 0; i < stats.size(); ++i)
-    {
-        const auto & stat_ptr = stats[i];
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
-        execution_stats.statistics_build_us[i] += watch.elapsed();
-    }
+    UNUSED(block);
+    // for (size_t i = 0; i < stats.size(); ++i)
+    // {
+    //     const auto & stat_ptr = stats[i];
+    //     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+    //     stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
+    //     execution_stats.statistics_build_us[i] += watch.elapsed();
+    // }
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
@@ -379,19 +380,20 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
             stream->sync();
     }
 
-    for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
+    // for (size_t i = 0; i < stats.size(); ++i)
+    //     LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
-    for (size_t i = 0; i < stats.size(); i++)
-    {
-        auto & stream = *stats_streams[i];
-        stats[i]->serialize(stream.compressed_hashing);
-        stream.preFinalize();
-        stream.addToChecksums(checksums);
-    }
+    UNUSED(checksums);
+    // for (size_t i = 0; i < stats.size(); i++)
+    // {
+    //     auto & stream = *stats_streams[i];
+    //     stats[i]->serialize(stream.compressed_hashing);
+    //     stream.preFinalize();
+    //     stream.addToChecksums(checksums);
+    // }
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)

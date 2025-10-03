@@ -875,13 +875,11 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
+    ColumnsStatistics result(metadata_snaphost.getColumns());
 
-    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
-
-    ColumnsStatistics result;
-    for (auto & stat : total_statistics)
+    for (auto it = result.begin(); it != result.end();)
     {
-        String escaped_name = escapeForFileName(stat->getStatisticName());
+        auto escaped_name = escapeForFileName(ColumnsStatistics::getStatisticName(it->first));
         auto stream_name = getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, checksums);
 
         if (!stream_name.has_value())
@@ -895,13 +893,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
         if (auto stat_file = readFileIfExists(file_name))
         {
             CompressedReadBuffer compressed_buffer(*stat_file);
-            stat->deserialize(compressed_buffer);
-            result.push_back(stat);
+            it->second->deserialize(compressed_buffer);
+            ++it;
         }
         else
         {
             String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
             LOG_INFO(storage.log, "Cannot read stats file {}", file_path);
+            result.erase(it++);
         }
     }
     return result;
@@ -917,8 +916,8 @@ Estimates IMergeTreeDataPart::getEstimates() const
     estimates = Estimates();
     auto statistics = loadStatistics();
 
-    for (const auto & stat : statistics)
-        estimates->emplace(stat->getColumnName(), stat->getEstimate());
+    for (const auto & [column_name, stat] : statistics)
+        estimates->emplace(column_name, stat->getEstimate());
 
     return *estimates;
 }
@@ -934,6 +933,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         if (!isStoredOnReadonlyDisk())
             loadUUID();
+
         loadColumns(require_columns_checksums, load_metadata_version);
         loadColumnsSubstreams();
         loadChecksums(require_columns_checksums);

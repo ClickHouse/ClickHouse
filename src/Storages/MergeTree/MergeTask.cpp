@@ -154,7 +154,7 @@ ColumnsStatistics getStatisticsForColumns(
         if (desc && !desc->statistics.empty())
         {
             auto statistics = MergeTreeStatisticsFactory::instance().get(*desc);
-            all_statistics.push_back(std::move(statistics));
+            all_statistics.emplace(column.name, std::move(statistics));
         }
     }
     return all_statistics;

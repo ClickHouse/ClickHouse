@@ -808,8 +808,8 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
             estimator_builder.incrementRowCount(part.data_part->rows_count);
-            for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -839,8 +839,8 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             {
                 auto stats = part.data_part->loadStatistics();
                 estimator_builder.incrementRowCount(part.data_part->rows_count);
-                for (const auto & stat : stats)
-                    estimator_builder.addStatistics(stat);
+                for (const auto & [column_name, stat] : stats)
+                    estimator_builder.addStatistics(column_name, stat);
             }
         }
         catch (...)

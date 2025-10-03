@@ -845,8 +845,9 @@ static NameSet collectFilesToSkip(
 
     for (const auto & stat : stats_to_recalc)
     {
-        if (auto filename = getStatisticFilename(stat->getStatisticName(), *source_part))
-            files_to_skip.insert(*filename);
+        // if (auto filename = getStatisticFilename(stat->getStatisticName(), *source_part))
+        //     files_to_skip.insert(*filename);
+        UNUSED(stat);
     }
 
     if (isWidePart(source_part))
@@ -1632,21 +1633,21 @@ private:
 
         ColumnsStatistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
-        for (const auto & col : columns)
+        for (const auto & column : columns)
         {
-            if (col.statistics.empty() || removed_stats.contains(col.name))
+            if (column.statistics.empty() || removed_stats.contains(column.name))
                 continue;
 
-            if (ctx->materialized_statistics.contains(col.name))
+            if (ctx->materialized_statistics.contains(column.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col));
+                stats_to_rewrite.emplace(column.name, MergeTreeStatisticsFactory::instance().get(column));
             }
             else
             {
                 /// We do not hard-link statistics which
                 /// 1. In `DROP STATISTICS` statement. It is filtered by `removed_stats`
                 /// 2. Not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
-                if (auto stat_filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + col.name, *ctx->source_part))
+                if (auto stat_filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + column.name, *ctx->source_part))
                 {
                     const auto & checksum = ctx->source_part->checksums.files.at(*stat_filename);
                     entries_to_hardlink.insert(*stat_filename);
@@ -2046,7 +2047,8 @@ private:
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                // ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                ColumnsStatistics{},
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk());

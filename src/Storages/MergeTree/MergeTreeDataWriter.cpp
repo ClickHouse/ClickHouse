@@ -700,10 +700,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
-    ColumnsStatistics statistics;
-    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
-        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
-
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
@@ -755,6 +751,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+    }
+
+    ColumnsStatistics statistics;
+    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    {
+        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+        statistics.build(block);
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
