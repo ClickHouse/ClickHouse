@@ -199,6 +199,8 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
         std::move(filter_dag),
         filter_column_name,
         true);
+
+    join_node.step->updateInputHeader(new_filter_node.step->getOutputHeader(), child_idx);
 }
 
 }
