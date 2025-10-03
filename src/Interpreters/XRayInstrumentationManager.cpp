@@ -4,7 +4,6 @@
 #include <shared_mutex>
 #include <string>
 #include <llvm/IR/Constant.h>
-#include <llvm/ADT/ScopeExit.h> 
 
 #if USE_XRAY
 
@@ -189,7 +188,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     static thread_local bool in_hook = false;
     if (in_hook) return;
     in_hook = true;
-    auto cleanup = llvm::make_scope_exit([] { in_hook = false; });
+    SCOPE_EXIT({ in_hook = false; });
 
     std::shared_lock lock(shared_mutex);
     auto handlers_set_it = functionIdToHandlers.find(func_id);
@@ -284,7 +283,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         return;
     }
     in_hook = true;
-    auto cleanup = llvm::make_scope_exit([] { in_hook = false; });
+    SCOPE_EXIT({ in_hook = false; });
     HandlerType type = HandlerType::Sleep;
     auto parameters_it = functionIdToHandlers[func_id].find(type);
     if (parameters_it == functionIdToHandlers[func_id].end())
@@ -339,7 +338,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
-    auto cleanup = llvm::make_scope_exit([] { in_hook = false; });
+    SCOPE_EXIT({ in_hook = false; });
     HandlerType type = HandlerType::Log;
     auto parameters_it = functionIdToHandlers[func_id].find(type);
     if (parameters_it == functionIdToHandlers[func_id].end())
@@ -377,7 +376,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
-    auto cleanup = llvm::make_scope_exit([] { in_hook = false; });
+    SCOPE_EXIT({ in_hook = false; });
     LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(func_id));
     HandlerType type = HandlerType::Profile;
     static thread_local std::unordered_map<int32_t, XRayInstrumentationProfilingLogElement> active_elements;
