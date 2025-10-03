@@ -292,12 +292,31 @@ class JobConfigs:
             provides=[ArtifactNames.CH_LOONGARCH64],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+    )
+    fuzzers_build_job = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.FUZZERS,
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
-    )
+    )[0]
+    fuzzers_objects_build_job = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.FUZZERS_OBJECTS,
+            provides=[],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )[0]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
