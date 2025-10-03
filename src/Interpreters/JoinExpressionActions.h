@@ -15,6 +15,7 @@ enum class JoinConditionOperator : UInt8
     And,
     Or,
     Equals,
+    NotEquals,
     NullSafeEquals,
     Less,
     LessOrEquals,
