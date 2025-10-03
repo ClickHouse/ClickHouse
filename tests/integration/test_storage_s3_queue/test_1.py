@@ -294,14 +294,19 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             break
         time.sleep(1)
 
-    if (
-        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) != total_rows:
-        info = node.query(
-            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
-        )
-        logging.debug(info)
-        assert False
+    expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
+
+    count1 = get_count(node, dst_table_name)
+    count2 = get_count(node_2, dst_table_name)
+    if (count1 + count2) != total_rows:
+        files = node.query(
+            f"SELECT file_path FROM system.s3queue WHERE zookeeper_path like '%{table_name}' AND status != 'Processed'"
+        ).strip().split('\n')
+        logging.debug(f"All files: {files}")
+        missing_files =  [file for file in files if file not in expected_files]
+        logging.debug(f"Missing files: {missing_files}")
+
+        assert False, f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2})"
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
