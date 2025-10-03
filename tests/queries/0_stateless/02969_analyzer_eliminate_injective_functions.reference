@@ -38,11 +38,11 @@ QUERY id: 0
                 FUNCTION id: 23, function_name: toString, function_type: ordinary, result_type: String
                   ARGUMENTS
                     LIST id: 24, nodes: 1
-                      FUNCTION id: 25, function_name: plus, function_type: ordinary, result_type: UInt64
+                      FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
                         ARGUMENTS
-                          LIST id: 26, nodes: 2
-                            COLUMN id: 27, column_name: number, result_type: UInt64, source_id: 9
-                            CONSTANT id: 28, constant_value: UInt64_1, constant_value_type: UInt8
+                          LIST id: 16, nodes: 2
+                            COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 9
+                            CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
 1	1
 2	1
 QUERY id: 0
@@ -131,11 +131,11 @@ QUERY id: 0, is_group_by_with_totals: 1
                 FUNCTION id: 23, function_name: toString, function_type: ordinary, result_type: String
                   ARGUMENTS
                     LIST id: 24, nodes: 1
-                      FUNCTION id: 25, function_name: plus, function_type: ordinary, result_type: UInt64
+                      FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
                         ARGUMENTS
-                          LIST id: 26, nodes: 2
-                            COLUMN id: 27, column_name: number, result_type: UInt64, source_id: 9
-                            CONSTANT id: 28, constant_value: UInt64_1, constant_value_type: UInt8
+                          LIST id: 16, nodes: 2
+                            COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 9
+                            CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
 1	1
 2	1
 
