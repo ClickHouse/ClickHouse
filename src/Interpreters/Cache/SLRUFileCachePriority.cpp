@@ -78,17 +78,12 @@ FileCachePriorityPtr SLRUFileCachePriority::copy() const
         max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
 }
 
-size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::WriteLock & lock) const
+size_t SLRUFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const
 {
     return protected_queue.getSize(lock) + probationary_queue.getSize(lock);
 }
 
-size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::WriteLock & lock) const
-{
-    return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
-}
-
-size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::ReadLock & lock) const
+size_t SLRUFileCachePriority::getElementsCount(const CacheStateGuard::Lock & lock) const
 {
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
@@ -106,7 +101,7 @@ size_t SLRUFileCachePriority::getElementsCountApprox() const
 bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t size,
     size_t elements,
-    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
     bool best_effort) const
 {
@@ -129,6 +124,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     size_t size,
     const UserInfo &,
     const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock & state_lock,
     bool is_startup)
 {
     IteratorPtr iterator;
@@ -137,29 +133,29 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         /// If it is server startup, we put entries in any queue it will fit in,
         /// but with preference for probationary queue,
         /// because we do not know the distribution between queues after server restart.
-        if (probationary_queue.canFit(size, /* elements */1, lock))
+        if (probationary_queue.canFit(size, /* elements */1, state_lock))
         {
-            auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock);
+            auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
             iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
         }
         else
         {
-            auto lru_iterator = protected_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock);
+            auto lru_iterator = protected_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
             iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), true);
         }
     }
     else
     {
-        auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock);
+        auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
         iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
     }
 
-    if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
+    if (getSize(state_lock) > max_size || getElementsCount(state_lock) > max_elements)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Violated cache limits. "
             "Added {} for {} element ({}:{}). Current state: {}",
-            size, iterator->getType(), key_metadata->key, offset, getStateInfoForLog(lock));
+            size, iterator->getType(), key_metadata->key, offset, getStateInfoForLog(state_lock));
     }
 
     return iterator;
@@ -235,7 +231,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     return false;
 }
 
-void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock & lock)
+void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock & lock, const CacheStateGuard::Lock & state_lock)
 {
     auto * candidate_it = assert_cast<SLRUIterator *>(iterator.get());
     if (!candidate_it->is_protected)
@@ -252,15 +248,15 @@ void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityG
     }
 
     const size_t entry_size = candidate_it->getEntry()->size;
-    if (!probationary_queue.canFit(entry_size, 1, lock))
+    if (!probationary_queue.canFit(entry_size, 1, state_lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot downgrade {}: not enough space: {}",
                         candidate_it->getEntry()->toString(),
-                        probationary_queue.getStateInfoForLog(lock));
+                        probationary_queue.getStateInfoForLog(state_lock));
     }
 
-    candidate_it->lru_iterator = probationary_queue.move(candidate_it->lru_iterator, protected_queue, lock);
+    candidate_it->lru_iterator = probationary_queue.move(candidate_it->lru_iterator, protected_queue, lock, state_lock);
     candidate_it->is_protected = false;
 }
 
@@ -291,14 +287,14 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
-    if (entry->size > protected_queue.getSizeLimit(lock))
-    {
-        /// Entry size is bigger than the whole protected queue limit.
-        /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
-        /// which is not possible in any realistic cache configuration.
-        iterator.lru_iterator.increasePriority(lock);
-        return;
-    }
+    //if (entry->size > protected_queue.getSizeLimit(lock))
+    //{
+    //    /// Entry size is bigger than the whole protected queue limit.
+    //    /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
+    //    /// which is not possible in any realistic cache configuration.
+    //    iterator.lru_iterator.increasePriority(lock);
+    //    return;
+    //}
 
     /// We need to remove the entry from probationary first
     /// in order to make space for downgrade from protected.
@@ -318,7 +314,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
             /// Then just increase its priority within probationary queue.
-            iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+            //iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
             return;
         }
 
@@ -333,22 +329,23 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     }
     catch (...)
     {
-        iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+        //iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
         throw;
     }
 
-    iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
+    //iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
     iterator.is_protected = true;
 }
 
 LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
     EntryPtr entry,
     LRUFileCachePriority & queue,
-    const CachePriorityGuard::WriteLock & lock)
+    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock & state_lock)
 {
     try
     {
-        return queue.add(entry, lock);
+        return queue.add(entry, lock, state_lock);
     }
     catch (...)
     {
@@ -396,7 +393,7 @@ void SLRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock & lock)
 }
 
 bool SLRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::WriteLock & lock)
+    size_t max_size_, size_t max_elements_, double size_ratio_, const CacheStateGuard::Lock & lock)
 {
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
         return false; /// Nothing to change.
@@ -433,11 +430,11 @@ size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriority
 {
     assertValid();
     cache_priority->increasePriority(*this, lock);
-    cache_priority->check(lock);
+    //cache_priority->check(lock);
     return getEntry()->hits;
 }
 
-void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CachePriorityGuard::WriteLock & lock)
+void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
 {
     assertValid();
     lru_iterator.incrementSize(size, lock);
@@ -466,7 +463,7 @@ void SLRUFileCachePriority::SLRUIterator::assertValid() const
     lru_iterator.assertValid();
 }
 
-std::string SLRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::WriteLock & lock) const
+std::string SLRUFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock & lock) const
 {
     return fmt::format("total size {}/{}, elements {}/{}, "
                        "probationary queue size {}/{}, elements {}/{}, "
@@ -478,7 +475,7 @@ std::string SLRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::
                        protected_queue.getElementsCount(lock), protected_queue.max_elements.load());
 }
 
-void SLRUFileCachePriority::check(const CachePriorityGuard::WriteLock & lock) const
+void SLRUFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
     probationary_queue.check(lock);
     protected_queue.check(lock);

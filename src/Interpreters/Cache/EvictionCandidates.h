@@ -65,7 +65,7 @@ public:
         size_t size,
         size_t elements,
         IFileCachePriority & priority,
-        const CachePriorityGuard::WriteLock &);
+        const CacheStateGuard::Lock &);
 
 private:
 

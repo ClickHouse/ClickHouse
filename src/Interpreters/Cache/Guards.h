@@ -95,6 +95,27 @@ private:
     Mutex mutex;
 };
 
+struct CacheStateGuard : private boost::noncopyable
+{
+    using Mutex = std::timed_mutex;
+
+    struct Lock : public std::unique_lock<Mutex>
+    {
+        using Base = std::unique_lock<Mutex>;
+        using Base::Base;
+
+        explicit Lock(Mutex & mutex_) : std::unique_lock<Mutex>(mutex_) {}
+    };
+
+    Lock lock() { return Lock(mutex); }
+    Lock tryLock() { return Lock(mutex, std::try_to_lock); }
+    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
+    {
+        return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+    }
+    Mutex mutex;
+};
+
 /**
  * Guard for cache metadata.
  */

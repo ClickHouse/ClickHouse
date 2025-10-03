@@ -84,7 +84,7 @@ public:
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
 
-        virtual void incrementSize(size_t size, const CachePriorityGuard::WriteLock &) = 0;
+        virtual void incrementSize(size_t size, const CacheStateGuard::Lock &) = 0;
 
         virtual void decrementSize(size_t size) = 0;
 
@@ -105,7 +105,7 @@ public:
             size_t size_,
             size_t elements_,
             IFileCachePriority & priority_,
-            const CachePriorityGuard::WriteLock & lock)
+            const CacheStateGuard::Lock & lock)
             : size(size_), elements(elements_), priority(priority_)
         {
             priority.holdImpl(size, elements, lock);
@@ -136,26 +136,35 @@ public:
 
     virtual ~IFileCachePriority() = default;
 
-    size_t getElementsLimit(const CachePriorityGuard::WriteLock &) const { return max_elements; }
-
-    size_t getSizeLimit(const CachePriorityGuard::WriteLock &) const { return max_size; }
+    size_t getSizeLimit(const CacheStateGuard::Lock &) const { return max_size; }
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
 
-    virtual size_t getSize(const CachePriorityGuard::WriteLock &) const = 0;
-    virtual size_t getSize(const CachePriorityGuard::ReadLock &) const = 0;
+    size_t getElementsLimit(const CacheStateGuard::Lock &) const { return max_elements; }
+    size_t getElementsLimitApprox() const { return max_elements.load(std::memory_order_relaxed); }
 
+    virtual size_t getSize(const CacheStateGuard::Lock &) const = 0;
     virtual size_t getSizeApprox() const = 0;
+
+    virtual size_t getElementsCount(const CacheStateGuard::Lock &) const = 0;
+    virtual size_t getElementsCountApprox() const = 0;
 
     virtual double getSLRUSizeRatio() const { return 0; }
 
-    virtual size_t getElementsCount(const CachePriorityGuard::WriteLock &) const = 0;
-    virtual size_t getElementsCount(const CachePriorityGuard::ReadLock &) const = 0;
+    virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
+    virtual void check(const CacheStateGuard::Lock &) const;
 
-    virtual size_t getElementsCountApprox() const = 0;
+    struct EvictionInfo
+    {
+        size_t size_to_evict = 0;
+        size_t elements_to_evict = 0;
+        HoldSpacePtr hold_space;
 
-    virtual std::string getStateInfoForLog(const CachePriorityGuard::WriteLock &) const = 0;
-
-    virtual void check(const CachePriorityGuard::WriteLock &) const;
+        std::string formatForLog() const;
+    };
+    virtual EvictionInfo checkEvictionInfo(
+        size_t size,
+        size_t elements,
+        const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
     {
@@ -177,6 +186,7 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         bool best_effort = false) = 0;
 
     /// `reservee` is the entry for which are reserving now.
@@ -185,7 +195,7 @@ public:
     virtual bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
 
@@ -198,19 +208,6 @@ public:
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
-
-    struct EvictionInfo
-    {
-        size_t size_to_evict = 0;
-        size_t elements_to_evict = 0;
-        HoldSpacePtr hold_space;
-
-        std::string formatForLog() const;
-    };
-    virtual EvictionInfo checkEvictionInfo(
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::WriteLock &) = 0;
 
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
@@ -239,15 +236,14 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
-        const CachePriorityGuard::WriteLock &) = 0;
+        const CacheStateGuard::Lock &) = 0;
 
     virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
-    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CachePriorityGuard::WriteLock &) {}
-
+    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
     std::atomic<size_t> max_size = 0;

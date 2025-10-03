@@ -44,7 +44,7 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-void IFileCachePriority::check(const CachePriorityGuard::WriteLock & lock) const
+void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
     if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
     {

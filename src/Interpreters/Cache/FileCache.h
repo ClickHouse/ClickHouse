@@ -263,6 +263,7 @@ private:
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
+    mutable CacheStateGuard cache_state_guard;
 
     struct HitsCountStash
     {
@@ -345,7 +346,7 @@ private:
         const SizeLimits & current_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
-        CachePriorityGuard::WriteLock &);
+        CacheStateGuard::Lock &);
 };
 
 }

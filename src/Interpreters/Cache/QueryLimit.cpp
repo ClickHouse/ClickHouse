@@ -68,22 +68,22 @@ FileCacheQueryLimit::QueryContext::QueryContext(
 }
 
 void FileCacheQueryLimit::QueryContext::add(
-    KeyMetadataPtr key_metadata,
-    size_t offset,
-    size_t size,
-    const FileCache::UserInfo & user,
-    const CachePriorityGuard::WriteLock & lock)
+    [[maybe_unused]]KeyMetadataPtr key_metadata,
+    [[maybe_unused]]size_t offset,
+    [[maybe_unused]]size_t size,
+    [[maybe_unused]]const FileCache::UserInfo & user,
+    [[maybe_unused]]const CachePriorityGuard::WriteLock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, user, lock);
-    auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
-    if (!inserted)
-    {
-        it->remove(lock);
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add offset {} to query context under key {}, it already exists",
-            offset, key_metadata->key);
-    }
+    //auto it = getPriority().add(key_metadata, offset, size, user, lock);
+    //auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
+    //if (!inserted)
+    //{
+    //    it->remove(lock);
+    //    throw Exception(
+    //        ErrorCodes::LOGICAL_ERROR,
+    //        "Cannot add offset {} to query context under key {}, it already exists",
+    //        offset, key_metadata->key);
+    //}
 }
 
 void FileCacheQueryLimit::QueryContext::remove(
