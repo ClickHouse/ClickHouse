@@ -13,6 +13,8 @@
 #include <variant>
 #include <xray/xray_interface.h>
 
+class XRayInstrumentationManagerTest;
+
 namespace DB
 {
 
@@ -79,6 +81,8 @@ private:
     std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers TSA_GUARDED_BY(shared_mutex);
 
     static constexpr const char* UNKNOWN = "<unknown>";
+
+    friend class ::XRayInstrumentationManagerTest;
 };
 
 }

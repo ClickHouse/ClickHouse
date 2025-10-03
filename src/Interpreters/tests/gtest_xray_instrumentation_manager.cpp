@@ -3,7 +3,7 @@
 #include <Interpreters/XRayInstrumentationManager.h>
 
 
-class XRayInstrumentationManagerTest : public ::testing::Test, protected DB::XRayInstrumentationManager
+class XRayInstrumentationManagerTest : public ::testing::Test
 {
 protected:
     static std::string removeTemplateArgs(std::string_view input)
