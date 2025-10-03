@@ -19,7 +19,7 @@ public:
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const String rname, const DB::Strings names)
+    SQLRelationCol(const String & rname, const DB::Strings & names)
         : rel_name(rname)
         , path(names)
     {
