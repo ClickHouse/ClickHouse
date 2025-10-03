@@ -370,7 +370,8 @@ void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
     if (std::holds_alternative<String>(param))
     {
         String logger_info = std::get<String>(param);
-        LOG_DEBUG(getLogger("XRayInstrumentationManager::log"), "Instrumentation log: {}", logger_info);
+        auto function_name = parameters_it->second->function_name;
+        LOG_DEBUG(getLogger("XRayInstrumentationManager::log"), "{}: {}", function_name, logger_info);
     }
     else
     {
