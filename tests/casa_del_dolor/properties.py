@@ -952,21 +952,32 @@ class LogTablePropertiesGroup(PropertiesGroup):
         #        policy_choices
         #    )
         apply_properties_recursively(property_element, log_table_properties, 0)
-        # max_size_rows cannot be smaller than reserved_size_rows
+        # max_size_rows (default 1048576) cannot be smaller than reserved_size_rows (default 8192)
         max_size_rows_xml = property_element.find("max_size_rows")
         reserved_size_rows_xml = property_element.find("reserved_size_rows")
-        if max_size_rows_xml is not None and max_size_rows_xml.text:
-            max_size_rows_xml.text = str(
-                max(
-                    int(max_size_rows_xml.text),
-                    (
-                        8192
-                        if reserved_size_rows_xml is None
-                        or not reserved_size_rows_xml.text
-                        else int(reserved_size_rows_xml.text)
-                    ),
-                )
+        if max_size_rows_xml is not None or reserved_size_rows_xml is not None:
+            max_size_rows_value = (
+                1048576
+                if (max_size_rows_xml is None or max_size_rows_xml.text is None)
+                else int(max_size_rows_xml.text)
             )
+            reserved_size_rows_value = (
+                8192
+                if (
+                    reserved_size_rows_xml is None
+                    or reserved_size_rows_xml.text is None
+                )
+                else int(reserved_size_rows_xml.text)
+            )
+            if max_size_rows_value < reserved_size_rows_value:
+                max_size_rows_xml = (
+                    ET.SubElement(property_element, "max_size_rows")
+                    if max_size_rows_xml is None
+                    else max_size_rows_xml
+                )
+                max_size_rows_xml.text = str(
+                    max(max_size_rows_value, reserved_size_rows_value)
+                )
 
 
 def add_ssl_settings(next_ssl: ET.Element):
