@@ -6104,6 +6104,9 @@ Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distrib
     DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
 Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
 )", 0) \
+    DECLARE(Bool, read_from_distributed_cache_if_exists_otherwise_bypass_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Same as read_from_filesystem_cache_if_exists_otherwise_bypass_cache, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
