@@ -488,8 +488,14 @@ String XRayInstrumentationManager::extractNearestNamespaceAndFunction(std::strin
         function_name = before_args.substr(last_colon + 2);
 
         size_t second_last_colon = before_args.rfind("::", last_colon - 2);
-        if (second_last_colon != std::string_view::npos)
-            class_or_namespace_name = before_args.substr(second_last_colon + 2, last_colon - (second_last_colon + 2));
+        size_t last_space = before_args.rfind(' ');
+        size_t method_name = second_last_colon;
+
+        if (last_space != std::string_view::npos && second_last_colon != std::string_view::npos && last_space > second_last_colon)
+            method_name = last_space - 1;
+
+        if (method_name != std::string_view::npos)
+            class_or_namespace_name = before_args.substr(method_name + 2, last_colon - (method_name + 2));
         else
         {
             size_t first_space = before_args.find_last_of(' ', last_colon);
