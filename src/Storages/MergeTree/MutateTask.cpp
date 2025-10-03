@@ -698,17 +698,16 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
+    ColumnsStatistics stats_to_recalc;
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
+
     for (const auto & col_desc : columns)
     {
         if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
-        {
-            stats_to_recalc.insert(stats_factory.get(col_desc));
-        }
+            stats_to_recalc.emplace(col_desc.name,stats_factory.get(col_desc));
     }
     return stats_to_recalc;
 }
@@ -821,7 +820,7 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
-    const std::set<ColumnStatisticsPtr> & stats_to_recalc,
+    const ColumnsStatistics & stats_to_recalc,
     const NameSet & updated_columns_in_patches)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -843,11 +842,11 @@ static NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_skip)
         files_to_skip.insert(projection->getDirectoryName());
 
-    for (const auto & stat : stats_to_recalc)
+    /// TODO: handle compact format.
+    for (const auto & [stat_name, stat] : stats_to_recalc)
     {
-        // if (auto filename = getStatisticFilename(stat->getStatisticName(), *source_part))
-        //     files_to_skip.insert(*filename);
-        UNUSED(stat);
+        if (auto filename = getStatisticFilename(stat_name, *source_part))
+            files_to_skip.insert(*filename);
     }
 
     if (isWidePart(source_part))
@@ -1044,6 +1043,7 @@ static NameToNameVector collectFilesForRenames(
 void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
+    const IMergedBlockOutputStream::GatheredData & all_gathered_data,
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
     ContextPtr context,
@@ -1085,6 +1085,11 @@ void finalizeMutatedPart(
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
+    }
+
+    if (!all_gathered_data.part_level_statistics.statistics.empty())
+    {
+        /// TODO: write statistics...
     }
 
     {
@@ -1205,16 +1210,16 @@ struct MutationContext
     NameSet materialized_projections;
     NameSet materialized_statistics;
 
+    IMergedBlockOutputStream::GatheredData all_gathered_data;
     MergeTreeData::MutableDataPartPtr new_data_part;
     IMergedBlockOutputStreamPtr out;
 
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
@@ -1382,9 +1387,6 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             finalizeTempProjections();
             return false;
         }
-
-        if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 
@@ -1776,8 +1778,6 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-        ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-
         bool affects_all_columns = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -1805,12 +1805,18 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
+        PartLevelStatistics part_level_statistics;
+        part_level_statistics.addStatistics(stats_to_rewrite, true);
+
+        auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        part_level_statistics.addMinMaxIndex(minmax_idx, true);
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
-            stats_to_rewrite,
+            part_level_statistics,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
@@ -1831,13 +1837,12 @@ private:
     void finalize()
     {
         bool noop;
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
+        auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
+        out_mut->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr, &ctx->all_gathered_data);
         ctx->out.reset();
     }
 
@@ -2015,9 +2020,8 @@ private:
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
-
-        ctx->new_data_part->checksums = ctx->source_part->checksums;
-
+        ctx->all_gathered_data.checksums = ctx->source_part->checksums;
+        ctx->all_gathered_data.part_level_statistics.addStatistics(ctx->source_part->loadStatistics(), false);
         ctx->compression_codec = ctx->source_part->default_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
@@ -2042,13 +2046,15 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            PartLevelStatistics part_level_statistics;
+            part_level_statistics.addStatistics(ctx->stats_to_recalc, true);
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                // ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
-                ColumnsStatistics{},
+                part_level_statistics,
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk());
@@ -2073,21 +2079,18 @@ private:
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
-            auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
-            ctx->new_data_part->checksums.add(std::move(changed_checksums));
+            auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
+            auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->all_gathered_data);
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
-                auto changed_columns_substreams = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->getColumnsSubstreams();
+                auto changed_columns_substreams = out_mut->getColumnsSubstreams();
                 new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
                 ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
             }
 
-            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
-
+            out_mut->finish(ctx->need_sync);
             ctx->out.reset();
         }
 
@@ -2104,7 +2107,15 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
+        MutationHelpers::finalizeMutatedPart(
+            ctx->source_part,
+            ctx->new_data_part,
+            ctx->all_gathered_data,
+            ctx->execute_ttl_type,
+            ctx->compression_codec,
+            ctx->context,
+            ctx->metadata_snapshot,
+            ctx->need_sync);
     }
 
     enum class State : uint8_t

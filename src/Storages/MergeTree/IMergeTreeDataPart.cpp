@@ -876,10 +876,11 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
     ColumnsStatistics result(metadata_snaphost.getColumns());
+    NameSet names_to_remove;
 
-    for (auto it = result.begin(); it != result.end();)
+    for (const auto & [column_name, statistics] : result)
     {
-        auto escaped_name = escapeForFileName(ColumnsStatistics::getStatisticName(it->first));
+        auto escaped_name = escapeForFileName(ColumnsStatistics::getStatisticName(column_name));
         auto stream_name = getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, checksums);
 
         if (!stream_name.has_value())
@@ -893,16 +894,19 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
         if (auto stat_file = readFileIfExists(file_name))
         {
             CompressedReadBuffer compressed_buffer(*stat_file);
-            it->second->deserialize(compressed_buffer);
-            ++it;
+            statistics->deserialize(compressed_buffer);
         }
         else
         {
             String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
             LOG_INFO(storage.log, "Cannot read stats file {}", file_path);
-            result.erase(it++);
+            names_to_remove.insert(column_name);
         }
     }
+
+    for (const auto & column_name : names_to_remove)
+        result.erase(column_name);
+
     return result;
 }
 
@@ -916,10 +920,16 @@ Estimates IMergeTreeDataPart::getEstimates() const
     estimates = Estimates();
     auto statistics = loadStatistics();
 
-    for (const auto & [column_name, stat] : statistics)
-        estimates->emplace(column_name, stat->getEstimate());
+    for (const auto & [column_name, stats] : statistics)
+        estimates->emplace(column_name, stats->getEstimate());
 
     return *estimates;
+}
+
+void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
+{
+    std::lock_guard lock(estimates_mutex);
+    estimates = new_estimates;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

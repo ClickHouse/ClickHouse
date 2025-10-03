@@ -99,7 +99,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -108,7 +107,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
             columns_list_, metadata_snapshot_, virtual_columns_,
-            indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
+            indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_))
 {
     if (settings.save_marks_in_cache)
@@ -191,11 +190,13 @@ void MergeTreeDataPartWriterWide::addStreams(
         query_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size());
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream<false>>(
+        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream>(
             stream_name,
             data_part_storage,
-            stream_name, DATA_FILE_EXTENSION,
-            stream_name, marks_file_extension,
+            stream_name,
+            DATA_FILE_EXTENSION,
+            stream_name,
+            marks_file_extension,
             compression_codec,
             max_compress_block_size,
             marks_compression_codec,
@@ -367,7 +368,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
-    calculateAndSerializeStatistics(block);
 
     shiftCurrentMark(granules_to_write);
 }
@@ -800,7 +800,6 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -813,7 +812,6 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::cancel() noexcept

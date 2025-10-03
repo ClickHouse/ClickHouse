@@ -901,12 +901,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addStatistics(std::move(statistics), false);
+    part_level_statistics.addMinMaxIndex(std::move(minmax_idx), false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
         columns,
         indices,
-        statistics,
+        part_level_statistics,
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
@@ -1071,7 +1075,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
+        PartLevelStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
