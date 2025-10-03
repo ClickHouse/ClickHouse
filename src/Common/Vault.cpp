@@ -65,7 +65,6 @@ String Vault::readSecret(const String & secret, const String & key)
                       .create(credentials);
 
         readJSONObjectPossiblyInvalid(json_str, *wb);
-        LOG_DEBUG(log, "Vault response '{}'.", json_str);
     }
     catch (const DB::HTTPException & e)
     {
@@ -86,7 +85,6 @@ String Vault::readSecret(const String & secret, const String & key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
 
     const auto value = kv->get(key).extract<String>();
-    LOG_DEBUG(log, "Vault value '{}'.", value);
 
     return value;
 }

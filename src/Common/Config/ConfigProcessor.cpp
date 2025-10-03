@@ -627,14 +627,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_vault"] && Vault::instance().isLoaded())
     {
-        // LOG_DEBUG(log, "Vault token '{}'.", Vault::instance().token);
-
         const auto * vault_key_node = node->attributes()->getNamedItem("vault_key");
 
         if (!vault_key_node || vault_key_node->getNodeValue().empty())
             throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_vault' attribute and does not have valid 'vault_key' attribute");
-
-        // LOG_DEBUG(log, "Vault vault_key '{}'.", vault_key_node->getNodeValue());
 
         XMLDocumentPtr vault_document;
 
