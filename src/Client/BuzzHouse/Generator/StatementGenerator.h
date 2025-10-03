@@ -45,7 +45,7 @@ public:
 
     SQLRelation() = default;
 
-    explicit SQLRelation(const String n)
+    explicit SQLRelation(const String & n)
         : name(n)
     {
     }
