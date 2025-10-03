@@ -476,7 +476,7 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
     }
 }
 
-Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr * expr)
+Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const
 {
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();

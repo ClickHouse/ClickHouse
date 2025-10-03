@@ -626,7 +626,7 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT {} FROM \"system\".\"iceberg_history\" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 property,
                 fuzz_server_out.generic_string())))
     {
