@@ -187,11 +187,12 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 
     col_result->getData().resize(input_rows_count);
 
-    // If token_extractor is not set it means that we are using brute force instead of index
+    /// If token_extractor == nullptr, we do a brute force scan on a column without index
     if (token_extractor == nullptr)
     {
         chassert(!needles.has_value());
 
+        /// Populate needles from function arguments
         Needles needles_tmp;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
@@ -205,7 +206,6 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
         }
         else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
         {
-            // This is what happens when called over a string instead of a column
             const IColumn & needles_data = col_needles_vector->getData();
             const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
 
@@ -217,15 +217,17 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
+        DefaultTokenExtractor default_token_extractor;
+
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<SearchTraits>(token_default_extractor.get(), *column_string, input_rows_count, needles_tmp, col_result->getData());
+            execute<SearchTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<SearchTraits>(token_default_extractor.get(), *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+            execute<SearchTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
 
     }
     else
     {
-        // token_extractor != nullptr => We are using a column with index.
+        /// If token_extractor != nullptr, we are doing text index lookups
         if (!needles.has_value())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
