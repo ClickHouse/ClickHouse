@@ -157,6 +157,14 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
         const auto & predicate = predicate_expression.asBinaryPredicate();
         auto left_column_actions = get<1>(predicate);
         auto right_column_actions = get<2>(predicate);
+
+        if (get<0>(predicate) != JoinConditionOperator::Equals || !left_column_actions || !right_column_actions)
+        {
+            /// TODO: add support for non-equality operators
+            LOG_TEST(log, "Skipping predicate '{}'", predicate_expression.dump());
+            continue;
+        }
+
         if (left_column_actions.fromRight() && right_column_actions.fromLeft())
             std::swap(left_column_actions, right_column_actions);
         const auto & left_column = left_column_actions.getColumnName();
