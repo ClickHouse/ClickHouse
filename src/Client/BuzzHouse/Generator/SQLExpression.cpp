@@ -110,7 +110,11 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
         {
             cp.add_sub_cols()->set_column("values");
         }
-        else if (nsuboption < 21)
+        else if (nsuboption < 20)
+        {
+            cp.add_sub_cols()->set_column("size");
+        }
+        else if (nsuboption < 24)
         {
             cp.add_sub_cols()->set_column("size" + std::to_string(rg.nextMediumNumber() % 3));
         }
