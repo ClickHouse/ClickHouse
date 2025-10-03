@@ -884,10 +884,24 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         po::parsed_options parsed = parser.run();
 
         /// Check unrecognized options.
-        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
         if (!unrecognized_options.empty())
         {
             throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+        }
+
+        /// Check positional options.
+        for (const auto & op : parsed.options)
+        {
+            /// Skip all options after empty `--`. These are processed separately into the Application configuration.
+            if (op.string_key.empty() && op.original_tokens[0].starts_with("--"))
+                break;
+
+            if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+                && !op.original_tokens[0].empty() && !op.value.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option '{}' is not supported.", op.original_tokens[0]);
+            }
         }
 
         po::variables_map options;
