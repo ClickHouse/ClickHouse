@@ -4,6 +4,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
@@ -20,6 +21,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
@@ -39,6 +42,7 @@
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -65,6 +69,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -1002,9 +1007,45 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 namespace
 {
 
+void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
+{
+    if (node->getNodeType() == QueryTreeNodeType::MATCHER)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Matcher (e.g. asterisk '*' or COLUMNS expression) is not allowed {}. "
+            "Use explicit column names instead",
+            context_description);
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child)
+            assertNoMatcherNodes(child, context_description);
+    }
+}
+
 std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
+    if (!default_expr_list || default_expr_list->children.empty())
+    {
+        if (!get_sample_block)
+            return {};
+        return Block{};
+    }
+
     auto execution_context = Context::createCopy(context);
+
+    Aliases aliases;
+    QueryAliasesVisitor(aliases).visit(default_expr_list);
+    NameSet source_columns_set;
+    QueryNormalizer::Data normalizer_data(
+        aliases,
+        source_columns_set,
+        /*ignore_alias=*/false,
+        QueryNormalizer::ExtractedSettings(execution_context->getSettingsRef()),
+        /*allow_self_aliases=*/false);
+    QueryNormalizer(normalizer_data).visit(default_expr_list);
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
@@ -1015,9 +1056,12 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     QueryAnalyzer analyzer(/* only_analyze */ false);
 
+    auto query_node = std::make_shared<QueryNode>(execution_context);
     auto expression_list = buildQueryTree(default_expr_list, execution_context);
 
-    auto query_node = std::make_shared<QueryNode>(execution_context);
+    /// Fail fast before analyzer expands matchers into concrete columns.
+    assertNoMatcherNodes(expression_list, "in column DEFAULT expression");
+
     query_node->getProjectionNode() = expression_list;
     query_node->getJoinTree() = fake_table_expression;
 
