@@ -159,8 +159,11 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) = 0;
+
+    virtual void resetEvictionPos(const CachePriorityGuard::Lock & lock) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.

@@ -20,6 +20,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
@@ -30,6 +31,7 @@
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
+#include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
@@ -261,6 +263,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
 
+    manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
@@ -271,6 +274,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+
+    manager.addPass(std::make_unique<L2DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
