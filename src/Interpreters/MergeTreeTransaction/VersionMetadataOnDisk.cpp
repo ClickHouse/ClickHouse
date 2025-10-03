@@ -124,10 +124,16 @@ catch (Exception & e)
 void VersionMetadataOnDisk::storeMetadata(bool force) const
 {
     LOG_DEBUG(log, "Object {}, store metadata", getObjectName());
+    bool involved_in_transaction = wasInvolvedInTransaction();
     if (!can_write_metadata)
-        return;
+    {
+        if (involved_in_transaction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object was involved in transaction but cannot write metadata");
 
-    if (!force && !wasInvolvedInTransaction())
+        return;
+    }
+
+    if (!force && !involved_in_transaction)
     {
         LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
         pending_store_metadata = true;
@@ -277,17 +283,23 @@ void VersionMetadataOnDisk::storeCreationCSNToStoredMetadataImpl()
 {
     LOG_DEBUG(merge_tree_data_part->storage.log, "Object {}, storing creation_csn {}", getObjectName(), getCreationCSN());
 
+    bool involved_in_transaction = wasInvolvedInTransaction();
     if (!can_write_metadata)
-        return;
+    {
+        if (involved_in_transaction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object was involved in transaction but cannot write metadata");
 
-    if (!wasInvolvedInTransaction())
+        return;
+    }
+
+    if (!involved_in_transaction)
     {
         LOG_DEBUG(log, "Object {} was not involved in a transaction", getObjectName());
         return;
     }
 
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append creation CSN to non-existing metadata");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Store creation CSN to non-existing metadata file");
 
     auto write_func = [this](WriteBuffer & buf) { writeCreationCSNToBuffer(buf); };
     storeMetadataHelper(write_func, false);
@@ -297,17 +309,23 @@ void VersionMetadataOnDisk::storeRemovalCSNToStoredMetadataImpl()
 {
     LOG_DEBUG(merge_tree_data_part->storage.log, "Object {}, storing removal_csn {}", getObjectName(), getRemovalCSN());
 
+    bool involved_in_transaction = wasInvolvedInTransaction();
     if (!can_write_metadata)
-        return;
+    {
+        if (involved_in_transaction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object was involved in transaction but cannot write metadata");
 
-    if (!wasInvolvedInTransaction())
+        return;
+    }
+
+    if (!involved_in_transaction)
     {
         LOG_DEBUG(log, "Object {} was not involved in a transaction", getObjectName());
         return;
     }
 
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal CSN to non-existing metadata");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Store removal CSN to non-existing metadata file");
 
     auto write_func = [this](WriteBuffer & buf) { writeRemovalCSNToBuffer(buf); };
     storeMetadataHelper(write_func, false);
@@ -324,17 +342,22 @@ void VersionMetadataOnDisk::storeRemovalTIDToStoredMetadataImpl()
 
     assert(removal_tid.isEmpty() || removal_tid.getHash() == getRemovalTIDLock());
 
-    if (!wasInvolvedInTransaction())
+    if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Store removal TID to non-existing metadata file");
+
+    bool involved_in_transaction = wasInvolvedInTransaction();
+    if (!can_write_metadata)
+    {
+        if (involved_in_transaction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object was involved in transaction but cannot write metadata");
+
+        return;
+    }
+    if (!involved_in_transaction)
     {
         LOG_DEBUG(log, "Object {} was not involved in a transaction", getObjectName());
         return;
     }
-
-    if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Append removal TID to non-existing metadata");
-
-    if (!can_write_metadata)
-        return;
 
     auto write_func = [this](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, removal_tid); };
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
