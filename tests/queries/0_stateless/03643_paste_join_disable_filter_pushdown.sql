@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 With
     A AS (
         SELECT * FROM numbers(10) ORDER BY number ASC
