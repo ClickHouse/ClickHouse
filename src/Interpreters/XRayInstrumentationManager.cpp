@@ -21,6 +21,7 @@
 #include <llvm/Support/Path.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/IR/Function.h>
+#include <base/getThreadId.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
@@ -465,27 +466,6 @@ std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view
     size_t pos = result.find('<');
     if (pos == std::string_view::npos)
         return result;
-
-    size_t depth = 0;
-    for (size_t i = pos; i < result.size(); ++i)
-    {
-        if (result[i] == '<')
-            ++depth;
-        else if (result[i] == '>')
-        {
-            if (depth > 0)
-                --depth;
-        }
-        else if (depth == 0 && result[i] == ':')
-        {
-            continue;
-        }
-
-        if (depth == 0)
-        {
-            return result.substr(0, i);
-        }
-    }
 
     return result.substr(0, pos);
 }
