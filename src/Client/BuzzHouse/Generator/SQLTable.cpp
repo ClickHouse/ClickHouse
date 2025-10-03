@@ -32,6 +32,8 @@ static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain 
 void collectColumnPaths(
     const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
+    bool is_lcard = false;
+
     checkStackSize();
     /// Append this node to the path
     next.path.emplace_back(ColumnPathChainEntry(cname, tp));
@@ -46,6 +48,7 @@ void collectColumnPaths(
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
         tp = lc->subtype;
+        is_lcard = true;
     }
     if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
@@ -158,7 +161,7 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
-    else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::STRING)
+    else if (!is_lcard && tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::STRING)
     {
         StringType * st = dynamic_cast<StringType *>(tp);
 

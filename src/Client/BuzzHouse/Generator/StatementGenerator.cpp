@@ -1064,12 +1064,15 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
 
             for (const auto & entry : this->entries)
             {
+                const String nval
+                    = entry.getBottomType()->insertNumberEntry(rg, *this, string_length_dist(rg.generator), nested_rows_dist(rg.generator));
+
                 buf += fmt::format(
                     "{}{}{}{}",
                     first ? "" : ", ",
-                    entry.path.size() > 1 ? "arrayRepeat([" : "",
-                    entry.getBottomType()->insertNumberEntry(rg, *this, string_length_dist(rg.generator), nested_rows_dist(rg.generator)),
-                    entry.path.size() > 1 ? ("], " + std::to_string(nested_nrows) + ")") : "");
+                    entry.path.size() > 1 ? "arrayResize([" : "",
+                    nval,
+                    entry.path.size() > 1 ? ("], " + std::to_string(nested_nrows) + ", " + nval + ")") : "");
                 first = false;
             }
             ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
