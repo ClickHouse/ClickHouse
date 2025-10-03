@@ -2,6 +2,9 @@
 
 #include <memory>
 #include <Compression/CompressionFactory.h>
+#include <algorithm>
+#include <functional>
+#include <unordered_map>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/Names.h>
@@ -21,8 +24,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
@@ -42,6 +43,7 @@
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -70,6 +72,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int CYCLIC_ALIASES;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -1025,6 +1028,135 @@ void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_
     }
 }
 
+void collectAliasDependenciesFromAST(
+    const ASTPtr & node,
+    const NameSet & candidate_names,
+    NameSet & dependencies)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        const auto & column_name = identifier->name();
+        if (candidate_names.contains(column_name))
+            dependencies.insert(column_name);
+        return;
+    }
+
+    for (const auto & child : node->children)
+        if (child)
+            collectAliasDependenciesFromAST(child, candidate_names, dependencies);
+}
+
+[[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
+{
+    Strings formatted_cycle = cycle_path;
+    formatted_cycle.emplace_back(cycle_path.front());
+
+    std::string message;
+    message.reserve(32 * formatted_cycle.size());
+    for (size_t i = 0; i < formatted_cycle.size(); ++i)
+    {
+        if (i)
+            message += " -> ";
+        message += formatted_cycle[i];
+    }
+
+    throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
+}
+
+/**
+ * Build a dependency graph between all aliases present in the DEFAULT expression list.
+ * The additional alias map is required because typed defaults are rewritten into temporary
+ * aliases (e.g. `a_tmp_alter...`) before the analyzer runs, so we must consider every alias,
+ * not only user-visible column names, to detect cycles that pass through those synthetic nodes.
+ */
+void detectRecursiveDefaultCycles(
+    const ASTPtr & expression_list,
+    const NameSet & default_column_names)
+{
+    if (!expression_list || default_column_names.empty())
+        return;
+
+    const auto * list_node = expression_list->as<ASTExpressionList>();
+    if (!list_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Default expression list node is expected to be a list node");
+
+    NameSet alias_names;
+    std::unordered_map<String, ASTPtr> alias_to_expression;
+    alias_names.reserve(list_node->children.size());
+    alias_to_expression.reserve(list_node->children.size());
+    for (const auto & child : list_node->children)
+    {
+        if (!child)
+            continue;
+
+        String alias = child->tryGetAlias();
+        if (alias.empty())
+            alias = child->getColumnName();
+
+        if (alias.empty())
+            continue;
+
+        alias_names.insert(alias);
+        alias_to_expression.emplace(alias, child);
+    }
+
+    enum class Color
+    {
+        White,
+        Gray,
+        Black,
+    };
+
+    std::unordered_map<String, Color> colors;
+    colors.reserve(alias_to_expression.size());
+
+    Strings dfs_stack;
+    dfs_stack.reserve(alias_to_expression.size());
+
+    std::function<void(const String &)> dfs = [&](const String & vertex)
+    {
+        auto & color = colors[vertex];
+        if (color == Color::Black)
+            return;
+        if (color == Color::Gray)
+        {
+            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
+            Strings cycle;
+            if (it != dfs_stack.end())
+                cycle.assign(it, dfs_stack.end());
+            else
+                cycle.emplace_back(vertex);
+            throwDefaultCycleException(cycle);
+        }
+
+        color = Color::Gray;
+        dfs_stack.push_back(vertex);
+
+        NameSet dependencies;
+        if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
+        {
+            collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
+            for (const auto & dependency : dependencies)
+                dfs(dependency);
+        }
+
+        dfs_stack.pop_back();
+        color = Color::Black;
+    };
+
+    for (const auto & column_name : default_column_names)
+    {
+        if (!alias_names.contains(column_name))
+            continue;
+
+        if (colors[column_name] != Color::Black)
+            dfs(column_name);
+    }
+}
+
 std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     if (!default_expr_list || default_expr_list->children.empty())
@@ -1036,16 +1168,25 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     auto execution_context = Context::createCopy(context);
 
-    Aliases aliases;
-    QueryAliasesVisitor(aliases).visit(default_expr_list);
-    NameSet source_columns_set;
-    QueryNormalizer::Data normalizer_data(
-        aliases,
-        source_columns_set,
-        /*ignore_alias=*/false,
-        QueryNormalizer::ExtractedSettings(execution_context->getSettingsRef()),
-        /*allow_self_aliases=*/false);
-    QueryNormalizer(normalizer_data).visit(default_expr_list);
+    NameSet table_column_names;
+    table_column_names.reserve(all_columns.size());
+    for (const auto & column : all_columns)
+        table_column_names.insert(column.name);
+
+    NameSet default_column_names;
+    default_column_names.reserve(default_expr_list->children.size());
+    for (const auto & child : default_expr_list->children)
+    {
+        if (!child)
+            continue;
+        String alias = child->tryGetAlias();
+        if (alias.empty())
+            alias = child->getColumnName();
+        if (!alias.empty() && table_column_names.contains(alias))
+            default_column_names.insert(alias);
+    }
+
+    detectRecursiveDefaultCycles(default_expr_list, default_column_names);
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
