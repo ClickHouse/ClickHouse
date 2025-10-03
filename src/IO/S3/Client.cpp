@@ -224,14 +224,14 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
 
-std::unique_ptr<Client> Client::clone(const PocoHTTPClientConfiguration & client_configuration_override) const
-{
-    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
-}
-
 std::unique_ptr<Client> Client::clone() const
 {
-    return clone(this->client_configuration);
+    return cloneWithConfigurationOverride(this->client_configuration);
+}
+
+std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
+{
+    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
 }
 
 namespace

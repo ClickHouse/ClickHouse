@@ -197,11 +197,11 @@ std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk, S3B
         it->second.backup_client = creator(disk);
     else
     {
-        auto locked = it->second.original_client.lock();
+        auto locked = it->second.disk_reported_client.lock();
         if (locked != disk_client)
         {
             it->second.backup_client = creator(disk);
-            it->second.original_client = disk_client;
+            it->second.disk_reported_client = disk_client;
         }
     }
 
@@ -350,8 +350,8 @@ BackupWriterS3::BackupWriterS3(
             .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
 
         config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
-        LOG_TRACE(log, "Creating backup client for '{}' disk", disk->getName());
-        return disk_client->clone(config);
+        LOG_TRACE(log, "Creating client with backup-specific configuration for '{}' disk", disk->getName());
+        return disk_client->cloneWithConfigurationOverride(config);
     };
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())

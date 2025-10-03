@@ -30,9 +30,9 @@ private:
     struct ClientEntry
     {
         std::shared_ptr<S3::Client> backup_client;
-        std::weak_ptr<const S3::Client> original_client;
+        std::weak_ptr<const S3::Client> disk_reported_client;
     };
-    /// Disk name to storage client;
+    /// Disk name to client entry;
     std::unordered_map<std::string, ClientEntry> clients TSA_GUARDED_BY(clients_mutex);
 };
 
