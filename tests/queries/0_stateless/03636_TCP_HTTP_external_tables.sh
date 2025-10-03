@@ -21,7 +21,7 @@ cat >$tmp_file_2 <<EOF
 EOF
 
 echo "HTTP POST with external table"
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&query=SELECT%20*%20FROM%20external_table" \
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&query=SELECT%20*%20FROM%20external_table%20order%20by%20id" \
         -F "external_table_structure=id UInt32, name String, age UInt8" \
         -F "external_table_format=CSV" \
         -F "external_table=@$tmp_file_1" \
@@ -31,7 +31,7 @@ ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&query=SELECT%20*%20FROM%20exte
 
 echo "TCP with external table"
 ${CLICKHOUSE_CLIENT} \
-        --query "SELECT * FROM external_table" \
+        --query "SELECT * FROM external_table order by id" \
         --external \
         --file=$tmp_file_1 \
         --name=external_table \
