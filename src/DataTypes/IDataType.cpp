@@ -415,6 +415,7 @@ bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } 
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
 bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
+bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
 \
 bool isColumnedAsNumber(TYPE data_type) \
 { \
