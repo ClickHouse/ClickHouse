@@ -94,7 +94,8 @@ HandlerType XRayInstrumentationManager::getHandlerType(const String & handler_na
 
 void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
-    auto handler_it = xrayHandlerNameToFunction.find(handler_name);
+    auto handler_name_lower = toLower(handler_name);
+    auto handler_it = xrayHandlerNameToFunction.find(handler_name_lower);
     if (handler_it == xrayHandlerNameToFunction.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
@@ -114,7 +115,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name
     HandlerType type;
     try
     {
-        type = getHandlerType(handler_name);
+        type = getHandlerType(handler_name_lower);
     }
     catch (const std::exception & e)
     {
@@ -134,7 +135,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name
         __xray_patch_function(function_id);
     }
 
-    instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters, context);
+    instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name_lower, parameters, context);
     functionIdToHandlers[function_id][type] = instrumented_functions.begin();
     instrumentation_point_id++;
 }
