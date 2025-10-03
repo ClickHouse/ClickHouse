@@ -153,7 +153,10 @@ namespace
                         auto select_copy = create.select->clone();
                         ApplyWithSubqueryVisitor(global_context).visit(select_copy);
 
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        // Use the database where the materialized view is created to resolve nested views
+                        ContextMutablePtr mv_db_context = Context::createCopy(global_context);
+                        mv_db_context->setCurrentDatabase(table_name.database);
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
