@@ -40,6 +40,8 @@ private:
     String metadata_path;
     mutable std::optional<Int32> metadata_version;
     String lock_path;
+    /// If the object is not involved in transaction, delay the metadata storing if possible.
+    mutable bool pending_store_metadata{false};
 };
 
 }

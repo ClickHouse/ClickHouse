@@ -99,8 +99,17 @@ void VersionMetadataOnKeeper::loadMetadata()
     setCreationCSN(Tx::PrehistoricCSN);
 }
 
-void VersionMetadataOnKeeper::storeMetadata(bool) const
+void VersionMetadataOnKeeper::storeMetadata(bool force) const
 {
+    if (!force && !wasInvolvedInTransaction())
+    {
+        LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
+        pending_store_metadata = true;
+        return;
+    }
+
+    pending_store_metadata = false;
+
     if (!txn_keeper_node.empty() && !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
     {
         LOG_TEST(log, "Object {}, store {}, keeper_node {}", getObjectName(), TXN_VERSION_METADATA_FILE_NAME, txn_keeper_node);
@@ -238,6 +247,8 @@ TIDHash VersionMetadataOnKeeper::getRemovalTIDLock() const
 
 bool VersionMetadataOnKeeper::hasStoredMetadata() const
 {
+    if (pending_store_metadata)
+        return true;
     auto zookeeper = get_zk_func();
     return zookeeper->exists(metadata_path);
 }
@@ -275,6 +286,9 @@ void VersionMetadataOnKeeper::storeCreationCSNToStoredMetadataImpl()
 {
     LOG_TEST(merge_tree_data_part->storage.log, "Object {}, store creation_csn {}", getObjectName(), getCreationCSN());
 
+    if (!wasInvolvedInTransaction())
+        return;
+
     if (!metadata_version.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Appending creation_csn before loading metadata");
 
@@ -304,6 +318,9 @@ void VersionMetadataOnKeeper::storeCreationCSNToStoredMetadataImpl()
 void VersionMetadataOnKeeper::storeRemovalCSNToStoredMetadataImpl()
 {
     LOG_TEST(merge_tree_data_part->storage.log, "Object {}, store removal_csn {}", getObjectName(), getRemovalCSN());
+
+    if (!wasInvolvedInTransaction())
+        return;
 
     if (!metadata_version.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Storing removal_csn before loading metadata");
@@ -341,6 +358,11 @@ void VersionMetadataOnKeeper::storeRemovalTIDToStoredMetadataImpl()
         creation_tid,
         removal_tid);
 
+    assert(removal_tid.isEmpty() || removal_tid.getHash() == getRemovalTIDLock());
+
+    if (!wasInvolvedInTransaction())
+        return;
+
     if (!metadata_version.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Appending removal TID before loading metadata");
 
@@ -370,6 +392,9 @@ void VersionMetadataOnKeeper::storeRemovalTIDToStoredMetadataImpl()
 
 VersionMetadata::Info VersionMetadataOnKeeper::readStoredMetadata(String & content) const
 {
+    if (pending_store_metadata)
+        storeMetadata(true);
+
     auto zookeeper = get_zk_func();
     if (!zookeeper->tryGet(metadata_path, content))
         throw Exception(ErrorCodes::NOT_FOUND_NODE, "No node {}", metadata_path);
