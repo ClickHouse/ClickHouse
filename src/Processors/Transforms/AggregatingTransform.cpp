@@ -114,11 +114,7 @@ public:
 protected:
     Chunk generate() override
     {
-        AggregatedDataVariantsPtr & first = data->at(0);
-        if (first->type == AggregatedDataVariants::Type::key8)
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
-        else
-            params->aggregator.mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
+        params->aggregator.mergeSingleLevelDataImplFixedMap(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
 
         finished = true;
         data.reset();
@@ -444,9 +440,7 @@ private:
         if (num_threads <= 1)
             return false;
 
-        auto & first = data->at(0);
-        if (first->type != AggregatedDataVariants::Type::key8 &&
-            first->type != AggregatedDataVariants::Type::key16)
+        if (!params->aggregator.isTypeFixedSize(*data))
             return false;
 
         return params->aggregator.hasFunctionsBenefitFromParallelMerge();
@@ -696,15 +690,7 @@ private:
     void createSourcesForFixedHashMap()
     {
         /// Disable min max optimization to avoid race condition.
-        for (auto & variant : *data)
-        {
-            if (variant->type == AggregatedDataVariants::Type::key8)
-                variant->key8->data.disableMinMaxOptimization();
-            else if (variant->type == AggregatedDataVariants::Type::key16)
-                variant->key16->data.disableMinMaxOptimization();
-            else
-                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
-        }
+        params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
         processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);

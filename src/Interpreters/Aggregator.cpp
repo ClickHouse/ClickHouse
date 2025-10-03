@@ -2015,44 +2015,22 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
-template <typename Method, typename Table>
-void Aggregator::ensureLimitsFixedMapMergeImpl(Table & table) const
-{
-    size_t rows_count = 0;
-    bool no_more_keys = false;
-    bool ignore_rest = false;
-
-    /// We want to respect the limits of `max_rows_to_group_by`, depending on `group_by_overflow_mode`:
-    /// - throw mode: this is the same, exception would be thrown.
-    /// - break/any mode: do nothing for a few reasons.
-    /// `max_rows_to_group_by` is to limit the memory usage, however `execute` and `merge` we already
-    /// finishes the majority of the work, so the memory usage peak has been reached. Additionally during
-    /// exuection phase, we already check the limit. Last this is for fixed hashmap, the number of rows
-    /// are bounded.
-    table.forEachValue([&](const auto &, auto &)
-    {
-        if (ignore_rest)
-            return;
-        ++rows_count;
-        if (!checkLimits(rows_count, no_more_keys))
-        {
-            ignore_rest = true;
-            return;
-        }
-    });
-}
-
-
 void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
 {
     if (!data || data->empty())
         return;
 
-    /// Only handle key8 and key16 FixedHashMap variants (similar to mergeSingleLevelDataImplFixedMap)
+    bool no_more_keys = false;
+    /// We want to respect the limits of `max_rows_to_group_by`, depending on `group_by_overflow_mode`:
+    /// - throw mode: this is the same, exception would be thrown.
+    /// - break/any mode: do nothing for a few reasons.
+    /// `max_rows_to_group_by` is to limit the memory usage, however `execute` and `merge` we already
+    /// finishes the majority of the work. Additionally during execution phase, we already check the
+    /// limit. Last this is for fixed hashmap, the number of rows are bounded.
     if (data->type == AggregatedDataVariants::Type::key8)
-        ensureLimitsFixedMapMergeImpl<decltype(data->key8)::element_type>(data->key8->data);
+        checkLimits(data->key8->data.size(), no_more_keys);
     else if (data->type == AggregatedDataVariants::Type::key16)
-        ensureLimitsFixedMapMergeImpl<decltype(data->key16)::element_type>(data->key16->data);
+        checkLimits(data->key16->data.size(), no_more_keys);
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
@@ -2074,6 +2052,29 @@ bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
         return true;
     }
     return false;
+}
+
+bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
+{
+    if (data_variants.empty())
+        return false;
+
+    const auto & first = data_variants.at(0);
+    return first->type == AggregatedDataVariants::Type::key8 ||
+           first->type == AggregatedDataVariants::Type::key16;
+}
+
+void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
+{
+    for (auto & variant : data_variants)
+    {
+        if (variant->type == AggregatedDataVariants::Type::key8)
+            variant->key8->data.disableMinMaxOptimization();
+        else if (variant->type == AggregatedDataVariants::Type::key16)
+            variant->key16->data.disableMinMaxOptimization();
+        else
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "disableMinMaxOptimizationForFixedHashMaps only supports key8 and key16 variants.");
+    }
 }
 
 
@@ -3115,8 +3116,10 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
         }
+
+        /// `current` will not destroy the states of aggregate functions in the destructor
+        current.aggregator = nullptr;
     }
-    resetAggregatorExceptFirst(non_empty_data);
 }
 
 #define M(NAME) \
@@ -3124,6 +3127,25 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
+
+void Aggregator::mergeSingleLevelDataImplFixedMap(
+    ManyAggregatedDataVariants & non_empty_data,
+    Arena * arena,
+    UInt32 worker_id,
+    UInt32 total_worker,
+    std::atomic<bool> & is_cancelled) const
+{
+    if (non_empty_data.empty())
+        return;
+
+    AggregatedDataVariantsPtr & first = non_empty_data[0];
+    if (first->type == AggregatedDataVariants::Type::key8)
+        mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
+    else if (first->type == AggregatedDataVariants::Type::key16)
+        mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "mergeSingleLevelDataImplFixedMap only supports key8 and key16 variants.");
+}
 
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
     ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;

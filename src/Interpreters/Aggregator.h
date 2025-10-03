@@ -472,8 +472,6 @@ private:
         Table & table_src,
         Arena * arena) const;
 
-    template <typename Method, typename Table>
-    void ensureLimitsFixedMapMergeImpl(Table & table) const;
 
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
@@ -484,6 +482,14 @@ private:
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
+    void mergeSingleLevelDataImplFixedMap(
+        ManyAggregatedDataVariants & non_empty_data,
+        Arena * arena,
+        UInt32 worker_id,
+        UInt32 total_worker,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// Non-template wrapper that handles type switch internally
     void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
@@ -640,6 +646,13 @@ private:
 
     /// Check if aggregation uses computationally expensive functions that benefit from parallel merge.
     bool hasFunctionsBenefitFromParallelMerge() const;
+
+    /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
+    /// at single level.
+    bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
+
+    /// Disable min-max optimization for fixed-size hash tables to avoid race conditions.
+    void disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const;
 
     void prepareAggregateInstructions(
         Columns columns,
