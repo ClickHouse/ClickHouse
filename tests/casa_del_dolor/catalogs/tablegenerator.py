@@ -12,7 +12,15 @@ from .laketables import (
 )
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import DateType, TimestampType
+from pyspark.sql.types import (
+    ByteType,
+    ShortType,
+    IntegerType,
+    LongType,
+    DateType,
+    TimestampType,
+    DataType,
+)
 
 Parameter = typing.Callable[[], int | float | str]
 
@@ -71,6 +79,10 @@ class LakeTableGenerator:
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         return []
 
+    @abstractmethod
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        return ""
+
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
         flattened_columns = table.flat_columns()
@@ -115,10 +127,13 @@ class LakeTableGenerator:
             str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
                 val["type"], False
             )
+            generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
-                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}"
+                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}{generated}"
             )
-            columns_spark[val["name"]] = SparkColumn(val["name"], spark_type, nullable)
+            columns_spark[val["name"]] = SparkColumn(
+                val["name"], spark_type, nullable, len(generated) > 0
+            )
         ddl += ",".join(columns_def)
         ddl += ")"
 
@@ -263,6 +278,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             res.append(f"bucket({random.randint(0, 1000)}, {k})")
             res.append(f"truncate({random.randint(0, 1000)}, {k})")
         return res
+
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        return ""
 
     def generate_table_properties_impl(
         self,
@@ -714,6 +732,21 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         for k in table.columns.keys():
             res.append(k)
         return res
+
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        if isinstance(col, LongType) and random.randint(1, 10) < 3:
+            return f" GENERATED {random.choice(["ALWAYS", "BY DEFAULT"])} AS IDENTITY"
+        if len(columns) > 0 and random.randint(1, 10) < 3:
+            flattened = {}
+            for _, val in columns.items():
+                val.flat_column(flattened)
+            if (
+                isinstance(col, (ByteType, ShortType, IntegerType, LongType))
+                and random.randint(1, 2) == 1
+            ):
+                return f" GENERATED ALWAYS AS ({random.choice(["year", "month", "day", "hour"])}({random.choice(list(flattened.keys()))}))"
+            return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
+        return ""
 
     def generate_table_properties_impl(
         self,

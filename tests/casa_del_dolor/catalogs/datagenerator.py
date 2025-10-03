@@ -380,6 +380,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         struct2 = StructType(
@@ -390,6 +391,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         rows = []
