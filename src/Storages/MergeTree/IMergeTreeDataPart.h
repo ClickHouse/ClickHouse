@@ -776,6 +776,9 @@ private:
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
 
+    /// Returns the name of the part state as a string.
+    String stateToString() const;
+
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
 

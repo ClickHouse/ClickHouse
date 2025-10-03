@@ -1,3 +1,5 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -393,4 +395,14 @@ extern const std::vector<Metric> keeper_metrics
     APPLY_FOR_KEEPER_METRICS(M)
 };
 #undef M
+}
+
+namespace HistogramMetrics
+{
+    std::vector<MetricFamily *> keeper_histograms;
+}
+
+namespace DimensionalMetrics
+{
+    std::vector<MetricFamily *> keeper_dimensional_metrics;
 }

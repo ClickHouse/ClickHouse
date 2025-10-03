@@ -85,6 +85,11 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForMerge;
 }
 
+namespace DimensionalMetrics
+{
+    extern MetricFamily & MergeFailures;
+}
+
 namespace DB
 {
 
@@ -154,12 +159,6 @@ ColumnsStatistics getStatisticsForColumns(
     }
     return all_statistics;
 }
-
-DimensionalMetrics::MetricFamily & merge_failures = DimensionalMetrics::Factory::instance().registerMetric(
-    "merge_failures",
-    "Number of all failed merges since startup.",
-    {"error_name"}
-);
 
 }
 
@@ -1663,7 +1662,9 @@ try
 }
 catch (...)
 {
-    merge_failures.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).increment();
+    DimensionalMetrics::add(
+        DimensionalMetrics::MergeFailures,
+        {String(ErrorCodes::getName(getCurrentExceptionCode()))});
     throw;
 }
 
