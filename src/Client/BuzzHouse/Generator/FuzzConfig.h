@@ -266,8 +266,7 @@ public:
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
              max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          client_file_path = std::filesystem::temp_directory_path() / "db",
-                          server_file_path = std::filesystem::temp_directory_path() / "db",
+                          client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
                           lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
