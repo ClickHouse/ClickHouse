@@ -50,6 +50,10 @@ struct FormatSettings
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
 
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_STATE = "state";
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE = "value";
+    inline static const String AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY = "array";
+
     enum class DateTimeInputFormat : uint8_t
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -540,6 +544,8 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
+
+    String aggregate_function_input_format = AGGREGATE_FUNCTION_INPUT_FORMAT_STATE;
 };
 
 }
