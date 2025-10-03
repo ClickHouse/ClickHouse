@@ -158,3 +158,11 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ENV PYTHONUNBUFFERED=1
+
+# Download and install mold 2.40.4
+RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.40.4/mold-2.40.4-x86_64-linux.tar.gz" \
+    && mkdir /tmp/mold \
+    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
+    && cp -r /tmp/mold/mold*/* /usr \
+    && rm -rf /tmp/mold \
+    && rm /tmp/mold.tar.gz

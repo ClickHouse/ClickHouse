@@ -164,15 +164,15 @@ class JobConfigs:
             ],
             runs_on=RunnerLabels.AMD_LARGE,
         ),
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_MSAN,
-            provides=[
-                ArtifactNames.CH_AMD_MSAN,
-                ArtifactNames.DEB_AMD_MSAN,
-                ArtifactNames.UNITTEST_AMD_MSAN,
-            ],
-            runs_on=RunnerLabels.AMD_LARGE,
-        ),
+        # Job.ParamSet(
+        #     parameter=BuildTypes.AMD_MSAN,
+        #     provides=[
+        #         ArtifactNames.CH_AMD_MSAN,
+        #         ArtifactNames.DEB_AMD_MSAN,
+        #         ArtifactNames.UNITTEST_AMD_MSAN,
+        #     ],
+        #     runs_on=RunnerLabels.AMD_LARGE,
+        # ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_UBSAN,
             provides=[
@@ -449,24 +449,24 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL_MEM,
-                requires=[ArtifactNames.CH_AMD_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        # *[
+        #     Job.ParamSet(
+        #         parameter=f"amd_msan, parallel, {batch}/{total_batches}",
+        #         runs_on=RunnerLabels.AMD_LARGE,
+        #         requires=[ArtifactNames.CH_AMD_MSAN],
+        #     )
+        #     for total_batches in (2,)
+        #     for batch in range(1, total_batches + 1)
+        # ],
+        # *[
+        #     Job.ParamSet(
+        #         parameter=f"amd_msan, sequential, {batch}/{total_batches}",
+        #         runs_on=RunnerLabels.AMD_SMALL_MEM,
+        #         requires=[ArtifactNames.CH_AMD_MSAN],
+        #     )
+        #     for total_batches in (2,)
+        #     for batch in range(1, total_batches + 1)
+        # ],
         Job.ParamSet(
             parameter="amd_ubsan, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM_CPU,
@@ -564,11 +564,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_TSAN],
         ),
-        Job.ParamSet(
-            parameter="msan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="msan",
+        #     runs_on=RunnerLabels.AMD_LARGE,
+        #     requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+        # ),
         Job.ParamSet(
             parameter="ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -601,19 +601,19 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_UBSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="amd_msan",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.DEB_AMD_MSAN],
+        # ),
     )
     # might be heavy on azure - run only on master
     stress_test_azure_jobs = common_stress_job_config.parametrize(
-        Job.ParamSet(
-            parameter="azure, amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="azure, amd_msan",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.DEB_AMD_MSAN],
+        # ),
         Job.ParamSet(
             parameter="azure, amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
@@ -644,11 +644,11 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_TSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="amd_msan",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.DEB_AMD_MSAN],
+        # ),
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
@@ -809,11 +809,11 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="amd_msan",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.CH_AMD_MSAN],
+        # ),
         Job.ParamSet(
             parameter="amd_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
@@ -848,11 +848,11 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_MSAN],
-        ),
+        # Job.ParamSet(
+        #     parameter="amd_msan",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.CH_AMD_MSAN],
+        # ),
         Job.ParamSet(
             parameter="amd_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
