@@ -22,6 +22,7 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 6,
     ratio_of_defaults_for_sparse_serialization = 0.9,
+    serialization_info_version = 'default',
     write_marks_for_substreams_in_compact_parts=1;
 
 SYSTEM STOP MERGES t_merge_tree_index;
