@@ -1618,11 +1618,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
 
-                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
-                /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
+                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column.
+                /// Non-intersecting ranges will just go through extra filter added by createExpressionForIsDeleted() to filter
+                /// deleted rows.
                 bool split_parts_ranges_into_intersecting_and_non_intersecting_final
-                    = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final]
-                    && data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+                    = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
+                          !reader_settings.read_in_order;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
