@@ -4,9 +4,9 @@ from helpers.cluster import ClickHouseCluster
 from .common import *
 
 
-def start_clickhouse(config, err_msg):
+def start_clickhouse(config, users, err_msg):
     cluster = ClickHouseCluster(__file__)
-    instance = cluster.add_instance("instance", main_configs=[config], with_vault=True)
+    instance = cluster.add_instance("instance", main_configs=[config], user_configs=[users], with_vault=True)
     cluster.set_vault_startup_command(vault_startup_command)
 
     failed_to_start = False
@@ -25,24 +25,30 @@ def start_clickhouse(config, err_msg):
 def test_wrong_url():
     start_clickhouse(
         "configs/config_wrong_url.xml",
+        "configs/users.xml",
         "DB::NetException: Not found address of host: wrong",
     )
 
 
 def test_wrong_token():
     start_clickhouse(
-        "configs/config_wrong_token.xml", "HTTP status code: 403 'Forbidden'"
+        "configs/config_wrong_token.xml",
+        "configs/users.xml",
+        "HTTP status code: 403 'Forbidden'"
     )
 
 
 def test_wrong_secret():
     start_clickhouse(
-        "configs/config_wrong_secret.xml", "HTTP status code: 404 'Not Found'"
+        "configs/config.xml",
+        "configs/users_wrong_secret.xml",
+        "HTTP status code: 404 'Not Found'"
     )
 
 
 def test_wrong_key():
     start_clickhouse(
-        "configs/config_wrong_key.xml",
+        "configs/config.xml",
+        "configs/users_wrong_key.xml",
         "DB::Exception: Key WRONG not found in secret ch_secret of vault",
     )

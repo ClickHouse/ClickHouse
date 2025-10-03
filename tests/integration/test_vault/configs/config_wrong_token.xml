@@ -3,5 +3,4 @@
       <url>http://openbao:1337</url>
       <token>WRONG</token>
     </vault>
-    <http_port from_vault="ch_secret" vault_key="http" replace="replace"/>
 </clickhouse>
