@@ -187,7 +187,7 @@ namespace
 }
 
 
-std::shared_ptr<S3::Client> S3StorageBackupClientFactory::getOrCreate(DiskPtr disk, S3StorageBackupClientCreator creator)
+std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk, S3BackupClientCreator creator)
 {
     std::lock_guard lock(clients_mutex);
 
@@ -338,7 +338,7 @@ BackupWriterS3::BackupWriterS3(
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
 
-    storage_client_creator = [this, context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
+    client_creator = [this, context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
     {
         auto disk_client = disk->getS3StorageClient();
         const Settings & local_settings = context->getSettingsRef();
@@ -376,7 +376,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             /// Use storage client with overridden retry strategy settings.
-            auto src_client = storage_client_factory.getOrCreate(src_disk, storage_client_creator);
+            auto src_client = client_factory.getOrCreate(src_disk, client_creator);
             copyS3File(
                 src_client,
                 /* src_bucket */ blob_path[1],

@@ -18,12 +18,12 @@
 namespace DB
 {
 
-using S3StorageBackupClientCreator = std::function<std::shared_ptr<S3::Client>(DiskPtr)>;
+using S3BackupClientCreator = std::function<std::shared_ptr<S3::Client>(DiskPtr)>;
 
-class S3StorageBackupClientFactory
+class S3BackupClientFactory
 {
 public:
-    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk, S3StorageBackupClientCreator creator);
+    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk, S3BackupClientCreator creator);
 
 private:
     mutable std::mutex clients_mutex;
@@ -108,8 +108,8 @@ private:
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
 
-    S3StorageBackupClientCreator storage_client_creator;
-    S3StorageBackupClientFactory storage_client_factory;
+    S3BackupClientCreator client_creator;
+    S3BackupClientFactory client_factory;
     S3Capabilities s3_capabilities;
     BlobStorageLogWriterPtr blob_storage_log;
 };
