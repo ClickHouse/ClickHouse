@@ -357,9 +357,11 @@ void copyAzureBlobStorageFile(
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
+    bool is_native_copy_done = false;
 
     if (settings->use_native_copy)
     {
+        /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (dest_client->IsClientForDisk())
@@ -419,7 +421,7 @@ void copyAzureBlobStorageFile(
                         operation.IsDone());
                 }
             }
-            return;
+            is_native_copy_done = true;
         }
         catch (const Azure::Storage::StorageException & e)
         {
@@ -433,15 +435,19 @@ void copyAzureBlobStorageFile(
                 throw;
         }
     }
-    LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
-    auto create_read_buffer = [&]
+    if (!is_native_copy_done)
     {
-        return std::make_unique<ReadBufferFromAzureBlobStorage>(
-            src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
-    };
+        /// Copy through read and write
+        LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
+        auto create_read_buffer = [&]
+        {
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(
+                src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
+        };
 
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, log};
-    helper.performCopy();
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, log};
+        helper.performCopy();
+    }
 }
 
 }

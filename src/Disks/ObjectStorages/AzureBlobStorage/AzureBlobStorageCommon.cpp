@@ -621,16 +621,17 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
                 if (!config.has(endpoint_path))
                 {
-                    /// Error, shouldn't hit this todo:: throw error
+                    /// Then its not an azure config
                     continue;
                 }
             }
         }
 
+        auto endpoint = AzureBlobStorage::processEndpoint(config, key_path);
         auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
 
         azure_settings.emplace(
-                config.getString(endpoint_path),
+                endpoint.storage_account_url,
                 std::move(*request_settings));
 
     }
