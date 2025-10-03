@@ -190,7 +190,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
                     field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));
-                    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper);
+                    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
                     auto output_format = FormatFactory::instance().getOutputFormat(
                         configuration->format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
@@ -629,6 +629,8 @@ void alter(
             metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
             break;
         case AlterCommand::Type::DROP_COLUMN:
+            if (params[0].clear)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
             metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
             break;
         case AlterCommand::Type::MODIFY_COLUMN:

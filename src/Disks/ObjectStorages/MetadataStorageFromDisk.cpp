@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Storages/PartitionCommands.h>
 
 #include <IO/ReadHelpers.h>
@@ -57,8 +58,7 @@ bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & 
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
 {
-    auto metadata = readMetadata(path);
-    return metadata->getTotalSizeBytes();
+    return getTotalSize(readMetadata(path)->objects);
 }
 
 std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::string & path) const
@@ -84,7 +84,7 @@ std::string MetadataStorageFromDisk::readFileToString(const std::string & path) 
 
 std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
 {
-    return readMetadata(path)->getInlineData();
+    return readMetadata(path)->inline_data;
 }
 
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> &) const
@@ -117,9 +117,9 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
     for (const auto & path : file_paths)
     {
         auto metadata = readMetadataUnlocked(path, lock);
-        metadata->resetRefCount();
+        metadata->ref_count = 0;
         WriteBufferFromOwnString buf;
-        metadata->serialize(buf, false);
+        metadata->serialize(buf);
         metadatas[path] = buf.str();
     }
 
@@ -133,14 +133,12 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
-    auto metadata = readMetadata(path);
-    return metadata->getStorageObjects(path);
+    return readMetadata(path)->objects;
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
-    auto metadata = readMetadata(path);
-    return metadata->getRefCount();
+    return readMetadata(path)->ref_count;
 }
 
 const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const
@@ -243,19 +241,14 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
     operations.addOperation(std::make_unique<SetReadonlyFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
 }
 
-void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
+void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{}, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<RewriteFileOperation>(path, objects, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
-void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes)
+void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const StoredObject & object)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, /*objects=*/std::vector<std::pair<ObjectStorageKey, uint64_t>>{{key, size_in_bytes}}, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
-}
-
-void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes)
-{
-    operations.addOperation(std::make_unique<AddBlobOperation>(path, std::move(key), size_in_bytes, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
 TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)

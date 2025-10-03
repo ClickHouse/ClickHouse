@@ -143,6 +143,21 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
+    else if (tp && tp->getTypeClass() == SQLTypeClass::QBIT)
+    {
+        QBitType * qbit = dynamic_cast<QBitType *>(tp);
+        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
+        static const std::unordered_map<uint32_t, DB::Strings> & qentries
+            = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
+
+        /// Only setring a subset of the values to not add too many entries
+        for (const auto & entry : qentries.at(fp->size))
+        {
+            next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
+    }
     /// Remove the last element from the path
     next.path.pop_back();
 }
@@ -225,6 +240,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}));
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
@@ -1347,48 +1363,10 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isMergeTreeFamily() && rg.nextBool())
+        if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
         {
-            /// Use wide and vertical merge settings more often
-            static const DB::Strings & behaviorSettings = {
-                "add_minmax_index_for_numeric_columns",
-                "add_minmax_index_for_string_columns",
-                "allow_coalescing_columns_in_partition_or_order_key",
-                "allow_experimental_replacing_merge_with_cleanup",
-                "allow_experimental_reverse_key",
-                "allow_floating_point_partition_key",
-                "allow_nullable_key",
-                "allow_summing_columns_in_partition_or_order_key",
-                "allow_suspicious_indices",
-                "allow_vertical_merges_from_compact_to_wide_parts",
-                "enable_block_number_column",
-                "enable_block_offset_column",
-                "min_bytes_for_full_part_storage",
-                "min_bytes_for_wide_part",
-                "min_rows_for_full_part_storage",
-                "min_rows_for_wide_part",
-                "vertical_merge_algorithm_min_bytes_to_activate",
-                "vertical_merge_algorithm_min_columns_to_activate",
-                "vertical_merge_algorithm_min_rows_to_activate",
-            };
-            const size_t nsets = (rg.nextLargeNumber() % behaviorSettings.size()) + 1;
-
-            chassert(this->ids.empty());
-            for (size_t i = 0; i < behaviorSettings.size(); i++)
-            {
-                this->ids.emplace_back(i);
-            }
-            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
             svs = svs ? svs : te->mutable_setting_values();
-            for (size_t i = 0; i < nsets; i++)
-            {
-                const String & next = behaviorSettings[this->ids[i]];
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-                sv->set_property(next);
-                sv->set_value((next[0] == 'a' || next[0] == 'e' || rg.nextBool()) ? "1" : "0");
-            }
-            this->ids.clear();
+            generateHotTableSettingsValues(rg, true, svs);
         }
         if (b.isAnyS3Engine() && rg.nextBool())
         {
@@ -1522,7 +1500,7 @@ void StatementGenerator::addTableColumnInternal(
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
-            flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+            flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
             generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
             this->entries.clear();
         }
@@ -1552,13 +1530,13 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
-            | set_no_decimal_limit);
+            | set_no_decimal_limit | allow_qbit);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo);
+            | allow_geo | allow_qbit);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
@@ -1569,7 +1547,7 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
-            | allow_nested | allow_geo);
+            | allow_nested | allow_geo | allow_qbit);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
@@ -1579,7 +1557,7 @@ void StatementGenerator::addTableColumn(
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_qbit);
     }
     if (t.hasDatabasePeer())
     {
@@ -1706,6 +1684,30 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 }
                 buf += "]";
                 idef->add_params()->set_unescaped_sval(std::move(buf));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 512);
+
+                idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
+                idef->add_params()->set_unescaped_sval(
+                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
+
+                idef->add_params()->set_unescaped_sval(
+                    "max_cardinality_for_embedded_postings = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 9);
+
+                idef->add_params()->set_unescaped_sval("bloom_filter_false_positive_rate = 0." + std::to_string(next_dist(rg.generator)));
             }
         }
         break;
@@ -2259,7 +2261,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
-        flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+        flatTableColumnPath(flat_tuple | flat_nested, next.cols, [](const SQLColumn &) { return true; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
         entries.clear();
     }
