@@ -4604,6 +4604,32 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 )", 0) \
+    DECLARE(String, aggregate_function_input_format, "state", R"(
+Format for AggregateFunction input during INSERT operations.
+Possible values:
+- `state` — Binary string with the serialized state (the default). This is the current behavior where AggregateFunction values are expected as binary data.
+- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
+- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+**Examples**
+For a table with structure:
+```sql
+CREATE TABLE example (
+    user_id UInt64,
+    avg_session_length AggregateFunction(avg, UInt32)
+);
+```
+With `aggregate_function_input_format = 'value'`:
+```sql
+INSERT INTO example FORMAT CSV
+123,456
+```
+With `aggregate_function_input_format = 'array'`:
+```sql
+INSERT INTO example FORMAT CSV
+123,"[456,789,101]"
+```
+Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
+)", 0) \
     DECLARE(Bool, optimize_syntax_fuse_functions, false, R"(
 Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](/sql-reference/aggregate-functions/reference/sum), [count](/sql-reference/aggregate-functions/reference/count) or [avg](/sql-reference/aggregate-functions/reference/avg) with identical argument to [sumCount](/sql-reference/aggregate-functions/reference/sumcount).
 
