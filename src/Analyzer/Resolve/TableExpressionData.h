@@ -2,6 +2,7 @@
 
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -49,7 +50,8 @@ struct AnalysisTableExpressionData
 
     bool canBindIdentifier(IdentifierView identifier_view) const
     {
-        return column_identifier_first_parts.contains(identifier_view.at(0));
+        return column_identifier_first_parts.contains(identifier_view.at(0)) || column_name_to_column_node.contains(identifier_view.at(0))
+            || tryGetSubcolumnInfo(identifier_view.getFullName());
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
@@ -77,6 +79,28 @@ struct AnalysisTableExpressionData
         dump(buffer);
 
         return buffer.str();
+    }
+
+    struct SubcolumnInfo
+    {
+        ColumnNodePtr column_node;
+        std::string_view subcolumn_name;
+        DataTypePtr subcolumn_type;
+    };
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const
+    {
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
+        {
+            auto it = column_name_to_column_node.find(column_name);
+            if (it != column_name_to_column_node.end())
+            {
+                if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                    return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
+            }
+        }
+
+        return std::nullopt;
     }
 };
 
