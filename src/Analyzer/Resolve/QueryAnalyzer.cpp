@@ -630,13 +630,22 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
-    if (converted_value.isNull())
+    const Field & field = limit_offset_constant_node->getValue();
+
+    // Here, we handle input negative of negative limit. If negative number is given,
+    // then converted_value_uint64 will be null
+    Field converted_value_uint64 = convertFieldToType(field, DataTypeUInt64());
+    Field converted_value_int64 = convertFieldToType(field, DataTypeInt64());
+
+    if (converted_value_uint64.isNull() && converted_value_int64.isNull())
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} numeric constant expression is not representable as UInt64",
+            "{} numeric constant expression is not representable as Int64 or UInt64",
             expression_description);
 
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+    Field & converted_value = (!converted_value_uint64.isNull() ? converted_value_uint64 : converted_value_int64);
+
+    // Regardless of positive or negative number, we cover the entire range [INT64_MIN, UINT64_MAX] using INT128
+    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt128>());
     result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
 
     expression_node = std::move(result_constant_node);
