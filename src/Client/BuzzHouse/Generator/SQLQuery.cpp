@@ -693,6 +693,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         const auto & next_cte = rg.pickValueRandomlyFromMap(rg.pickValueRandomlyFromMap(this->ctes));
 
+        chassert(!next_cte.cols.empty());
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
@@ -842,6 +843,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
         est->mutable_database()->set_database(ntable.schema_name);
         est->mutable_table()->set_table(ntable.table_name);
+        chassert(!ntable.columns.empty());
         for (const auto & entry : ntable.columns)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {entry}));
@@ -956,6 +958,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
         ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
+        chassert(ncols);
         for (const auto & [key, val] : this->levels)
         {
             levels_backup[key] = val;

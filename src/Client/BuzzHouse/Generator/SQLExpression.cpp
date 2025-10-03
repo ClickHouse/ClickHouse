@@ -626,7 +626,6 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr)
 {
-    SQLRelation rel("");
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
@@ -642,13 +641,18 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     this->ctes.clear();
 
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    for (uint32_t i = 0; i < nparams; i++)
+    if (nparams > 0)
     {
-        const String buf = "p" + std::to_string(i);
-        lexpr->add_args()->set_column(buf);
-        rel.cols.emplace_back(SQLRelationCol("", {buf}));
+        SQLRelation rel("");
+
+        for (uint32_t i = 0; i < nparams; i++)
+        {
+            const String buf = "p" + std::to_string(i);
+            lexpr->add_args()->set_column(buf);
+            rel.cols.emplace_back(SQLRelationCol("", {buf}));
+        }
+        this->levels[this->current_level].rels.emplace_back(rel);
     }
-    this->levels[this->current_level].rels.emplace_back(rel);
     this->generateExpression(rg, lexpr->mutable_expr());
 
     this->levels.clear();

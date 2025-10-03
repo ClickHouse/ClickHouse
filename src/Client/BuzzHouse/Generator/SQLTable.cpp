@@ -743,7 +743,10 @@ void StatementGenerator::colRefOrExpression(
         this->levels.clear();
         this->ctes.clear();
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        this->levels[this->current_level].rels.push_back(rel);
+        if (!rel.cols.empty())
+        {
+            this->levels[this->current_level].rels.push_back(rel);
+        }
         generateTableExpression(rg, false, expr);
         this->levels.clear();
         this->ctes.clear();
@@ -798,7 +801,10 @@ void StatementGenerator::generateTableKey(
             {
                 TableKeyExpr * tke = tkey->add_exprs();
 
-                this->levels[this->current_level].rels.push_back(rel);
+                if (!rel.cols.empty())
+                {
+                    this->levels[this->current_level].rels.push_back(rel);
+                }
                 generateTableExpression(rg, false, tke->mutable_expr());
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
