@@ -128,7 +128,7 @@ GlueCatalog::GlueCatalog(
         s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
 
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
-    bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
+    bool s3_slow_all_threads_after_retryable_error = false;
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(

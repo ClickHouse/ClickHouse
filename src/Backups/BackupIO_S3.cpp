@@ -37,7 +37,7 @@ namespace Setting
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
+    extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
 
 namespace ServerSetting
@@ -121,7 +121,7 @@ namespace
                 .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
 
             local_settings[Setting::s3_slow_all_threads_after_network_error],
-            local_settings[Setting::s3_slow_all_threads_after_retryable_error],
+            local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
@@ -349,7 +349,7 @@ BackupWriterS3::BackupWriterS3(
             .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
             .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
 
-        config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::s3_slow_all_threads_after_retryable_error];
+        config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
         LOG_TRACE(log, "Creating backup client for '{}' disk", disk->getName());
         return disk_client->clone(config);
     };
