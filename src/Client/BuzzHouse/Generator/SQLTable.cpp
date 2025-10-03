@@ -160,10 +160,15 @@ void collectColumnPaths(
     }
     else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::STRING)
     {
-        /// String size generated column
-        next.path.emplace_back(ColumnPathChainEntry("size", &(*size_tp)));
-        paths.push_back(next);
-        next.path.pop_back();
+        StringType * st = dynamic_cast<StringType *>(tp);
+
+        if (!st->precision.has_value())
+        {
+            /// String size generated column
+            next.path.emplace_back(ColumnPathChainEntry("size", &(*size_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
     }
     /// Remove the last element from the path
     next.path.pop_back();

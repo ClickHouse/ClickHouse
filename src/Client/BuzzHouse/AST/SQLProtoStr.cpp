@@ -5176,7 +5176,7 @@ CONV_FN(ShowIndex, sh)
     {
         ret += "EXTENDED ";
     }
-    ShowIndex_IndexShow_Name(sh.key());
+    ret += ShowIndex_IndexShow_Name(sh.key());
     ret += " FROM ";
     TableToString(ret, true, sh.est().table());
     if (sh.est().has_database())

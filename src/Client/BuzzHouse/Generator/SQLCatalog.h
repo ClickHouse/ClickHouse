@@ -277,6 +277,8 @@ public:
 
     bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
 
+    bool isAnyQueueEngine() const { return isS3QueueEngine() || isAzureQueueEngine(); }
+
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
     bool isDeltaLakeS3Engine() const { return teng == TableEngineValues::DeltaLakeS3; }

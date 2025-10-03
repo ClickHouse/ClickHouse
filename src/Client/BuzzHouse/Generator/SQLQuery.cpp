@@ -426,8 +426,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if (sfunc || afunc || lfunc)
+        if ((sfunc || afunc || lfunc) && !t.isAnyQueueEngine())
         {
+            /// Queue tables don't support settings in table function counterparts
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
 
