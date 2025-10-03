@@ -26,6 +26,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/Settings.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -80,6 +81,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -88,9 +91,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
 }
-
-namespace
-{
 
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
@@ -160,12 +160,147 @@ void buildScatterSelector(
     }
 }
 
+namespace
+{
+
+template <bool with_where, typename TTLType, typename WhereColumnType, typename ValueExtractor>
+void updateTTLInfo(
+    MergeTreeDataPartTTLInfo & ttl_info,
+    const PaddedPODArray<TTLType> & ttl_data,
+    const WhereColumnType * where_column,
+    ValueExtractor && value_extractor)
+{
+    for (size_t i = 0; i < ttl_data.size(); ++i)
+    {
+        if constexpr (with_where)
+        {
+            /// Update ttl info only if row passes the filter.
+            /// Rows that don't pass the filter should not affect TTL.
+            if (where_column->getBool(i))
+            {
+                auto value = value_extractor(ttl_data[i]);
+                ttl_info.update(value);
+            }
+        }
+        else
+        {
+            auto value = value_extractor(ttl_data[i]);
+            ttl_info.update(value);
+        }
+    }
+}
+
+template <bool with_where, typename WhereColumnType>
+void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const WhereColumnType * where_column)
+{
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date->getData(), where_column, [&date_lut](UInt16 val)
+        {
+            return date_lut.fromDayNum(DayNum(val));
+        });
+    }
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_time->getData(), where_column, [](UInt32 val)
+        {
+            return val;
+        });
+    }
+    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_32->getData(), where_column, [&date_lut](Int32 val)
+        {
+            return date_lut.fromDayNum(ExtendedDayNum(val));
+        });
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column))
+    {
+        updateTTLInfo<with_where>(ttl_info, column_date_time_64->getData(), where_column, [scale = column_date_time_64->getScale()](DateTime64 val)
+        {
+            return val / intExp10OfSize<Int64>(scale);
+        });
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type ({}) of result TTL column", ttl_column.getName());
+    }
+}
+
+void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column)
+{
+    if (where_column)
+    {
+        /// Add specialization for UInt8 because it's the most common type for filter
+        if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(where_column))
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column_uint8);
+        else
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column);
+    }
+    else
+    {
+        updateTTLInfo<false>(ttl_info, ttl_column, where_column);
+    }
+}
+
+template <typename ColumnType>
+bool hasRowsInFilter(const ColumnType & where_column)
+{
+    for (size_t i = 0; i < where_column.size(); ++i)
+    {
+        if (where_column.getBool(i))
+            return true;
+    }
+    return false;
+}
+
+bool hasRowsInFilter(const IColumn & where_column)
+{
+    /// Add specialization for UInt8 because it's the most common type for filter
+    if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
+        return hasRowsInFilter(*where_column_uint8);
+    else
+        return hasRowsInFilter(where_column);
+}
+
+void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
+{
+    if (where_column && !hasRowsInFilter(*where_column))
+        return;
+
+    if (typeid_cast<const ColumnUInt16 *>(&ttl_column.getDataColumn()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        ttl_info.update(date_lut.fromDayNum(DayNum(ttl_column.getValue<UInt16>())));
+    }
+    else if (typeid_cast<const ColumnUInt32 *>(&ttl_column.getDataColumn()))
+    {
+        ttl_info.update(ttl_column.getValue<UInt32>());
+    }
+    else if (typeid_cast<const ColumnInt32 *>(&ttl_column.getDataColumn()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(ttl_column.getValue<Int32>())));
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column.getDataColumn()))
+    {
+        ttl_info.update(ttl_column.getValue<DateTime64>() / intExp10OfSize<Int64>(column_date_time_64->getScale()));
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type ({}) of result TTL column", ttl_column.getName());
+    }
+
+}
+
 /// Computes ttls and updates ttl infos
 void updateTTL(
     const ContextPtr context,
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
-    DB::MergeTreeDataPartTTLInfo & ttl_info,
+    MergeTreeDataPartTTLInfo & ttl_info,
     const Block & block,
     bool update_part_min_max_ttls)
 {
@@ -174,54 +309,27 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    ColumnPtr where_column;
 
-    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
+    if (ttl_entry.where_expression_ast)
     {
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-        for (const auto & val : column_date->getData())
-            ttl_info.update(date_lut.fromDayNum(DayNum(val)));
+        auto where_expr_and_set = ttl_entry.buildWhereExpression(context);
+        for (auto & subquery : where_expr_and_set.sets->getSubqueries())
+            subquery->buildSetInplace(context);
+
+        where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
+        if (where_column)
+            where_column = where_column->convertToFullColumnIfConst();
     }
-    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
+
+    if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
-        for (const auto & val : column_date_time->getData())
-            ttl_info.update(val);
-    }
-    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(ttl_column.get()))
-    {
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-        for (const auto & val : column_date_32->getData())
-            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(val)));
-    }
-    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(ttl_column.get()))
-    {
-        for (const auto & val : column_date_time_64->getData())
-            ttl_info.update(val / intExp10OfSize<Int64>(column_date_time_64->getScale()));
-    }
-    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
-    {
-        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-        {
-            const auto & date_lut = DateLUT::serverTimezoneInstance();
-            ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
-        }
-        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
-        {
-            ttl_info.update(column_const->getValue<UInt32>());
-        }
-        else if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
-        {
-            const auto & date_lut = DateLUT::serverTimezoneInstance();
-            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>())));
-        }
-        else if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
-        {
-            ttl_info.update(column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale()));
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+        updateTTLInfoConst(ttl_info, *column_const, where_column.get());
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    {
+        updateTTLInfo(ttl_info, *ttl_column, where_column.get());
+    }
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
@@ -336,7 +444,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
-    if (!block || !block.rows())
+    if (block.empty() || !block.rows())
         return result;
 
     metadata_snapshot->check(block, true);
@@ -431,11 +539,12 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
-    size_t block_size = block.rows();
+    size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
-    span.addAttribute("clickhouse.columns", block.columns());
+    span.addAttribute("clickhouse.columns", header->columns());
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
@@ -446,37 +555,45 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column,
+                    header, 1, sort_description, merging_params.sign_column,
                     false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
                     /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing: {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.columns_to_sum,
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow", "sumMapWithOverflow", true, false);
             }
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
+                return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
+                    header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
+            case MergeTreeData::MergingParams::Coalescing:
+            {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+                return std::make_shared<SummingSortedAlgorithm>(
+                    header, 1, sort_description, merging_params.columns_to_sum,
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value", "last_value", false, true);
+            }
         }
     };
 
     auto merging_algorithm = get_merging_algorithm();
     if (!merging_algorithm)
-        return block;
+        return *header;
 
     span.addAttribute("clickhouse.merging_algorithm", merging_algorithm->getName());
 
-    Chunk chunk(block.getColumns(), block_size);
+    Chunk chunk(header->getColumns(), block_size);
 
     IMergingAlgorithm::Input input;
     input.set(std::move(chunk));
@@ -501,20 +618,31 @@ Block MergeTreeDataWriter::mergeBlock(
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
 
-    return block.cloneWithColumns(status.chunk.getColumns());
+    return header->cloneWithColumns(status.chunk.getColumns());
 }
 
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(context), data.insert_increment.get());
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get());
+}
+
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
+    BlockWithPartition & block,
+    StorageMetadataPtr metadata_snapshot,
+    String partition_id,
+    SourcePartsSetForPatch source_parts_set,
+    ContextPtr context)
+{
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get());
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     BlockWithPartition & block_with_partition,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
+    SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
     UInt64 block_number)
 {
@@ -531,10 +659,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
-    bool optimize_on_insert = context->getSettingsRef()[Setting::optimize_on_insert] && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    UInt32 new_part_level = optimize_on_insert ? 1 : 0;
+    bool optimize_on_insert = !isPatchPartitionId(partition_id)
+        && context->getSettingsRef()[Setting::optimize_on_insert]
+        && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
+    UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
+
+    if (!source_parts_set.empty())
+        new_part_info.mutation = source_parts_set.getMaxDataVersion();
 
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -618,7 +751,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         perm_ptr = &perm;
     }
 
-    if (context->getSettingsRef()[Setting::optimize_on_insert])
+    if (optimize_on_insert)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
@@ -688,7 +821,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings
+    {
+        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*data_settings)[MergeTreeSetting::serialization_info_version],
+        (*data_settings)[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -700,6 +839,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
+    new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
@@ -838,7 +978,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings
+    {
+        (*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*data.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*data.getSettings())[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

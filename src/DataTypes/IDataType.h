@@ -9,6 +9,8 @@
 
 #include <boost/noncopyable.hpp>
 
+class SipHash;
+
 namespace DB
 {
 
@@ -101,6 +103,9 @@ public:
     /// Storage type (e.g. Int64 for Interval)
     virtual TypeIndex getColumnType() const { return getTypeId(); }
 
+    void updateHash(SipHash & hash) const;
+    virtual void updateHashImpl(SipHash & hash) const = 0;
+
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
@@ -136,18 +141,22 @@ public:
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization() const;
-    SerializationPtr getSparseSerialization() const;
+    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
+    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind) const;
+    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
+    SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings);
 
     static SerializationPtr getSerialization(const NameAndTypePair & column);
 
@@ -441,6 +450,7 @@ struct WhichDataType
     constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
@@ -521,6 +531,7 @@ bool isIPv4(TYPE data_type); \
 bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
+bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
 bool isObjectDeprecated(TYPE data_type); \

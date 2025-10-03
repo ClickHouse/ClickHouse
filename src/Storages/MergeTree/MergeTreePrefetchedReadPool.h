@@ -21,7 +21,9 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -72,10 +74,7 @@ private:
     {
         using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
-            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
-        {
-        }
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_);
 
         ~ThreadTask()
         {
@@ -90,6 +89,7 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };

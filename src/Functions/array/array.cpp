@@ -17,7 +17,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -31,7 +30,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -184,9 +183,7 @@ private:
             {
                 StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
-                out_chars[cur_out_offset + ref.size] = 0;
-
-                cur_out_offset += ref.size + 1;
+                cur_out_offset += ref.size;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -254,15 +251,22 @@ private:
             return false;
 
         const size_t tuple_size = concrete_out_data->tupleSize();
-        for (size_t i = 0; i < tuple_size; ++i)
+        if (tuple_size == 0)
         {
-            ColumnRawPtrs elem_columns(columns.size(), nullptr);
-            for (size_t j = 0; j < columns.size(); ++j)
+            out_data.insertManyDefaults(columns.size());
+        }
+        else
+        {
+            for (size_t i = 0; i < tuple_size; ++i)
             {
-                const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
-                elem_columns[j] = &concrete_column->getColumn(i);
+                ColumnRawPtrs elem_columns(columns.size(), nullptr);
+                for (size_t j = 0; j < columns.size(); ++j)
+                {
+                    const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
+                    elem_columns[j] = &concrete_column->getColumn(i);
+                }
+                execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
             }
-            execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
         }
         return true;
     }
@@ -301,7 +305,7 @@ Use the `[ ]` operator for the same functionality.
         {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
         {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array, where 'T' is the smallest common type out of the passed arguments.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Valid usage", R"(
 SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
     )",

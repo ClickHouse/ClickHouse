@@ -196,6 +196,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -306,10 +307,7 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
+    ColumnCheckpointPtr getCheckpoint() const override;
 
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
@@ -388,6 +386,7 @@ public:
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
@@ -412,7 +411,7 @@ public:
         return name;
     }
 
-    static DataTypePtr getSharedVariantDataType();
+    static const DataTypePtr & getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
@@ -500,6 +499,16 @@ private:
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
     std::unordered_map<String, SerializationPtr> serialization_cache;
 };
+
+struct DynamicColumnCheckpoint : public ColumnCheckpoint
+{
+    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    {
+    }
+
+    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+};
+
 
 void extendVariantColumn(
     IColumn & variant_column,

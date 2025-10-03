@@ -96,7 +96,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector<Creator>(column, *type, creator));
 
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
@@ -148,6 +148,11 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 
     const auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
+}
+
+void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
+{
+    dictionary_type->updateHash(hash);
 }
 
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const

@@ -50,11 +50,11 @@ namespace
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_.columns())
-    , types(header_.getDataTypes())
+    , prev_positions(header_->columns())
+    , types(header_->getDataTypes())
 {
     name_map = getNamesToIndexesMap(getPort().getHeader());
 }
@@ -256,14 +256,13 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size + 1;
+        size_t offset = old_chars_size + size;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
-            data.back() = 0;
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
         }
         catch (...)
         {
@@ -1060,7 +1059,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 

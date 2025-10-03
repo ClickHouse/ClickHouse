@@ -20,7 +20,6 @@ class StorageObjectStorageQueue;
 struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
-using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.
@@ -60,6 +59,8 @@ public:
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
         size_t cleanup_interval_max_ms_,
+        bool use_persistent_processing_nodes_,
+        size_t persistent_processing_nodes_ttl_seconds_,
         size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
@@ -122,10 +123,13 @@ public:
     /// active = true:
     ///     We also want to register nodes only for a period when they are active.
     ///     For this we create ephemeral nodes in "zookeeper_path / registry / <node_info>"
-    void registerIfNot(const StorageID & storage_id, bool active);
+    void registerNonActive(const StorageID & storage_id, bool & created_new_metadata);
+    void registerActive(const StorageID & storage_id);
+
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
-    size_t unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered);
+    void unregisterActive(const StorageID & storage_id);
+    void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
     /// According to current *active* registered tables,
@@ -146,17 +150,19 @@ public:
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
+    void updateSettings(const SettingsChanges & changes);
+
+    std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
+
+    bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
+    size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+    void cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client);
 
     void migrateToBucketsInKeeper(size_t value);
-
-    void registerNonActive(const StorageID & storage_id);
-    void registerActive(const StorageID & storage_id);
-
-    size_t unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
-    size_t unregisterActive(const StorageID & storage_id);
 
     void updateRegistryFunc();
     void updateRegistry(const DB::Strings & registered_);
@@ -168,8 +174,13 @@ private:
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
-    const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
+
+    std::atomic<size_t> cleanup_interval_min_ms;
+    std::atomic<size_t> cleanup_interval_max_ms;
+    std::atomic<bool> use_persistent_processing_nodes;
+    std::atomic<size_t> persistent_processing_node_ttl_seconds;
+
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 

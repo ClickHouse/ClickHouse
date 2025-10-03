@@ -18,6 +18,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -202,7 +204,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
-        return DecimalField(
+        return DecimalField<DateTime64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
@@ -210,7 +212,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField(
+        return DecimalField<DateTime64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
@@ -235,7 +237,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
-        return DecimalField(
+        return DecimalField<Time64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
             time64_type.getScale());
     }
@@ -243,7 +245,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField(
+        return DecimalField<Time64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
             time64_type.getScale());
     }
@@ -338,7 +340,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
                                                        : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
+            return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 
         if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
@@ -357,7 +359,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
                                                        : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
+            return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
@@ -511,6 +513,98 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
+    else if (const DataTypeQBit * type_qbit = typeid_cast<const DataTypeQBit *>(&type))
+    {
+        size_t dst_dimension = type_qbit->getDimension();
+        size_t dst_element_size = type_qbit->getElementSize();
+        size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dst_dimension);
+        const size_t padded_dimension = bytes_per_fixedstring * 8;
+
+        /// For tuples, we expect the input to be in the transposed format already s.t. it can by directly copied inside a QBit
+        auto convert_tuple_to_qbit = [&](const auto & src_container, size_t src_size) -> Field
+        {
+            /// Check that we have 16, 32 and 64 strings for BFloat16, Float32 and Float64 respectively
+            if (dst_element_size != src_size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad number of elements in IN or VALUES section when converting to QBit. Expected size: {}, actual size: {}",
+                    dst_element_size,
+                    src_size);
+
+            /// Check that each string is of expected length
+            for (size_t i = 0; i < src_container.size(); i++)
+            {
+                const auto elem = src_container[i].template safeGet<String>();
+
+                if (elem.size() != bytes_per_fixedstring)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "To construct QBit, each string within tuple must consist of {} byte{}. Got {}",
+                        bytes_per_fixedstring,
+                        bytes_per_fixedstring != 1 ? "s" : "",
+                        elem.size());
+            }
+            return src_container;
+        };
+
+        /// For arrays, we expect to get normal numeric data
+        auto convert_array_to_qbit = [&](const auto & src_container, size_t src_size) -> Field
+        {
+            if (dst_dimension != src_size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of QBit in IN or VALUES section. Expected size: {}, actual size: {}",
+                    dst_dimension,
+                    src_size);
+
+            for (const auto & elem : src_container)
+                if (elem.getType() != Field::Types::Float64)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "QBit can only be constructed from BFloat16, Float32 and Float64 values, got {}",
+                        elem.getTypeName());
+
+            Tuple res(dst_element_size);
+
+            auto transpose_bits = [&]<typename Word, typename FloatType>()
+            {
+                /// Read field values into contiguous memory. Use padded_dimension as we want all memory used for transposition to be initialised
+                std::vector<FloatType> value_floats(padded_dimension);
+                for (size_t i = 0; i < dst_dimension; ++i)
+                    value_floats[i] = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+
+                /// Transpose the data
+                std::vector<char> transposed_bytes(bytes_per_fixedstring * dst_element_size);
+
+                SerializationQBit::transposeBits<Word>(
+                    reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), padded_dimension);
+
+                /// Extract the transposed data into result tuple
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    res[i] = Field(String(transposed_bytes.data() + i * bytes_per_fixedstring, bytes_per_fixedstring));
+            };
+
+            if (dst_element_size == 16)
+                transpose_bits.template operator()<UInt16, BFloat16>();
+            else if (dst_element_size == 32)
+                transpose_bits.template operator()<UInt32, Float32>();
+            else
+                transpose_bits.template operator()<UInt64, Float64>();
+
+            return Field(res);
+        };
+
+        if (src.getType() == Field::Types::Tuple)
+        {
+            const auto & src_tuple = src.safeGet<Tuple>();
+            return convert_tuple_to_qbit(src_tuple, src_tuple.size());
+        }
+        else if (src.getType() == Field::Types::Array)
+        {
+            const auto & src_array = src.safeGet<Array>();
+            return convert_array_to_qbit(src_array, src_array.size());
+        }
+    }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
     {
         if (src.getType() == Field::Types::Map)
@@ -566,7 +660,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src; /// Already in needed type.
 
         const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
+        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->hasExplicitNames())
         {
             const auto & names = from_type_tuple->getElementNames();
             const auto & tuple = src.safeGet<Tuple>();

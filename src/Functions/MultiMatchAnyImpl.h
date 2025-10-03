@@ -12,7 +12,7 @@
 #if USE_VECTORSCAN
 #    include <hs.h>
 #else
-#    include "MatchImpl.h"
+#    include <Functions/MatchImpl.h>
     #include <Common/Volnitsky.h>
 #endif
 
@@ -138,7 +138,7 @@ struct MultiMatchAnyImpl
         UInt64 offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 length = haystack_offsets[i] - offset - 1;
+            UInt64 length = haystack_offsets[i] - offset;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
@@ -268,7 +268,7 @@ struct MultiMatchAnyImpl
                 return 1;
             };
 
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
@@ -312,7 +312,7 @@ struct MultiMatchAnyImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 

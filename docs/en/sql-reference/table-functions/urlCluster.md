@@ -5,6 +5,7 @@ sidebar_label: 'urlCluster'
 sidebar_position: 201
 slug: /sql-reference/table-functions/urlCluster
 title: 'urlCluster'
+doc_type: 'reference'
 ---
 
 # urlCluster Table Function
@@ -63,5 +64,5 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Related {#related}
 
--   [HDFS engine](../../engines/table-engines/special/url.md)
--   [URL table function](../../sql-reference/table-functions/url.md)
+-   [HDFS engine](/engines/table-engines/integrations/hdfs)
+-   [URL table function](/engines/table-engines/special/url)

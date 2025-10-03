@@ -4,6 +4,7 @@ description: 'The result is equal to the square root of varPop. Unlike stddevPop
 sidebar_position: 189
 slug: /sql-reference/aggregate-functions/reference/stddevpopstable
 title: 'stddevPopStable'
+doc_type: 'reference'
 ---
 
 # stddevPopStable
@@ -22,7 +23,7 @@ stddevPopStable(x)
 
 **Returned value**
 
-Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
+Square root of the variance of `x`. [Float64](../../data-types/float.md).
 
 **Example**
 

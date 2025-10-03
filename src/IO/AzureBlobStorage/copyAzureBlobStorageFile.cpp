@@ -14,6 +14,12 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
 
+
+#include <azure/core/credentials/credentials.hpp>
+#include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+
 namespace ProfileEvents
 {
     extern const Event AzureCopyObject;
@@ -347,29 +353,46 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    const std::optional<ObjectAttributes> & object_to_attributes,
+    bool same_credentials,
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
 
-    if (settings->use_native_copy)
+    if (settings->use_native_copy && same_credentials)
     {
-        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
         auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
+
         auto source_uri = block_blob_client_src.GetUrl();
 
         if (size < settings->max_single_part_copy_size)
         {
+            Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+            if (object_to_attributes.has_value())
+            {
+                for (const auto & [key, value] : *object_to_attributes)
+                    copy_options.Metadata[key] = value;
+            }
+
             LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
-            block_blob_client_dest.CopyFromUri(source_uri);
+            block_blob_client_dest.CopyFromUri(source_uri, copy_options);
         }
         else
         {
-            Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri);
+            Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+            if (object_to_attributes.has_value())
+            {
+                for (const auto & [key, value] : *object_to_attributes)
+                    copy_options.Metadata[key] = value;
+            }
+
+            Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
 
             auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
             auto properties_model = copy_response.Value;
@@ -398,7 +421,7 @@ void copyAzureBlobStorageFile(
     }
     else
     {
-        LOG_TRACE(log, "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} native copy is disabled {}", src_blob, src_container_for_logging, same_credentials ? "" : " because of different credentials");
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(

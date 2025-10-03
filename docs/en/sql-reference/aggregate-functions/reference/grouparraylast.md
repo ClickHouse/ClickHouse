@@ -3,6 +3,7 @@ description: 'Creates an array of the last argument values.'
 sidebar_position: 142
 slug: /sql-reference/aggregate-functions/reference/grouparraylast
 title: 'groupArrayLast'
+doc_type: 'reference'
 ---
 
 # groupArrayLast
@@ -19,7 +20,7 @@ In some cases, you can still rely on the order of execution. This applies to cas
 Query:
 
 ```sql
-select groupArrayLast(2)(number+1) numbers from numbers(10)
+SELECT groupArrayLast(2)(number+1) numbers FROM numbers(10)
 ```
 
 Result:
@@ -33,7 +34,7 @@ Result:
 In compare to `groupArray`:
 
 ```sql
-select groupArray(2)(number+1) numbers from numbers(10)
+SELECT groupArray(2)(number+1) numbers FROM numbers(10)
 ```
 
 ```text

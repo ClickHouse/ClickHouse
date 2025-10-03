@@ -14,7 +14,7 @@ class CustomMetricLogViewStep : public ITransformingStep
 {
     SortDescription sort_description;
 public:
-    CustomMetricLogViewStep(Block input_header_, Block output_header_);
+    CustomMetricLogViewStep(SharedHeader input_header_, SharedHeader output_header_);
 
     String getName() const override
     {
