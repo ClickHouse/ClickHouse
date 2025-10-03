@@ -300,6 +300,8 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+\
+    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 
 namespace ProfileEvents
 {
