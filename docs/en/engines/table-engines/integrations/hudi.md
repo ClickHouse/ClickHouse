@@ -5,6 +5,7 @@ sidebar_label: 'Hudi'
 sidebar_position: 86
 slug: /engines/table-engines/integrations/hudi
 title: 'Hudi Table Engine'
+doc_type: 'reference'
 ---
 
 # Hudi table engine

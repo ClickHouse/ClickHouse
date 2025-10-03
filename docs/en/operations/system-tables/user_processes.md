@@ -4,6 +4,7 @@ description: 'System table containing information useful for an overview of memo
 keywords: ['system table', 'user_processes']
 slug: /operations/system-tables/user_processes
 title: 'system.user_processes'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

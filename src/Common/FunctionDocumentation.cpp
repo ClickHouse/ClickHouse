@@ -121,18 +121,20 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/functions/overview#arrow-operator-and-lambda)";
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
+        else if (type.starts_with("QBit")) /// "QBit(T, UInt64)", "QBit(Float64, UInt64)", ...
+            result += "`](/sql-reference/data-types/qbit)";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }
     result += "\n";
     return result;
 }
-}
 
-String FunctionDocumentation::argumentsAsString() const
+template <typename Type>
+String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
 {
     String result;
-    for (const auto & [name, description_, types] : arguments)
+    for (const auto & [name, description_, types] : arguments_or_parameters)
     {
         result += "- `" + name + "` — " + description_ + " ";
 
@@ -142,6 +144,20 @@ String FunctionDocumentation::argumentsAsString() const
             result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
+}
+
+}
+
+String FunctionDocumentation::argumentsAsString() const
+{
+    return argumentsOrParametersAsString(arguments, syntax);
+}
+
+String FunctionDocumentation::parametersAsString() const
+{
+    /// TODO Replace dummy parameters by actual parameters
+    Parameters dummy_parameters;
+    return argumentsOrParametersAsString(dummy_parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -208,6 +224,7 @@ String FunctionDocumentation::categoryAsString() const
     static const std::unordered_map<Category, std::string> category_to_string =
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
+
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
@@ -235,6 +252,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Null, "Null"},
         {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
+        {Category::QBit, "QBit"},
         {Category::RandomNumber, "Random Number"},
         {Category::Rounding, "Rounding"},
         {Category::StringReplacement, "String Replacement"},
@@ -249,6 +267,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
+
+        {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 

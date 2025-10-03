@@ -267,6 +267,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
+    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);

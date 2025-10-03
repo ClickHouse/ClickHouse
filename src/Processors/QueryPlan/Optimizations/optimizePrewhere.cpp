@@ -140,8 +140,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!storage.canMoveConditionsToPrewhere())
         return;
 
-    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
-    if (storage_prewhere_info)
+    if (source_step_with_filter->getPrewhereInfo())
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -158,7 +157,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!optimize)
         return;
 
-    const auto & storage_metadata = storage_snapshot->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
         return;
@@ -181,7 +179,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
-        storage_metadata,
+        storage_snapshot,
         storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
@@ -195,11 +193,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (optimize_result.prewhere_nodes.empty())
         return;
 
-    PrewhereInfoPtr prewhere_info;
-    if (storage_prewhere_info)
-        prewhere_info = storage_prewhere_info->clone();
-    else
-        prewhere_info = std::make_shared<PrewhereInfo>();
+    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,

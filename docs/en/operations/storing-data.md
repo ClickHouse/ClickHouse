@@ -4,6 +4,7 @@ sidebar_label: 'External disks for storing data'
 sidebar_position: 68
 slug: /operations/storing-data
 title: 'External disks for storing data'
+doc_type: 'guide'
 ---
 
 Data processed in ClickHouse is usually stored in the local file system of the 

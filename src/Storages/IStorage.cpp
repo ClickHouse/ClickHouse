@@ -227,9 +227,7 @@ void IStorage::readFromPipe(
     }
 }
 
-std::optional<QueryPipeline> IStorage::distributedWrite(
-    const ASTInsertQuery & /*query*/,
-    ContextPtr /*context*/)
+std::optional<QueryPipeline> IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/)
 {
     return {};
 }
@@ -245,7 +243,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -409,11 +407,6 @@ std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
 
     {
         ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
