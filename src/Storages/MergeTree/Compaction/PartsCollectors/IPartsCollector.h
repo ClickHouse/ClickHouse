@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 
 class IPartsCollector
 {
