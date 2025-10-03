@@ -580,7 +580,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
                 {
                     names.push_back(path.cname);
                 }
-                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), std::move(names)));
+                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), names));
             }
             this->table_entries.clear();
             this->levels[this->current_level].rels.emplace_back(rel);
@@ -923,7 +923,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.push_back("mark");
-            marks.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            marks.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
@@ -1111,7 +1111,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.back() = "_parent" + npath.back();
-            parents.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            parents.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
     }

@@ -49,8 +49,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(
-        std::move(client_hostname), std::move(server_hostname), std::move(path), std::move(region), std::move(warehouse), std::move(port)));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, warehouse, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -103,22 +102,22 @@ static std::optional<ServerCredentials> loadServerCredentials(
     }
 
     return std::optional<ServerCredentials>(ServerCredentials(
-        std::move(client_hostname),
-        std::move(server_hostname),
-        std::move(container),
-        std::move(port),
-        std::move(mysql_port),
-        std::move(unix_socket),
-        std::move(user),
-        std::move(password),
-        std::move(database),
-        std::move(named_collection),
-        std::move(user_files_dir),
-        std::move(query_log_file),
-        std::move(glue_catalog),
-        std::move(hive_catalog),
-        std::move(rest_catalog),
-        std::move(unity_catalog)));
+        client_hostname,
+        server_hostname,
+        container,
+        port,
+        mysql_port,
+        unix_socket,
+        user,
+        password,
+        database,
+        named_collection,
+        user_files_dir,
+        query_log_file,
+        glue_catalog,
+        hive_catalog,
+        rest_catalog,
+        unity_catalog));
 }
 
 static PerformanceMetric

@@ -217,7 +217,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
     if (allow_internal_cols && rg.nextSmallNumber() < 3)
@@ -324,7 +324,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
     if (this->levels.find(this->current_level) == this->levels.end())
