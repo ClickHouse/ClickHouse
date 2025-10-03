@@ -2355,26 +2355,20 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     {
         /// Data for external tables
 
-        NamesAndTypesList columns = block.getNamesAndTypesList();
-        auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription{columns}, {});
-        auto storage = temporary_table.getTable();
-        state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-
-        // auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-        // StoragePtr storage;
-        // /// If such a table does not exist, create it.
-        // if (resolved)
-        // {
-        //     storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
-        // }
-        // else
-        // {
-        //     NamesAndTypesList columns = block.getNamesAndTypesList();
-        //     auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription{columns}, {});
-        //     storage = temporary_table.getTable();
-        //     state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-        // }
-
+        auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+        StoragePtr storage;
+        /// If such a table does not exist, create it.
+        if (resolved)
+        {
+            storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
+        }
+        else
+        {
+            NamesAndTypesList columns = block.getNamesAndTypesList();
+            auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription{columns}, {});
+            storage = temporary_table.getTable();
+            state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+        }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
