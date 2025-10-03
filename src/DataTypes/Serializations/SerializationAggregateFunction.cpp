@@ -1,15 +1,18 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Formats/FormatFactory.h"
 
 namespace DB
 {
@@ -17,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
@@ -127,23 +132,220 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     column_concrete.getData().push_back(place);
 }
 
+static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn & column, const String & value_str, const FormatSettings & settings)
+{
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
+
+    Arena & arena = column_concrete.createOrGetArena();
+    size_t size_of_state = function->sizeOfData();
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
+
+    function->create(place);
+
+    try
+    {
+        // Get the argument types for the aggregate function
+        const auto & argument_types = function->getArgumentTypes();
+        
+        if (argument_types.size() == 1)
+        {
+            // Single argument - parse the value directly
+            auto temp_column = argument_types[0]->createColumn();
+            ReadBufferFromString buf(value_str);
+            argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
+            
+            // Add the value to the aggregate state
+            const IColumn * columns[] = {temp_column.get()};
+            function->add(place, columns, 0, &arena);
+        }
+        else
+        {
+            // Multiple arguments - parse as tuple
+            ReadBufferFromString buf(value_str);
+            
+            // Parse tuple manually - expect format like (val1,val2,val3)
+            if (buf.eof() || *buf.position() != '(')
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, 
+                    "Expected tuple format for multi-argument aggregate function, got: '{}'", value_str);
+            
+            ++buf.position(); // skip '('
+            
+            std::vector<MutableColumnPtr> temp_columns;
+            for (size_t i = 0; i < argument_types.size(); ++i)
+            {
+                if (i > 0)
+                {
+                    if (buf.eof() || *buf.position() != ',')
+                        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                            "Expected comma in tuple, got: '{}'", value_str);
+                    ++buf.position(); // skip ','
+                }
+                
+                temp_columns.push_back(argument_types[i]->createColumn());
+                argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
+            }
+            
+            if (buf.eof() || *buf.position() != ')')
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                    "Expected closing parenthesis in tuple, got: '{}'", value_str);
+            
+            // Add the values to the aggregate state
+            std::vector<const IColumn *> columns_ptrs;
+            for (const auto & col : temp_columns)
+                columns_ptrs.push_back(col.get());
+                
+            function->add(place, columns_ptrs.data(), 0, &arena);
+        }
+    }
+    catch (...)
+    {
+        function->destroy(place);
+        throw;
+    }
+
+    column_concrete.getData().push_back(place);
+}
+
+static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn & column, const String & array_str, const FormatSettings & settings)
+{
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
+
+    Arena & arena = column_concrete.createOrGetArena();
+    size_t size_of_state = function->sizeOfData();
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
+
+    function->create(place);
+
+    try
+    {
+        // Get the argument types for the aggregate function
+        const auto & argument_types = function->getArgumentTypes();
+        
+        // Parse the array - expect format like [val1,val2,val3] or [(val1a,val1b),(val2a,val2b)]
+        ReadBufferFromString buf(array_str);
+        
+        if (buf.eof() || *buf.position() != '[')
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "Expected array format starting with '[', got: '{}'", array_str);
+        
+        ++buf.position(); // skip '['
+        
+        size_t row = 0;
+        while (!buf.eof() && *buf.position() != ']')
+        {
+            if (row > 0)
+            {
+                if (buf.eof() || *buf.position() != ',')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                        "Expected comma in array, got: '{}'", array_str);
+                ++buf.position(); // skip ','
+            }
+            
+            if (argument_types.size() == 1)
+            {
+                // Single argument
+                auto temp_column = argument_types[0]->createColumn();
+                argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
+                
+                const IColumn * columns[] = {temp_column.get()};
+                function->add(place, columns, 0, &arena);
+            }
+            else
+            {
+                // Multiple arguments - parse as tuple
+                if (buf.eof() || *buf.position() != '(')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                        "Expected tuple format for multi-argument aggregate function in array, got: '{}'", array_str);
+                
+                ++buf.position(); // skip '('
+                
+                std::vector<MutableColumnPtr> temp_columns;
+                for (size_t i = 0; i < argument_types.size(); ++i)
+                {
+                    if (i > 0)
+                    {
+                        if (buf.eof() || *buf.position() != ',')
+                            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                                "Expected comma in tuple within array, got: '{}'", array_str);
+                        ++buf.position(); // skip ','
+                    }
+                    
+                    temp_columns.push_back(argument_types[i]->createColumn());
+                    argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
+                }
+                
+                if (buf.eof() || *buf.position() != ')')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                        "Expected closing parenthesis in tuple within array, got: '{}'", array_str);
+                ++buf.position(); // skip ')'
+                
+                // Add the values to the aggregate state
+                std::vector<const IColumn *> columns_ptrs;
+                for (const auto & col : temp_columns)
+                    columns_ptrs.push_back(col.get());
+                    
+                function->add(place, columns_ptrs.data(), 0, &arena);
+            }
+            
+            ++row;
+        }
+        
+        if (buf.eof() || *buf.position() != ']')
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "Expected closing bracket in array, got: '{}'", array_str);
+    }
+    catch (...)
+    {
+        function->destroy(place);
+        throw;
+    }
+
+    column_concrete.getData().push_back(place);
+}
+
 void SerializationAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
-void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationAggregateFunction::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
+void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, String s) const
+{
+    if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE)
+    {
+        deserializeFromString(function, column, s, version);
+    }
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE)
+    {
+        deserializeFromValue(function, column, s, settings);
+    }
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY)
+    {
+        deserializeFromArray(function, column, s, settings);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid value for aggregate_function_input_format: '{}'. Expected '{}', '{}', or '{}'",
+            settings.aggregate_function_input_format,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE,
+            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY);
+    }
+}
 void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
     settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
-    deserializeFromString(function, column, s, version);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -153,19 +355,19 @@ void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column,
 }
 
 
-void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
-    deserializeFromString(function, column, s, version);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
-void SerializationAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
     readStringUntilEOF(s, istr);
-    deserializeFromString(function, column, s, version);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -179,7 +381,7 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
 {
     String s;
     readJSONString(s, istr, settings.json);
-    deserializeFromString(function, column, s, version);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 
@@ -199,7 +401,7 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
 {
     String s;
     readCSV(s, istr, settings.csv);
-    deserializeFromString(function, column, s, version);
+    deserializeBasedOnInput(column, settings, s);
 }
 
 }
