@@ -1477,8 +1477,14 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
 
-    auto cleanup = [&] ()
+    auto cleanup = [&] (bool cleanup_data_files)
     {
+        if (cleanup_data_files)
+        {
+            for (const auto & [_, writer] : writer_per_partition_key)
+                writer.clearAllDataFiles();
+        }
+
         for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
@@ -1552,7 +1558,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
             catch (...)
             {
-                cleanup();
+                cleanup(true);
                 throw;
             }
         }
@@ -1568,7 +1574,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
             catch (...)
             {
-                cleanup();
+                cleanup(true);
                 throw;
             }
         }
@@ -1588,7 +1594,7 @@ bool IcebergStorageSink::initializeMetadata()
             if (!writeMetadataFileAndVersionHint(storage_metadata_name, json_representation, hint.path_in_storage, storage_metadata_name, object_storage, context, metadata_compression_method, configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
-                cleanup();
+                cleanup(false);
                 return false;
             }
             else
@@ -1605,8 +1611,7 @@ bool IcebergStorageSink::initializeMetadata()
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
-                    cleanup();
-                    object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                    cleanup(false);
                     return false;
                 }
             }
@@ -1614,7 +1619,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        cleanup();
+        cleanup(true);
         throw;
     }
     return true;
