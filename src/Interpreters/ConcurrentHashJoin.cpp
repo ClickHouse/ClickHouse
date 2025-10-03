@@ -595,7 +595,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         {
             std::lock_guard lock(hash_join->mutex);
 
-            if (hash_join->data->hasNonJoinedRows() || 
+            if (hash_join->data->hasNonJoinedRows() ||
                 hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
             {
                 if (auto s = hash_join->data->getNonJoinedBlocks(
@@ -885,17 +885,17 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     if (holder.column)
                     {
                         const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
+                        for (unsigned long pos : idxs)
                         {
-                            size_t idx = static_cast<size_t>(idxs[pos]);
+                            size_t idx = static_cast<size_t>(pos);
                             if (idx < src_mask.size())
                                 filtered->getData()[idx] = src_mask[idx];
                         }
                     }
                     else
                     {
-                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
-                            filtered->getData()[static_cast<size_t>(idxs[pos])] = 1;
+                        for (unsigned long idx : idxs)
+                            filtered->getData()[static_cast<size_t>(idx)] = 1;
                     }
                 }
 
