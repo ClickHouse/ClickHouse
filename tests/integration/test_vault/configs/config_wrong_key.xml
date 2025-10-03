@@ -1,0 +1,7 @@
+<clickhouse>
+    <vault>
+      <url>http://openbao:1337</url>
+      <token>foobar</token>
+    </vault>
+    <http_port from_vault="ch_secret" vault_key="WRONG" replace="replace"/>
+</clickhouse>

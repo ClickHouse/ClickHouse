@@ -81,6 +81,10 @@ String Vault::readSecret(const String & secret, const String & key)
     const Poco::JSON::Object::Ptr & root = res_json.extract<Poco::JSON::Object::Ptr>();
     const Poco::JSON::Object::Ptr & data = root->getObject("data");
     const Poco::JSON::Object::Ptr & kv = data->getObject("data");
+
+    if (!kv->has(key))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
+
     const auto value = kv->get(key).extract<String>();
     LOG_DEBUG(log, "Vault value '{}'.", value);
 
