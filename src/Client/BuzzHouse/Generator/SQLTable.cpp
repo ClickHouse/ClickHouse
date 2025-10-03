@@ -143,7 +143,7 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
-    else if (tp && tp->getTypeClass() == SQLTypeClass::QBIT)
+    else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::QBIT)
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
         FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
@@ -157,6 +157,13 @@ void collectColumnPaths(
             paths.push_back(next);
             next.path.pop_back();
         }
+    }
+    else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::STRING)
+    {
+        /// String size generated column
+        next.path.emplace_back(ColumnPathChainEntry("size", &(*size_tp)));
+        paths.push_back(next);
+        next.path.pop_back();
     }
     /// Remove the last element from the path
     next.path.pop_back();
