@@ -27,6 +27,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String server_hostname = "localhost";
     String path;
     String region = default_region;
+    String warehouse = "data";
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
@@ -34,6 +35,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
+           {"warehouse", [&](const JSONObjectType & value) { warehouse = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
     for (const auto [key, value] : jobj.getObject())
@@ -47,7 +49,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, warehouse, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -259,7 +261,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings}};
+           {"fixedstring", allow_fixed_strings},
+           {"qbit", allow_qbit}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -385,6 +388,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
+        {"hot_table_settings", [&](const JSONObjectType & value) { hot_table_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},

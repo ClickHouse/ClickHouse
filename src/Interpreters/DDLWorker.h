@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -14,7 +15,6 @@
 #include <atomic>
 #include <list>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -119,7 +119,7 @@ protected:
 
     private:
         std::unordered_set<String> set;
-        mutable std::shared_mutex mtx;
+        mutable SharedMutex mtx;
     };
 
     /// Pushes query into DDL queue, returns path to created node

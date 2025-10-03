@@ -32,6 +32,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
@@ -269,6 +270,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -368,6 +370,11 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
     extern const Metric IsServerShuttingDown;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & StartupScriptsFailureReason;
 }
 
 namespace ProfileEvents
@@ -939,12 +946,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
-            "startup_scripts_failure_reason",
-            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
-            {"error_name"}
-        );
-        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
+        DimensionalMetrics::set(
+            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
+
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -1027,20 +1031,20 @@ try
 
     Poco::Logger * log = &logger();
 
-    // If the startupLevel is set in the config, we override the root logger level.
+    // If the startup_level is set in the config, we override the root logger level.
     // Specific loggers can still override it.
     std::string default_logger_level_config = config().getString("logger.level", "");
     bool should_restore_default_logger_level = false;
-    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
+    if (config().has("logger.startup_level") && !config().getString("logger.startup_level").empty())
     {
         /// Set the root logger level to the startup level.
         /// This is useful for debugging startup issues.
         /// The root logger level will be reset to the default level after the server is fully initialized.
-        config().setString("logger.level", config().getString("logger.startupLevel"));
+        config().setString("logger.level", config().getString("logger.startup_level"));
         Loggers::updateLevels(config(), logger());
         should_restore_default_logger_level = true;
 
-        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
+        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startup_level"));
     }
 
     MainThreadStatus::getInstance();
@@ -2038,6 +2042,7 @@ try
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
+            global_context->setMaxNamedCollectionNumToWarn(new_server_settings[ServerSetting::max_named_collection_num_to_warn]);
             global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
             global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
@@ -2811,14 +2816,14 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
-            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
+            if (config().has("logger.shutdown_level") && !config().getString("logger.shutdown_level").empty())
             {
                 /// Set the root logger level to the shutdown level.
                 /// This is useful for debugging shutdown issues.
-                config().setString("logger.level", config().getString("logger.shutdownLevel"));
+                config().setString("logger.level", config().getString("logger.shutdown_level"));
                 Loggers::updateLevels(config(), logger());
 
-                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
+                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdown_level"));
             }
             LOG_DEBUG(log, "Received termination signal.");
 
@@ -2875,11 +2880,11 @@ try
             else
                 LOG_INFO(log, "Closed connections.");
 
-            global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 
-            if (current_connections)
+            if (current_connections || !joined_refresh_tasks)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live

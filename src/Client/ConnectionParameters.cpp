@@ -9,6 +9,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <base/scope_guard.h>
+#include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
 
@@ -33,7 +34,7 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
+    if (isCloudEndpoint(connection_host))
         return true;
 
     if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)

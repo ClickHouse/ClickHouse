@@ -329,6 +329,18 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeSerializationInfoVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeStringSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"default", MergeTreeStringSerializationVersion::DEFAULT},
+     {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeObjectSerializationVersion::V1},

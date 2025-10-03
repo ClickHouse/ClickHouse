@@ -22,8 +22,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
-#include <Disks/IO/ReadBufferFromDistributedCache.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
 
@@ -241,7 +240,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::truncateFile(const String & path, size_t size)
 {
-    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    LOG_TEST(log, "Truncate file operation {} to size {}", path, size);
     auto transaction = createObjectStorageTransaction();
     transaction->truncateFile(path, size);
     transaction->commit();
@@ -388,15 +387,6 @@ void DiskObjectStorage::createDirectories(const String & path)
         transaction->commit();
     }
 }
-
-
-void DiskObjectStorage::clearDirectory(const String & path)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->clearDirectory(path);
-    transaction->commit();
-}
-
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
@@ -749,15 +739,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
-    ObjectStorageConnectionInfoPtr connection_info;
-    if (enable_distributed_cache
-        && settings.read_through_distributed_cache
-        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
-    {
-        connection_info = object_storage->getConnectionInfo();
-        if (connection_info)
-            use_distributed_cache = true;
-    }
+    use_distributed_cache = enable_distributed_cache && DistributedCache::canUseDistributedCacheForRead(read_settings, *object_storage);
 #endif
 
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -793,7 +775,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
-    auto read_from_object_storage_gather = [=]()
+    auto read_from_object_storage_gather = [=]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromRemoteFSGather>(
             std::move(read_buffer_creator),
@@ -808,19 +790,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
     {
-        LOG_TEST(log, "Reading from distributed cache");
-
-        auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-        impl = std::make_unique<ReadBufferFromDistributedCache>(
-            path,
-            storage_objects,
-            read_settings,
-            connection_info,
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(query_context ? query_context->getSettingsRef() : global_context->getSettingsRef()),
-            read_from_object_storage_gather,
-            /*use_external_buffer*/use_page_cache || use_async_buffer,
-            global_context->getDistributedCacheLog(),
-            /* include_credentials_in_cache_key */false);
+        impl = DistributedCache::readWithDistributedCache(
+                    path,
+                    storage_objects,
+                    read_settings,
+                    *object_storage,
+                    /*use_external_buffer*/use_page_cache || use_async_buffer,
+                    read_from_object_storage_gather);
     }
 #endif
 
@@ -882,7 +858,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 
     WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(path, buf_size, mode, write_settings);
+    return transaction->writeFileWithAutoCommit(path, buf_size, mode, write_settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
