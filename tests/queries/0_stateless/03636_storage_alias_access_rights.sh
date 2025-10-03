@@ -25,7 +25,6 @@ echo "Test INSERT without permission"
 ${CLICKHOUSE_CLIENT} --user="${username}" --query "INSERT INTO test_alias VALUES (4, 'four');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 ${CLICKHOUSE_CLIENT} --query "
-    GRANT SHOW ON ${CLICKHOUSE_DATABASE}.* TO ${username};
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.test_alias TO ${username};
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.test_table TO ${username};
 "
