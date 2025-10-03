@@ -187,15 +187,25 @@ namespace
 }
 
 
-std::shared_ptr<S3::Client> S3StorageBackupClientFactory::getOrCreate(DiskPtr disk, S3StorageBackupClientCretor creator)
+std::shared_ptr<S3::Client> S3StorageBackupClientFactory::getOrCreate(DiskPtr disk, S3StorageBackupClientCreator creator)
 {
     std::lock_guard lock(clients_mutex);
 
-    auto [it, inserted] = clients.try_emplace(disk->getName(), nullptr);
+    auto disk_client = disk->getS3StorageClient();
+    auto [it, inserted] = clients.try_emplace(disk->getName(), ClientEntry{nullptr, disk_client});
     if (inserted)
-        it->second = creator(disk);
+        it->second.backup_client = creator(disk);
+    else
+    {
+        auto locked = it->second.original_client.lock();
+        if (locked != disk_client)
+        {
+            it->second.backup_client = creator(disk);
+            it->second.original_client = disk_client;
+        }
+    }
 
-    return it->second;
+    return it->second.backup_client;
 }
 
 BackupReaderS3::BackupReaderS3(
