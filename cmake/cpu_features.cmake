@@ -112,7 +112,7 @@ elseif (ARCH_AARCH64)
         # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
         # bf16 dgh rng")
         execute_process(
-            COMMAND grep -P "^(?=.*atomic)(?=.*ssbs)" /proc/cpuinfo
+            COMMAND grep -P "^(?=.*atomic)" /proc/cpuinfo
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
             MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
