@@ -303,6 +303,7 @@ private:
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
     void slowDownAfterRetryableError() const;
 
+    void logConfiguration() const;
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;

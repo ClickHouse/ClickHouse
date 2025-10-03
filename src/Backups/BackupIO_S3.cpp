@@ -328,7 +328,7 @@ BackupWriterS3::BackupWriterS3(
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
 
-    storage_client_creator = [context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
+    storage_client_creator = [this, context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
     {
         auto disk_client = disk->getS3StorageClient();
         const Settings & local_settings = context->getSettingsRef();
@@ -340,6 +340,7 @@ BackupWriterS3::BackupWriterS3(
             .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
 
         config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::s3_slow_all_threads_after_retryable_error];
+        LOG_TRACE(log, "Creating backup client for '{}' disk", disk->getName());
         return disk_client->clone(config);
     };
 
