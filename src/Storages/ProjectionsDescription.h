@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/PODArray_fwd.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <memory>
 #include <vector>
@@ -70,7 +71,7 @@ struct ProjectionDescription
 
     /// Parse projection from definition AST
     static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, LoadingStrictnessLevel loading_strictness_level, ContextPtr query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
