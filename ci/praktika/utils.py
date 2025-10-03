@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -694,6 +695,24 @@ class Utils:
         return path_out
 
     @classmethod
+    def compress_files_gz(cls, files, archive_name):
+        files = [
+            os.path.relpath(file) if os.path.isabs(file) else file for file in files
+        ]
+        for file in files:
+            assert Path(file).is_file(), f"File does not exist [{file}]"
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.write("\n".join(files).encode())
+            f.flush()
+            Shell.check(
+                f"tar -cf - -T {f.name} | gzip > {archive_name}",
+                verbose=True,
+                strict=True,
+            )
+        return archive_name
+
+    @classmethod
     def compress_gz(cls, path):
         path = str(path).rstrip("/")
         path_obj = Path(path)
@@ -811,6 +830,7 @@ class TeePopen:
         log_file: Union[str, Path] = "",
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
+        preserve_stdio: bool = False,
     ):
         self.command = command
         self.log_file_name = log_file
@@ -822,6 +842,7 @@ class TeePopen:
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
+        self.preserve_stdio = preserve_stdio
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
@@ -846,19 +867,35 @@ class TeePopen:
             time.sleep(2)
 
     def __enter__(self) -> "TeePopen":
-        if self.log_file_name:
+        if self.log_file_name and not self.preserve_stdio:
             self.log_file = open(self.log_file_name, "w", encoding="utf-8")
-        self.process = subprocess.Popen(
-            self.command,
-            shell=True,
-            universal_newlines=True,
-            env=self.env,
-            start_new_session=True,  # signall will be sent to all children
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            bufsize=1,
-            errors="backslashreplace",
-        )
+
+        if self.preserve_stdio:
+            # Inherit parent's stdio and do not start a new session to keep the controlling TTY
+            self.process = subprocess.Popen(
+                self.command,
+                shell=True,
+                universal_newlines=True,
+                env=self.env,
+                # inherit stdin/stdout/stderr
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                start_new_session=False,
+                errors="backslashreplace",
+            )
+        else:
+            self.process = subprocess.Popen(
+                self.command,
+                shell=True,
+                universal_newlines=True,
+                env=self.env,
+                start_new_session=True,  # signal will be sent to all children
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
+                bufsize=1,
+                errors="backslashreplace",
+            )
         time.sleep(1)
         print(f"Subprocess started, pid [{self.process.pid}]")
         if self.timeout is not None and self.timeout > 0:
@@ -873,7 +910,8 @@ class TeePopen:
             self.log_file.close()
 
     def wait(self) -> int:
-        if self.process.stdout is not None:
+        # If preserving stdio, we don't have our own stdout pipe; just wait
+        if not self.preserve_stdio and self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
 
@@ -886,7 +924,14 @@ class TeePopen:
         return self.process.poll()
 
     def send_signal(self, signal_num):
-        os.killpg(self.process.pid, signal_num)
+        try:
+            # Prefer sending to the process group when we created a new session
+            if not self.preserve_stdio:
+                os.killpg(self.process.pid, signal_num)
+            else:
+                os.kill(self.process.pid, signal_num)
+        except ProcessLookupError:
+            pass
 
     def get_latest_log(self, max_lines=20):
         buffer = list(self.log_rolling_buffer)
