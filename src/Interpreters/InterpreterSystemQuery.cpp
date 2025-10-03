@@ -912,11 +912,13 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_XRAY
         case Type::INSTRUMENT_ADD:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
             instrumentWithXRay(true, query);
             break;
         }
         case Type::INSTRUMENT_REMOVE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             instrumentWithXRay(false, query);
             break;
         }
