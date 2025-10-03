@@ -625,13 +625,31 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
     /// Constness of limit and offset is validated during query analysis stage
-    size_t limit_length = 0;
+    UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
-        limit_length = main_query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
+        const Int128 field_lim_val = field.safeGet<Int128>();
 
-    size_t limit_offset = 0;
+        // Negative LIMIT, skip optimization
+        if (field_lim_val < 0)
+            return 0;
+
+        limit_length = static_cast<UInt64>(field_lim_val);
+    }
+
+    UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
-        limit_offset = main_query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue(); // assume Int128 too
+        const Int128 field_offset_val = field.safeGet<Int128>();
+
+        // Negative OFFSET, skip optimization
+        if (field_offset_val < 0)
+            return 0;
+
+        limit_offset = static_cast<UInt64>(field_offset_val);
+    }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified, and limit + offset < max_block_size,
