@@ -106,13 +106,13 @@ protected:
 };
 
 
-class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
 protected:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 
-    MetadataOperationsHolder operations;
+    std::vector<MetadataOperationPtr> operations;
 
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(
@@ -133,7 +133,9 @@ public:
         /// Noop
     }
 
-    void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
+    void createEmptyMetadataFile(const std::string & /* path */) override;
+
+    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override;
 
     void createDirectory(const std::string & path) override;
 

@@ -136,7 +136,6 @@ public:
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;

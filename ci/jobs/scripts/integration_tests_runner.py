@@ -45,7 +45,6 @@ TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 NO_CHANGES_MSG = "Nothing to run"
 
 JOB_TIMEOUT_TEST_NAME = "Job Timeout Expired"
-OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 
 
 # Search test by the common prefix.
@@ -1216,15 +1215,7 @@ def run():
     if is_ci:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
-        subprocess.check_call("sudo -E dmesg -T | tee dmesg.log", shell=True)
-        with open("dmesg.log", "rb") as dmesg:
-            dmesg = dmesg.read()
-            if (
-                b"Out of memory: Killed process" in dmesg
-                or b"oom_reaper: reaped process" in dmesg
-                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-            ):
-                test_results.insert(0, (OOM_IN_DMESG_TEST_NAME, "FAIL", "", ""))
+        subprocess.check_call("sudo -E dmesg -T", shell=True)
 
     status = (state, description)
     out_results_file = os.path.join(runner.path(), "test_results.tsv")

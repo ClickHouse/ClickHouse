@@ -140,7 +140,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!storage.canMoveConditionsToPrewhere())
         return;
 
-    if (source_step_with_filter->getPrewhereInfo())
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (storage_prewhere_info)
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -149,6 +150,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!filter_step)
         return;
 
+    auto filter_step_description = filter_step->getStepDescription();
     const auto & context = source_step_with_filter->getContext();
     const auto & settings = context->getSettingsRef();
 
@@ -157,6 +159,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!optimize)
         return;
 
+    const auto & storage_metadata = storage_snapshot->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
         return;
@@ -179,7 +182,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
-        storage_snapshot,
+        storage_metadata,
         storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
@@ -193,7 +196,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (optimize_result.prewhere_nodes.empty())
         return;
 
-    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+    PrewhereInfoPtr prewhere_info;
+    if (storage_prewhere_info)
+        prewhere_info = storage_prewhere_info->clone();
+    else
+        prewhere_info = std::make_shared<PrewhereInfo>();
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,
@@ -205,25 +212,23 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
-    QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        filter_node->step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        filter_node->step->setStepDescription(std::move(filter_step_description));
     }
     else
     {
         /// Have to keep this expression to change column names to column identifiers
-        new_step = std::make_unique<ExpressionStep>(
+        filter_node->step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr));
+        filter_node->step->setStepDescription(std::move(filter_step_description));
     }
-
-    new_step->setStepDescription(*filter_step);
-    filter_node->step = std::move(new_step);
 }
 
 }

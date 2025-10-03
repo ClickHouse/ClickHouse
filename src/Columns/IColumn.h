@@ -366,11 +366,11 @@ public:
       * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
-      * - if nan_direction_hint == -1, NaN and NULLs are considered as less than everything other;
-      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greater than everything other.
+      * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
+      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greatest than everything other.
       * For example, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
       *
-      * For non-Nullable and non-floating point types, nan_direction_hint is ignored.
+      * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
@@ -668,8 +668,6 @@ public:
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
-    /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
-    virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.

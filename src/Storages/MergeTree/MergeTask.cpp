@@ -119,9 +119,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
-    extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -565,12 +562,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
-    SerializationInfo::Settings info_settings
+    SerializationInfo::Settings info_settings =
     {
-        (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        true,
-        (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
-        (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
+        .ratio_of_defaults_for_sparse = (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = true,
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
@@ -725,40 +720,6 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
     global_ctx->storage_columns.emplace_back(name, type);
     global_ctx->gathering_columns.emplace_back(name, type);
-}
-
-bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx)
-{
-    if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return false;
-
-    if (global_ctx.chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        return false;
-
-    if (!(*global_ctx.data->getSettings())[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
-        return false;
-
-    bool has_lightweight_delete = false;
-
-    for (const auto & part : global_ctx.future_part->parts)
-    {
-        if (part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    for (const auto & patch_part : global_ctx.future_part->patch_parts)
-    {
-        if (patch_part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    return has_lightweight_delete;
 }
 
 
@@ -1168,9 +1129,6 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
-    /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
-    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
-
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
@@ -1184,7 +1142,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             global_ctx->merged_part_offsets,
             Names{column_name},
             global_ctx->input_rows_filtered,
-            apply_deleted_mask,
+            /*apply_deleted_mask=*/ true,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
@@ -1692,7 +1650,6 @@ public:
         const Names partition_and_sorting_required_columns_,
         const MergeTreeData::MergingParams & merging_params_,
         const String & rows_sources_temporary_file_name_,
-        const std::optional<String> & filter_column_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         bool blocks_are_granules_size_,
@@ -1703,7 +1660,6 @@ public:
         , partition_and_sorting_required_columns(partition_and_sorting_required_columns_)
         , merging_params(merging_params_)
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
-        , filter_column_name(filter_column_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
         , blocks_are_granules_size(blocks_are_granules_size_)
@@ -1744,7 +1700,6 @@ public:
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
                     rows_sources_write_buf,
-                    filter_column_name,
                     blocks_are_granules_size);
                 break;
 
@@ -1827,7 +1782,6 @@ private:
     const Names partition_and_sorting_required_columns;
     const MergeTreeData::MergingParams merging_params{};
     const String rows_sources_temporary_file_name;
-    const std::optional<String> filter_column_name;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
     const bool blocks_are_granules_size;
@@ -1941,15 +1895,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
     }
 
-    global_ctx->vertical_lightweight_delete = isVerticalLightweightDelete(*global_ctx);
-    /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
-    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
-
-    if (global_ctx->vertical_lightweight_delete)
-    {
-        merging_column_names.push_back(RowExistsColumn::name);
-    }
-
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -1969,7 +1914,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merged_part_offsets,
             merging_column_names,
             global_ctx->input_rows_filtered,
-            apply_deleted_mask,
+            /*apply_deleted_mask=*/ true,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             /*prefetch=*/ false,
@@ -2035,7 +1980,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
-        std::optional<String> filter_column_name = global_ctx->vertical_lightweight_delete ? std::make_optional(RowExistsColumn::name) : std::nullopt;
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
@@ -2043,13 +1987,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             partition_and_sorting_required_columns,
             global_ctx->merging_params,
             (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""), /// rows_sources' temporary file is used only for vertical merge
-            filter_column_name,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
             cleanup,
             global_ctx->time_of_merge);
-
         merge_step->setStepDescription("Merge sorted parts");
         merge_parts_query_plan.addStep(std::move(merge_step));
     }

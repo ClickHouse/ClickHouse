@@ -299,7 +299,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
         return;
     }
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -314,7 +314,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
         return variant_col.getValueNameAndType(n);
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -1377,7 +1377,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column during merges.
+    /// to extend selected variants on inerts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 
@@ -1403,28 +1403,6 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
-}
-
-void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromColumn should be called only on empty Dynamic column");
-
-    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
-    variant_column = source_dynamic.getVariantColumn().cloneEmpty();
-    variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
-    variant_info = source_dynamic.getVariantInfo();
-    statistics = source_dynamic.getStatistics();
-    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column.
-    /// -1 because we don't count shared variant in the limit.
-    max_dynamic_types = variant_info.variant_names.size() - 1;
-
-    /// Run takeDynamicStructureFromColumn recursively for variants.
-    const auto & source_variant_column = source_dynamic.getVariantColumn();
-    auto & variant_col = getVariantColumn();
-    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

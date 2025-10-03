@@ -301,9 +301,6 @@
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
 \
-    M(JemallocFailedAllocationSampleTracking) \
-    M(JemallocFailedDeallocationSampleTracking) \
-\
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 
 namespace ProfileEvents

@@ -3,7 +3,6 @@ description: 'Documentation for Functions for Searching in Strings'
 sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
-doc_type: 'reference'
 ---
 
 # Functions for Searching in Strings
@@ -1273,6 +1272,8 @@ Result:
 ```
 
 The less similar two strings are to each, the larger the result will be.
+
+
 Query:
 
 ```sql
@@ -1828,6 +1829,8 @@ Result:
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
+
+
 **Syntax**
 
 ```sql
@@ -2095,6 +2098,8 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 Token must be a constant string. Supported by tokenbf_v1 index specialization.
 
 **Example**
+
+
 Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
 
 Query:

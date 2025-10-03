@@ -5,7 +5,6 @@ sidebar_label: 'Overview'
 sidebar_position: 52
 slug: /operations/system-tables/overview
 title: 'System Tables Overview'
-doc_type: 'reference'
 ---
 
 ## System tables overview {#system-tables-introduction}

@@ -703,7 +703,7 @@ private:
     NameToNumber column_name_to_position;
 
     /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos{{}};
+    SerializationInfoByName serialization_infos;
 
     /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;

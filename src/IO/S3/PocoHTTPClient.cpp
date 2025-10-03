@@ -23,7 +23,6 @@
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
-#include <smithy/tracing/NoopTelemetryProvider.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
@@ -134,14 +133,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
         retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
     }
-
-    /// NOTE: In some places AWS SDK expects it to be non-null.
-    telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
-
-    /// NOTE: Without these settings AWS SDK enable transfer-encoding: chunked and content-encoding: aws-chunked
-    /// We don't use them and MinIO server doesn't support them.
-    checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
-    checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -281,9 +272,6 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
     {
         case Aws::Http::HttpMethod::HTTP_GET:
         case Aws::Http::HttpMethod::HTTP_HEAD:
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
             return S3MetricKind::Read;
         case Aws::Http::HttpMethod::HTTP_POST:
         case Aws::Http::HttpMethod::HTTP_DELETE:
@@ -363,15 +351,12 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     {
         switch (m)
         {
-            case Aws::Http::HttpMethod::HTTP_GET:      return "GET";
-            case Aws::Http::HttpMethod::HTTP_HEAD:     return "HEAD";
-            case Aws::Http::HttpMethod::HTTP_POST:     return "POST";
-            case Aws::Http::HttpMethod::HTTP_DELETE:   return "DELETE";
-            case Aws::Http::HttpMethod::HTTP_PUT:      return "PUT";
-            case Aws::Http::HttpMethod::HTTP_PATCH:    return "PATCH";
-            case Aws::Http::HttpMethod::HTTP_CONNECT:  return "CONNECT";
-            case Aws::Http::HttpMethod::HTTP_TRACE:    return "TRACE";
-            case Aws::Http::HttpMethod::HTTP_OPTIONS:  return "OPTIONS";
+            case Aws::Http::HttpMethod::HTTP_GET:    return "GET";
+            case Aws::Http::HttpMethod::HTTP_HEAD:   return "HEAD";
+            case Aws::Http::HttpMethod::HTTP_POST:   return "POST";
+            case Aws::Http::HttpMethod::HTTP_DELETE: return "DELETE";
+            case Aws::Http::HttpMethod::HTTP_PUT:    return "PUT";
+            case Aws::Http::HttpMethod::HTTP_PATCH:  return "PATCH";
         }
     }(request.GetMethod());
 
@@ -456,12 +441,6 @@ String getMethod(const Aws::Http::HttpRequest & request)
             return Poco::Net::HTTPRequest::HTTP_HEAD;
         case Aws::Http::HttpMethod::HTTP_PATCH:
             return Poco::Net::HTTPRequest::HTTP_PATCH;
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
-            return Poco::Net::HTTPRequest::HTTP_CONNECT;
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-            return Poco::Net::HTTPRequest::HTTP_TRACE;
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-            return Poco::Net::HTTPRequest::HTTP_OPTIONS;
     }
 }
 
@@ -500,9 +479,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         case Aws::Http::HttpMethod::HTTP_GET:
         case Aws::Http::HttpMethod::HTTP_HEAD:
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
             if (get_request_throttler)
             {
                 Stopwatch sleep_watch;

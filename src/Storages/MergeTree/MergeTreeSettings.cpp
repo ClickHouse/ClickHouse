@@ -247,37 +247,6 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "default", R"(
-    Serialization info version used when writing `serialization.json`.
-    This setting is required for compatibility during cluster upgrades.
-
-    Possible values:
-    - `DEFAULT`
-
-    - `WITH_TYPES`
-      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
-      This makes settings like `string_serialization_version` effective.
-
-    During rolling upgrades, set this to `DEFAULT` so that new servers produce
-    data parts compatible with old servers. After the upgrade completes,
-    switch to `WITH_TYPES` to enable per-type serialization versions.
-    )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
-    Controls the serialization format for top-level `String` columns.
-
-    This setting is only effective when `serialization_info_version` is set to "with_types".
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn storing string lengths, rather than inline. This allows real `.size`
-    subcolumns and can improve compression efficiency.
-
-    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
-    are not affected, except when they appear in a `Tuple`.
-
-    Possible values:
-
-    - `DEFAULT` — Use the standard serialization format with inline sizes.
-    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
-    )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
 
@@ -323,18 +292,6 @@ namespace ErrorCodes
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
-
-    For example column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
-    - `t.a` for String data of tuple element `a`
-    - `t.b` for UInt32 data of tuple element `b`
-    - `t.c.size0` for array sizes of tuple element `c`
-    - `t.c.null` for null map of nested array elements of tuple element `c`
-    - `t.c` for UInt32 data pf nested array elements of tuple element `c`
-
-    When this setting is enabled, we will write a mark for each of these 5 substreams, which means that we will be able to read
-    the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
-    substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
-    we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -939,7 +896,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Replication settings. */ \
-    DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
+    DECLARE(UInt64, replicated_deduplication_window, 1000, R"(
     The number of most recently inserted blocks for which ClickHouse Keeper stores
     hash sums to check for duplicates.
 
@@ -959,7 +916,7 @@ namespace ErrorCodes
     the composition of the field names and types and the data of the inserted
     part (stream of bytes).
     )", 0) \
-    DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
+    DECLARE(UInt64, replicated_deduplication_window_seconds, 7 * 24 * 60 * 60 /* one week */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
     removed from ClickHouse Keeper.
 
@@ -1312,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
@@ -1327,10 +1284,6 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
-    )", 0) \
-    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
-    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
-    Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
@@ -1419,9 +1372,6 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_remote_filesystem_prefetch, true, R"(
     If true prefetching of data from remote filesystem is used for the next
     column during merge
-    )", 0) \
-    DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
-    If true, lightweight delete is optimized on vertical merge.
     )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
@@ -1539,7 +1489,7 @@ namespace ErrorCodes
     Allow Nullable types as primary keys.
     )", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow usage of '_part_offset' column in projections select query.
+    Allow ussage of '_part_offfset' column in projections select query.
     )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
@@ -1828,12 +1778,6 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
-    Enabled cleanup of Keeper entries of empty partition.
-    )", 0) \
-    DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
-    How many seconds partition will be stored in keeper if it has no parts.
-    )", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

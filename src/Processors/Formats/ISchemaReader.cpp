@@ -53,9 +53,7 @@ void checkFinalInferredType(
         type = default_type;
     }
 
-    if (settings.schema_inference_make_columns_nullable == 0)
-        type = removeNullableRecursively(type, settings);
-    else if (settings.schema_inference_make_columns_nullable != 2)
+    if (settings.schema_inference_make_columns_nullable == 1)
         type = makeNullableRecursively(type, settings);
 }
 

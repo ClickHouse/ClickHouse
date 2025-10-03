@@ -23,6 +23,7 @@
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorageConnectionInfo.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
@@ -175,6 +176,7 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
@@ -510,6 +512,11 @@ void S3ObjectStorage::applyNewSettings(
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));
+}
+
+ObjectStorageConnectionInfoPtr S3ObjectStorage::getConnectionInfo() const
+{
+    return getS3ObjectStorageConnectionInfo(*client.get(), uri.bucket);
 }
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
