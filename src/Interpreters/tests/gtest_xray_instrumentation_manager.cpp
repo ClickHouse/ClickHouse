@@ -3,17 +3,19 @@
 #include <Interpreters/XRayInstrumentationManager.h>
 
 
+using namespace DB;
+
 class XRayInstrumentationManagerTest : public ::testing::Test
 {
 protected:
     static std::string removeTemplateArgs(std::string_view input)
     {
-        return std::string(DB::XRayInstrumentationManager::removeTemplateArgs(input));
+        return std::string(XRayInstrumentationManager::removeTemplateArgs(input));
     }
 
     static std::string extractNearestNamespaceAndFunction(std::string_view signature)
     {
-        return DB::XRayInstrumentationManager::extractNearestNamespaceAndFunction(signature);
+        return XRayInstrumentationManager::extractNearestNamespaceAndFunction(signature);
     }
 };
 
