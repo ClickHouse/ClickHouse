@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -775,6 +776,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 function_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
                 return false;
+
             res->function_name = std::move(function_name);
 
             String handler_name;
@@ -783,7 +785,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             }
             res->handler_name = std::move(handler_name);
-            if (res->handler_name == "PROFILE")
+            if (Poco::toLower(res->handler_name) == "profile")
                 break;
 
             res->parameters.emplace();
