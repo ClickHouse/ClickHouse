@@ -750,22 +750,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::INSTRUMENT_REMOVE:
         {
-            String function_name;
             ASTPtr temporary_identifier;
-
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-                function_name = temporary_identifier->as<ASTIdentifier &>().name();
-            else
+            if (!ParserLiteral{}.parse(pos, temporary_identifier, expected))
                 return false;
 
-            res->function_name = std::move(function_name);
-
-            String handler_name;
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-            {
-                handler_name = temporary_identifier->as<ASTIdentifier &>().name();
-            }
-            res->handler_name = std::move(handler_name);
+            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
         case Type::INSTRUMENT_ADD:

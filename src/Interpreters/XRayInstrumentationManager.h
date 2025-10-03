@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 #include "config.h"
 
 #if USE_XRAY
@@ -9,8 +7,11 @@
 #include <unordered_map>
 #include <list>
 #include <vector>
-#include <Common/SharedMutex.h>
 #include <variant>
+
+#include <base/types.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/SharedMutex.h>
 #include <xray/xray_interface.h>
 
 class XRayInstrumentationManagerTest;
@@ -44,7 +45,7 @@ public:
     static XRayInstrumentationManager & instance();
 
     void setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context);
-    void unpatchFunction(const String & function_name, const String & handler_name);
+    void unpatchFunction(uint64_t instrumentation_point_id);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
     using HandlerTypeToIP = std::unordered_map<HandlerType, InstrumentedFunctions::iterator>;
@@ -62,7 +63,6 @@ private:
     void parseXRayInstrumentationMap();
 
     HandlerType getHandlerType(const String & handler_name);
-    String toLower(const String & s);
 
     [[clang::xray_never_instrument]] static void dispatchHandler(int32_t func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type);
@@ -76,7 +76,7 @@ private:
     std::unordered_map<int64_t, String> xrayIdToFunctionName;
 
     SharedMutex shared_mutex;
-    std::atomic<uint64_t> instrumentation_point_id;
+    std::atomic<uint64_t> instrumentation_point_ids;
     InstrumentedFunctions instrumented_functions TSA_GUARDED_BY(shared_mutex);
     std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers TSA_GUARDED_BY(shared_mutex);
 

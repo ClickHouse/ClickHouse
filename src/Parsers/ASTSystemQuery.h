@@ -183,6 +183,7 @@ public:
     using InstrumentParameter = std::variant<String, Int64, Float64>;
     String function_name;
     String handler_name;
+    std::optional<uint64_t> instrumentation_point_id;
     std::optional<std::vector<InstrumentParameter>> parameters;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).

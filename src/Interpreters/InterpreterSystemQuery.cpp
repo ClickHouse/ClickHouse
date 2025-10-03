@@ -1603,7 +1603,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
-    auto table_id_ = table->getStorageID();
+    auto table_id = table->getStorageID();
 
     /// If materialized view, sync its target table.
     for (int i = 0;; ++i)
@@ -1624,14 +1624,14 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "SYNC REPLICA {}: command timed out. "
                 "See the 'receive_timeout' setting",
-                table_id_.getNameForLogs());
+                table_id.getNameForLogs());
         }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         return false;
@@ -1725,25 +1725,26 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 }
 
 #if USE_XRAY
-[[clang::xray_never_instrument]] void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
 {
-    // query.handler_name -- handler to be set for the function
-    // query.function_name -- name of the function to be patched - rename in query to function name
-    // query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
     try
     {
         if (add)
             XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters, getContext());
         else
-            XRayInstrumentationManager::instance().unpatchFunction(query.function_name, query.handler_name);
+            XRayInstrumentationManager::instance().unpatchFunction(*query.instrumentation_point_id);
     }
     catch (const DB::Exception & e)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Failed to instrument function '{}' with handler '{}': {}",
+            "Failed to instrument function '{}' with handler '{}' and instrumentation_point_id '{}': {}",
             query.function_name,
             query.handler_name,
+            query.instrumentation_point_id ? std::to_string(*query.instrumentation_point_id) : "None",
             e.what());
     }
 }

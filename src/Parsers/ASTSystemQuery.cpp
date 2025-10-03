@@ -470,9 +470,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::INSTRUMENT_ADD:
-        case Type::INSTRUMENT_REMOVE:
         {
-
             if (!function_name.empty())
             {
                 ostr << ' ';
@@ -504,6 +502,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     }, param);
                 }
             }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (instrumentation_point_id)
+                ostr << ' ' << *instrumentation_point_id;
             break;
         }
         case Type::KILL:
