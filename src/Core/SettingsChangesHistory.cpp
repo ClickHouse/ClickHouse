@@ -58,8 +58,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
+            {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
+            {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -592,7 +594,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_json_ignore_unnecessary_fields", false, true, "Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields"},
             {"input_format_hive_text_allow_variable_number_of_columns", false, true, "Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values."},
             {"allow_experimental_database_replicated", false, true, "Database engine Replicated is now in Beta stage"},
-            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for sapce reservation in temporary data in filesystem cache"},
+            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for space reservation in temporary data in filesystem cache"},
             {"optimize_rewrite_sum_if_to_count_if", false, true, "Only available for the analyzer, where it works correctly"},
             {"azure_allow_parallel_part_upload", "true", "true", "Use multiple threads for azure multipart upload."},
             {"max_recursive_cte_evaluation_depth", DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, "Maximum limit on recursive CTE evaluation depth"},
@@ -613,7 +615,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"log_processors_profiles", false, true, "Enable by default"},
             {"function_locate_has_mysql_compatible_argument_order", false, true, "Increase compatibility with MySQL's locate function."},
             {"allow_suspicious_primary_key", true, false, "Forbid suspicious PRIMARY KEY/ORDER BY for MergeTree (i.e. SimpleAggregateFunction)"},
-            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
+            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for space reservation in filesystem cache"},
             {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
             {"analyzer_compatibility_join_using_top_level_identifier", false, false, "Force to resolve identifier in JOIN USING from projection"},
             {"distributed_insert_skip_read_only_replicas", false, false, "If true, INSERT into Distributed will skip read-only replicas"},
@@ -900,6 +902,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
+            {"serialization_info_version", "default", "default", "New setting"},
+            {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",

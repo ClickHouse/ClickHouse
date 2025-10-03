@@ -86,6 +86,11 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForMerge;
 }
 
+namespace DimensionalMetrics
+{
+    extern MetricFamily & MergeFailures;
+}
+
 namespace DB
 {
 
@@ -122,6 +127,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -154,12 +161,6 @@ ColumnsStatistics getStatisticsForColumns(
     }
     return all_statistics;
 }
-
-DimensionalMetrics::MetricFamily & merge_failures = DimensionalMetrics::Factory::instance().registerMetric(
-    "merge_failures",
-    "Number of all failed merges since startup.",
-    {"error_name"}
-);
 
 }
 
@@ -578,10 +579,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
-    SerializationInfo::Settings info_settings =
+    SerializationInfo::Settings info_settings
     {
-        .ratio_of_defaults_for_sparse = (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = true,
+        (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
+        (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
@@ -913,6 +916,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         Block block_to_squash = projection.calculate(block, global_ctx->context);
+        /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
+        if (block_to_squash.rows() == 0)
+            return;
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
         Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
@@ -1685,7 +1691,9 @@ try
 }
 catch (...)
 {
-    merge_failures.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).increment();
+    DimensionalMetrics::add(
+        DimensionalMetrics::MergeFailures,
+        {String(ErrorCodes::getName(getCurrentExceptionCode()))});
     throw;
 }
 

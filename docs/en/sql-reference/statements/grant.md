@@ -75,6 +75,11 @@ Also `john` has the `GRANT OPTION` privilege, so it can grant other users with p
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
+:::note
+While there are many system tables which new users can access by default, they  may not be able to access every system table by default without grants.
+Additionally, access to certain system tables such as `system.zookeeper` is restricted for Cloud users for security reasons.
+:::
+
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
 ## Wildcard grants {#wildcard-grants}
