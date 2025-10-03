@@ -125,6 +125,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
     const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
+    chassert(nclauses);
     for (uint32_t i = 0; i < nclauses; i++)
     {
         const String ncname = getNextAlias();
@@ -536,6 +537,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
         {
             SQLRelation rel(rel_name.value());
 
+            chassert(ncols);
             for (uint32_t i = 0; i < ncols; i++)
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name.value(), {"c" + std::to_string(i + 1)}));
@@ -569,6 +571,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             SQLRelation rel(rel_name.value());
 
             flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
+            chassert(!this->table_entries.empty());
             for (const auto & entry : this->table_entries)
             {
                 DB::Strings names;
@@ -1996,6 +1999,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             const bool recursive = fc.allow_infinite_tables && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
                 && rg.nextSmallNumber() < 4;
 
+            chassert(ncols);
             nqcte->set_recursive(recursive);
             generateDerivedTable(
                 rg,
