@@ -885,9 +885,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     if (holder.column)
                     {
                         const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        for (size_t pos : idxs)
+                        for (size_t idx : idxs)
                         {
-                            size_t idx = static_cast<size_t>(pos);
                             if (idx < src_mask.size())
                                 filtered->getData()[idx] = src_mask[idx];
                         }
@@ -895,7 +894,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     else
                     {
                         for (size_t idx : idxs)
-                            filtered->getData()[static_cast<size_t>(idx)] = 1;
+                            filtered->getData()[idx] = 1;
                     }
                 }
 
