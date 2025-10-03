@@ -503,22 +503,20 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-    Block projection_block;
-    if (sink->isAccumulatedSomething())
+
+    /// Always return the proper header, even if nothing was accumulated, in case the caller needs to use it
+    Block projection_block = sink->isAccumulatedSomething() ? sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns())
+                                                            : sink->getPort().getHeader().cloneEmpty();
+    /// Rename parent _part_offset to _parent_part_offset column
+    if (with_parent_part_offset)
     {
-      projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
+        chassert(projection_block.has("_part_offset"));
+        chassert(!projection_block.has("_parent_part_offset"));
 
-      /// Rename parent _part_offset to _parent_part_offset column
-      if (with_parent_part_offset)
-      {
-          chassert(projection_block.has("_part_offset"));
-          chassert(!projection_block.has("_parent_part_offset"));
-
-          auto new_column = projection_block.getByName("_part_offset");
-          new_column.name = "_parent_part_offset";
-          projection_block.erase("_part_offset");
-          projection_block.insert(std::move(new_column));
-      }
+        auto new_column = projection_block.getByName("_part_offset");
+        new_column.name = "_parent_part_offset";
+        projection_block.erase("_part_offset");
+        projection_block.insert(std::move(new_column));
     }
 
     return projection_block;
