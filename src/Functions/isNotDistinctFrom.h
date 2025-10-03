@@ -13,5 +13,3 @@ using NullSafeEqualImpl = FunctionsNullSafeCmp<NameFunctionIsNotDistinctFrom,
 using FunctionIsNotDistinctFrom = NullSafeEqualImpl;
 
 }
-
-

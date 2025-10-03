@@ -13,5 +13,3 @@ using NullSafeNotEqualImpl = DB::FunctionsNullSafeCmp<NameFunctionIsDistinctFrom
 using FunctionIsDistinctFrom = NullSafeNotEqualImpl;
 
 }
-
-

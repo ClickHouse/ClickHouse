@@ -665,7 +665,7 @@ struct ComparisonParams
     ComparisonParams() = default;
 };
 
-template <template <typename, typename> class Op, typename Name>
+template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
 class FunctionComparison : public IFunction
 {
 public:
@@ -1247,6 +1247,10 @@ public:
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
                 has_null = has_null || element_type->onlyNull();
             }
+
+            // In null-safe cmp mode, return DataTypeUInt8
+            if (is_null_safe_cmp_mode)
+                return std::make_shared<DataTypeUInt8>();
 
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.

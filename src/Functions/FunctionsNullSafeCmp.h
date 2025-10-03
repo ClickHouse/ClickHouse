@@ -69,6 +69,7 @@ public:
     {
         ColumnPtr left_col = arguments[0].column;
         ColumnPtr right_col = arguments[1].column;
+
         if (!left_col || !right_col)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -85,6 +86,7 @@ public:
         ColumnPtr c0_converted = castColumn(arguments[0], common_type);
         ColumnPtr c1_converted = castColumn(arguments[1], common_type);
 
+        //1. address null
         if (c0_converted->isNullable() && c1_converted->isNullable())
         {
             auto c_res = ColumnUInt8::create();
@@ -99,11 +101,11 @@ public:
             return c_res;
         }
 
-        // address normal
+        //2. address normal
         ColumnPtr res;
 
         FunctionOverloadResolverPtr comparator
-            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<CompareOp, CompareName>>(params));
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<CompareOp, CompareName, true>>(params));
 
         auto executable_func = comparator->build(arguments);
         auto data_type = executable_func->getResultType();

@@ -112,3 +112,14 @@ IS DISTINCT FROM JOIN	4	3	2	\N
 4	2	2	0	1
 1.18 OR / AND
 0	1
+1.19 Tuple has null
+0
+1
+0
+1
+1
+0
+0
+1
+
+0

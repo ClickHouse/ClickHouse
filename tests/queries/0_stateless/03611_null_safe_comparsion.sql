@@ -340,5 +340,21 @@ SELECT '1.18 OR / AND';
 select 1 <=> 1 AND 1 is distinct from 1,
        1 <=> 1 OR 1 is distinct from 1;
 
+SELECT '1.19 Tuple has null';
+select (null,null,null) is distinct from (null,null,null);
+select (null,null,null) is distinct from (null,null,1);
+select (null,null,null) <=> (null,null,1);
+select (null,null,null) <=> (null,null,null);
+
+select (null,null,(null,null,null)) is distinct from (null,null,(null,null,1));
+select (null,null,(null,null,null)) is distinct from (null,null,(null,null,null));
+select (null,null,(null,null,null)) <=> (null,null,(null,null,1));
+select (null,null,(null,null,null)) <=> (null,null,(null,null,null));
+
+SELECT DISTINCT * WHERE 2 <=> materialize(2)
+GROUP BY 1
+WITH TOTALS QUALIFY ((2 <=> 2) / ((2 IS NOT NULL) IS NULL), *, *, materialize(toNullable(2)), materialize(2), materialize(materialize(2)), 2)
+<=> ((2 = *) * 2, *, *, 2, toNullable(2), 2, 2);
+
 DROP TABLE IF EXISTS 03611_nscmp_tbl;
 DROP TABLE IF EXISTS 03611_t_nullsafe;
