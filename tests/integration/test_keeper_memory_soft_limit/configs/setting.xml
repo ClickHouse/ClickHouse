@@ -1,3 +1,9 @@
 <clickhouse>
-<allow_zookeeper_write>1</allow_zookeeper_write>
+    <allow_zookeeper_write>1</allow_zookeeper_write>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
 </clickhouse>

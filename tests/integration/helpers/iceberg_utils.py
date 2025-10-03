@@ -29,7 +29,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("iceberg_utils")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
@@ -43,7 +43,7 @@ def get_spark():
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="module")
