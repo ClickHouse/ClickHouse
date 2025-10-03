@@ -110,7 +110,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
-        bool semicolon_inline = options.count("semicolon_inline");
+        bool semicolon_inline = options.count("semicolons_inline");
 
         std::function<void(std::string_view)> comments_callback;
         if (options.count("comments"))
