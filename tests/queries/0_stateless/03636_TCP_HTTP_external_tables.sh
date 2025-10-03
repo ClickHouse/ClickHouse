@@ -27,9 +27,9 @@ ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&query=SELECT%20*%20FROM%20exte
         -F "external_table=@$tmp_file_1" \
         -F "external_table_structure=id UInt32, name String, age UInt8" \
         -F "external_table_format=CSV" \
-        -F "external_table=@$tmp_file_2" | sed 's/DB::Exception:/.../'
+        -F "external_table=@$tmp_file_2"
 
-echo "TCP POST with external table"
+echo "TCP with external table"
 ${CLICKHOUSE_CLIENT} \
         --query "SELECT * FROM external_table" \
         --external \
