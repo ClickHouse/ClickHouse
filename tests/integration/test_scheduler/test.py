@@ -88,20 +88,26 @@ def clear_workloads_and_resources(set_default_configs):
     yield
 
 
-def update_workloads_config(**settings):
+def update_workloads_config(*nodes, **settings):
     xml = ""
     for name in settings:
         xml += f"<{name}>{settings[name]}</{name}>"
     print(xml)
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"echo '<clickhouse>{xml}</clickhouse>' > /etc/clickhouse-server/config.d/workloads.xml",
-        ]
-    )
-    node.query("system reload config")
+    if nodes == ():
+        nodes = (node,)
+    for n in nodes:
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo '<clickhouse>{xml}</clickhouse>' > /etc/clickhouse-server/config.d/workloads.xml",
+            ]
+        )
+        n.query("system reload config")
 
+
+def update_workloads_config_on_cluster(**settings):
+    update_workloads_config(node, node2, **settings)
 
 def check_profile_event_for_query(workload, profile_event, amount=1):
     node.query("system flush logs")
@@ -1003,7 +1009,9 @@ def test_throw_on_unknown_workload():
 
 def test_config_based_workloads_and_resources():
     # Create a test configuration with resources and workloads
-    update_workloads_config(resources_and_workloads="""
+    # It is important to update config on cluster, because otherwise node2 expectedly crashes with
+    # Logical error: 'Parent node 'all' for creating workload 'development' does not exist in resource 'sql_io_read''.
+    update_workloads_config_on_cluster(resources_and_workloads="""
         CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
         CREATE RESOURCE config_io_write (WRITE DISK s3_no_resource);
         CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000, max_bytes_inflight = 2000000 FOR config_io_write;
@@ -1070,20 +1078,20 @@ def test_config_based_workloads_and_resources():
         node.query("DROP RESOURCE config_io_read")
         assert False, "Should not be able to drop config-defined resource"
     except Exception as ex:
-        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in config" in str(ex)
+        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in read-only configuration storage" in str(ex)
 
     try:
         node.query("DROP WORKLOAD production")
         assert False, "Should not be able to drop config-defined workload"
     except Exception as ex:
-        assert "It is not allowed to remove workload entity 'production' that is stored in config" in str(ex)
+        assert "It is not allowed to remove workload entity 'production' that is stored in read-only configuration storage" in str(ex)
 
     # But SQL entities can be dropped
     node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
     node.query("DROP RESOURCE sql_io_read")
 
     # Update config to remove some entities
-    update_workloads_config(resources_and_workloads="""
+    update_workloads_config_on_cluster(resources_and_workloads="""
         CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
         CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read;
     """
