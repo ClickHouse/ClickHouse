@@ -33,7 +33,7 @@ The following two columns being compared below have a small association with eac
 
 ```sql
 SELECT
-    theilsU(a ,b)
+    theilsU(a, b)
 FROM
     (
         SELECT
