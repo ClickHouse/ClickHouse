@@ -24,26 +24,26 @@ public:
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
-    size_t getSize(const CachePriorityGuard::WriteLock & lock) const override;
-    size_t getSize(const CachePriorityGuard::ReadLock & lock) const override;
-
-    size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override;
-    size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override;
-
+    size_t getSize(const CacheStateGuard::Lock & lock) const override;
     size_t getSizeApprox() const override;
 
+    size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
 
-    std::string getStateInfoForLog(const CachePriorityGuard::WriteLock & lock) const override;
+    std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
+    void check(const CacheStateGuard::Lock &) const override;
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    void check(const CachePriorityGuard::WriteLock &) const override;
+    EvictionInfo checkEvictionInfo(
+        size_t size,
+        size_t elements,
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -53,12 +53,8 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         bool is_startup = false) override;
-
-    EvictionInfo checkEvictionInfo(
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::WriteLock &) override;
 
     bool collectCandidatesForEviction(
         size_t size,
@@ -85,7 +81,7 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
-        const CachePriorityGuard::WriteLock &) override;
+        const CacheStateGuard::Lock &) override;
 
     FileCachePriorityPtr copy() const;
 
@@ -101,7 +97,7 @@ private:
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
-    void downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock &);
+    void downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock &, const CacheStateGuard::Lock &);
 
     bool collectCandidatesForEvictionInProtected(
         size_t size,
@@ -116,7 +112,8 @@ private:
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,
         LRUFileCachePriority & queue,
-        const CachePriorityGuard::WriteLock & lock);
+        const CachePriorityGuard::WriteLock & lock,
+        const CacheStateGuard::Lock &);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
@@ -136,7 +133,7 @@ public:
 
     void invalidate() override;
 
-    void incrementSize(size_t size, const CachePriorityGuard::WriteLock &) override;
+    void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
 

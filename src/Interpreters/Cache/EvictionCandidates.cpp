@@ -284,7 +284,7 @@ void EvictionCandidates::setSpaceHolder(
     size_t size,
     size_t elements,
     IFileCachePriority & priority,
-    const CachePriorityGuard::WriteLock & lock)
+    const CacheStateGuard::Lock & lock)
 {
     if (hold_space)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");

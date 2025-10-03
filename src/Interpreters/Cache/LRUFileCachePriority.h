@@ -15,10 +15,24 @@ namespace DB
 class LRUFileCachePriority : public IFileCachePriority
 {
 protected:
-    struct State
+    class State
     {
-        std::atomic<size_t> current_size = 0;
-        std::atomic<size_t> current_elements_num = 0;
+    public:
+        explicit State(LoggerPtr log_) : log(log_) {}
+
+        size_t getSize(const CacheStateGuard::Lock &) const { return size; }
+        size_t getSizeApprox() const { return size.load(std::memory_order_relaxed); }
+
+        size_t getElementsCount(const CacheStateGuard::Lock &) const { return elements_num; }
+        size_t getElementsCountApprox() const { return elements_num.load(std::memory_order_relaxed); }
+
+        void add(uint64_t size_, uint64_t elements_, const CacheStateGuard::Lock &);
+        void sub(uint64_t size_, uint64_t elements_);
+
+    private:
+        std::atomic<size_t> size = 0;
+        std::atomic<size_t> elements_num = 0;
+        LoggerPtr log;
     };
     using StatePtr = std::shared_ptr<State>;
 
@@ -29,22 +43,23 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
-    size_t getSize(const CachePriorityGuard::WriteLock &) const override { return state->current_size; }
-    size_t getSize(const CachePriorityGuard::ReadLock &) const override { return state->current_size; }
+    size_t getSize(const CacheStateGuard::Lock & lock) const override { return state->getSize(lock); }
+    size_t getSizeApprox() const override { return state->getSizeApprox(); }
 
-    size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override { return state->current_elements_num; }
-    size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override { return state->current_elements_num; }
+    size_t getElementsCount(const CacheStateGuard::Lock & lock) const override { return state->getElementsCount(lock); }
+    size_t getElementsCountApprox() const override { return state->getElementsCountApprox(); }
 
-    size_t getSizeApprox() const override { return state->current_size; }
+    std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
-    size_t getElementsCountApprox() const override { return state->current_elements_num; }
-
-    std::string getStateInfoForLog(const CachePriorityGuard::WriteLock & lock) const override;
+    EvictionInfo checkEvictionInfo(
+        size_t size,
+        size_t elements,
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -54,12 +69,8 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         bool best_effort = false) override;
-
-    EvictionInfo checkEvictionInfo(
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::WriteLock &) override;
 
     bool collectCandidatesForEviction(
         size_t size,
@@ -83,7 +94,11 @@ public:
 
     void pop(const CachePriorityGuard::WriteLock & lock) { remove(queue.begin(), lock); } // NOLINT
 
-    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::WriteLock &) override;
+    bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CacheStateGuard::Lock &) override;
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
@@ -106,15 +121,12 @@ private:
     StatePtr state;
     LRUQueue::iterator eviction_pos;
 
-    void updateElementsCount(int64_t num);
-    void updateSize(int64_t size);
-
     bool canFit(
         size_t size,
         size_t elements,
         size_t released_size_assumption,
         size_t released_elements_assumption,
-        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &,
         const size_t * max_size_ = nullptr,
         const size_t * max_elements_ = nullptr) const;
 
@@ -132,15 +144,22 @@ private:
         FileCacheReserveStat & stat,
         const CachePriorityGuard::ReadLock &);
 
-    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::WriteLock &);
-    LRUIterator add(EntryPtr entry, const CachePriorityGuard::WriteLock &);
+    LRUIterator add(
+        EntryPtr entry,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &);
+    LRUIterator move(
+        LRUIterator & it,
+        LRUFileCachePriority & other,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock &);
 
     void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
     void holdImpl(
         size_t size,
         size_t elements,
-        const CachePriorityGuard::WriteLock & lock) override;
+        const CacheStateGuard::Lock & lock) override;
 
     void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
@@ -166,7 +185,7 @@ public:
 
     void invalidate() override;
 
-    void incrementSize(size_t size, const CachePriorityGuard::WriteLock &) override;
+    void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
 
