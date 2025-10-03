@@ -100,8 +100,7 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
-            /// Do not allow removing constants like `hostName()`
-            if (function_node->getFunctionOrThrow()->isServerConstant())
+            if (function_node->isOrdinaryFunction() && function_node->getFunctionOrThrow()->isServerConstant())
                 return false;
 
             for (const auto & child : function_node->getArguments())
