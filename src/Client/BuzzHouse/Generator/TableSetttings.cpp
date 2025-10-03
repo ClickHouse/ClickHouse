@@ -282,6 +282,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'none'", "'local'", "'any'"},
          false)},
+    {"serialization_info_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'default'", "'with_types'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'default'", "'with_types'"},
+         false)},
     /// ClickHouse cloud setting
     {"shared_merge_tree_merge_coordinator_factor", highRangeSetting},
     /// ClickHouse cloud setting
@@ -337,6 +346,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"simultaneous_parts_removal_limit",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+    {"string_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'default'", "'with_size_stream'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'default'", "'with_size_stream'"},
+         false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
