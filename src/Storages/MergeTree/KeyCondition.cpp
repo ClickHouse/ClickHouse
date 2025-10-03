@@ -53,6 +53,7 @@ namespace Setting
 {
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -1909,12 +1910,23 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     if (date_time_parsing_functions.contains(func_name))
                     {
-                        const auto & arg_types = func_base->getArgumentTypes();
-                        if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                            func_name = func_name + "OrNull";
-                    }
+                        // In case when session timezone is used while querying, skipping the analysis
+                        if (!context->getSettingsRef()[Setting::session_timezone].value.empty())
+                            return false;
 
-                    auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
+                        const auto & func_arg_types = func_base->getArgumentTypes();
+
+                        // Otherwise, in case when datetime parsing is required, rebuilding function
+                        if (!func_arg_types.empty() && isStringOrFixedString(func_arg_types[0]))
+                        {
+                            ColumnsWithTypeAndName new_args;
+                            for (const auto & type : func->function_base->getArgumentTypes())
+                                new_args.push_back({nullptr, type, ""});
+
+                            const auto func_builder = FunctionFactory::instance().tryGet(func_name + "OrNull", context);
+                            func_base = func_builder->build(new_args);
+                        }
+                    }
 
                     if (func->children.size() == 1)
                     {
@@ -1940,11 +1952,10 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                         }
                     }
 
-                    auto out_func = func_builder->build(arguments);
                     if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
-                        out_functions_chain.push_back(out_func);
+                        out_functions_chain.push_back(func_base);
                     else
-                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(out_func, const_arg, kind));
+                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func_base, const_arg, kind));
                 }
 
                 out_key_column_num = it->second;
