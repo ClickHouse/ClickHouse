@@ -1432,7 +1432,7 @@ protected:
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

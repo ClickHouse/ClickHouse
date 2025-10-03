@@ -1241,6 +1241,8 @@ class MergeTreeSettingsRandomizer:
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
         "auto_statistics_types": auto_statistics_generator(),
+        "serialization_info_version": lambda: random.choice(["default", "with_types"]),
+        "string_serialization_version": lambda: random.choice(["default", "with_size_stream"]),
     }
 
     @staticmethod

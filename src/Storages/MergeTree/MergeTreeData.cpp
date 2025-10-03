@@ -268,6 +268,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ServerSetting
@@ -8342,6 +8344,13 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
+    SerializationInfo::Settings serialization_settings
+    {
+        settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        settings[MergeTreeSetting::serialization_info_version],
+        settings[MergeTreeSetting::string_serialization_version],
+    };
 
     for (const auto & column : columns_list)
     {
@@ -8360,14 +8369,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
             column_streams.emplace(stream_name, full_stream_name);
         };
 
-        auto serialization = column.type->getDefaultSerialization();
+        auto serialization = column.type->getSerialization(serialization_settings);
         serialization->enumerateStreams(callback);
-
-        if (column.type->supportsSparseSerialization() && settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization] < 1.0)
-        {
-            auto sparse_serialization = column.type->getSparseSerialization();
-            sparse_serialization->enumerateStreams(callback);
-        }
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
@@ -9773,10 +9776,12 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 {
-    SerializationInfo::Settings settings =
+    SerializationInfo::Settings settings
     {
-        .ratio_of_defaults_for_sparse = (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = true,
+        (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*getSettings())[MergeTreeSetting::serialization_info_version],
+        (*getSettings())[MergeTreeSetting::string_serialization_version],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -9805,10 +9810,7 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 SerializationInfoByName MergeTreeData::getSerializationHints() const
 {
     auto lock = lockParts();
-    SerializationInfoByName res;
-    for (const auto & [name, info] : serialization_hints)
-        res.emplace(name, info->clone());
-    return res;
+    return serialization_hints.clone();
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
@@ -9995,7 +9997,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
+    SerializationInfo::Settings info_settings
+    {
+        (*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*settings)[MergeTreeSetting::serialization_info_version],
+        (*settings)[MergeTreeSetting::string_serialization_version],
+    };
+
+    new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
 

@@ -41,12 +41,10 @@ try:
     import pymongo
     import pymysql
     import nats
+    from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
-    from confluent_kafka.avro.cached_schema_registry_client import (
-        CachedSchemaRegistryClient,
-    )
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -4794,20 +4792,14 @@ class ClickHouseInstance:
         filename="/var/log/clickhouse-server/clickhouse-server.log",
         timeout=30,
         repetitions=1,
-        look_behind_lines=100,
+        look_behind_lines=10000,
     ):
         start_time = time.time()
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
-                'timeout {} stdbuf -o0 -e0 tail -Fn{} "{}" | stdbuf -o0 -e0 tee /dev/stderr | grep -Em {} {}'.format(
-                    timeout,
-                    look_behind_lines,
-                    filename,
-                    repetitions,
-                    shlex.quote(regexp),
-                ),
+                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
             ]
         )
 
