@@ -1177,7 +1177,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Requires CAP_SYS_NICE capability, otherwise no-op.
 
     Possible values: -20 to 19.
-    )", 0)
+    )", 0) \
+    DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
 
 // clang-format on
 
