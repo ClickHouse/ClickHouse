@@ -5045,6 +5045,8 @@ void Context::handleCrash() const
         }
     }
 
+    /// Must be called without mutex_shared_context to avoid deadlock:
+    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
     system_logs->handleCrash();
 }
 
