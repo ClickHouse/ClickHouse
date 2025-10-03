@@ -1,7 +1,10 @@
+#include <config.h>
+
+#if USE_XRAY
+
 #include <gtest/gtest.h>
 #include <string>
 #include <Interpreters/XRayInstrumentationManager.h>
-
 
 using namespace DB;
 
@@ -85,3 +88,5 @@ TEST_F(XRayInstrumentationManagerTest, ExtractEdgeCases)
     EXPECT_EQ(extractNearestNamespaceAndFunction("void strange name(int)"), "name"); // with space before name
     EXPECT_EQ(extractNearestNamespaceAndFunction("void Foo::operator()(int)"), "Foo::operator"); // operator handling
 }
+
+#endif
