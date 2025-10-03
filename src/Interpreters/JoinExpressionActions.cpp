@@ -33,6 +33,7 @@ std::string_view toString(JoinConditionOperator op)
     switch (op)
     {
         case JoinConditionOperator::Equals: return "=";
+        case JoinConditionOperator::NotEquals: return "!=";
         case JoinConditionOperator::NullSafeEquals: return "<=>";
         case JoinConditionOperator::Less: return "<";
         case JoinConditionOperator::LessOrEquals: return "<=";
@@ -374,6 +375,7 @@ std::string operatorToFunctionName(JoinConditionOperator op)
         case JoinConditionOperator::Or: return FunctionOr::name;
         case JoinConditionOperator::NullSafeEquals: return FunctionIsNotDistinctFrom::name;
         case JoinConditionOperator::Equals: return NameEquals::name;
+        case JoinConditionOperator::NotEquals: return NameNotEquals::name;
         case JoinConditionOperator::Less: return NameLess::name;
         case JoinConditionOperator::LessOrEquals: return NameLessOrEquals::name;
         case JoinConditionOperator::Greater: return NameGreater::name;
