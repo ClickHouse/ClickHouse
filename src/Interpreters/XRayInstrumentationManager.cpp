@@ -69,7 +69,8 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
     return instance;
 }
 
-String XRayInstrumentationManager::toLower(const String & s) {
+String XRayInstrumentationManager::toLower(const String & s)
+{
     String lower = s;
     std::ranges::transform(lower, lower.begin(), ::tolower);
     return lower;
@@ -166,6 +167,12 @@ void XRayInstrumentationManager::unpatchFunction(const String & function_name, c
         functionIdToHandlers.erase(function_id);
         __xray_unpatch_function(function_id);
     }
+}
+
+XRayInstrumentationManager::InstrumentedFunctions XRayInstrumentationManager::getInstrumentedFunctions()
+{
+    SharedLockGuard lock(shared_mutex);
+    return instrumented_functions;
 }
 
 XRayHandlerFunction XRayInstrumentationManager::getHandler(const String & name) const

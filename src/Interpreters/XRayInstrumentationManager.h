@@ -6,7 +6,6 @@
 
 #if USE_XRAY
 
-#include <string>
 #include <unordered_map>
 #include <list>
 #include <vector>
@@ -48,6 +47,8 @@ public:
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
     using HandlerTypeToIP = std::unordered_map<HandlerType, InstrumentedFunctions::iterator>;
 
+    InstrumentedFunctions getInstrumentedFunctions();
+
 protected:
     static std::string_view removeTemplateArgs(std::string_view input);
     static String extractNearestNamespaceAndFunction(std::string_view signature);
@@ -74,7 +75,7 @@ private:
 
     SharedMutex shared_mutex;
     std::atomic<uint64_t> instrumentation_point_id;
-    std::list<InstrumentedFunctionInfo> instrumented_functions TSA_GUARDED_BY(shared_mutex);
+    InstrumentedFunctions instrumented_functions TSA_GUARDED_BY(shared_mutex);
     std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers TSA_GUARDED_BY(shared_mutex);
 
     static constexpr const char* UNKNOWN = "<unknown>";
