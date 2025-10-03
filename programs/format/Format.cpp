@@ -83,7 +83,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
-            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of on new line")
+            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
         ;
 
         Settings cmd_settings;
