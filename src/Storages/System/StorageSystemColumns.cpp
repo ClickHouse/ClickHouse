@@ -5,11 +5,13 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -21,6 +23,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -33,17 +37,25 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
+}
+
+StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_, ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
-    auto description = ColumnsDescription({
+    std::vector<ColumnDescription> columns = {
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
-        { "name",               std::make_shared<DataTypeString>(), "Column name."},
+        { "name",               std::make_shared<DataTypeString>(), "Column name."}};
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+        columns.emplace_back("uuid",               std::make_shared<DataTypeUUID>(), "Column uuid.");
+    columns.insert(columns.end(), {
         { "type",               std::make_shared<DataTypeString>(), "Column type."},
         { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         { "default_kind",       std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -67,8 +79,10 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
             "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
+        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."}
     });
+
+    auto description = ColumnsDescription(columns);
 
     description.setAliases({
         {"column", std::make_shared<DataTypeString>(), "name"}
@@ -84,7 +98,6 @@ namespace
     using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
 }
 
-
 class ColumnsSource : public ISource
 {
 public:
@@ -95,13 +108,14 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
+        , context(Context::createCopy(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -198,6 +212,10 @@ protected:
                     res_columns[res_index++]->insert(table_name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
+
+                if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns] && columns_mask[src_index++])
+                    res_columns[res_index++]->insert(column.uuid);
+
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
                 if (columns_mask[src_index++])
@@ -343,6 +361,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
