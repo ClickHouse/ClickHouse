@@ -45,9 +45,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
-std::unordered_map<int64_t, std::string> XRayInstrumentationManager::xrayIdToFunctionName;
-std::unordered_map<std::string, XRayHandlerFunction> XRayInstrumentationManager::xrayHandlerNameToFunction;
-std::unordered_map<int32_t, XRayInstrumentationManager::HandlerTypeToIP> XRayInstrumentationManager::functionIdToHandlers;
+
 const std::string SleepHandler
     = "sleep";
 const std::string LogHandler
@@ -60,12 +58,11 @@ void XRayInstrumentationManager::registerHandler(const std::string & name, XRayH
     xrayHandlerNameToFunction[name] = handler;
 }
 
-
 XRayInstrumentationManager::XRayInstrumentationManager()
 {
-    registerHandler(SleepHandler, &sleep);
-    registerHandler(LogHandler, &log);
-    registerHandler(ProfileHandler, &profile);
+    registerHandler(SleepHandler, [this](int32_t func_id, XRayEntryType entry_type) { sleep(func_id, entry_type); });
+    registerHandler(LogHandler, [this](int32_t func_id, XRayEntryType entry_type) { log(func_id, entry_type); });
+    registerHandler(ProfileHandler, [this](int32_t func_id, XRayEntryType entry_type) { profile(func_id, entry_type); });
     parseXRayInstrumentationMap();
 }
 
@@ -184,6 +181,11 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
 }
 
 [[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType entry_type)
+{
+    XRayInstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
+}
+
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook) return;
