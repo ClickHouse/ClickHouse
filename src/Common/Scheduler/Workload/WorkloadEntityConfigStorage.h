@@ -17,6 +17,8 @@ public:
     explicit WorkloadEntityConfigStorage(const ContextPtr & global_context_);
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
+    std::string_view getName() const override { return "configuration"; }
+
 private:
     OperationResult storeEntityImpl(
         const ContextPtr & current_context,

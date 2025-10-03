@@ -30,6 +30,8 @@ class IWorkloadEntityStorage
 public:
     virtual ~IWorkloadEntityStorage() = default;
 
+    virtual std::string_view getName() const = 0;
+
     /// Whether this storage can replicate entities to another node.
     virtual bool isReplicated() const { return false; }
     virtual String getReplicationID() const { return ""; }

@@ -425,7 +425,7 @@ bool WorkloadEntityStorageBase::storeEntity(
             if (workload && !old_workload->hasParent() && workload->hasParent())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
             if (other_entities.contains(entity_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in config", entity_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
 
         // Validate workload
@@ -552,7 +552,7 @@ bool WorkloadEntityStorageBase::removeEntity(
         }
 
         if (other_entities.contains(entity_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in config", entity_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
 
         auto result = removeEntityImpl(
             current_context,

@@ -19,6 +19,8 @@ public:
     WorkloadEntityKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ~WorkloadEntityKeeperStorage() override;
 
+    std::string_view getName() const override { return "keeper"; }
+
     bool isReplicated() const override { return true; }
     String getReplicationID() const override { return zookeeper_path; }
 
