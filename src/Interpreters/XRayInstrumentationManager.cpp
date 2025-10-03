@@ -1,17 +1,14 @@
-#include "XRayInstrumentationManager.h"
-#include <cstdint>
-#include <mutex>
-#include <shared_mutex>
-#include <string>
-#include <llvm/IR/Constant.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 
 #if USE_XRAY
+
+#include <cstdint>
+#include <string>
 
 #include <filesystem>
 #include <print>
 #include <stdexcept>
 #include <thread>
-#include <string_view>
 #include <unistd.h>
 
 #include <llvm/Object/Binary.h>
@@ -27,11 +24,11 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/XRayInstrumentationProfilingLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-
 
 using namespace llvm;
 using namespace llvm::object;
@@ -46,14 +43,14 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-const std::string SleepHandler
+const String SleepHandler
     = "sleep";
-const std::string LogHandler
+const String LogHandler
     = "log";
-const std::string ProfileHandler
+const String ProfileHandler
     = "profile";
 
-void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
+void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
     xrayHandlerNameToFunction[name] = handler;
 }
@@ -72,15 +69,15 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
     return instance;
 }
 
-std::string XRayInstrumentationManager::toLower(const std::string & s) {
-    std::string lower = s;
+String XRayInstrumentationManager::toLower(const String & s) {
+    String lower = s;
     std::ranges::transform(lower, lower.begin(), ::tolower);
     return lower;
 }
 
-HandlerType XRayInstrumentationManager::getHandlerType(const std::string & handler_name)
+HandlerType XRayInstrumentationManager::getHandlerType(const String & handler_name)
 {
-    std::string name_lower = toLower(handler_name);
+    String name_lower = toLower(handler_name);
     if (name_lower == SleepHandler)
         return HandlerType::Sleep;
 
@@ -93,7 +90,7 @@ HandlerType XRayInstrumentationManager::getHandlerType(const std::string & handl
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown handler type: ({})", handler_name);
 }
 
-void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
+void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
     auto handler_it = xrayHandlerNameToFunction.find(handler_name);
     if (handler_it == xrayHandlerNameToFunction.end())
@@ -122,7 +119,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
         throw e;
     }
 
-    std::lock_guard lock(shared_mutex);
+    SharedLockGuard lock(shared_mutex);
     auto handlers_set_it = functionIdToHandlers.find(function_id);
     if (handlers_set_it !=  functionIdToHandlers.end() && handlers_set_it->second.contains(type))
     {
@@ -141,7 +138,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
 }
 
 
-void XRayInstrumentationManager::unpatchFunction(const std::string & function_name, const std::string & handler_name)
+void XRayInstrumentationManager::unpatchFunction(const String & function_name, const String & handler_name)
 {
     int64_t function_id;
     auto fn_it = functionNameToXRayID.find(function_name);
@@ -157,7 +154,7 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
     }
     HandlerType type = getHandlerType(handler_name);
 
-    std::lock_guard lock(shared_mutex);
+    SharedLockGuard lock(shared_mutex);
     if (!functionIdToHandlers.contains(function_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function wasn't previously instrumented, nothing to unpatch: ({})", function_name);
     if (!functionIdToHandlers[function_id].contains(type))
@@ -171,8 +168,7 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
     }
 }
 
-
-XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & name) const
+XRayHandlerFunction XRayInstrumentationManager::getHandler(const String & name) const
 {
     auto it = xrayHandlerNameToFunction.find(name);
     if (it == xrayHandlerNameToFunction.end())
@@ -180,19 +176,19 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     return it->second;
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType entry_type)
 {
     XRayInstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook) return;
     in_hook = true;
     SCOPE_EXIT({ in_hook = false; });
 
-    std::shared_lock lock(shared_mutex);
+    SharedLockGuard lock(shared_mutex);
     auto handlers_set_it = functionIdToHandlers.find(func_id);
     if (handlers_set_it == functionIdToHandlers.end())
     {
@@ -256,7 +252,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         module_address.SectionIndex = object::SectionedAddress::UndefSection;
 
         /// Default function name if symbolization fails
-        std::string function_name = UNKNOWN;
+        String function_name = UNKNOWN;
 
         /// Attempt to symbolize the function address (resolve its name)
         if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
@@ -277,7 +273,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook || entry_type != XRayEntryType::ENTRY)
@@ -286,6 +282,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
     in_hook = true;
     SCOPE_EXIT({ in_hook = false; });
+
+    SharedLockGuard lock(shared_mutex);
     HandlerType type = HandlerType::Sleep;
     auto parameters_it = functionIdToHandlers[func_id].find(type);
     if (parameters_it == functionIdToHandlers[func_id].end())
@@ -331,7 +329,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook || entry_type != XRayEntryType::ENTRY)
@@ -341,6 +339,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
     in_hook = true;
     SCOPE_EXIT({ in_hook = false; });
+
+    SharedLockGuard lock(shared_mutex);
     HandlerType type = HandlerType::Log;
     auto parameters_it = functionIdToHandlers[func_id].find(type);
     if (parameters_it == functionIdToHandlers[func_id].end())
@@ -369,7 +369,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook)
@@ -379,6 +379,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
     in_hook = true;
     SCOPE_EXIT({ in_hook = false; });
+
+    SharedLockGuard lock(shared_mutex);
     LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(func_id));
     HandlerType type = HandlerType::Profile;
     static thread_local std::unordered_map<int32_t, XRayInstrumentationProfilingLogElement> active_elements;
@@ -481,7 +483,7 @@ std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view
     return result.substr(0, pos);
 }
 
-std::string XRayInstrumentationManager::extractNearestNamespaceAndFunction(std::string_view signature)
+String XRayInstrumentationManager::extractNearestNamespaceAndFunction(std::string_view signature)
 {
     size_t paren_pos = signature.find('(');
     if (paren_pos == std::string_view::npos)
@@ -522,7 +524,7 @@ std::string XRayInstrumentationManager::extractNearestNamespaceAndFunction(std::
     function_name = removeTemplateArgs(function_name);
     class_or_namespace_name = removeTemplateArgs(class_or_namespace_name);
 
-    std::string result;
+    String result;
     if (!class_or_namespace_name.empty())
     {
         result += class_or_namespace_name;
