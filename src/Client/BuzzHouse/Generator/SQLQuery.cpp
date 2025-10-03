@@ -1159,6 +1159,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
     Expr * expr1 = nullptr;
     Expr * expr2 = nullptr;
+    chassert(this->levels[this->current_level].rels.size() > 1);
     const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
     const auto & op = rg.nextSmallNumber() < 9
@@ -1169,6 +1170,8 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     {
         rel1 = &this->levels[this->current_level].rels[this->levels[this->current_level].rels.size() - 2];
     }
+    chassert(!rel1->cols.empty());
+    chassert(!rel2->cols.empty());
     if (rg.nextSmallNumber() < 4)
     {
         /// Swap relations
