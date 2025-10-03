@@ -6,6 +6,9 @@
 #include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnSparse.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -191,6 +194,86 @@ public:
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
+        class IInlinedSumHelper
+        {
+        public:
+            virtual ~IInlinedSumHelper() = default;
+            virtual UInt64 get(const DB::IColumn* column, size_t row) = 0;
+            virtual UInt64 addSparse(const DB::IColumn* column, size_t row_begin, size_t row_end) = 0;
+            virtual UInt64 addMany(const DB::IColumn* column, size_t row_begin, size_t row_end) = 0;
+        };
+
+        template <typename T>
+        struct InlineAggregationSumHelper : public IInlinedSumHelper
+        {
+            using ColVecType = ColumnVectorOrDecimal<T>;
+
+            explicit InlineAggregationSumHelper(bool has_sparse_arguments_) : has_sparse_arguments(has_sparse_arguments_) {}
+
+            UInt64 get(const DB::IColumn* column, size_t row) override
+            {
+                // TODO(jianfei): This might be problem for performance as we call lower_bound on every row
+                // when adding sparse together we can check lower bound once and just increment the iterator.
+                // Either implement suming together or disable sparse case, which might be infeasible as constructor phase we don't know if it's sparse in some cases..
+                if (has_sparse_arguments)
+                    return addSparse(column, row, row+1);
+                const auto & typed_column = assert_cast<const ColVecType &>(*column);
+                return static_cast<UInt64>(typed_column.getData()[row]);
+            }
+
+            UInt64 addSparse(const DB::IColumn* column, size_t row_begin, size_t row_end) override
+            {
+                const auto & column_sparse = assert_cast<const ColumnSparse &>(*column);
+                const auto * values = &column_sparse.getValuesColumn();
+                const auto & offsets = column_sparse.getOffsetsData();
+
+                size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+                size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+                const auto & typed_column = assert_cast<const ColVecType &>(*values);
+                const auto & data = typed_column.getData();
+                UInt64 result = 0;
+                for (size_t i = from; i < to; ++i)
+                    result += static_cast<UInt64>(data[i+1]);
+                return result;
+            }
+
+            UInt64 addMany(const DB::IColumn* column, size_t row_begin, size_t row_end) override
+            {
+                if (has_sparse_arguments)
+                    return addSparse(column, row_begin, row_end);
+
+                const auto & typed_column = assert_cast<const ColVecType &>(*column);
+                AggregateFunctionSumData<UInt64> sum_data;
+                sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
+                return sum_data.get();
+            }
+
+            bool has_sparse_arguments = false;
+        };
+
+        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::TypeIndex type, bool has_sparse_arguments)
+        {
+#define FOR_INLINABLE_UINT_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64)
+
+            if (false) {} // NOLINT
+#define M(TYPE) \
+            else if (type == TypeIndex::TYPE) { \
+                return std::make_unique<InlineAggregationSumHelper<TYPE> >(has_sparse_arguments); \
+            }
+
+            FOR_INLINABLE_UINT_TYPES(M)
+#undef M
+#undef FOR_INLINABLE_UINT_TYPES
+            return nullptr;
+        }
 
     /** This array serves two purposes.
       *
@@ -204,10 +287,12 @@ public:
         const IColumn ** arguments{};
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
+        std::unique_ptr<IInlinedSumHelper> inline_sum_helper{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
     };
+
 
     /// Used for optimize_aggregation_in_order:
     /// - No two-level aggregation
@@ -324,6 +409,11 @@ private:
     /// - The aggregation logic can be inlined, meaning each row is aggregated immediately during hash table probing.
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
+
+    /// Indicates whether the aggregation is a simple `sum(integer_column)` with result type UInt64.
+    ///
+    /// If true, we apply similar optimization as is_simple_count.
+    bool is_simple_sum = false;
 
     LoggerPtr log = getLogger("Aggregator");
 
