@@ -659,7 +659,7 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
 
     std::unique_lock lock(mutex);
 
-    // Merge `local_new_entities` merged with existing `other_entities`
+    // Merge `local_new_entities` with existing `other_entities`
     std::unordered_map<String, ASTPtr> merged_new_entities;
     for (const auto & [entity_name, entity] : local_new_entities)
         merged_new_entities[entity_name] = entity;
