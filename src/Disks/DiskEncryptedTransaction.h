@@ -1,6 +1,8 @@
 #pragma once
 
-#include "config.h"
+#include <memory>
+#include <IO/ReadBufferFromFileBase.h>
+#include <config.h>
 
 #if USE_SSL
 
@@ -258,6 +260,21 @@ public:
         auto wrapped_path = wrappedPath(src_path);
         delegate_transaction->truncateFile(wrapped_path, size);
     }
+
+    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const override;
+
+    bool isTransactional() const override
+    {
+        return delegate_transaction->isTransactional();
+    }
+
+    void validateTransaction(std::function<void(IDiskTransaction &)> check_function) override;
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(

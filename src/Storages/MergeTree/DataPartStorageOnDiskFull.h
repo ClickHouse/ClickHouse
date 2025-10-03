@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
@@ -11,6 +12,8 @@ class DataPartStorageOnDiskFull final : public DataPartStorageOnDiskBase
 public:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
+
+    ~DataPartStorageOnDiskFull() override;
 
     MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
     DataPartStoragePtr getProjection(const std::string & name) const override;
@@ -58,6 +61,9 @@ public:
     void commitTransaction() override;
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }
+
+    void validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function) override;
+    bool isTransactional() const override;
 
 private:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);

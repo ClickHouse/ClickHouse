@@ -4,6 +4,7 @@
 
 #include <map>
 #include <optional>
+#include <vector>
 #include <city.h>
 
 class SipHash;
@@ -89,6 +90,8 @@ struct MergeTreeDataPartChecksums
 
     UInt64 getTotalSizeOnDisk() const;
     UInt64 getTotalSizeUncompressedOnDisk() const;
+
+    std::vector<std::string> getFileNames() const;
 };
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)

@@ -118,6 +118,35 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
     return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
 }
 
+std::unique_ptr<ReadBufferFromFileBase> DiskEncryptedTransaction::readUncommittedFileInTransaction(
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
+{
+    if (read_hint && *read_hint > 0)
+        read_hint = *read_hint + FileEncryption::Header::kSize;
+
+    auto wrapped_path = wrappedPath(path);
+    auto buffer = delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint);
+    if (!buffer)
+        return nullptr;
+    if (buffer->eof())
+    {
+        /// File is empty, that's a normal case
+        /// There is no header so we just return `ReadBufferFromString("")`.
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
+    }
+    FileEncryption::Header header = readHeader(*buffer);
+    String key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
+    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+}
+
+void DiskEncryptedTransaction::validateTransaction(std::function<void(IDiskTransaction &)> check_function)
+{
+    auto wrapped = [&, moved_func = std::move(check_function)](IDiskTransaction &)
+    {
+        moved_func(*this);
+    };
+    delegate_transaction->validateTransaction(std::move(wrapped));
+}
 }
 
 #endif
