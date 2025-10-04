@@ -895,16 +895,13 @@ std::optional<Type> castAs(const std::optional<Field> & option, bool throw_on_un
 template <typename Type>
 std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option, bool throw_on_unexpected_type = true)
 {
-    if (auto it = options.find(option); it != options.end())
-    {
-        if (castAs<Type>(it->second, throw_on_unexpected_type))
-        {
-            Field value = std::move(it->second);
-            options.erase(it);
-            return value.safeGet<Type>();
-        }
-    }
-    return {};
+    auto it = options.find(option);
+    if (it == options.end() || !castAs<Type>(it->second, throw_on_unexpected_type))
+        return {};
+
+    Field value = std::move(it->second);
+    options.erase(it);
+    return value.safeGet<Type>();
 }
 
 std::optional<std::vector<String>> castAsStringArray(const std::optional<Field> & option)
@@ -953,14 +950,12 @@ std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<Stri
 
     /// Tokenizer is provided as Literal or Identifier.
     if (auto tokenizer_str = extractOption<String>(options, ARGUMENT_TOKENIZER, false); tokenizer_str)
-    {
         return {tokenizer_str.value(), {}};
-    }
 
     /// Tokenizer is provided as Function.
     if (auto tokenizer_tuple = extractOption<Tuple>(options, ARGUMENT_TOKENIZER, false); tokenizer_tuple)
     {
-        /// Functions are converted into Tuples as the first entry is the name of the function and rest is parameters.
+        /// Functions are converted into Tuples as the first entry is the name of the function and rest is arguments.
         chassert(!tokenizer_tuple->empty());
 
         const auto & function_name = tokenizer_tuple->at(0);
