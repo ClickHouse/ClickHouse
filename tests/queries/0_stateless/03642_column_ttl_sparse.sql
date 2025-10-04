@@ -6,7 +6,7 @@ CREATE TABLE ttl_sparse_repro
     dt DateTime,
     b UInt64 TTL dt + INTERVAL 2 SECOND, c UInt64
 )
-ENGINE = MergeTree ORDER BY a SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY a SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
 
 INSERT INTO ttl_sparse_repro SELECT number, now(), 1, if (number % 23 = 0, 1, 0) FROM numbers(10000);
 
