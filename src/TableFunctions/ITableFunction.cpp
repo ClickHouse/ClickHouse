@@ -44,7 +44,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
     }
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());

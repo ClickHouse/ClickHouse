@@ -681,6 +681,24 @@ GRANT READ ON S3('s3://foo/.*') TO john
 GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
+:::warning
+Source filter takes **regexp** as a parameter, so a grant
+`GRANT READ ON URL('http://www.google.com') TO john;`
+
+will allow queries
+```sql
+SELECT * FROM url('https://www.google.com');
+SELECT * FROM url('https://www-google.com');
+```
+
+because `.` is treated as an `Any Single Character` in the regexps. 
+This may lead to potential vulnerability. The correct grant should be
+```sql
+GRANT READ ON URL('https://www\.google\.com') TO john;
+```
+:::
+
+
 **Re-granting with GRANT OPTION:**
 
 If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
