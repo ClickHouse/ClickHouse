@@ -358,6 +358,37 @@
 </footer>
 
 <script>
+    // Track all interval timers for cleanup
+    const activeTimers = {
+        intervals: [],
+        addInterval: function(timer) {
+            this.intervals.push(timer);
+            return timer;
+        },
+        clearAll: function() {
+            this.intervals.forEach(clearInterval);
+            this.intervals = [];
+        }
+    };
+
+    // Track event listeners for cleanup
+    const activeListeners = {
+        listeners: [],
+        add: function(element, type, listener) {
+            element.addEventListener(type, listener);
+            this.listeners.push({ element, type, listener });
+            return listener;
+        },
+        removeAll: function() {
+            this.listeners.forEach(({ element, type, listener }) => {
+                if (element && element.removeEventListener) {
+                    element.removeEventListener(type, listener);
+                }
+            });
+            this.listeners = [];
+        }
+    };
+
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
         if (document.body.classList.contains('night-theme')) {
@@ -1010,8 +1041,9 @@
             drawTimeline();
         }
         resizeCanvas();
-        window.addEventListener("resize", resizeCanvas);
-        
+        // Use our event tracker instead of direct attachment
+        activeListeners.add(window, "resize", resizeCanvas);
+
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
@@ -1067,9 +1099,9 @@
                 ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
+        }
 
-            // Event listeners
-        canvas.addEventListener("mousemove", (event) => {
+        activeListeners.add(canvas, "mousemove", (event) => {
             const rect = canvas.getBoundingClientRect();
             const mouseY = event.clientY - rect.top;
 
@@ -1081,17 +1113,17 @@
                 }
             }
 
-                if (hoveredTask && statusWidget?.update) {
-                    statusWidget.update(
-                        hoveredTask.name,
-                        hoveredTask.status,
-                        hoveredTask.start_time,
-                        hoveredTask.duration
-                    );
+            if (hoveredTask && statusWidget?.update) {
+                statusWidget.update(
+                    hoveredTask.name,
+                    hoveredTask.status,
+                    hoveredTask.start_time,
+                    hoveredTask.duration
+                );
             }
         });
 
-        canvas.addEventListener("mouseleave", () => {
+        activeListeners.add(canvas, "mouseleave", () => {
             if (statusWidget?.update && originalTask) {
                 statusWidget.update(
                     originalTask.name,
@@ -1101,10 +1133,10 @@
                 );
             }
         });
-        }
 
         drawTimeline();
-        setInterval(drawTimeline, 5000);
+
+        activeTimers.addInterval(setInterval(drawTimeline, 5000));
     }
 
     function addStatusWidget(name, status, start_time, duration, container = null) {
@@ -1147,10 +1179,11 @@
                 const durationLine = document.createElement('div');
                 let seconds = Math.floor(Date.now() / 1000 - start_time);
                 durationLine.textContent = formatDuration(seconds, true);
-                setInterval(() => {
+
+                activeTimers.addInterval(setInterval(() => {
                     seconds++;
                     durationLine.textContent = formatDuration(seconds, true);
-                }, 1000);
+                }, 1000));
 
                 widget.appendChild(durationLine);
             } else {
@@ -1632,7 +1665,7 @@
         }
     }
 
-    async function fetchData(PR, REF, sha, nameParams) {
+    async function fetchData(PR, REF, sha, nameParams, base_url) {
         function normalizeTaskName(name) {
             return name.toLowerCase()
                 .replace(/[^a-z0-9]/g, '_')
@@ -1640,7 +1673,11 @@
                 .replace(/_+$/, '');
         }
 
-        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
+        // Use base_url from param if provided, else fallback to old logic
+        let baseUrl = base_url;
+        if (!baseUrl) {
+            baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
+        }
         let suffix = '';
 
         if (PR) {
@@ -1697,11 +1734,15 @@
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
     
-    async function renderResultsAuto(PR, REF, sha, nameParams) {
+    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
+        let autoRefreshTimer = null; // Store the main refresh interval timer
 
         function clearPage() {
-            // Clear the main content areas
-            // document.getElementById('content').innerHTML = '';
+            // First, clean up any existing timers and event listeners
+            activeTimers.clearAll();
+            activeListeners.removeAll();
+
+            // Then clear the DOM content
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
@@ -1713,23 +1754,37 @@
                 && !force
                 || openedInfoCnt - closedInfoCnt > 0
             ) {
-                return
+                return;
             }
 
             const statusContainer = document.getElementById('status-container');
-            const scrollTop = statusContainer.scrollTop;
+            const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
 
-            if (await fetchData(PR, REF, sha, nameParams)) {
+            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
+                // Clear timers, event listeners, and DOM before refreshing content
                 clearPage();
+
+                // Rebuild the page with new data
                 await renderResults(PR, sha, nameParams);
 
-                statusContainer.scrollTop = scrollTop;
+                // Restore scroll position
+                if (statusContainer) {
+                    statusContainer.scrollTop = scrollTop;
+                }
+
+                console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
             }
         }
 
-        await checkForUpdatesAndRender(true)
+        // Initial render
+        await checkForUpdatesAndRender(true);
+
+        // Setup periodic refresh using our timer management
+        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
+            checkForUpdatesAndRender(false);
+        }, 30000));
+
         console.log("Auto-reload started");
-        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1753,16 +1808,15 @@
         const PR = urlParams.get('PR');
         const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
+        const base_url = urlParams.get('base_url');
         const nameParams = [];
-
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
                 const index = parseInt(key.split('_')[1], 10);
                 nameParams[index] = value;
             }
         });
-
-        await renderResultsAuto(PR, REF, sha, nameParams);
+        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
