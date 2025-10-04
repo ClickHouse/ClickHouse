@@ -3952,6 +3952,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         }
     }
 
+    if (array_join_column_expressions.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "ARRAY JOIN requires at least one expression after resolving COLUMNS");
+
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
