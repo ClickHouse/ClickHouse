@@ -1,5 +1,7 @@
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/Set.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/SharedMutex.h>
 #include <shared_mutex>
 
@@ -11,52 +13,162 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class BloomFilterLookup : public IRuntimeFilterLookup
+static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
+{
+    auto & destination_words = destination.getFilter();
+    const auto & source_words = source.getFilter();
+    constexpr size_t word_size = sizeof(source_words.front());
+    if (destination_words.size() != source_words.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot merge Bloom Filters of different sizes: {} and {}",
+            destination_words.size() * word_size, source_words.size() * word_size);
+
+    for (size_t i = 0; i < destination_words.size(); ++i)
+        destination_words[i] |= source_words[i];
+}
+
+static constexpr UInt64 BLOOM_FILTER_SEED = 42;
+
+RuntimeFilter::RuntimeFilter(
+    const DataTypePtr & filter_column_target_type,
+    UInt64 exact_values_limit_,
+    UInt64 bloom_filter_bytes_,
+    UInt64 bloom_filter_hash_functions_)
+    : exact_values_limit(exact_values_limit_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
+    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    , bloom_filter(nullptr)
+    , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
+{
+    ColumnsWithTypeAndName set_header;
+    set_header.emplace_back(ColumnWithTypeAndName(filter_column_target_type, String()));
+    exact_values->setHeader(set_header);
+    exact_values->fillSetElements();    /// Save the values, not just hashes
+}
+
+void RuntimeFilter::insert(ColumnPtr values)
+{
+    if (exact_values)
+    {
+        exact_values->insertFromColumns({values});
+        if (exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bloom_filter_bytes)
+            switchToBloomFilter();
+    }
+    else
+        insertIntoBloomFilter(values);
+}
+
+void RuntimeFilter::finishInsert()
+{
+    if (exact_values)
+        exact_values->finishInsert();
+}
+
+/// Add all keys from one filter to the other so that destination filter contains the union of both filters.
+void RuntimeFilter::addAllFrom(const RuntimeFilter & source)
+{
+    if (source.exact_values)
+    {
+        insert(source.exact_values->getSetElements().front());
+    }
+    else
+    {
+        switchToBloomFilter();
+        mergeBloomFilters(*bloom_filter, *source.bloom_filter);
+    }
+}
+
+ColumnPtr RuntimeFilter::find(ColumnPtr values) const
+{
+    if (exact_values)
+    {
+        /// If the set is empty just return Const False column
+        if (exact_values->getTotalRowCount() == 0)
+            return DataTypeUInt8().createColumnConst(values->size(), false);
+
+        return exact_values->execute({ColumnWithTypeAndName(values, exact_values->getDataTypes().front(), String())}, false);
+    }
+    else
+    {
+        auto dst = ColumnVector<UInt8>::create();
+        auto & dst_data = dst->getData();
+        dst_data.resize(values->size());
+
+        for (size_t row = 0; row < values->size(); ++row)
+        {
+            /// TODO: optimize: consider replacing hash calculation with vectorized version
+            const auto & value = values->getDataAt(row);
+            dst_data[row] = bloom_filter->find(value.data, value.size);
+        }
+
+        return dst;
+    }
+}
+
+void RuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
+{
+    const size_t num_rows = values->size();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        /// TODO: make this efficient: compute hashes in vectorized manner
+        auto value = values->getDataAt(row);
+        bloom_filter->add(value.data, value.size);
+    }
+}
+
+void RuntimeFilter::switchToBloomFilter()
+{
+    if (bloom_filter)
+        return;
+
+    exact_values->finishInsert();
+
+    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    insertIntoBloomFilter(exact_values->getSetElements().front());
+
+    exact_values.reset();
+}
+
+using RuntimeFilterPtr = std::shared_ptr<RuntimeFilter>;
+class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & name, std::unique_ptr<BloomFilter> bloom_filter) override
+    void add(const String & name, std::unique_ptr<RuntimeFilter> runtime_filter) override
     {
         std::lock_guard g(rw_lock);
         auto & filter = filters_by_name[name];
         if (!filter)
-            filter.reset(bloom_filter.release());   /// Save new filter
+        {
+            filter.reset(runtime_filter.release());   /// Save new filter
+        }
         else
-            mergeFilter(*filter, *bloom_filter);    /// Add all new keys to a existing filter
+        {
+            runtime_filter->finishInsert();
+            filter->addAllFrom(*runtime_filter);    /// Add all new keys to a existing filter
+        }
     }
 
-    BloomFilterConstPtr find(const String & name) const override
+    RuntimeFilterConstPtr find(const String & name) const override
     {
         std::shared_lock g(rw_lock);
         auto it = filters_by_name.find(name);
         if (it == filters_by_name.end())
             return nullptr;
         else
+        {
+            it->second->finishInsert();
             return it->second;
+        }
     }
 
 private:
-    /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
-    static void mergeFilter(BloomFilter & destination, const BloomFilter & source)
-    {
-        auto & destination_words = destination.getFilter();
-        const auto & source_words = source.getFilter();
-        constexpr size_t word_size = sizeof(source_words.front());
-        if (destination_words.size() != source_words.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Cannot merge Bloom Filters of different sizes: {} and {}",
-                destination_words.size() * word_size, source_words.size() * word_size);
-
-        for (size_t i = 0; i < destination_words.size(); ++i)
-            destination_words[i] |= source_words[i];
-    }
-
     mutable SharedMutex rw_lock;
-    std::unordered_map<String, BloomFilterPtr> filters_by_name;
+    std::unordered_map<String, RuntimeFilterPtr> filters_by_name;
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
 {
-    return std::make_shared<BloomFilterLookup>();
+    return std::make_shared<RuntimeFilterLookup>();
 }
 
 }
