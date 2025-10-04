@@ -794,7 +794,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_integer=*/false, /*convert_bool_to_float=*/false, /*allow_type_conversion=*/true, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
