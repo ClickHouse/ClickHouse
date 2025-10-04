@@ -1,0 +1,79 @@
+SET enable_analyzer = 1;
+-- Basic functionality
+SELECT number, cume_dist() OVER (ORDER BY number) FROM numbers(5);
+0	0.2
+1	0.4
+2	0.6
+3	0.8
+4	1
+-- With PARTITION BY
+SELECT number, intDiv(number, 3) AS p, cume_dist() OVER (PARTITION BY p ORDER BY number) FROM numbers(10);
+0	0	0.3333333333333333
+1	0	0.6666666666666666
+2	0	1
+3	1	0.3333333333333333
+4	1	0.6666666666666666
+5	1	1
+6	2	0.3333333333333333
+7	2	0.6666666666666666
+8	2	1
+9	3	1
+-- With DESC order
+SELECT number, cume_dist() OVER (ORDER BY number DESC) FROM numbers(5);
+4	0.2
+3	0.4
+2	0.6
+1	0.8
+0	1
+-- With ties in ordering values
+CREATE TABLE IF NOT EXISTS test_cume_dist (a Int, b Int) ENGINE = Memory;
+TRUNCATE TABLE test_cume_dist;
+INSERT INTO test_cume_dist VALUES (1, 10), (2, 20), (3, 20), (4, 30), (5, 30), (6, 30), (7, 40), (8, 50);
+SELECT a, b, cume_dist() OVER (ORDER BY b) FROM test_cume_dist ORDER BY b, a;
+1	10	0.125
+2	20	0.375
+3	20	0.375
+4	30	0.75
+5	30	0.75
+6	30	0.75
+7	40	0.875
+8	50	1
+-- With multiple partitions and ties
+TRUNCATE TABLE test_cume_dist;
+INSERT INTO test_cume_dist VALUES (1, 10), (1, 20), (1, 20), (2, 10), (2, 10), (2, 20);
+SELECT a, b, cume_dist() OVER (PARTITION BY a ORDER BY b) FROM test_cume_dist ORDER BY a, b;
+1	10	0.3333333333333333
+1	20	1
+1	20	1
+2	10	0.6666666666666666
+2	10	0.6666666666666666
+2	20	1
+-- With NULL values in ordering column
+TRUNCATE TABLE test_cume_dist;
+INSERT INTO test_cume_dist VALUES (1, 10), (2, 20), (3, NULL), (4, 30), (5, NULL);
+SELECT a, b, cume_dist() OVER (ORDER BY b) FROM test_cume_dist ORDER BY b, a;
+3	0	0.4
+5	0	0.4
+1	10	0.6
+2	20	0.8
+4	30	1
+SELECT a, b, cume_dist() OVER (ORDER BY b NULLS FIRST) FROM test_cume_dist ORDER BY b, a;
+3	0	0.4
+5	0	0.4
+1	10	0.6
+2	20	0.8
+4	30	1
+SELECT a, b, cume_dist() OVER (ORDER BY b NULLS LAST) FROM test_cume_dist ORDER BY b, a;
+3	0	0.4
+5	0	0.4
+1	10	0.6
+2	20	0.8
+4	30	1
+-- Empty partition
+SELECT a, b, cume_dist() OVER (PARTITION BY a ORDER BY b) FROM test_cume_dist WHERE a = 3;
+3	0	1
+-- Single-row partition
+SELECT a, b, cume_dist() OVER (PARTITION BY a ORDER BY b) FROM test_cume_dist WHERE a = 7;
+-- Frame specification should produce an error
+SELECT number, cume_dist() OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
+DROP TABLE test_cume_dist;
