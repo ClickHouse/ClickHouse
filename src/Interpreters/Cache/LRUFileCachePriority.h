@@ -29,20 +29,22 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
-    size_t getSize(const CachePriorityGuard::Lock &) const override { return state->current_size; }
+    size_t getSize(const CachePriorityGuard::WriteLock &) const override { return state->current_size; }
+    size_t getSize(const CachePriorityGuard::ReadLock &) const override { return state->current_size; }
 
-    size_t getElementsCount(const CachePriorityGuard::Lock &) const override { return state->current_elements_num; }
+    size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override { return state->current_elements_num; }
+    size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override { return state->current_elements_num; }
 
     size_t getSizeApprox() const override { return state->current_size; }
 
     size_t getElementsCountApprox() const override { return state->current_elements_num; }
 
-    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+    std::string getStateInfoForLog(const CachePriorityGuard::WriteLock & lock) const override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::Lock &,
+        const CachePriorityGuard::WriteLock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -51,8 +53,13 @@ public:
         size_t offset,
         size_t size,
         const UserInfo & user,
-        const CachePriorityGuard::Lock &,
+        const CachePriorityGuard::WriteLock &,
         bool best_effort = false) override;
+
+    EvictionInfo checkEvictionInfo(
+        size_t size,
+        size_t elements,
+        const CachePriorityGuard::WriteLock &) override;
 
     bool collectCandidatesForEviction(
         size_t size,
@@ -62,17 +69,9 @@ public:
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         const UserID & user_id,
-        const CachePriorityGuard::Lock &) override;
+        const CachePriorityGuard::ReadLock &) override;
 
-    CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        const CachePriorityGuard::Lock &) override;
-
-    void shuffle(const CachePriorityGuard::Lock &) override;
+    void shuffle(const CachePriorityGuard::WriteLock &) override;
 
     struct LRUPriorityDump : public IPriorityDump
     {
@@ -80,15 +79,15 @@ public:
         explicit LRUPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
         void merge(const LRUPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
     };
-    PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
+    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
-    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT
+    void pop(const CachePriorityGuard::WriteLock & lock) { remove(queue.begin(), lock); } // NOLINT
 
-    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
+    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::WriteLock &) override;
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
-    void resetEvictionPos(const CachePriorityGuard::Lock &) override { eviction_pos = queue.end(); }
+    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override { eviction_pos = queue.end(); }
 
     /// Used only for unit test.
     size_t getEvictionPos()
@@ -115,32 +114,33 @@ private:
         size_t elements,
         size_t released_size_assumption,
         size_t released_elements_assumption,
-        const CachePriorityGuard::Lock &,
+        const CachePriorityGuard::WriteLock &,
         const size_t * max_size_ = nullptr,
         const size_t * max_elements_ = nullptr) const;
 
-    LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
+    LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
-    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
-    LRUQueue::iterator iterateImpl(LRUQueue::iterator start_pos, IterateFunc func, const CachePriorityGuard::Lock &);
-
-    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
-    LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
-
-    using StopConditionFunc = std::function<bool()>;
-    void iterateForEviction(
-        EvictionCandidates & res,
+    void iterate(
+        IterateFunc func,
         FileCacheReserveStat & stat,
-        StopConditionFunc stop_condition,
-        bool continue_from_last_eviction_pos,
-        const CachePriorityGuard::Lock &);
+        const CachePriorityGuard::ReadLock &) override;
 
-    void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
+    //void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
+    LRUQueue::iterator iterateImpl(
+        LRUQueue::iterator start_pos,
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock &);
+
+    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::WriteLock &);
+    LRUIterator add(EntryPtr entry, const CachePriorityGuard::WriteLock &);
+
+    void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
     void holdImpl(
         size_t size,
         size_t elements,
-        const CachePriorityGuard::Lock & lock) override;
+        const CachePriorityGuard::WriteLock & lock) override;
 
     void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
@@ -160,13 +160,13 @@ public:
 
     EntryPtr getEntry() const override;
 
-    size_t increasePriority(const CachePriorityGuard::Lock &) override;
+    size_t increasePriority(const CachePriorityGuard::WriteLock &) override;
 
-    void remove(const CachePriorityGuard::Lock &) override;
+    void remove(const CachePriorityGuard::WriteLock &) override;
 
     void invalidate() override;
 
-    void incrementSize(size_t size, const CachePriorityGuard::Lock &) override;
+    void incrementSize(size_t size, const CachePriorityGuard::WriteLock &) override;
 
     void decrementSize(size_t size) override;
 
