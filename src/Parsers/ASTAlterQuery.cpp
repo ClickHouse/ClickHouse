@@ -228,7 +228,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "");
-        statistics_decl->format(ostr, settings, state, frame);
+
+        if (statistics_decl)
+            statistics_decl->format(ostr, settings, state, frame);
+        else
+            ostr << " ALL";
+
         if (partition)
         {
             ostr << " IN PARTITION ";
