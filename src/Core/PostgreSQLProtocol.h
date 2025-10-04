@@ -1344,12 +1344,6 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        // Max pattern length: "CREATE TEMPORARY TABLE"
-        constexpr size_t MAX_PATTERN_LEN = 22;
-        static_assert(std::string_view("CREATE TEMPORARY TABLE").size() == MAX_PATTERN_LEN);
-
-        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
-
         static const std::vector<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
@@ -1371,6 +1365,17 @@ public:
             {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
             {"SET", Command::SET},
         };
+
+        // Calculate max pattern length from query_patterns
+        static const size_t MAX_PATTERN_LEN = []() {
+            size_t max_len = 0;
+            for (const auto & [pattern, _] : query_patterns)
+                if (pattern.size() > max_len)
+                    max_len = pattern.size();
+            return max_len;
+        }();
+
+        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
 
         for (const auto & [pattern, command] : query_patterns)
         {
