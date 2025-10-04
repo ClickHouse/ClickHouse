@@ -126,6 +126,12 @@ public:
         return current_metadata->supportsDelete();
     }
 
+    bool supportsParallelInsert() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsParallelInsert();
+    }
+
     void mutate(const MutationCommands & commands,
         ContextPtr context,
         const StorageID & storage_id,

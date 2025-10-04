@@ -75,6 +75,9 @@ namespace DB::Setting
     extern const SettingsUInt64 output_format_compression_level;
 }
 
+/// Hard to imagine a hint file larger than 10 MB
+static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
+
 namespace DB::Iceberg
 {
 
@@ -85,32 +88,86 @@ void writeMessageToFile(
     const String & filename,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    std::function<void()> cleanup,
+    const std::string & write_if_none_match,
     CompressionMethod compression_method)
+{
+    auto write_settings = context->getWriteSettings();
+    write_settings.s3_write_if_none_match = write_if_none_match;
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    if (compression_method != CompressionMethod::None)
+    {
+        auto settings = context->getSettingsRef();
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        compressed_buffer_metadata->write(data.data(), data.size());
+        compressed_buffer_metadata->finalize();
+    }
+    else
+    {
+        buffer_metadata->write(data.data(), data.size());
+        buffer_metadata->finalize();
+    }
+}
+
+bool writeMetadataFileAndVersionHint(
+    const std::string & metadata_file_path,
+    const std::string & metadata_file_content,
+    const std::string & version_hint_path,
+    const std::string & version_hint_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    DB::CompressionMethod compression_method,
+    bool try_write_version_hint)
 {
     try
     {
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        if (compression_method != CompressionMethod::None)
-        {
-            auto settings = context->getSettingsRef();
-            auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
-            compressed_buffer_metadata->write(data.data(), data.size());
-            compressed_buffer_metadata->finalize();
-        }
-        else
-        {
-            buffer_metadata->write(data.data(), data.size());
-            buffer_metadata->finalize();
-        }
+        if (object_storage->exists(StoredObject(metadata_file_path)))
+            return false;
+
+        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", compression_method);
     }
     catch (...)
     {
-        cleanup();
-        throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
+
+    if (try_write_version_hint)
+    {
+        size_t i = 0;
+        while (i < 10)
+        {
+            StoredObject object_info(version_hint_path);
+            std::string version_hint_value;
+            std::string etag = "*";
+            if (object_storage->exists(object_info))
+            {
+                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
+                version_hint_value = object_data;
+                etag = object_metadata.etag;
+            }
+
+            if (version_hint_value < metadata_file_path)
+            {
+                try
+                {
+                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, /* write-if-none-match */ etag);
+                    break;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+            else
+                break;
+            ++i;
+        }
+    }
+
+    return true;
 }
+
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
