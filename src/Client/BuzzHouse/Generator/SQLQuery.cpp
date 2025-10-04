@@ -125,6 +125,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
     const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
+    chassert(nclauses);
     for (uint32_t i = 0; i < nclauses; i++)
     {
         const String ncname = getNextAlias();
@@ -536,6 +537,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
         {
             SQLRelation rel(rel_name.value());
 
+            chassert(ncols);
             for (uint32_t i = 0; i < ncols; i++)
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name.value(), {"c" + std::to_string(i + 1)}));
@@ -569,6 +571,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             SQLRelation rel(rel_name.value());
 
             flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
+            chassert(!this->table_entries.empty());
             for (const auto & entry : this->table_entries)
             {
                 DB::Strings names;
@@ -690,6 +693,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         const auto & next_cte = rg.pickValueRandomlyFromMap(rg.pickValueRandomlyFromMap(this->ctes));
 
+        chassert(!next_cte.cols.empty());
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
@@ -839,6 +843,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
         est->mutable_database()->set_database(ntable.schema_name);
         est->mutable_table()->set_table(ntable.table_name);
+        chassert(!ntable.columns.empty());
         for (const auto & entry : ntable.columns)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {entry}));
@@ -953,6 +958,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
         ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
+        chassert(ncols);
         for (const auto & [key, val] : this->levels)
         {
             levels_backup[key] = val;
@@ -1156,6 +1162,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
     Expr * expr1 = nullptr;
     Expr * expr2 = nullptr;
+    chassert(this->levels[this->current_level].rels.size() > 1);
     const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
     const auto & op = rg.nextSmallNumber() < 9
@@ -1166,6 +1173,8 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     {
         rel1 = &this->levels[this->current_level].rels[this->levels[this->current_level].rels.size() - 2];
     }
+    chassert(!rel1->cols.empty());
+    chassert(!rel2->cols.empty());
     if (rg.nextSmallNumber() < 4)
     {
         /// Swap relations
@@ -1993,6 +2002,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             const bool recursive = fc.allow_infinite_tables && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
                 && rg.nextSmallNumber() < 4;
 
+            chassert(ncols);
             nqcte->set_recursive(recursive);
             generateDerivedTable(
                 rg,
@@ -2252,12 +2262,14 @@ void StatementGenerator::generateTopSelect(
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();
-    if (rg.nextSmallNumber() < 3)
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
         const std::filesystem::path & qfile = fc.client_file_path / "file.data";
 
-        ts->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        ts->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
         sif->set_path(qfile.generic_string());
         if (rg.nextSmallNumber() < 10)
         {
