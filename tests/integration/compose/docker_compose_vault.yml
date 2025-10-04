@@ -1,0 +1,10 @@
+services:
+    openbao:
+        image: openbao/openbao:2.3
+        restart: always
+        environment:
+            BAO_DEV_ROOT_TOKEN_ID: foobar
+            BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:1337"
+            BAO_ADDR: "http://0.0.0.0:1337"
+        ports:
+            - 1337:1337
