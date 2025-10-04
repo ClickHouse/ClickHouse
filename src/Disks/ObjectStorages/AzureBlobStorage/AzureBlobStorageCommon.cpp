@@ -93,8 +93,6 @@ namespace ErrorCodes
 namespace AzureBlobStorage
 {
 
-#if USE_AZURE_BLOB_STORAGE
-
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
     const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
@@ -126,6 +124,7 @@ static bool isConnectionString(const std::string & candidate)
     return !candidate.starts_with("http");
 }
 
+#if USE_AZURE_BLOB_STORAGE
 /// As ManagedIdentityCredential is related to the machine/pod, it's ok to have it as a singleton.
 /// It is beneficial because creating this object can take a lot of time and lead to throttling.
 static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIdentityCredential()
