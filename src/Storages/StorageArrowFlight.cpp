@@ -56,6 +56,7 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
     StorageArrowFlight::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_))
     {
+        LOG_INFO(getLogger("!!!"), "named_collection = {}", named_collection->dumpStructure());
         configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
     }
     else
@@ -96,6 +97,8 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
 
     configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
+
+    configuration.dataset_name = named_collection.get<String>("dataset");
 
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
@@ -144,26 +147,6 @@ StorageArrowFlight::StorageArrowFlight(
     setInMemoryMetadata(storage_metadata);
 }
 
-std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
-{
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss << "{";
-    oss << R"("dataset": ")" << dataset_name << R"(", )";
-    oss << "\"columns\": [";
-
-    for (size_t i = 0; i < column_names.size(); ++i)
-    {
-        oss << "\"" << column_names[i] << "\"";
-        if (i + 1 != column_names.size())
-            oss << ", ";
-    }
-
-    oss << "]";
-    oss << "}";
-
-    return oss.str();
-}
-
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_)
@@ -171,6 +154,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     auto client = connection_->getClient();
     auto options = connection_->getOptions();
 
+    LOG_INFO(getLogger("!!!"), "Calling client->GetSchema: dataset = {}", dataset_name_);
     arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     auto status = client->GetSchema(*options, descriptor);
     if (!status.ok())
@@ -184,8 +168,11 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", schema_result.status().ToString());
     }
     auto schema = std::move(schema_result).ValueOrDie();
-
+                                    
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
+
+    LOG_INFO(getLogger("!!!"), "getTableStructureFromData: header = {}", header.dumpStructure());
+
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
@@ -195,7 +182,7 @@ Pipe StorageArrowFlight::read(
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum,
-    size_t max_block_size,
+    size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
@@ -207,8 +194,7 @@ Pipe StorageArrowFlight::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(
-        connection, buildArrowFlightQueryString(column_names, dataset_name), sample_block, column_names, max_block_size));
+    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block));
 }
 
 class ArrowFlightSink : public SinkToStorage

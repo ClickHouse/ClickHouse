@@ -26,25 +26,21 @@ extern const int ARROWFLIGHT_INTERNAL_ERROR;
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    const std::string & query_,
-    const Block & sample_block_,
-    const std::vector<std::string> & column_names_,
-    UInt64 /*max_block_size_*/)
+    const std::string & dataset_name_,
+    const Block & sample_block_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
-    , query(query_)
     , sample_block(sample_block_)
-    , column_names(column_names_)
 {
-    initializeStream();
+    initializeStream(dataset_name_);
 }
 
-void ArrowFlightSource::initializeStream()
+void ArrowFlightSource::initializeStream(const String & dataset_name_)
 {
     auto client = connection->getClient();
     auto options = connection->getOptions();
 
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({query});
+    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
 
     auto flight_info_result = client->GetFlightInfo(*options, descriptor);
     if (!flight_info_result.ok())
@@ -73,6 +69,21 @@ void ArrowFlightSource::initializeStream()
 
     stream_reader = std::move(result.ValueOrDie());
 
+    auto result_schema = stream_reader->GetSchema();
+    if (!result_schema.ok())
+    {
+        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", result_schema.status().ToString());
+    }
+    schema = result_schema.ValueOrDie();
+}
+
+ArrowFlightSource::ArrowFlightSource(
+    std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_,
+    const Block & sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    , sample_block(sample_block_)
+    , stream_reader(std::move(stream_reader_))
+{
     auto result_schema = stream_reader->GetSchema();
     if (!result_schema.ok())
     {
