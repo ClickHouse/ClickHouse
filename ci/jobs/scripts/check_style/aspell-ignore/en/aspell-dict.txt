@@ -1691,6 +1691,7 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
+cume
 curdate
 currentDatabase
 currentProfiles
