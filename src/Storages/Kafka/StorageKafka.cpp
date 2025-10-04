@@ -572,8 +572,13 @@ void StorageKafka::threadFunc(size_t idx)
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
-                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                if (auto err = StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                {
+                    auto safe_consumers = getSafeConsumers();
+                    for (auto const & consumer_ptr : safe_consumers.consumers)
+                        consumer_ptr->setExceptionInfo(*err, false);
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
@@ -595,8 +600,12 @@ void StorageKafka::threadFunc(size_t idx)
             }
         }
         else
+        {
             LOG_DEBUG(log, "No attached views");
-
+            auto safe_consumers = getSafeConsumers();
+            for (auto const & consumer_ptr : safe_consumers.consumers)
+              consumer_ptr->setExceptionInfo("No attached views", false);
+        }
     }
     catch (...)
     {
