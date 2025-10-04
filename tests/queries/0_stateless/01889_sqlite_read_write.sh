@@ -42,6 +42,7 @@ sqlite3 "${DB_PATH}" 'CREATE TABLE table5 (a character(20), b varchar(10), c rea
 sqlite3 "${DB_PATH}" "CREATE TABLE \"table6'\" (col1 text, col2 smallint);"
 sqlite3 "${DB_PATH}" "INSERT INTO \"table6'\" VALUES ('table6_line1', 1), ('table6_line2', 2), ('table6_line3', 3)"
 
+sqlite3 "${DB_PATH}" 'CREATE TABLE table7 (col1 text, col2 int);'
 
 ${CLICKHOUSE_CLIENT} --query="select 'create database engine'";
 ${CLICKHOUSE_CLIENT} --query="CREATE DATABASE ${CURR_DATABASE} ENGINE = SQLite('${DB_PATH}')"
@@ -96,15 +97,31 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table3 (col1 String, col2 Int3
 ${CLICKHOUSE_CLIENT} --query='SHOW CREATE TABLE sqlite_table3;' | sed -r 's/(.*SQLite)(.*)/\1/'
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('line\'6', 6);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES (NULL, 7);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\'', 8);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\\\\', 9);" # Escaped backslash = \\, but we're in bash - so \\\\
 
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
-
 
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table1') SELECT 'line4', 4"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table1') ORDER BY col2"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', '\\'); select 1 --') ORDER BY col2 -- { serverError SQLITE_ENGINE_ERROR }"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table6''') ORDER BY col2"
+
+
+${CLICKHOUSE_CLIENT} --query="select 'create table engine with table7'";
+${CLICKHOUSE_CLIENT} --query='DROP TABLE IF EXISTS sqlite_table7'
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table7 (col1 FixedString(10), col2 Int32) ENGINE = SQLite('${DB_PATH}', 'table7')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table7 VALUES ('line\'6', 6);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table7 VALUES (NULL, 7);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table7 VALUES ('\'', 8);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table7 VALUES ('\\\\', 9);" # Escaped backslash = \\, but we're in bash - so \\\\
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table7 VALUES ('abc\0\0def', 10);"
+${CLICKHOUSE_CLIENT} --query="select 'Data from sqlite_table7 via clickhouse:'";
+${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table7 ORDER BY col2'
+${CLICKHOUSE_CLIENT} --query="select 'Data from table7 from sqlite:'";
+sqlite3 "${DB_PATH}" 'SELECT * FROM table7 ORDER BY col2;'
+
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'test schema inference'";

@@ -4,9 +4,11 @@
 #include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -154,7 +156,16 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
         default:
             const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
             int len = sqlite3_column_bytes(compiled_statement.get(), idx);
-            assert_cast<ColumnString &>(column).insertData(data, len);
+            auto process = [&]<typename T>
+            {
+                auto column_typed = typeid_cast<T>(&column);
+                if (!column_typed)
+                    return false;
+                column_typed->insertData(data, len);
+                return true;
+            };
+            if (!process.template operator()<ColumnString *>() && !process.template operator()<ColumnFixedString *>())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid column type");
             break;
     }
 }
