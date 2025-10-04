@@ -8,7 +8,6 @@ namespace DB
 class HashJoinResult : public IJoinResult
 {
 public:
-
     struct Properties
     {
         const TableJoin & table_join;
@@ -22,7 +21,11 @@ public:
 
         bool need_filter;
         bool is_join_get;
+
+        bool joined_block_split_single_row = false;
     };
+
+    struct GenerateCurrentRowState;
 
     HashJoinResult(
         LazyOutput && lazy_output_,
@@ -35,6 +38,7 @@ public:
 
     JoinResultBlock next() override;
 
+    ~HashJoinResult() override;
 private:
     const LazyOutput lazy_output;
     const Properties properties;
@@ -42,14 +46,20 @@ private:
     std::optional<ScatteredBlock> scattered_block;
 
     MutableColumns columns;
-    const IColumn::Offsets offsets;
-    const IColumn::Filter filter;
+    IColumn::Offsets offsets;
+    IColumn::Filter filter;
     IColumn::Offsets matched_rows;
 
     size_t next_row = 0;
     size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
+
+    /// HashJoinResult iterates over rows from the left side.
+    /// This state is used to generate blocks for a single row from the left side.
+    /// When limiting the number of rows in a block, if there are many matches for a single key,
+    /// the current progress is saved here to continue from this state on the next call to next().
+    std::unique_ptr<GenerateCurrentRowState> current_row_state;
 };
 
 }
