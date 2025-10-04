@@ -55,6 +55,7 @@ def clone_submodules():
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
+        "contrib/StringZilla",
         "contrib/rust_vendor",
     ]
 

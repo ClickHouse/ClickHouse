@@ -1,22 +1,50 @@
 #pragma once
 
-#include <base/getPageSize.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/UTF8Helpers.h>
-#include <Core/Defines.h>
-#include <Poco/Unicode.h>
+#include <base/types.h>
+
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 
+#include <base/getPageSize.h>
+#include <Common/StringSearcher.h>
+#include <Common/TargetSpecific.h>
+#include <Common/UTF8Helpers.h>
+
+#include <Poco/Unicode.h>
+
 #ifdef __SSE2__
-    #include <emmintrin.h>
+#    include <emmintrin.h>
 #endif
 
 #ifdef __SSE4_1__
-    #include <smmintrin.h>
+#    include <smmintrin.h>
 #endif
 
+#define SZ_AVOID_LIBC 1
+#define SZ_DEBUG 0
+#define SZ_DYNAMIC_DISPATCH 0
+#define SZ_IS_BIG_ENDIAN_ __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+
+#if USE_MULTITARGET_CODE
+#    define SZ_USE_SKYLAKE 1
+#    define SZ_USE_HASWELL 1
+#    define SZ_USE_WESTMERE 1
+#elif defined(__x86_64__) && defined(__AVX512__)
+#    define SZ_USE_SKYLAKE 1
+#elif defined(__x86_64__) && defined(__AVX2__)
+#    define SZ_USE_HASWELL 1
+#elif defined(__x86_64__) && defined(__SSE4_2__)
+#    define SZ_USE_WESTMERE 1
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
+#    define SZ_USE_SVE 1
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+#    define SZ_USE_NEON 1
+#endif
+
+#include <stringzilla/compare.h>
+#include <stringzilla/find.h>
 
 namespace DB
 {
@@ -33,264 +61,124 @@ class StringSearcherBase
 public:
     bool force_fallback = false;
 
+    bool getForceFallback() const { return force_fallback; }
+
+    void setForceFallback(bool force_fallback_) { force_fallback = force_fallback_; }
+
 #ifdef __SSE2__
 protected:
     static constexpr size_t N = sizeof(__m128i);
 
-    bool isPageSafe(const void * const ptr) const
-    {
-        return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
-    }
+    bool isPageSafe(const void * const ptr) const { return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N; }
 
 private:
     const Int64 page_size = ::getPageSize();
 #endif
 };
 
+/// Performs case-sensitive or case-insensitive search of ASCII or UTF-8 strings
+template <bool CaseSensitive, bool ASCII>
+class StringSearcher;
 
 /// Performs case-sensitive or case-insensitive search of ASCII or UTF-8 strings
-template <bool CaseSensitive, bool ASCII> class StringSearcher;
-
-
-/// Case-sensitive ASCII and UTF8 searcher
 template <bool ASCII>
-class StringSearcher<true, ASCII> : public StringSearcherBase
+class StringSearcher<true, ASCII> final : public StringSearcherBase
 {
-private:
-    /// string to be searched for
-    const uint8_t * const needle;
-    const uint8_t * const needle_end;
-    /// first character in `needle`
-    uint8_t first_needle_character = 0;
+    using FindFunction = decltype(sz_find);
+    using EqualFunction = decltype(sz_equal);
 
-#ifdef __SSE4_1__
-    /// second character of "needle" (if its length is > 1)
-    uint8_t second_needle_character = 0;
-    /// first/second needle character broadcast into a 16 bytes vector
-    __m128i first_needle_character_vec;
-    __m128i second_needle_character_vec;
-    /// vector of first 16 characters of `needle`
-    __m128i cache = _mm_setzero_si128();
-    uint16_t cachemask = 0;
-#endif
+    /// string to be searched for
+    sz_cptr_t const needle;
+    sz_cptr_t const needle_end;
+
+    FindFunction * find;
+    EqualFunction * equal;
 
 public:
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    StringSearcher(const CharT * needle_, size_t needle_size)
-        : needle(reinterpret_cast<const uint8_t *>(needle_))
+    StringSearcher(const UInt8 * needle_, size_t needle_size)
+        : needle(reinterpret_cast<sz_cptr_t>(needle_))
         , needle_end(needle + needle_size)
     {
-        if (needle_size == 0)
-            return;
-
-        first_needle_character = *needle;
-
-#ifdef __SSE4_1__
-        first_needle_character_vec = _mm_set1_epi8(first_needle_character);
-        if (needle_size > 1)
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            second_needle_character = *(needle + 1);
-            second_needle_character_vec = _mm_set1_epi8(second_needle_character);
+            find = sz_find_skylake;
+            equal = sz_equal_skylake;
         }
-        const auto * needle_pos = needle;
-
-        for (uint8_t i = 0; i < N; ++i)
+        else if (isArchSupported(TargetArch::AVX2))
         {
-            cache = _mm_srli_si128(cache, 1);
-
-            if (needle_pos != needle_end)
-            {
-                cache = _mm_insert_epi8(cache, *needle_pos, N - 1);
-                cachemask |= 1 << i;
-                ++needle_pos;
-            }
+            find = sz_find_haswell;
+            equal = sz_equal_haswell;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            find = sz_find_westmere;
+            equal = sz_equal_westmere;
+        }
+        else
+        {
+            find = sz_find_serial;
+            equal = sz_equal_serial;
+        }
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
+        {
+            find = sz_find_sve;
+            equal = sz_equal_sve;
+        }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+        {
+            find = sz_find_neon;
+            equal = sz_equal_neon;
+        }
+#else
+        {
+            find = sz_find_serial;
+            equal = sz_equal_serial;
         }
 #endif
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
-#ifdef __SSE4_1__
-        if (isPageSafe(pos))
-        {
-            const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, cache);
-            const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
+        sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
+        size_t needle_size = needle_end - needle;
 
-            if (0xffff == cachemask)
+        if (needle_size <= 32)
+        {
+            /// For short needles   , we can use a simple loop and avoid function calls and the mask preparation
+            sz_cptr_t c = needle;
+            while (c != needle_end && *c == *pos_cptr)
             {
-                if (comparison_result_mask == cachemask)
-                {
-                    pos += N;
-                    const auto * needle_pos = needle + N;
-
-                    while (needle_pos < needle_end && *pos == *needle_pos)
-                        ++pos, ++needle_pos;
-
-                    if (needle_pos == needle_end)
-                        return true;
-                }
+                c++;
+                pos_cptr++;
             }
-            else if ((comparison_result_mask & cachemask) == cachemask)
-                return true;
-
-            return false;
+            return c == needle_end;
         }
-#endif
-
-        if (*pos == first_needle_character)
-        {
-            ++pos;
-            const auto * needle_pos = needle + 1;
-
-            while (needle_pos < needle_end && *pos == *needle_pos)
-                ++pos, ++needle_pos;
-
-            if (needle_pos == needle_end)
-                return true;
-        }
-
-        return false;
+        return equal(pos_cptr, needle, needle_size);
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        const auto needle_size = needle_end - needle;
-
         if (needle == needle_end)
             return haystack;
 
-#ifdef __SSE4_1__
-        /// Fast path for single-character needles. Compare 16 characters of the haystack against the needle character at once.
-        if (needle_size == 1)
-        {
-            while (haystack < haystack_end)
-            {
-                if (haystack + N <= haystack_end && isPageSafe(haystack))
-                {
-                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                    const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, first_needle_character_vec);
-                    const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
-                    if (comparison_result_mask == 0)
-                    {
-                        haystack += N;
-                        continue;
-                    }
+        sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
+        size_t haystack_size = haystack_end - haystack;
+        size_t needle_size = needle_end - needle;
 
-                    const int offset = std::countr_zero(comparison_result_mask);
-                    haystack += offset;
+        const char * res = find(haystack_cptr, haystack_size, needle, needle_size);
 
-                    return haystack;
-                }
-
-                if (haystack == haystack_end)
-                    return haystack_end;
-
-                if (*haystack == first_needle_character)
-                    return haystack;
-
-                ++haystack;
-            }
-
+        if (!res)
             return haystack_end;
-        }
-#endif
-
-        while (haystack < haystack_end && haystack_end - haystack >= needle_size)
-        {
-#ifdef __SSE4_1__
-            /// Compare the [0:15] bytes from haystack and broadcast 16 bytes vector from first character of needle.
-            /// Compare the [1:16] bytes from haystack and broadcast 16 bytes vector from second character of needle.
-            /// Bit AND the results of above two comparisons and get the mask.
-            if ((haystack + 1 + N) <= haystack_end && isPageSafe(haystack + 1))
-            {
-                const __m128i haystack_characters_from_1st = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const __m128i haystack_characters_from_2nd = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack + 1));
-                const __m128i comparison_result_1st = _mm_cmpeq_epi8(haystack_characters_from_1st, first_needle_character_vec);
-                const __m128i comparison_result_2nd = _mm_cmpeq_epi8(haystack_characters_from_2nd, second_needle_character_vec);
-                const __m128i comparison_result_combined = _mm_and_si128(comparison_result_1st, comparison_result_2nd);
-                const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result_combined);
-                /// If the mask = 0, then first two characters [0:1] from needle are not in the [0:17] bytes of haystack.
-                if (comparison_result_mask == 0)
-                {
-                    haystack += N;
-                    continue;
-                }
-
-                const int offset = std::countr_zero(comparison_result_mask);
-                haystack += offset;
-
-                if (haystack + N <= haystack_end && isPageSafe(haystack))
-                {
-                    /// Already find the haystack position where the [pos:pos + 1] two characters exactly match the first two characters of needle.
-                    /// Compare the 16 bytes from needle (cache) and the first 16 bytes from haystack at once if the haystack size >= 16 bytes.
-                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                    const __m128i comparison_result_cache = _mm_cmpeq_epi8(haystack_characters, cache);
-                    const uint16_t mask_offset = _mm_movemask_epi8(comparison_result_cache);
-
-                    if (0xffff == cachemask)
-                    {
-                        if (mask_offset == cachemask)
-                        {
-                            const auto * haystack_pos = haystack + N;
-                            const auto * needle_pos = needle + N;
-
-                            while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                                   *haystack_pos == *needle_pos)
-                                ++haystack_pos, ++needle_pos;
-
-                            if (needle_pos == needle_end)
-                                return haystack;
-                        }
-                    }
-                    else if ((mask_offset & cachemask) == cachemask)
-                        return haystack;
-
-                    ++haystack;
-                    continue;
-                }
-            }
-#endif
-
-            if (haystack == haystack_end)
-                return haystack_end;
-
-            if (*haystack == first_needle_character)
-            {
-                const auto * haystack_pos = haystack + 1;
-                const auto * needle_pos = needle + 1;
-
-                while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                       *haystack_pos == *needle_pos)
-                    ++haystack_pos, ++needle_pos;
-
-                if (needle_pos == needle_end)
-                    return haystack;
-            }
-
-            ++haystack;
-        }
-
-        return haystack_end;
+        return reinterpret_cast<const UInt8 *>(res);
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
+    const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
-
 
 /// Case-insensitive ASCII searcher
 template <>
-class StringSearcher<false, true> : public StringSearcherBase
+class StringSearcher<false, true> final : public StringSearcherBase
 {
 private:
     /// string to be searched for
@@ -309,9 +197,7 @@ private:
 #endif
 
 public:
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    StringSearcher(const CharT * needle_, size_t needle_size)
+    StringSearcher(const UInt8 * needle_, size_t needle_size)
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_end(needle + needle_size)
     {
@@ -343,9 +229,7 @@ public:
 #endif
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (isPageSafe(pos))
@@ -398,9 +282,7 @@ public:
         return false;
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
         if (needle == needle_end)
             return haystack;
@@ -441,8 +323,8 @@ public:
                             const auto * haystack_pos = haystack + N;
                             const auto * needle_pos = needle + N;
 
-                            while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                                   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+                            while (haystack_pos < haystack_end && needle_pos < needle_end
+                                   && std::tolower(*haystack_pos) == std::tolower(*needle_pos))
                             {
                                 ++haystack_pos;
                                 ++needle_pos;
@@ -469,8 +351,7 @@ public:
                 const auto * haystack_pos = haystack + 1;
                 const auto * needle_pos = needle + 1;
 
-                while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                       std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+                while (haystack_pos < haystack_end && needle_pos < needle_end && std::tolower(*haystack_pos) == std::tolower(*needle_pos))
                 {
                     ++haystack_pos;
                     ++needle_pos;
@@ -486,18 +367,13 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
+    const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
 
 
 /// Case-insensitive UTF-8 searcher
 template <>
-class StringSearcher<false, false> : public StringSearcherBase
+class StringSearcher<false, false> final : public StringSearcherBase
 {
 private:
     using UTF8SequenceBuffer = uint8_t[6];
@@ -524,9 +400,7 @@ private:
 #endif
 
 public:
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    StringSearcher(const CharT * needle_, size_t needle_size_)
+    StringSearcher(const UInt8 * needle_, size_t needle_size_)
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_size(needle_size_)
     {
@@ -635,13 +509,12 @@ public:
 #endif
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool compareTrivial(const CharT * haystack_pos, const CharT * const haystack_end, const uint8_t * needle_pos) const
+    ALWAYS_INLINE bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * const haystack_end, const uint8_t * needle_pos) const
     {
         while (haystack_pos < haystack_end && needle_pos < needle_end)
         {
-            auto haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
+            auto haystack_code_point
+                = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
             auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
 
             /// Invalid UTF-8, should not compare equals
@@ -662,11 +535,8 @@ public:
         return needle_pos == needle_end;
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * haystack_end, const CharT * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
-
 #ifdef __SSE4_1__
         if (isPageSafe(pos) && !force_fallback)
         {
@@ -708,9 +578,7 @@ public:
 
     /** Returns haystack_end if not found.
       */
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
         if (needle_size == 0)
             return haystack;
@@ -785,15 +653,14 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
+    const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
-
 }
+
+extern template class impl::StringSearcher<true, true>;
+extern template class impl::StringSearcher<false, true>;
+extern template class impl::StringSearcher<true, false>;
+extern template class impl::StringSearcher<false, false>;
 
 using ASCIICaseSensitiveStringSearcher =   impl::StringSearcher<true, true>;
 using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
