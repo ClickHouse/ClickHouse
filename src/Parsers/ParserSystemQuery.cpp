@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -746,6 +747,64 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+
+        case Type::INSTRUMENT_REMOVE:
+        {
+            ASTPtr temporary_identifier;
+            if (!ParserLiteral{}.parse(pos, temporary_identifier, expected))
+                return false;
+
+            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral>()->value.safeGet<UInt64>();
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            String function_name;
+            ASTPtr temporary_identifier;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            res->function_name = std::move(function_name);
+
+            String handler_name;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+            {
+                handler_name = temporary_identifier->as<ASTIdentifier &>().name();
+            }
+            res->handler_name = std::move(handler_name);
+            if (Poco::toLower(res->handler_name) == "profile")
+                break;
+
+            res->parameters.emplace();
+            do
+            {
+                ASTPtr params_ast;
+                if (!ParserLiteral{}.parse(pos, params_ast, expected))
+                    return false;
+                const auto & value = params_ast->as<ASTLiteral &>().value;
+                if (value.getType() == Field::Types::String)
+                {
+                    res->parameters->emplace_back(value.safeGet<String>());
+                }
+                else if (value.getType() == Field::Types::Int64)
+                {
+                    res->parameters->emplace_back(value.safeGet<Int64>());
+                }
+                else if (value.getType() == Field::Types::UInt64)
+                {
+                    res->parameters->emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                }
+                else if (value.getType() == Field::Types::Float64)
+                {
+                    res->parameters->emplace_back(value.safeGet<Float64>());
+                }
+            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+            break;
+        }
+
 #if USE_JEMALLOC
         case Type::JEMALLOC_FLUSH_PROFILE:
         {

@@ -50,6 +50,7 @@
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -908,7 +909,23 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -1586,7 +1603,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
-    auto table_id_ = table->getStorageID();
+    auto table_id = table->getStorageID();
 
     /// If materialized view, sync its target table.
     for (int i = 0;; ++i)
@@ -1607,14 +1624,14 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "SYNC REPLICA {}: command timed out. "
                 "See the 'receive_timeout' setting",
-                table_id_.getNameForLogs());
+                table_id.getNameForLogs());
         }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         return false;
@@ -1706,6 +1723,32 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         }
     }
 }
+
+#if USE_XRAY
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+            XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters, getContext());
+        else
+            XRayInstrumentationManager::instance().unpatchFunction(*query.instrumentation_point_id);
+    }
+    catch (const DB::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}' and instrumentation_point_id '{}': {}",
+            query.function_name,
+            query.handler_name,
+            query.instrumentation_point_id ? std::to_string(*query.instrumentation_point_id) : "None",
+            e.what());
+    }
+}
+#endif
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
@@ -2141,6 +2184,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOCK_SNAPSHOT:
         {
             required_access.emplace_back(AccessType::BACKUP);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
