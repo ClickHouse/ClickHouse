@@ -247,6 +247,37 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "default", R"(
+    Serialization info version used when writing `serialization.json`.
+    This setting is required for compatibility during cluster upgrades.
+
+    Possible values:
+    - `DEFAULT`
+
+    - `WITH_TYPES`
+      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
+      This makes settings like `string_serialization_version` effective.
+
+    During rolling upgrades, set this to `DEFAULT` so that new servers produce
+    data parts compatible with old servers. After the upgrade completes,
+    switch to `WITH_TYPES` to enable per-type serialization versions.
+    )", 0) \
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
+    Controls the serialization format for top-level `String` columns.
+
+    This setting is only effective when `serialization_info_version` is set to "with_types".
+    When enabled, top-level `String` columns are serialized with a separate `.size`
+    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    subcolumns and can improve compression efficiency.
+
+    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
+    are not affected, except when they appear in a `Tuple`.
+
+    Possible values:
+
+    - `DEFAULT` — Use the standard serialization format with inline sizes.
+    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
+    )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
 
@@ -928,7 +959,7 @@ namespace ErrorCodes
     the composition of the field names and types and the data of the inserted
     part (stream of bytes).
     )", 0) \
-    DECLARE(UInt64, replicated_deduplication_window_seconds, 7 * 24 * 60 * 60 /* one week */, R"(
+    DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
     removed from ClickHouse Keeper.
 
