@@ -347,7 +347,7 @@ ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 
 ## REWRITE PARTS {#rewrite-parts}
 
-This will rewrite the parts from scratch, by using all new settings (since some, like `use_const_adaptive_granularity`, will be applied only for new parts).
+This will rewrite the parts from scratch, using all new settings. This makes sense because table-level settings like `use_const_adaptive_granularity` are applied only for newly written parts by default.
 
 ### Example {#example-rewrite-parts}
 
