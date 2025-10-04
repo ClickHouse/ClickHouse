@@ -25,6 +25,9 @@ class JoinUsedFlags
 
     bool need_flags;
 
+    std::vector<bool> used;
+    std::atomic<size_t> unused_count{0};
+
 public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
@@ -120,7 +123,6 @@ public:
         {
             return per_offset_flags[f.getOffset()].load();
         }
-
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
@@ -151,7 +153,6 @@ public:
             bool expected = false;
             return per_offset_flags[off].compare_exchange_strong(expected, true);
         }
-
     }
 
     template <bool use_flags, bool flag_per_row>
@@ -179,6 +180,31 @@ public:
             return per_offset_flags[offset].compare_exchange_strong(expected, true);
         }
     }
+
+    void onInsertRows(size_t n)
+    {
+        used.resize(used.size() + n);
+        for (size_t i = used.size() - n; i < used.size(); ++i)
+            used[i] = false;
+        unused_count.fetch_add(n, std::memory_order_relaxed);
+    }
+
+    /// returns true if the row was not used before
+    bool markUsed(size_t row_id)
+    {
+        bool expected = false;
+        if (used[row_id] == expected)
+        {
+            used[row_id] = true;
+            unused_count.fetch_sub(1, std::memory_order_acq_rel);
+            return true;
+        }
+        return false;
+    }
+
+    bool hasUnused() const { return unused_count.load(std::memory_order_acquire) > 0; }
+
+    size_t unusedCount() const { return unused_count.load(std::memory_order_acquire); }
 };
 
 }

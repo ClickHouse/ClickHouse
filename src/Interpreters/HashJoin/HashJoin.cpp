@@ -126,7 +126,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -160,7 +161,11 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
+    /// use shared instance if provided, else create a new one
+    if (shared_used_flags_)
+        used_flags = shared_used_flags_;
+    else
+        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1182,8 +1187,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
-
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1249,6 +1253,41 @@ HashJoin::~HashJoin()
         instance_log_id,
         getTotalByteCount(),
         getTotalRowCount());
+}
+
+bool HashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(kind))
+        return false;
+
+    if (!needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+
+    /// if the hash table is empty, we have no non-joined rows
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
+        return false;
+
+    updateNonJoinedRowsStatus();
+    return has_non_joined_rows.load(std::memory_order_acquire);
+}
+
+void HashJoin::updateNonJoinedRowsStatus() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return;
+
+    bool found_non_joined = false;
+
+    if (!empty() && used_flags)
+    {
+        found_non_joined = true;
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
 }
 
 template <typename Mapped>
@@ -1470,15 +1509,18 @@ private:
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
             size_t rows = columns->columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            size_t limit = nullmap ? std::min(rows, nullmap->size()) : rows;
+            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
             {
-                if (nullmap && (*nullmap)[row])
+                if (!nullmap || (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
                     ++rows_added;
                 }
             }
+            if (rows_added >= max_block_size)
+                break;
         }
     }
 };
@@ -1828,5 +1870,6 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+    updateNonJoinedRowsStatus();
 }
 }
