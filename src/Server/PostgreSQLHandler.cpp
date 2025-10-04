@@ -607,18 +607,19 @@ void PostgreSQLHandler::processQuery()
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
-        for (const auto & spl_query : queries)
+        for (auto & spl_query : queries)
         {
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            auto read_buf = std::make_unique<ReadBufferFromString>(spl_query);
-            executeQuery(std::move(read_buf), *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+
+            UInt64 affected_rows = executeQueryWithTracking(std::move(spl_query), query_context, command);
+
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
         }
 
     }
@@ -630,6 +631,41 @@ void PostgreSQLHandler::processQuery()
             true);
         throw;
     }
+}
+
+std::function<void(const Progress&)> PostgreSQLHandler::createProgressCallback(
+    ContextMutablePtr query_context,
+    std::atomic<UInt64>& result_rows,
+    std::atomic<UInt64>& written_rows)
+{
+    auto prev_callback = query_context->getProgressCallback();
+    return [&, my_prev = prev_callback](const Progress & progress)
+    {
+        if (my_prev)
+            my_prev(progress);
+        result_rows += progress.result_rows;   // For SELECT
+        written_rows += progress.written_rows; // For INSERT
+    };
+}
+
+UInt64 PostgreSQLHandler::executeQueryWithTracking(
+    String && sql_query,
+    ContextMutablePtr query_context,
+    PostgreSQLProtocol::Messaging::CommandComplete::Command command)
+{
+    // Track affected rows using progress callback (similar to MySQL handler)
+    std::atomic<UInt64> result_rows {0};
+    std::atomic<UInt64> written_rows {0};
+    query_context->setProgressCallback(createProgressCallback(query_context, result_rows, written_rows));
+
+    // Execute query with PostgreSQLWire output format
+    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
+    executeQuery(std::move(read_buf), *out, false, query_context, {});
+
+    // Determine affected rows based on command type
+    return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)
+        ? written_rows.load()
+        : result_rows.load();
 }
 
 bool PostgreSQLHandler::processPrepareStatement(const String & query)
@@ -672,10 +708,10 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
 
     CurrentThread::QueryScope query_scope{query_context};
-    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(result_query));
-    executeQuery(std::move(read_buf), *out, false, query_context, {});
 
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+    UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
+
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
 
     return true;
 }
@@ -777,11 +813,13 @@ void PostgreSQLHandler::processExecuteQuery()
 
         CurrentThread::QueryScope query_scope{query_context};
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
-        auto read_buf = std::make_unique<ReadBufferFromString>(std::move(sql_query));
-        executeQuery(std::move(read_buf), *out, false, query_context, {});
 
-        PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command =
+            PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
+
+        UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
+
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
     }
     catch (const Exception & e)
     {
