@@ -223,113 +223,6 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
     }, auth_method);
 }
 
-Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    String storage_url;
-    String account_name;
-    String container_name;
-    String prefix;
-
-    auto get_container_name = [&]
-    {
-        if (config.has(config_prefix + ".container_name"))
-            return config.getString(config_prefix + ".container_name");
-
-        if (config.has(config_prefix + ".container"))
-            return config.getString(config_prefix + ".container");
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `container` or `container_name` parameter in config");
-    };
-
-    if (config.has(config_prefix + ".endpoint"))
-    {
-        String endpoint = config.getString(config_prefix + ".endpoint");
-
-        /// For some authentication methods account name is not present in the endpoint
-        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
-
-        size_t pos = endpoint.find("//");
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected '//' in endpoint");
-
-        if (endpoint_contains_account_name)
-        {
-            size_t acc_pos_begin = endpoint.find('/', pos + 2);
-            if (acc_pos_begin == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected account_name in endpoint");
-
-            storage_url = endpoint.substr(0, acc_pos_begin);
-            size_t acc_pos_end = endpoint.find('/', acc_pos_begin + 1);
-
-            if (acc_pos_end == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
-
-            account_name = endpoint.substr(acc_pos_begin + 1, acc_pos_end - acc_pos_begin - 1);
-
-            size_t cont_pos_end = endpoint.find('/', acc_pos_end + 1);
-
-            if (cont_pos_end != std::string::npos)
-            {
-                container_name = endpoint.substr(acc_pos_end + 1, cont_pos_end - acc_pos_end - 1);
-                prefix = endpoint.substr(cont_pos_end + 1);
-            }
-            else
-            {
-                container_name = endpoint.substr(acc_pos_end + 1);
-            }
-        }
-        else
-        {
-            size_t cont_pos_begin = endpoint.find('/', pos + 2);
-
-            if (cont_pos_begin == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
-
-            storage_url = endpoint.substr(0, cont_pos_begin);
-            size_t cont_pos_end = endpoint.find('/', cont_pos_begin + 1);
-
-            if (cont_pos_end != std::string::npos)
-            {
-                container_name = endpoint.substr(cont_pos_begin + 1,cont_pos_end - cont_pos_begin - 1);
-                prefix = endpoint.substr(cont_pos_end + 1);
-            }
-            else
-            {
-                container_name = endpoint.substr(cont_pos_begin + 1);
-            }
-        }
-
-        if (config.has(config_prefix + ".endpoint_subpath"))
-        {
-            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
-        }
-    }
-    else if (config.has(config_prefix + ".connection_string"))
-    {
-        storage_url = config.getString(config_prefix + ".connection_string");
-        container_name = get_container_name();
-    }
-    else if (config.has(config_prefix + ".storage_account_url"))
-    {
-        storage_url = config.getString(config_prefix + ".storage_account_url");
-        validateStorageAccountUrl(storage_url);
-        container_name = get_container_name();
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
-
-    if (!container_name.empty())
-        validateContainerName(container_name);
-
-    std::optional<bool> container_already_exists {};
-    if (config.has(config_prefix + ".container_already_exists"))
-        container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-
-    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
-}
-
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
 {
     endpoint.container_name = container_name;
@@ -505,6 +398,113 @@ BlobClientOptions getClientOptions(
 
 #endif
 
+Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    String storage_url;
+    String account_name;
+    String container_name;
+    String prefix;
+
+    auto get_container_name = [&]
+    {
+        if (config.has(config_prefix + ".container_name"))
+            return config.getString(config_prefix + ".container_name");
+
+        if (config.has(config_prefix + ".container"))
+            return config.getString(config_prefix + ".container");
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expected either `container` or `container_name` parameter in config");
+    };
+
+    if (config.has(config_prefix + ".endpoint"))
+    {
+        String endpoint = config.getString(config_prefix + ".endpoint");
+
+        /// For some authentication methods account name is not present in the endpoint
+        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
+        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+
+        size_t pos = endpoint.find("//");
+        if (pos == std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected '//' in endpoint");
+
+        if (endpoint_contains_account_name)
+        {
+            size_t acc_pos_begin = endpoint.find('/', pos + 2);
+            if (acc_pos_begin == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected account_name in endpoint");
+
+            storage_url = endpoint.substr(0, acc_pos_begin);
+            size_t acc_pos_end = endpoint.find('/', acc_pos_begin + 1);
+
+            if (acc_pos_end == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            account_name = endpoint.substr(acc_pos_begin + 1, acc_pos_end - acc_pos_begin - 1);
+
+            size_t cont_pos_end = endpoint.find('/', acc_pos_end + 1);
+
+            if (cont_pos_end != std::string::npos)
+            {
+                container_name = endpoint.substr(acc_pos_end + 1, cont_pos_end - acc_pos_end - 1);
+                prefix = endpoint.substr(cont_pos_end + 1);
+            }
+            else
+            {
+                container_name = endpoint.substr(acc_pos_end + 1);
+            }
+        }
+        else
+        {
+            size_t cont_pos_begin = endpoint.find('/', pos + 2);
+
+            if (cont_pos_begin == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            storage_url = endpoint.substr(0, cont_pos_begin);
+            size_t cont_pos_end = endpoint.find('/', cont_pos_begin + 1);
+
+            if (cont_pos_end != std::string::npos)
+            {
+                container_name = endpoint.substr(cont_pos_begin + 1,cont_pos_end - cont_pos_begin - 1);
+                prefix = endpoint.substr(cont_pos_end + 1);
+            }
+            else
+            {
+                container_name = endpoint.substr(cont_pos_begin + 1);
+            }
+        }
+        if (config.has(config_prefix + ".endpoint_subpath"))
+        {
+            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
+            prefix = fs::path(prefix) / endpoint_subpath;
+        }
+    }
+    else if (config.has(config_prefix + ".connection_string"))
+    {
+        storage_url = config.getString(config_prefix + ".connection_string");
+        container_name = get_container_name();
+    }
+    else if (config.has(config_prefix + ".storage_account_url"))
+    {
+        storage_url = config.getString(config_prefix + ".storage_account_url");
+        validateStorageAccountUrl(storage_url);
+        container_name = get_container_name();
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
+
+    if (!container_name.empty())
+        validateContainerName(container_name);
+
+    std::optional<bool> container_already_exists {};
+    if (config.has(config_prefix + ".container_already_exists"))
+        container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
+
+    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
+}
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
@@ -597,7 +597,6 @@ void AzureSettingsByEndpoint::loadFromConfig(
     const std::string & config_prefix,
     const DB::Settings & settings)
 {
-#if USE_AZURE_BLOB_STORAGE
     std::lock_guard lock(mutex);
     azure_settings.clear();
     if (!config.has(config_prefix))
@@ -636,7 +635,6 @@ void AzureSettingsByEndpoint::loadFromConfig(
                 std::move(*request_settings));
 
     }
-#endif
 }
 
 std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(

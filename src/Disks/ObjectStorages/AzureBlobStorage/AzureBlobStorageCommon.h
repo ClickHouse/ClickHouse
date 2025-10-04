@@ -149,8 +149,6 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
-
-Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly);
@@ -164,6 +162,8 @@ BlobClientOptions getClientOptions(
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 #endif
+
+Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
 std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);
