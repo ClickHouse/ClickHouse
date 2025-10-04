@@ -6,6 +6,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -79,7 +80,8 @@ public:
     }
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -88,14 +90,19 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        FunctionArgumentDescriptors optional_args{
+            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), &isColumnConst, "const UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -109,6 +116,11 @@ public:
         series_name = escapeForFileName(series_name);
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
+
+        UInt64 start_value = 0;
+        bool has_start_value = arguments.size() >= 2;
+        if (has_start_value)
+            start_value = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt64>();
 
         auto col_res = ColumnUInt64::create();
         typename ColumnUInt64::Container & vec_to = col_res->getData();
@@ -126,7 +138,10 @@ public:
                     name, max_series);
         }
         else
-            keeper->createIfNotExists(serial_path, "0");
+        {
+            String initial_value = has_start_value ? toString(start_value) : "0";
+            keeper->createIfNotExists(serial_path, initial_value);
+        }
 
         UInt64 counter = 0;
         Coordination::Stat stat;
@@ -164,14 +179,15 @@ REGISTER_FUNCTION(Serial)
     {
         .description=R"(
 Generates and returns sequential numbers starting from the previous counter value.
-This function takes a constant string argument - a series identifier.
+This function takes a constant string argument - a series identifier, and an optional starting value.
 
 The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
 )",
-        .syntax = "generateSerialID('series_identifier')",
+        .syntax = "generateSerialID('series_identifier'[, start_value])",
         .arguments{
-            {"series_identifier", "Series identifier, (a short constant String)"}
+            {"series_identifier", "Series identifier, (a short constant String)"},
+            {"start_value", "Optional starting value for the counter. Defaults to 0"}
         },
         .returned_value = {"Returns sequential numbers starting from the previous counter value."},
         .examples{
@@ -191,7 +207,15 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      5 │   5 │                        6 │
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
-                  )"}},
+                  )"},
+            {"with start value", "SELECT generateSerialID('id2', 100)", R"(
+┌─generateSerialID('id2', 100)──┐
+│                           100 │
+└───────────────────────────────┘)"},
+            {"with start value second call", "SELECT generateSerialID('id2', 100)", R"(
+┌─generateSerialID('id2', 100)──┐
+│                           101 │
+└───────────────────────────────┘)"}},
         .category = FunctionDocumentation::Category::Other
     });
 }
