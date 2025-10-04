@@ -1,0 +1,9 @@
+(Expression)
+ExpressionTransform × 4
+  (MergingAggregated)
+  Resize 1 → 4
+    SortingAggregatedTransform 4 → 1
+      MergingAggregatedBucketTransform × 4
+        Resize 1 → 4
+          GroupingAggregatedTransform 60 → 1
+            (ReadFromMerge)
