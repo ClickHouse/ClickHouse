@@ -2037,21 +2037,21 @@ void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
 
 bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
 {
-    // for (const auto & aggregate_function : aggregate_functions)
-    // {
-    //     const String & function_name = aggregate_function->getName();
-    //     if (function_name.starts_with("sum") ||
-    //         function_name.starts_with("count") ||
-    //         function_name.starts_with("any") ||
-    //         function_name.starts_with("avg") ||
-    //         function_name.starts_with("min") ||
-    //         function_name.starts_with("max"))
-    //     {
-    //         continue;
-    //     }
-    //     return true;
-    // }
-    return true;
+    for (const auto & aggregate_function : aggregate_functions)
+    {
+        const String & function_name = aggregate_function->getName();
+        if (function_name.starts_with("sum") ||
+            function_name.starts_with("count") ||
+            function_name.starts_with("any") ||
+            function_name.starts_with("avg") ||
+            function_name.starts_with("min") ||
+            function_name.starts_with("max"))
+        {
+            continue;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
