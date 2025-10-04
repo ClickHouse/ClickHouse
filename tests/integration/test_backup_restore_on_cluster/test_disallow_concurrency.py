@@ -20,7 +20,7 @@ def generate_cluster_def():
         "./_gen/cluster_for_test_disallow_concurrency.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path + ".tmp", "w") as f:
         f.write(
             """
         <clickhouse>
@@ -48,6 +48,7 @@ def generate_cluster_def():
         </clickhouse>
         """
         )
+    os.rename(path + ".tmp", path)
     return path
 
 
