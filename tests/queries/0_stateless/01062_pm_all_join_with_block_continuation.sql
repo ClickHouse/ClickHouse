@@ -21,7 +21,6 @@ SELECT count(1), uniqExact(n) FROM (
     JOIN (SELECT materialize(1) AS k, number n FROM numbers(10)) j
     USING k);
 
--- errors
 SET max_joined_block_size_rows = 0;
 
 SET query_plan_join_swap_table = 'false';
@@ -29,12 +28,11 @@ SET query_plan_join_swap_table = 'false';
 SELECT count(1) FROM (
     SELECT materialize(1) as k, n FROM numbers(10) nums
     JOIN (SELECT materialize(1) AS k, number n FROM numbers(1000000)) j
-    USING k); -- { serverError MEMORY_LIMIT_EXCEEDED }
-
+    USING k);
 SELECT count(1) FROM (
     SELECT materialize(1) as k, n FROM numbers(1000) nums
     JOIN (SELECT materialize(1) AS k, number n FROM numbers(10000)) j
-    USING k); -- { serverError MEMORY_LIMIT_EXCEEDED }
+    USING k);
 
 SELECT 'max_joined_block_size_rows = 2000';
 SET max_joined_block_size_rows = 2000;

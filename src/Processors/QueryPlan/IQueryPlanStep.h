@@ -118,6 +118,33 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    struct UnusedColumnRemovalResult
+    {
+        bool updated_anything;
+        bool removed_any_input;
+
+        static UnusedColumnRemovalResult nothingChanged() { return {false, false}; }
+        static UnusedColumnRemovalResult updatedButKeptInputs() { return {true, false}; }
+        static UnusedColumnRemovalResult removedInputs() { return {true, true}; }
+
+    };
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    /// If none of the output columns are removed, then it is preferable to keep the order
+    /// of output columns in order to avoid excessive updates of input headers in parent steps.
+    virtual UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+
+    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
+    virtual bool canRemoveColumnsFromOutput() const;
+
 protected:
     virtual void updateOutputHeader() = 0;
 
