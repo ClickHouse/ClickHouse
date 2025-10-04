@@ -363,8 +363,8 @@
             display: grid;
             place-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
+            grid-template-columns: auto auto auto 1fr auto auto auto;
+            grid-template-areas: "run hint hourglass progress-bar copy progress-text theme";
         }
 
         #run
@@ -406,6 +406,24 @@
             display: none;
             font-size: 110%;
             color: #080;
+        }
+
+        #copy_button
+        {
+            grid-area: copy;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 1rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%; /* Otherwise button element will have a lower font size. */
+        }
+
+        #copy_button:hover, #copy_button:focus
+        {
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
         }
 
         #stats
@@ -2207,6 +2225,63 @@ async function getQueryUnderCursor() {
     }
 
     return all_queries;
+}
+
+function getDataAsJson(){
+    const dataTable = document.getElementById('data-table');
+    const tableData = [];
+    if (dataTable.rows.length > 0) {
+        const tbody = dataTable.querySelector('tbody');
+        if (tbody) {
+            for (let i = 0; i < tbody.rows.length; i++) {
+                const row = tbody.rows[i];
+                const rowData = {};
+                for (let j = 1; j < row.cells.length; j++) { // Skip row number column
+                    const columnName = header[j-1].name;
+                    if (row.cells[j].textContent === "ᴺᵁᴸᴸ"){
+                        rowData[columnName] = null;
+                    }
+                    else {
+                        rowData[columnName] = row.cells[j].textContent;
+                    }
+                }
+                tableData.push(rowData);
+            }
+        }
+    }
+    return tableData;
+}
+
+
+async function copyResultsToClipboard() {
+    try {
+        const data = JSON.stringify(getDataAsJson(), null, 4);
+        let copy_button = document.getElementById('copy_button')
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            // Modern clipboard API
+            await navigator.clipboard.writeText(data);
+        } else {
+            // Fallback for older browsers and disabled browsers in HTTP
+            const textArea = document.createElement('textarea');
+            textArea.value = data;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            if (!document.execCommand('copy')) {
+                throw new Error('Copy command failed');
+            }
+            document.body.removeChild(textArea);
+        }
+        copy_button.innerText = "Copied !";
+        copy_button.style.color = "white";
+        copy_button.style.backgroundColor = "green";
+    } catch (err) {
+        copy_button.innerText = "Failed !";
+        copy_button.style.backgroundColor = "red";
+    }
 }
 
 /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
