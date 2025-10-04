@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (
     id Int,
     text String,
-    INDEX idx_text(text) TYPE text(tokenizer = 'default')
+    INDEX idx_text(text) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE=MergeTree()
 ORDER BY (id);
