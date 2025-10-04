@@ -6,14 +6,35 @@
 #include <Backups/BackupIO_Default.h>
 #include <Common/Logger.h>
 #include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 
+#include <functional>
+
 namespace DB
 {
+
+using S3BackupClientCreator = std::function<std::shared_ptr<S3::Client>(DiskPtr)>;
+
+class S3BackupClientFactory
+{
+public:
+    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk, S3BackupClientCreator creator);
+
+private:
+    mutable std::mutex clients_mutex;
+    struct ClientEntry
+    {
+        std::shared_ptr<S3::Client> backup_client;
+        std::weak_ptr<const S3::Client> disk_reported_client;
+    };
+    /// Disk name to client entry;
+    std::unordered_map<std::string, ClientEntry> clients TSA_GUARDED_BY(clients_mutex);
+};
 
 /// Represents a backup stored to AWS S3.
 class BackupReaderS3 : public BackupReaderDefault
@@ -86,6 +107,9 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+
+    S3BackupClientCreator client_creator;
+    S3BackupClientFactory client_factory;
     S3Capabilities s3_capabilities;
     BlobStorageLogWriterPtr blob_storage_log;
 };

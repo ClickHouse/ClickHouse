@@ -471,6 +471,42 @@ def test_backup_to_s3_native_copy(storage_policy):
     )
 
 
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        "policy_s3",
+        "policy_s3_other_bucket",
+        "policy_s3_plain_rewritable",
+    ],
+)
+def test_backup_to_s3_native_copy_slow_down_all_threads(storage_policy):
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    (backup_events, restore_events) = check_backup_and_restore(
+        cluster,
+        storage_policy,
+        backup_destination,
+        backup_settings={"backup_slow_all_threads_after_retryable_s3_error": True},
+    )
+    # single part upload
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
+    node = cluster.instances["node"]
+
+    disk = node.query(
+        f"SELECT disks FROM system.storage_policies WHERE policy_name='{storage_policy}'"
+    )
+    assert node.contains_in_log(
+        f"S3 client for disk '{disk}': slowing down threads on retryable errors is enabled"
+    )
+    s3_retry_attempts = node.query(
+        f"SELECT getSetting('backup_restore_s3_retry_attempts')"
+    )
+    assert node.contains_in_log(
+        f"S3 client for disk '{disk}' initialized with s3_retry_attempts: {s3_retry_attempts}"
+    )
+
+
 def test_backup_to_s3_native_copy_multipart():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()

@@ -37,7 +37,7 @@ namespace Setting
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
+    extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
 
 namespace ServerSetting
@@ -121,7 +121,7 @@ namespace
                 .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
 
             local_settings[Setting::s3_slow_all_threads_after_network_error],
-            local_settings[Setting::s3_slow_all_threads_after_retryable_error],
+            local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
@@ -186,6 +186,27 @@ namespace
     }
 }
 
+
+std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk, S3BackupClientCreator creator)
+{
+    std::lock_guard lock(clients_mutex);
+
+    auto disk_client = disk->getS3StorageClient();
+    auto [it, inserted] = clients.try_emplace(disk->getName(), ClientEntry{nullptr, disk_client});
+    if (inserted)
+        it->second.backup_client = creator(disk);
+    else
+    {
+        auto locked = it->second.disk_reported_client.lock();
+        if (locked != disk_client)
+        {
+            it->second.backup_client = creator(disk);
+            it->second.disk_reported_client = disk_client;
+        }
+    }
+
+    return it->second.backup_client;
+}
 
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
@@ -317,6 +338,22 @@ BackupWriterS3::BackupWriterS3(
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
 
+    client_creator = [this, context = context_](DiskPtr disk) -> std::shared_ptr<S3::Client>
+    {
+        auto disk_client = disk->getS3StorageClient();
+        const Settings & local_settings = context->getSettingsRef();
+        auto config = disk_client->getClientConfiguration();
+        config.retry_strategy = S3::PocoHTTPClientConfiguration::RetryStrategy{
+            .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
+            .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
+            .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
+
+        config.s3_slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
+        LOG_TRACE(log, "Creating client with backup-specific configuration for '{}' disk", disk->getName());
+        return disk_client->cloneWithConfigurationOverride(config);
+    };
+
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -338,8 +375,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
+            /// Use storage client with overridden retry strategy settings.
+            auto src_client = client_factory.getOrCreate(src_disk, client_creator);
             copyS3File(
-                src_disk->getS3StorageClient(),
+                src_client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
