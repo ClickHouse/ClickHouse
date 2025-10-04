@@ -92,6 +92,10 @@ public:
 
     virtual size_t getDefaultVersion() const { return 0; }
 
+    /// Some aggregate functions have more efficient implementation for merging final states.
+    /// See AggregateFunctionAny for example.
+    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
+
     ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */
