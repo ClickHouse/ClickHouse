@@ -1679,6 +1679,7 @@ private:
     std::unordered_set<String> allowed_disks;
     /// Throttling
 public:
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
