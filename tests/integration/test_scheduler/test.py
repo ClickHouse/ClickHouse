@@ -54,21 +54,22 @@ def start_cluster():
 
 @pytest.fixture(scope="function", autouse=True)
 def set_default_configs():
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cp /etc/clickhouse-server/config.d/resources.xml.default /etc/clickhouse-server/config.d/resources.xml",
-        ]
-    )
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cp /etc/clickhouse-server/config.d/workloads.xml.default /etc/clickhouse-server/config.d/workloads.xml",
-        ]
-    )
-    node.query("system reload config")
+    for n in (node, node2):
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/config.d/resources.xml.default /etc/clickhouse-server/config.d/resources.xml",
+            ]
+        )
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/config.d/workloads.xml.default /etc/clickhouse-server/config.d/workloads.xml",
+            ]
+        )
+        n.query("system reload config")
     yield
 
 
