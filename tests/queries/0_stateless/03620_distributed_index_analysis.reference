@@ -1,0 +1,7 @@
+-- { echo }
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings distributed_index_analysis=0;
+['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0','all_8_8_0','all_9_9_0']	49999995000000
+select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0','all_8_8_0','all_9_9_0']	49999995000000
+distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas=0, DistributedIndexAnalysisFailedReplicas>0=0
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas=6, DistributedIndexAnalysisFailedReplicas>0=0
