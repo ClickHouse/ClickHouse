@@ -597,6 +597,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
     const std::string & config_prefix,
     const DB::Settings & settings)
 {
+#if USE_AZURE_BLOB_STORAGE
     std::lock_guard lock(mutex);
     azure_settings.clear();
     if (!config.has(config_prefix))
@@ -635,6 +636,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                 std::move(*request_settings));
 
     }
+#endif
 }
 
 std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(
@@ -654,5 +656,6 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
 
     return {};
 }
+
 
 }
