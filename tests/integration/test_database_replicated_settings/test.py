@@ -186,3 +186,15 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_create_database_replicated_with_default_args(started_cluster):
+    db_name = "test_" + get_random_string()
+    assert "within an ON CLUSTER query" in node1.query_and_get_error(f"CREATE DATABASE {db_name} Engine=Replicated")
+
+    node1.query(f"CREATE DATABASE {db_name} ON CLUSTER default Engine=Replicated")
+    node2.query(f"CREATE DATABASE {db_name}_2 ON CLUSTER default Engine=Replicated")
+
+    resp1 = node1.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database LIKE '{db_name}%' ORDER BY ALL")
+    resp2 = node2.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database LIKE '{db_name}%' ORDER BY ALL")
+
+    assert resp1 == resp2

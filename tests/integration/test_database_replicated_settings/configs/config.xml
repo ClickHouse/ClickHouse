@@ -23,4 +23,21 @@
             <database>postgres_database</database>
         </postgres2>
     </named_collections>
+    <distributed_ddl>
+        <path>/clickhouse/queue/</path>
+    </distributed_ddl>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
 </clickhouse>
