@@ -187,12 +187,11 @@ void optimizeTreeSecondPass(
         if (optimization_settings.direct_read_from_text_index)
             optimizeDirectReadFromTextIndex(stack, nodes);
 
-        /// NOTE: optimizePrewhere can modify the stack.
+        auto & frame = stack.back();
+
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(stack, nodes);
-
-        auto & frame = stack.back();
+            optimizePrewhere(*frame.node);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
@@ -228,11 +227,10 @@ void optimizeTreeSecondPass(
         stack.push_back({.node = &root});
         while (!stack.empty())
         {
-            if (optimization_settings.optimize_prewhere)
-                optimizePrewhere(stack, nodes);
-
-            /// NOTE: optimizePrewhere can modify the stack.
             auto & frame = stack.back();
+
+            if (optimization_settings.optimize_prewhere)
+                optimizePrewhere(*frame.node);
 
             if (frame.next_child == 0)
             {
