@@ -89,10 +89,23 @@ class SparkColumn:
         _column_name: str,
         _spark_type: DataType,
         _nullable: bool,
+        _generated: bool,
     ):
         self.column_name = _column_name
         self.spark_type = _spark_type
         self.nullable = _nullable
+        self.generated = _generated
+
+    def _flat_column(
+        self, res: dict[str, DataType], next_path: str, next_type: DataType
+    ):
+        res[next_path] = next_type
+        if isinstance(next_type, StructType):
+            for f in next_type.fields:
+                self._flat_column(res, f"{next_path}.`{f.name}`", f.dataType)
+
+    def flat_column(self, res: dict[str, DataType]):
+        self._flat_column(res, self.column_name, self.spark_type)
 
 
 class SparkTable:
@@ -127,16 +140,8 @@ class SparkTable:
     def get_clickhouse_path(self) -> str:
         return f"{self.database_name}.{self.table_name}"
 
-    def _flat_columns(
-        self, res: dict[str, DataType], next_path: str, next_type: DataType
-    ):
-        res[next_path] = next_type
-        if isinstance(next_type, StructType):
-            for f in next_type.fields:
-                self._flat_columns(res, f"{next_path}.`{f.name}`", f.dataType)
-
     def flat_columns(self) -> dict[str, DataType]:
         res = {}
-        for k, val in self.columns.items():
-            self._flat_columns(res, k, val.spark_type)
+        for _, val in self.columns.items():
+            val.flat_column(res)
         return res

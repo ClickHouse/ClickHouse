@@ -143,7 +143,7 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
-    else if (tp && tp->getTypeClass() == SQLTypeClass::QBIT)
+    else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::QBIT)
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
         FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
@@ -154,6 +154,18 @@ void collectColumnPaths(
         for (const auto & entry : qentries.at(fp->size))
         {
             next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
+    }
+    else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::STRING)
+    {
+        StringType * st = dynamic_cast<StringType *>(tp);
+
+        if (!st->precision.has_value())
+        {
+            /// String size generated column
+            next.path.emplace_back(ColumnPathChainEntry("size", &(*size_tp)));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -210,7 +222,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
     if (allow_internal_cols && rg.nextSmallNumber() < 3)
@@ -317,7 +329,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
     if (this->levels.find(this->current_level) == this->levels.end())
@@ -741,7 +753,10 @@ void StatementGenerator::colRefOrExpression(
         this->levels.clear();
         this->ctes.clear();
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        this->levels[this->current_level].rels.push_back(rel);
+        if (!rel.cols.empty())
+        {
+            this->levels[this->current_level].rels.push_back(rel);
+        }
         generateTableExpression(rg, false, expr);
         this->levels.clear();
         this->ctes.clear();
@@ -796,7 +811,10 @@ void StatementGenerator::generateTableKey(
             {
                 TableKeyExpr * tke = tkey->add_exprs();
 
-                this->levels[this->current_level].rels.push_back(rel);
+                if (!rel.cols.empty())
+                {
+                    this->levels[this->current_level].rels.push_back(rel);
+                }
                 generateTableExpression(rg, false, tke->mutable_expr());
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
@@ -1178,7 +1196,7 @@ void StatementGenerator::generateEngineDetails(
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!b.is_deterministic && !systemTables.empty());
         const uint32_t prob_space = dist_table + dist_view + dist_dictionary + dist_system_table;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
@@ -1925,7 +1943,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(ArrowFlight);
     }
-    if (has_tables || has_views || has_dictionaries || !systemTables.empty())
+    if (has_tables || has_views || has_dictionaries || (!b.is_deterministic && !systemTables.empty()))
     {
         if ((fc.engine_mask & allow_buffer) != 0)
         {
@@ -2322,7 +2340,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
     const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
     const uint32_t null_src = 2;
