@@ -131,6 +131,16 @@ struct RowRefList : RowRef
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
     {
+        /// init the first element.
+        /// When you use the RowRefList() constructor and then insert data using the insert interface,
+        /// make sure to prevent the first element from being null to avoid a crash.
+        if (rows == 0)
+        {
+            columns = row_ref.columns;
+            row_num = row_ref.row_num;
+            ++rows;
+            return;
+        }
         if (!next)
         {
             next = pool.alloc<Batch>();
