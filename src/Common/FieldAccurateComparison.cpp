@@ -154,6 +154,11 @@ public:
     template <typename T, typename U>
     bool operator()(const T & l, const U & r) const
     {
+        if (l != l || r != r)
+        {
+            /* We have a NaN, all comparisons must return false. */
+            return false;
+        }
         auto less_cmp = FieldVisitorAccurateLess();
         return !less_cmp(r, l);
     }
