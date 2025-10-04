@@ -49,7 +49,7 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const UserInfo & user,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &,
         bool is_startup = false) override;
 
@@ -60,7 +60,7 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
-        const UserID & user_id,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &) override;
 
     CollectStatus collectCandidatesForEviction(
@@ -108,7 +108,7 @@ private:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
-        const UserID & user_id,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock & lock);
 
     LRUFileCachePriority::LRUIterator addOrThrow(

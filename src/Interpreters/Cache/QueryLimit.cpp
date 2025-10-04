@@ -71,10 +71,10 @@ void FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const FileCache::UserInfo & user,
+    const FileCache::OriginInfo & origin,
     const CachePriorityGuard::Lock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, user, lock);
+    auto it = getPriority().add(key_metadata, offset, size, origin, lock);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
