@@ -2186,6 +2186,9 @@ try
                 global_context->getResourceManager()->updateConfiguration(*config);
             }
 
+            /// Load WORKLOADs and RESOURCEs.
+            global_context->getWorkloadEntityStorage().loadEntities(*config);
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -2630,8 +2633,6 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-        /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

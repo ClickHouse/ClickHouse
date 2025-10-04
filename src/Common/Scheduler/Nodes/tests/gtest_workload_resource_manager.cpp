@@ -66,7 +66,12 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    void loadEntities() override {}
+    std::string_view getName() const override { return "test"; }
+
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
+    {
+        WorkloadEntityStorageBase::loadEntities(config);
+    }
 
     void executeQuery(const String & query)
     {
