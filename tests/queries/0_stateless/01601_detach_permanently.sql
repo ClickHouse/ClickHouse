@@ -137,8 +137,6 @@ DETACH table test1601_detach_permanently_ordinary.test_name_reuse PERMANENTLY;
 SELECT 'DROP database - Directory not empty error, but database detached';
 DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError DATABASE_NOT_EMPTY }
 
-ATTACH DATABASE test1601_detach_permanently_ordinary;
-
 ATTACH TABLE test1601_detach_permanently_ordinary.test_name_reuse;
 DROP TABLE test1601_detach_permanently_ordinary.test_name_reuse;
 
@@ -210,8 +208,6 @@ DETACH table test1601_detach_permanently_lazy.test_name_reuse PERMANENTLY;
 
 SELECT 'DROP database - Directory not empty error, but database deteched';
 DROP DATABASE test1601_detach_permanently_lazy; -- { serverError DATABASE_NOT_EMPTY }
-
-ATTACH DATABASE test1601_detach_permanently_lazy;
 
 ATTACH TABLE test1601_detach_permanently_lazy.test_name_reuse;
 DROP TABLE test1601_detach_permanently_lazy.test_name_reuse;

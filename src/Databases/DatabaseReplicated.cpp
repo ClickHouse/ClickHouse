@@ -104,11 +104,13 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ASYNC_LOAD_CANCELED;
-}
-
+    extern const int KEEPER_EXCEPTION;
+    }
 namespace FailPoints
 {
     extern const char database_replicated_startup_pause[];
+    extern const char database_replicated_drop_before_removing_keeper_failed[];
+    extern const char database_replicated_drop_after_removing_keeper_failed[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1920,6 +1922,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     DatabaseAtomic::drop(context_);
 
+    fiu_do_on(FailPoints::database_replicated_drop_before_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when before removing keeper path from '{}'", replica_path);
+    });
+
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
     if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
@@ -1927,6 +1934,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
+
+    fiu_do_on(FailPoints::database_replicated_drop_after_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when after removing keeper path from '{}'", replica_path);
+    });
 }
 
 void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
