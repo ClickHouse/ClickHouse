@@ -167,6 +167,7 @@ private:
             return std::nullopt;
 
         function_node.type = ActionsDAG::ActionType::INPUT;
+        function_node.result_type = std::make_shared<DataTypeUInt8>();
         function_node.result_name = virtual_column_name.value();
         function_node.function.reset();
         function_node.function_base.reset();
