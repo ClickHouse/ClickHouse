@@ -15,7 +15,7 @@ SELECT 'Test direct read optimization from text log';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, text String, INDEX idx(text) TYPE text(tokenizer = 'default') GRANULARITY 1)
+CREATE TABLE tab(k UInt64, text String, INDEX idx(text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
             ENGINE = MergeTree() ORDER BY k
             SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
