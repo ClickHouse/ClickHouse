@@ -57,7 +57,7 @@ void OwnSplitChannel::log(Poco::Message && msg)
     if (const auto & masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
-        auto matches = masker->wipeSensitiveData(message_text);
+        auto matches = masker->wipeSensitiveDataThrow(message_text);
         if (matches > 0)
         {
             msg.setText(message_text);
@@ -296,7 +296,7 @@ public:
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
             auto message_text = msg.getText();
-            auto matches = masker->wipeSensitiveData(message_text);
+            auto matches = masker->wipeSensitiveDataThrow(message_text);
             if (matches > 0)
                 msg.setText(message_text);
         }
