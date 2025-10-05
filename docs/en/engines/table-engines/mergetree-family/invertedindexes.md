@@ -27,8 +27,8 @@ To create a text index, first enable the corresponding experimental setting:
 
 ```sql
 SET allow_experimental_full_text_index = true;
-```
 
+```
 A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) map functions) column using the following syntax:
 
 ```sql
@@ -38,7 +38,7 @@ CREATE TABLE tab
     `str` String,
     INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
-                                tokenizer = splitByNonAlpha|splitByString|ngrams|array
+                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
                                 -- Optional parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -52,10 +52,24 @@ ORDER BY key
 
 The `tokenizer` argument specifies the tokenizer:
 
-- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters.
-- `splitByString` splits strings along certain user-defined separator strings.
-- `ngrams` splits strings into equally large n-grams.
-- `array` performs no tokenization, i.e. every row value is a token.
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitbynonalpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitbystring)).
+  The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
+  Note that each string can consist of multiple characters (`', '` in the example).
+  The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
+- `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
+  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+  The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
+- `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
+
+:::note
+The `splitByString` tokenizer applies the split separators left-to-right.
+This can create ambiguities.
+For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
+In the most cases, you want that matching prefers longer separators first.
+This can generally be done by passing the separator strings in order of descending length.
+If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+:::
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
 
@@ -72,25 +86,6 @@ returns
 | ['abc','bc ','c d',' de','def'] |
 +---------------------------------+
 ```
-
-If you chose the `ngrams` tokenizer, you can set the ngram length using the (optional) parameter to the `ngrams` function.
-The parameter expects a single integer, for example, `tokenizer = ngrams(3)`.
-If ngram size is not specified, the default ngram size is 3.
-The smallest and largest possible ngram size are 2 and 8.
-
-If you chose the `splitByString` tokenizer, you can set the separators using the (optional) parameter to the `splitByString` function.
-The parameter expects a list of strings, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
-Note that each string can consist of multiple characters (`', '` in the example).
-If parameter separators is not specified, a single whitespace `[' ']` is used by default.
-
-:::note
-The `splitByString` tokenizer applies the split separators left-to-right.
-This can create ambiguities.
-For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
-In the most cases, you want that matching prefers longer separators first.
-This can generally be done by passing the separator strings in order of descending length.
-If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
-:::
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
@@ -117,7 +112,7 @@ Text indexes can be added to or removed from a column after the table has been c
 
 ```sql
 ALTER TABLE tab DROP INDEX text_idx;
-ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = splitByNonAlpha);
 ```
 
 ## Using a Text Index {#using-a-text-index}
@@ -294,7 +289,7 @@ ORDER BY (post_id);
 Without a text index, finding posts with a specific keyword (e.g. `clickhouse`) requires scanning all entries:
 
 ```sql
-SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post 
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post
 ```
 
 As the platform grows, this becomes increasingly slow because the query must examine every keywords array in every row.
@@ -302,7 +297,7 @@ As the platform grows, this becomes increasingly slow because the query must exa
 To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
 
 ```sql
-ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
 ```
 
 :::note
@@ -351,13 +346,13 @@ The solution is creating a text index for the [Map](/sql-reference/data-types/ma
 Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'array');
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
 ```
 
 Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'array');
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
 ```
 
 :::note

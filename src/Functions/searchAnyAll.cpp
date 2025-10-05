@@ -357,7 +357,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
 )
 ENGINE = MergeTree
 ORDER BY id;
