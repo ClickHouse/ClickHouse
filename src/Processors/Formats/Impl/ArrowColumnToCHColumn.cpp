@@ -876,6 +876,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
+    bool make_nullable_if_low_cardinality,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
@@ -1259,7 +1260,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::DICTIONARY:
         {
             auto & dict_info = dictionary_infos[column_name];
-            const auto is_lc_nullable = arrow_column->null_count() > 0 || (type_hint && type_hint->isLowCardinalityNullable());
 
             /// Load dictionary values only once and reuse it.
             if (!dict_info.values)
@@ -1297,10 +1297,20 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     }
                 }
 
-                auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_column.type) : dict_column.type);
+                auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_column.type) : dict_column.type);
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + make_nullable_if_low_cardinality;
+                if (tmp_dict_column->size() != expected_dictionary_size)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Expected Dictionary size {}, real Dictionary size is {}. The discrepancy probably caused by duplicated values",
+                        expected_dictionary_size,
+                        tmp_dict_column->size());
+                }
+
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
                 dict_info.dictionary_size = arrow_dict_column->length();
@@ -1314,9 +1324,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
+            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, make_nullable_if_low_cardinality);
             auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
-            auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
+            auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -1381,7 +1391,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
     const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && !geo_metadata && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1400,6 +1410,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
+            /*make_nullable_if_low_cardinality*/ false,
             geo_metadata,
             settings,
             arrow_field,
@@ -1422,6 +1433,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         dictionary_infos,
         type_hint,
         is_map_nested_column,
+        /*make_nullable_if_low_cardinality*/ read_as_nullable_column,
         geo_metadata,
         settings,
         arrow_field,
@@ -1441,9 +1453,9 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
+    /// default_memory_pool() uses posix_memalign which is intercepted and counted in MemoryTracker.
+    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;

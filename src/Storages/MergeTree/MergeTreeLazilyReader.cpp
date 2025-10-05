@@ -263,11 +263,10 @@ void MergeTreeLazilyReader::transformLazyColumns(
     const size_t rows_size = row_num_column->size();
 
     ReadSettings read_settings;
-    read_settings.direct_io_threshold = 1;
     MergeTreeReaderSettings reader_settings =
     {
         .read_settings = read_settings,
-        .save_marks_in_cache = false,
+        .save_marks_in_cache = true,
     };
 
     MutableColumns lazily_read_columns;

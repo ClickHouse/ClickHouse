@@ -151,17 +151,16 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        if (const auto & row_level_filter = reading->getRowLevelFilter())
+        {
+            appendExpression(row_level_filter->actions);
+            if (const auto * filter_expression = findInOutputs(*dag, row_level_filter->column_name, row_level_filter->do_remove_column))
+                filter_nodes.push_back(filter_expression);
+            else
+                return false;
+        }
         if (const auto & prewhere_info = reading->getPrewhereInfo())
         {
-            if (prewhere_info->row_level_filter)
-            {
-                appendExpression(*prewhere_info->row_level_filter);
-                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
-                    filter_nodes.push_back(filter_expression);
-                else
-                    return false;
-            }
-
             appendExpression(prewhere_info->prewhere_actions);
             if (const auto * filter_expression
                 = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))

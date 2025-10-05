@@ -1513,7 +1513,40 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
+
+See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
+)", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
+[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
+
+Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    INDEX idx_a a TYPE minmax,
+    INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
+
+ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
+
+SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
+```
 )", 0) \
     DECLARE(Bool, text_index_use_bloom_filter, true, R"(
 For testing purposes, enables or disables usage of bloom filter in text index.
@@ -4264,6 +4297,9 @@ Ignore MVs with dropped target table during pushing to views
     DECLARE(Bool, allow_materialized_view_with_bad_select, false, R"(
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
 )", 0) \
+    DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
+If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
+)", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
 Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
@@ -5086,6 +5122,10 @@ Possible values:
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
+    DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
+Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
+only when col is of String or FixedString type.
+)", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
@@ -5567,7 +5607,10 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan.", 0) \
+    DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
+Use logical join step in query plan.
+Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
+)", 0, query_plan_use_logical_join_step) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
@@ -6391,6 +6434,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
@@ -6901,10 +6947,12 @@ Possible values:
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
-Enable jemalloc profiler.
-    )", 0) \
+Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
+Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
+Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
+See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
-Collect jemalloc profile samples in trace log.
+Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
@@ -7107,6 +7155,9 @@ Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_run
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(Bool, rewrite_in_to_join, false, R"(
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
