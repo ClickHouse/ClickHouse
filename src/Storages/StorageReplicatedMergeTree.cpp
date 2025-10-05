@@ -90,9 +90,11 @@
 
 #include <Planner/Utils.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 #include <IO/Expect404ResponseScope.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -4550,18 +4552,24 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        if (broken_part_info == part->info)
+        String prefix;
+
+        const bool part_info_equal_broken = broken_part_info == part->info;
+        if (part_info_equal_broken)
         {
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
+            prefix = "broken";
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
+            prefix = "covered-by-broken";
         }
+
+        part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
+
         detached_parts.push_back(part->name);
     }
     LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
@@ -4642,8 +4650,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         log_entry->new_part_name = part_name;
 
         ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "queue/queue-", log_entry->toString(),
-            zkutil::CreateMode::PersistentSequential));
+            fs::path(replica_path) / "queue/queue-", log_entry->toString(), zkutil::CreateMode::PersistentSequential));
 
         Coordination::Responses results;
         auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
@@ -4667,7 +4674,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         return;
     }
 }
-
 
 void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
