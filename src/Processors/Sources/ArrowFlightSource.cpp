@@ -1,18 +1,10 @@
 #include <Processors/Sources/ArrowFlightSource.h>
 
 #if USE_ARROWFLIGHT
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Processors/Chunk.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
-#include <arrow/array.h>
-#include <base/range.h>
-#include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
+#include <arrow/table.h>
+
 
 namespace DB
 {

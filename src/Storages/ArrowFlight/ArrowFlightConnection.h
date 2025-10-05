@@ -4,6 +4,8 @@
 
 #if USE_ARROWFLIGHT
 #include <Storages/StorageArrowFlight.h>
+#include <arrow/flight/client.h>
+
 
 namespace DB
 {

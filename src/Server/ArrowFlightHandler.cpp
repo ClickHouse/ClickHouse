@@ -1,62 +1,31 @@
 #include <Server/ArrowFlightHandler.h>
 
 #if USE_ARROWFLIGHT
-#include <memory>
-#include <arrow/compute/api.h>
-#include <arrow/flight/api.h>
-#include <arrow/flight/types.h>
-#include <arrow/ipc/api.h>
-#include <arrow/memory_pool.h>
-#include <arrow/result.h>
-#include <arrow/status.h>
-#include <arrow/table.h>
-#include <arrow/util/macros.h>
 
-#include <fstream>
-#include <sstream>
-#include <Access/Credentials.h>
-#include <Core/Block.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
+#include <Common/Base64.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ParserInsertQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
-#include <Processors/ISource.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/ArrowFlightSource.h>
-#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
-#include <Storages/IStorage.h>
-#include <arrow/flight/server.h>
-#include <arrow/flight/server_middleware.h>
+#include <base/EnumReflection.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/Base64.h>
-#include <Common/Exception.h>
-#include <Common/SettingsChanges.h>
-#include <Common/logger_useful.h>
-
-#include <Common/quoteString.h>
+#include <arrow/flight/server_middleware.h>
 
 
 namespace DB
@@ -233,7 +202,7 @@ namespace
                 return cmd;
             }
             default:
-                return arrow::Status::TypeError("Flight descriptor has unknown type ", toString(descriptor.type));
+                return arrow::Status::TypeError("Flight descriptor has unknown type ", magic_enum::enum_name(descriptor.type));
         }
     }
 

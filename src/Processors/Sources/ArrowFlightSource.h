@@ -3,10 +3,9 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <DataTypes/DataTypeFactory.h>
 #include <Processors/ISource.h>
-#include <arrow/flight/api.h>
-#include <arrow/table.h>
+#include <arrow/flight/types.h>
+
 
 namespace DB
 {

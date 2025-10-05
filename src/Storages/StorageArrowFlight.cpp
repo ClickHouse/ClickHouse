@@ -1,42 +1,20 @@
 #include <Storages/StorageArrowFlight.h>
 
 #if USE_ARROWFLIGHT
-#include <sstream>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/SortNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Utils.h>
-#include <Core/Names.h>
-#include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
+#include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <arrow/array.h>
-#include <arrow/buffer.h>
-#include <arrow/builder.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <arrow/flight/client.h>
-#include <arrow/record_batch.h>
-#include <arrow/type.h>
-#include <Common/logger_useful.h>
-#include <Common/parseAddress.h>
-#include <boost/algorithm/string/predicate.hpp>
+
 
 const int ARROWFLIGHT_DEFAULT_PORT = 8815;
 

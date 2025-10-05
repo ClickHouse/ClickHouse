@@ -3,34 +3,10 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <atomic>
-#include <memory>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <Interpreters/Session.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Server/GRPCServer.h>
-#include <Server/IServer.h>
-#include <Server/TCPServer.h>
-#include <Server/TCPServerConnectionFactory.h>
-#include <arrow/array.h>
-#include <arrow/buffer.h>
-#include <arrow/builder.h>
-#include <arrow/flight/client.h>
-#include <arrow/flight/server.h>
-#include <arrow/record_batch.h>
-#include <arrow/type.h>
-#include <base/scope_guard.h>
-#include <pcg_random.hpp>
-#include <Common/CurrentThread.h>
-#include <Common/config_version.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Server/GRPCServer.h>
+#include <arrow/flight/server.h>
+
 
 namespace DB
 {
