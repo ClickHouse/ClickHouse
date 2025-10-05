@@ -712,8 +712,8 @@ if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
-if (TARGET ch_contrib::delta_kernel_rs)
-    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+if (TARGET ch_rust::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
 if (TARGET ch_contrib::sha3iuf)
@@ -763,8 +763,8 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
 
-    if (TARGET ch_contrib::delta_kernel_rs)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
+    if (TARGET ch_rust::delta_kernel_rs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
     endif ()
 
     if (TARGET ch_contrib::azure_sdk)
