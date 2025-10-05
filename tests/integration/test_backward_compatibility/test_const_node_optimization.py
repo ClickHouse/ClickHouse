@@ -46,3 +46,10 @@ def test_const_node_optimization_group_by(start_cluster):
     select count() from (select sum(number) from remote('node{1,2}', numbers(1)) group by [number] || arrayResize([1], 100000));
         """
     ) == "1\n"
+
+def test_const_node_optimization_group_by_from_old(start_cluster):
+    assert old_node.query(
+        """
+    select count() from (select sum(number) from remote('node{1,2}', numbers(1)) group by [number] || arrayResize([1], 100000));
+        """
+    ) == "1\n"

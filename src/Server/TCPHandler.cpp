@@ -2243,6 +2243,9 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
 
+    if (client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CONST_NODE_OPTIMIZATION)
+        passed_settings.set("optimize_const_name_size", -1);
+
     auto settings_changes = passed_settings.changes();
     query_kind = state->query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
