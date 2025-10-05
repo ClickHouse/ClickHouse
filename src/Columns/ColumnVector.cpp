@@ -882,7 +882,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
-    if (0 == size)
+    if (0 == size || 0 == offsets.back())
         return this->create();
 
     auto res = this->create(offsets.back());
