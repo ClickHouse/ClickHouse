@@ -15,29 +15,28 @@ class ArrowFlightConnection;
 class ArrowFlightSource : public ISource
 {
 public:
-    ArrowFlightSource(
-        std::shared_ptr<ArrowFlightConnection> connection_,
-        const String & dataset_,
-        const Block & sample_block_,
-        const std::vector<std::string> & column_names_,
-        UInt64 max_block_size_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_);
+    ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_);
 
-    ~ArrowFlightSource() override = default;
-
+    ~ArrowFlightSource() override;
     String getName() const override { return "ArrowFlightSource"; }
 
 protected:
     Chunk generate() override;
 
 private:
+    void initializeEndpoints(const String & dataset_name_);
+    bool nextEndpoint();
+    void initializeSchema();
+
     std::shared_ptr<ArrowFlightConnection> connection;
 
     Block sample_block;
-    std::unique_ptr<arrow::flight::FlightStreamReader> stream_reader;
+    std::vector<arrow::flight::FlightEndpoint> endpoints;
+    size_t current_endpoint = 0;
+    std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;
-    std::vector<std::string> column_names;
-
-    void initializeStream(const String & dataset_);
 };
 
 }

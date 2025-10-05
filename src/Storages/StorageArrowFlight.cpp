@@ -177,7 +177,7 @@ Pipe StorageArrowFlight::read(
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum,
-    size_t max_block_size,
+    size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
@@ -189,7 +189,7 @@ Pipe StorageArrowFlight::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, column_names, max_block_size));
+    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block));
 }
 
 class ArrowFlightSink : public SinkToStorage
