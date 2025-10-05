@@ -418,11 +418,11 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , object_storage(object_storage_)
 {
     {
-        auto tmp_path_from = path_to.string() + ".move_from." + getRandomASCIIString(16);
+        auto tmp_path_from = path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_from";
         tmp_remote_path_from = object_storage->generateObjectKeyForPath(tmp_path_from, std::nullopt).serialize();
     }
     {
-        auto tmp_path_to = path_to.string() + ".move_to." + getRandomASCIIString(16);
+        auto tmp_path_to = path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_to";
         tmp_remote_path_to = object_storage->generateObjectKeyForPath(tmp_path_to, std::nullopt).serialize();
     }
 }
