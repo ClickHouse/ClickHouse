@@ -247,6 +247,27 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 }
 
 
+StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t array_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    char * pos = arena.allocContinue(sizeof(array_size), begin);
+    memcpy(pos, &array_size, sizeof(array_size));
+
+    StringRef res(pos, sizeof(array_size));
+
+    for (size_t i = 0; i < array_size; ++i)
+    {
+        auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
+
 char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t array_size = sizeAt(n);
@@ -286,6 +307,18 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
+
+    getOffsets().push_back(getOffsets().back() + array_size);
+    return pos;
+}
+
+const char * ColumnArray::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().deserializeAndInsertAggregationStateValueFromArena(pos);
 
     getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
@@ -1391,6 +1424,11 @@ void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_c
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
     data->takeDynamicStructureFromSourceColumns(nested_source_columns);
+}
+
+void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    data->takeDynamicStructureFromColumn(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 }
 
 }

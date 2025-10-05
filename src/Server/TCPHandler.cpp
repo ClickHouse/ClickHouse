@@ -159,6 +159,7 @@ namespace DB::ErrorCodes
     extern const int ABORTED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int LOGICAL_ERROR;
@@ -2442,6 +2443,16 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 {
     std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
     std::optional<int> level;
+
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
     if (method == "ZSTD")
         level = query_settings[Setting::network_zstd_compression_level];
 

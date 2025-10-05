@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
+#include <base/scope_guard.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -972,7 +973,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 current_mark = stream.current_mark;
             }
 
-            if (merge_tree_reader->canSkipMark(currentMark()))
+            if (merge_tree_reader->canSkipMark(currentMark(), stream.stream.currentTaskLastMark()))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
                 stream.toNextMark();
@@ -1414,7 +1415,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
 
-    if (!prewhere_info)
+    if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;
 
     const auto & header = read_sample_block;

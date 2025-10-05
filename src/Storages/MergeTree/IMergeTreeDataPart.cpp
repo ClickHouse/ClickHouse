@@ -22,7 +22,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -42,9 +41,11 @@
 #include <Common/thread_local_rng.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/DimensionalMetrics.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
+#include <atomic>
 #include <exception>
 #include <optional>
 #include <string_view>
@@ -72,6 +73,11 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexBytes;
 }
 
+namespace DimensionalMetrics
+{
+    extern MetricFamily & MergeTreeParts;
+}
+
 namespace DB
 {
 
@@ -87,6 +93,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -391,6 +398,10 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
+    DimensionalMetrics::add(
+        DimensionalMetrics::MergeTreeParts,
+        {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
+
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -400,6 +411,10 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 {
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
+
+    DimensionalMetrics::sub(
+        DimensionalMetrics::MergeTreeParts,
+        {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
@@ -503,8 +518,16 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 {
     decrementStateMetric(state);
+    DimensionalMetrics::sub(
+        DimensionalMetrics::MergeTreeParts,
+        {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
+
     state.store(new_state);
+
     incrementStateMetric(state);
+    DimensionalMetrics::add(
+        DimensionalMetrics::MergeTreeParts,
+        {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 }
 
 std::string_view IMergeTreeDataPart::stateString(MergeTreeDataPartState state)
@@ -568,7 +591,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
         auto it = serialization_infos.find(column.name);
         auto serialization = it == serialization_infos.end()
-            ? IDataType::getSerialization(column)
+            ? IDataType::getSerialization(column, serialization_infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
 
         serializations.emplace(column.name, serialization);
@@ -1278,6 +1301,9 @@ void IMergeTreeDataPart::writeMetadataVersion(ContextPtr context, int32_t metada
 {
     getDataPartStorage().beginTransaction();
     {
+        // We need to remove the old file first to overwrite it only, not all its hard links.
+        getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
+
         auto out_metadata = getDataPartStorage().writeFile(METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         writeText(metadata_version_, *out_metadata);
         out_metadata->finalize();
@@ -1716,15 +1742,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
-    SerializationInfo::Settings settings =
-    {
-        .ratio_of_defaults_for_sparse = (*storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false,
-    };
-
-    SerializationInfoByName infos;
+    SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
+        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
@@ -2069,8 +2089,6 @@ void IMergeTreeDataPart::remove()
     if (isProjectionPart() && !is_temp)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}", name, parent_part_name);
 
-    GinIndexStoreFactory::instance().remove(getDataPartStoragePtr()->getRelativePath());
-
     std::list<IDataPartStorage::ProjectionChecksums> projection_checksums;
 
     for (const auto & [p_name, projection_part] : projection_parts)
@@ -2386,29 +2404,33 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        ColumnSize index_size;
-
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = index_ptr->getFileName();
         auto index_name_escaped = escapeForFileName(index_name);
+        auto index_substreams = index_ptr->getSubstreams();
 
-        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
-
-        /// If part does not contain index
-        auto bin_checksum = checksums.files.find(index_file_name);
-        if (bin_checksum != checksums.files.end())
+        for (const auto & index_substream : index_substreams)
         {
-            index_size.data_compressed = bin_checksum->second.file_size;
-            index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            ColumnSize substream_size;
+
+            auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
+            auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
+
+            /// If part does not contain index
+            auto bin_checksum = checksums.files.find(index_file_name);
+            if (bin_checksum != checksums.files.end())
+            {
+                substream_size.data_compressed = bin_checksum->second.file_size;
+                substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            }
+
+            auto mrk_checksum = checksums.files.find(index_marks_file_name);
+            if (mrk_checksum != checksums.files.end())
+                substream_size.marks = mrk_checksum->second.file_size;
+
+            total_secondary_indices_size.add(substream_size);
+            secondary_index_sizes[index_description.name].add(substream_size);
         }
-
-        auto mrk_checksum = checksums.files.find(index_marks_file_name);
-        if (mrk_checksum != checksums.files.end())
-            index_size.marks = mrk_checksum->second.file_size;
-
-        total_secondary_indices_size.add(index_size);
-        secondary_index_sizes[index_description.name] = index_size;
     }
 }
 
@@ -2738,6 +2760,11 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
         return res;
     }
     return {};
+}
+
+String IMergeTreeDataPart::stateToString() const
+{
+    return String(magic_enum::enum_name<MergeTreeDataPartState>(state.load(std::memory_order_relaxed)));
 }
 
 }

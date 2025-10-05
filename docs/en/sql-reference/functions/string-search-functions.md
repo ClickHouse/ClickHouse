@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Searching in Strings'
 sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
+doc_type: 'reference'
 ---
 
 # Functions for Searching in Strings
@@ -780,7 +781,7 @@ Column `input` must have a [text index][../../engines/table-engines/mergetree-fa
 The `input` string is tokenized by the tokenizer from the index definition.
 
 Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+For example, if you like to search for `ClickHouse` with index `tokenizer = ngrams(5)`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
@@ -797,7 +798,7 @@ Query:
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -818,7 +819,7 @@ Result:
 Query:
 
 ```sql
-SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 Result:
@@ -853,7 +854,7 @@ Column `input` must have a [text index][../../engines/table-engines/mergetree-fa
 The `input` string is tokenized by the tokenizer from the index definition.
 
 Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+For example, if you like to search for `ClickHouse` with index `tokenizer = ngrams(5)`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
@@ -870,7 +871,7 @@ Query:
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -891,7 +892,7 @@ Result:
 Query:
 
 ```sql
-SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 Result:
@@ -1272,8 +1273,6 @@ Result:
 ```
 
 The less similar two strings are to each, the larger the result will be.
-
-
 Query:
 
 ```sql
@@ -1829,8 +1828,6 @@ Result:
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
-
-
 **Syntax**
 
 ```sql
@@ -2098,8 +2095,6 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 Token must be a constant string. Supported by tokenbf_v1 index specialization.
 
 **Example**
-
-
 Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
 
 Query:

@@ -12,6 +12,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/SSHWrapper.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>
@@ -118,11 +119,12 @@ void UsersConfigAccessStorage::load(
     std::lock_guard lock{load_mutex};
     path = std::filesystem::path{users_config_path}.lexically_normal();
     config_reloader.reset();
+    auto zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>(get_zookeeper_function);
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         std::vector{{include_from_path}},
         preprocessed_dir,
-        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+        std::move(zk_node_cache),
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {

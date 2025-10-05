@@ -4,6 +4,7 @@ description: 'System table containing information about parts and columns of Mer
 keywords: ['system table', 'parts_columns']
 slug: /operations/system-tables/parts_columns
 title: 'system.parts_columns'
+doc_type: 'reference'
 ---
 
 # system.parts_columns

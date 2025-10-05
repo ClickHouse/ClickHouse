@@ -208,11 +208,13 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
 
     const char * skipSerializedInArena(const char * pos) const override;
 
@@ -308,6 +310,9 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
+
+    /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
+    ColumnPtr createSizeSubcolumn() const;
 };
 
 
