@@ -2137,8 +2137,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
                     MarkRanges diff_ranges;
 
-                    auto it_full = full_ranges.begin();
-                    auto it_kept = kept_ranges.begin();
+                    auto * it_full = full_ranges.begin();
+                    const auto * it_kept = kept_ranges.begin();
 
                     while (it_full != full_ranges.end())
                     {
