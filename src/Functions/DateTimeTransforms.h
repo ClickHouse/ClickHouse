@@ -2447,7 +2447,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                vec_from[i], TypeName<ValueType>);
+                                static_cast<Int64>(vec_from[i]), TypeName<ValueType>);
                         }
                     }
                 }
