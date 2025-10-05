@@ -218,18 +218,18 @@ SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
 
-#### `searchAny` and `searchAll` {#functions-example-searchany-searchall}
+#### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
 Like `hasToken`, no tokenization of the search terms takes place.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 
-SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
 #### `has` {#functions-example-has}
