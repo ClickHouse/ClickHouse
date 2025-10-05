@@ -345,6 +345,7 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
+    M(MarksTasksFromCache, "Number of times marks were loaded synchronously because they were already present in the cache.", ValueType::Number) \
     M(LoadingMarksTasksCanceled, "Number of times background tasks for loading marks were canceled", ValueType::Number) \
     M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
@@ -373,6 +374,7 @@
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageExecuteMilliseconds, "Total busy time spent for execution of prewarm stage of background merges", ValueType::Milliseconds) \
     \
+    M(MergesRejectedByMemoryLimit, "Number of background merges rejected due to memory limit", ValueType::Number) \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
     M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
     M(CoalescingSortedMilliseconds, "Total time spent while coalescing sorted columns", ValueType::Milliseconds) \
