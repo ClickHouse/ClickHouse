@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -75,7 +76,7 @@ void ColumnQBit::doInsertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 #endif
 
-std::pair<String, DataTypePtr> ColumnQBit::getValueNameAndType(size_t n) const
+DataTypePtr ColumnQBit::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const size_t tuple_size = getBitsCount();
 
@@ -84,10 +85,14 @@ std::pair<String, DataTypePtr> ColumnQBit::getValueNameAndType(size_t n) const
         : tuple_size == 64              ? "Float64"
                            : throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected tuple size 16, 32 or 64. Got: {}", tuple_size);
 
-    auto qbit_type = DataTypeFactory::instance().get(type_name);
-    String value_name = "qbit(" + tuple->getValueNameAndType(n).first + ")";
+    if (options.notFull(name_buf))
+    {
+        name_buf << "qbit(";
+        tuple->getValueNameAndTypeImpl(name_buf, n, options);
+        name_buf << ")";
+    }
 
-    return {value_name, std::make_shared<DataTypeQBit>(qbit_type, dimension)};
+    return DataTypeFactory::instance().get(type_name);
 }
 
 void ColumnQBit::get(size_t n, Field & res) const
