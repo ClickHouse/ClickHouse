@@ -696,6 +696,12 @@ if (TARGET ch_contrib::google_cloud_cpp)
 endif()
 
 if (TARGET ch_rust::delta_kernel_rs)
+    # FIXME: This is a temporary hack to force cmake put delta_kernel_rs at the
+    # end of the dependencies list, so that the linker will use symbols from it
+    # only if there were no such symbols before.
+    #
+    # Without it some symbols for lz4/zstd can be used from crates instead of our contrib.
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
