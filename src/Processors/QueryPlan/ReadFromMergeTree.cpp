@@ -2083,7 +2083,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, vector_search_parameters, context_, log);
 
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
