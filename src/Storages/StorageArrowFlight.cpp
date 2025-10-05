@@ -146,26 +146,6 @@ StorageArrowFlight::StorageArrowFlight(
     setInMemoryMetadata(storage_metadata);
 }
 
-std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
-{
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss << "{";
-    oss << R"("dataset": ")" << dataset_name << R"(", )";
-    oss << "\"columns\": [";
-
-    for (size_t i = 0; i < column_names.size(); ++i)
-    {
-        oss << "\"" << column_names[i] << "\"";
-        if (i + 1 != column_names.size())
-            oss << ", ";
-    }
-
-    oss << "]";
-    oss << "}";
-
-    return oss.str();
-}
-
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_)
@@ -209,8 +189,7 @@ Pipe StorageArrowFlight::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(
-        connection, buildArrowFlightQueryString(column_names, dataset_name), sample_block, column_names, max_block_size));
+    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, column_names, max_block_size));
 }
 
 class ArrowFlightSink : public SinkToStorage
