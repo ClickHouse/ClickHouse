@@ -1439,7 +1439,7 @@ protected:
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
 
-    MergeTreePartsMover parts_mover;
+    MergeTreePartsMoverPtr parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.
