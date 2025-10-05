@@ -2637,8 +2637,8 @@ SchemaInferenceMode
 schemas
 Schemas
 Schwartzian
-searchAll
-searchAny
+hasAnyTokens
+hasAllTokens
 SeasClick
 sectio
 seekable
