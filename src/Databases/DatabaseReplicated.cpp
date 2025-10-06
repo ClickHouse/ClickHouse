@@ -2384,7 +2384,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             }
 
             auto settings = args.context->getDatabaseReplicatedSettings();
-            if (engine->arguments->children.size() == 0)
+            if (engine->arguments->children.empty())
                 engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
             if (engine->arguments->children.size() == 1)
                 engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));

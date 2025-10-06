@@ -1514,6 +1514,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
 
     query->uuid = uuid;
+    query->has_uuid = uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
     query->database = database;
 
