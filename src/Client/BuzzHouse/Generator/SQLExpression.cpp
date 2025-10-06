@@ -491,15 +491,15 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
            SQLFunc::FUNChasTokenOrNull,
            SQLFunc::FUNCmapContains,
            SQLFunc::FUNCmatch,
-           SQLFunc::FUNCsearchAll,
-           SQLFunc::FUNCsearchAny,
+           SQLFunc::FUNChasAllTokens,
+           SQLFunc::FUNChasAnyTokens,
            SQLFunc::FUNCstartsWith};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if (nfunc == SQLFunc::FUNCsearchAny || nfunc == SQLFunc::FUNCsearchAll)
+    if (nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens)
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 6) + 1;
