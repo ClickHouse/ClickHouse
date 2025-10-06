@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool query_plan_display_internal_aliases;
 }
 
 namespace ErrorCodes
@@ -1808,7 +1809,12 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    const auto & table_expressions = cross_join_node.getTableExpressions();
+    bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
+
     auto left_join_tree_query_plan = std::move(plans[0]);
+    auto left_table_label = getQueryDisplayLabel(table_expressions.at(0), display_internal_aliases);
+
     for (size_t i = 1; i < plans.size(); ++i)
     {
         auto right_join_tree_query_plan = std::move(plans[i]);
@@ -1828,6 +1834,10 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
                 settings[Setting::join_use_nulls],
                 JoinSettings(settings),
                 SortingStep::Settings(settings));
+
+            auto right_table_label = getQueryDisplayLabel(table_expressions.at(i), display_internal_aliases);
+            join_step_logical->setInputLabels(std::move(left_table_label), std::move(right_table_label));
+            left_table_label = join_step_logical->getReadableRelationName();
 
             appendSetsFromActionsDAG(join_step_logical->getActionsDAG(), left_join_tree_query_plan.useful_sets);
             left_join_tree_query_plan = joinPlansWithStep(
