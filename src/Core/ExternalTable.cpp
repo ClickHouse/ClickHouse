@@ -22,8 +22,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/MessageHeader.h>
-
 
 namespace DB
 {
@@ -217,11 +217,26 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     ExternalTableDataPtr data = getData(getContext());
 
-    /// Create table
-    NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
-    auto storage = temporary_table.getTable();
-    getContext()->addExternalTable(data->table_name, std::move(temporary_table));
+    auto temporary_id = StorageID::createEmpty();
+    temporary_id.table_name = data->table_name;
+
+    auto resolved = getContext()->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+
+    StoragePtr storage;
+    if (resolved)
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Using existing table {} for external data", temporary_id.getNameForLogs());
+        storage = DatabaseCatalog::instance().getTable(resolved, getContext());
+    }
+    else
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Creating temporary table {} for external data", temporary_id.getNameForLogs());
+        NamesAndTypesList columns = sample_block.getNamesAndTypesList();
+        auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
+        storage = temporary_table.getTable();
+        getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+    }
+
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
 
     /// Write data
