@@ -82,7 +82,7 @@ private:
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
         out_offsets.resize(input_rows_count);
-        out_vec.resize(input_rows_count * (GEOHASH_MAX_TEXT_LENGTH + 1));
+        out_vec.resize(input_rows_count * GEOHASH_MAX_TEXT_LENGTH);
 
         char * begin = reinterpret_cast<char *>(out_vec.data());
         char * pos = begin;
@@ -96,8 +96,7 @@ private:
             const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
-            *pos = '\0';
-            out_offsets[i] = ++pos - begin;
+            out_offsets[i] = pos - begin;
         }
         out_vec.resize(pos - begin);
 

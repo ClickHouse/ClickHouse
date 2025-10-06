@@ -5,6 +5,7 @@ sidebar_label: 'TABLE'
 sidebar_position: 36
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

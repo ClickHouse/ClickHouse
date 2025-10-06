@@ -35,7 +35,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool allow_experimental_json_type;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
@@ -72,7 +71,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     auto it = dict.find(boost::to_lower_copy(name));
     if (dict.end() != it)
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+    auto hints = this->getHints(name);
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -175,7 +175,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.validate_utf8 = settings[Setting::output_format_json_validate_utf8];
     format_settings.json_object_each_row.column_for_object_name = settings[Setting::format_json_object_each_row_column_for_object_name];
     format_settings.json.allow_deprecated_object_type = context->getSettingsRef()[Setting::allow_experimental_object_type];
-    format_settings.json.allow_json_type = context->getSettingsRef()[Setting::allow_experimental_json_type];
     format_settings.json.compact_allow_variable_number_of_columns = settings[Setting::input_format_json_compact_allow_variable_number_of_columns];
     format_settings.json.try_infer_objects_as_tuples = settings[Setting::input_format_json_try_infer_named_tuples_from_objects];
     format_settings.json.throw_on_bad_escape_sequence = settings[Setting::input_format_json_throw_on_bad_escape_sequence];
@@ -186,6 +185,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
+    format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -196,14 +196,20 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
+    format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
     format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
+    format_settings.parquet.use_native_reader_v3 = settings[Setting::input_format_parquet_use_native_reader_v3];
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
+    format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
+    format_settings.parquet.memory_high_watermark = settings[Setting::input_format_parquet_memory_high_watermark];
     format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.output_date_as_uint16 = settings[Setting::output_format_parquet_date_as_uint16];
+    format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
@@ -249,6 +255,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
     format_settings.protobuf.use_autogenerated_schema = settings[Setting::format_protobuf_use_autogenerated_schema];
     format_settings.protobuf.google_protos_path = context->getGoogleProtosPath();
+    format_settings.protobuf.oneof_presence = settings[Setting::input_format_protobuf_oneof_presence];
     format_settings.regexp.escaping_rule = settings[Setting::format_regexp_escaping_rule];
     format_settings.regexp.regexp = settings[Setting::format_regexp];
     format_settings.regexp.skip_unmatched = settings[Setting::format_regexp_skip_unmatched];
@@ -391,8 +398,12 @@ InputFormatPtr FormatFactory::getInput(
     /// This doesn't affect server and clickhouse-local, they initialize threads pools on startup.
     getFormatParsingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
+
+    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter) && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
+            format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
     if (!parser_shared_resources)
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -888,6 +899,21 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
 }
 
+void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)
+{
+    auto & target = getOrCreateCreators(name).prewhere_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Prewhere support checker for format {} is already registered", name);
+    target = std::move(prewhere_support_checker);
+}
+
+bool FormatFactory::checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const auto & target = getCreators(name);
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return target.prewhere_support_checker && target.prewhere_support_checker(format_settings);
+}
+
 void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
     const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
 {
@@ -982,4 +1008,8 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
+std::vector<String> FormatFactory::getAllRegisteredNames() const
+{
+    return KnownFormatNames::instance().getAllRegisteredNames();
+}
 }

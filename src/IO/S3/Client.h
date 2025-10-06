@@ -165,6 +165,11 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome) override;
+        void RequestBookkeeping(
+            const Aws::Client::HttpResponseOutcome & httpResponseOutcome,
+            const Aws::Client::AWSError<Aws::Client::CoreErrors> & lastError) override;
+
         /// Sometimes [1] GCS may suggest to use Rewrite over CopyObject, i.e.:
         ///
         ///     AWSError 'InternalError': Copy spanning locations and/or storage classes could not complete within 30 seconds. Please use the Rewrite method in the JSON API (https://cloud.google.com/storage/docs/json_api/v1/objects/rewrite) instead.
@@ -177,6 +182,7 @@ public:
 
     private:
         PocoHTTPClientConfiguration::RetryStrategy config;
+        LoggerPtr log;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -321,7 +327,6 @@ private:
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
     LoggerPtr log;
-    LogSeriesLimiterPtr limited_log;
 };
 
 class ClientFactory
@@ -351,6 +356,7 @@ public:
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
+        std::optional<std::string> opt_disk_name,
         const ThrottlerPtr & get_request_throttler,
         const ThrottlerPtr & put_request_throttler,
         const String & protocol = "https");

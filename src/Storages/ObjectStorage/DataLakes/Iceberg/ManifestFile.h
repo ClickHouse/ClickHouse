@@ -61,6 +61,7 @@ struct ManifestFileEntry
     String file_path_key;
     // It's a processed file path to be used by Object Storage
     String file_path;
+    Int64 row_number;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;
@@ -74,6 +75,7 @@ struct ManifestFileEntry
 
     String file_format;
     std::optional<String> reference_data_file_path; // For position delete files only.
+    std::optional<std::vector<Int32>> equality_ids;
 };
 
 /**
@@ -110,7 +112,7 @@ public:
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
-        const DB::IcebergSchemaProcessor & schema_processor,
+        IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,
@@ -147,6 +149,7 @@ private:
     std::vector<ManifestFileEntry> data_files_without_deleted;
     // Partition level deletes files
     std::vector<ManifestFileEntry> position_deletes_files_without_deleted;
+    std::vector<ManifestFileEntry> equality_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
     String path_to_manifest_file;

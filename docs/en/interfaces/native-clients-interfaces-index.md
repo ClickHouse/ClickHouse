@@ -3,6 +3,7 @@ description: 'Native clients and interfaces for ClickHouse'
 keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers']
 slug: /interfaces/natives-clients-and-interfaces
 title: 'Native Clients and Interfaces'
+doc_type: 'landing-page'
 ---
 
 # Native clients & interfaces

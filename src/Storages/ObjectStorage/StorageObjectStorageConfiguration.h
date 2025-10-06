@@ -11,6 +11,10 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
+#include <Common/Exception.h>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -86,6 +90,9 @@ public:
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
 
+    /// Raw URI, specified by a user. Used in permission check.
+    virtual const String & getRawURI() const = 0;
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
@@ -118,7 +125,7 @@ public:
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
 
-    virtual void check(ContextPtr context) const;
+    virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
@@ -129,7 +136,10 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
-    virtual bool hasExternalDynamicMetadata() { return false; }
+    // This function is used primarily for datalake storages to check if we need to update metadata
+    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
+    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
+    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -137,27 +147,27 @@ public:
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const {}
+    virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
-
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /*object_info*/,
-        const SharedHeader & /*header*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        ContextPtr /*context_*/) const;
+    virtual void addDeleteTransformers(
+        ObjectInfoPtr object_info,
+        QueryPipelineBuilder & builder,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -168,17 +178,14 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
+        StorageMetadataPtr /*storage_metadata*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -209,12 +216,30 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
+    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    {
+        /// Check if any of the alter commands is ADD_INDEX and throw immediately
+        const bool alter_adds_index
+            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
+        if (alter_adds_index)
+        {
+            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
+            if (!features.supports_skipping_indices)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
+        }
+    }
+
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
+
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
@@ -222,6 +247,8 @@ public:
     {
         return false;
     }
+
+    virtual void drop(ContextPtr) {}
 
     String format = "auto";
     String compression_method = "auto";
@@ -235,6 +262,10 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
+    }
 
     void assertInitialized() const;
 

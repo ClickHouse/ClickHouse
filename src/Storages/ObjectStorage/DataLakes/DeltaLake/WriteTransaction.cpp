@@ -80,6 +80,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
+        {std::make_shared<DB::DataTypeInt64>(), "numRecords"},
     };
 
     DB::MutableColumns columns;
@@ -87,20 +88,21 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     for (const auto & [_, type, name] : names_and_types)
         columns.push_back(type->createColumn());
 
-    for (const auto & [path, size, partition_values] : files)
+    for (const auto & [path, size_bytes, size_rows, partition_values] : files)
     {
         if (path.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Commit file path cannot be empty");
 
         LOG_TEST(
-            log, "Committing file: {}, size: {}, partition values: {}",
-            path, size, partition_values.size());
+            log, "Committing file: {}, bytes: {}, rows: {}, partition values: {}",
+            path, size_bytes, size_rows, partition_values.size());
 
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
-        columns[2]->insert(size);
+        columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
         columns[4]->insert(true);
+        columns[5]->insert(size_rows);
     }
 
     DB::FormatSettings format_settings;
@@ -208,12 +210,14 @@ void WriteTransaction::create()
 void WriteTransaction::validateSchema(const DB::Block & header) const
 {
     assertTransactionCreated();
-    if (write_schema.getNames() != header.getNames())
+    auto write_column_names = write_schema.getNameSet();
+    auto header_column_names = header.getNamesAndTypesList().getNameSet();
+    if (write_column_names != header_column_names)
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
             "Header does not match write schema. Expected: {}, got: {}",
-            fmt::join(write_schema.getNames(), ", "), fmt::join(header.getNames(), ", "));
+            fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
     }
 }
 

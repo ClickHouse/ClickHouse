@@ -16,6 +16,7 @@ public:
         std::unordered_map<String, SerializationPtr> typed_paths_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_);
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -42,7 +43,6 @@ private:
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
 
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree;
-    JSONExtractInsertSettings insert_settings;
     /// Pool of parser objects to make SerializationJSON thread safe.
     mutable SimpleObjectPool<Parser> parsers_pool;
 };
