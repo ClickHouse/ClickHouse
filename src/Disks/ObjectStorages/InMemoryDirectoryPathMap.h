@@ -20,7 +20,7 @@ public:
     InMemoryDirectoryPathMap(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name)
         : metric_directories(metric_directories_name, 0), metric_files(metric_files_name, 0)
     {
-        addOrReplacePath("", RemotePathInfo{});
+        addOrReplacePath("", RemotePathInfo{ .path = "", .etag = "INVALID", .files = {} });
     }
 
     /// Breadth-first order.
@@ -173,8 +173,11 @@ public:
         return true;
     }
 
-    size_t removeOutdatedPaths(const std::set<std::string> & actual_set_of_remote_directories)
+    size_t removeOutdatedPaths(std::set<std::string> actual_set_of_remote_directories)
     {
+        /// Do not remove root folder - it is pure logical.
+        actual_set_of_remote_directories.insert("");
+
         size_t num_removed = 0;
         std::lock_guard lock(mutex);
         for (auto it = map.begin(); it != map.end();)
