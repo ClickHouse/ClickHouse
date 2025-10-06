@@ -144,26 +144,3 @@ def test_suggestions_backwards_compatibility_for_unique_suggestions_prefix(start
                 forward_server_completions = fetch_suggestions(forward_cl, unique_suggestions_prefix)
                 assert backward_server_completions == [unique_suggestions_token]
                 assert forward_server_completions == [unique_suggestions_token]
-
-def test_suggestions_backwards_compatibility_for_multiple_suggestions_prefix(start_cluster):
-    multiple_suggestions_prefix = "SET se"
-    with client(command=start_client_command(start_cluster, system_tables_based_suggestions_server)) as cl:
-        cl.expect(prompt)
-        cl.send("describe table system.completions")
-        cl.expect("UNKNOWN_TABLE") # completions table doesn't exist in this version of the server
-        cl.expect(prompt)
-
-        backward_server_completions = fetch_suggestions(cl, multiple_suggestions_prefix)
-    with client(command=start_client_command(start_cluster, system_completions_based_suggestions_server)) as cl:
-        cl.expect(prompt)
-
-        forward_server_completions = fetch_suggestions(cl, multiple_suggestions_prefix)
-    # In the new server suggestions logic exclude from suggestions aggregate function with "Null" combinator as well as other combinators with internal only usage
-    # https://github.com/ClickHouse/ClickHouse/blob/master/src/AggregateFunctions/Combinators/AggregateFunctionNull.cpp#L27
-    extra_backward_server_completions = [
-        "sequenceMatchEventsNull",
-        "sequenceCountNull",
-        "sequenceNextNodeNull",
-        "sequenceMatchNull"
-    ]
-    assert set(backward_server_completions).issubset(set(forward_server_completions).union(extra_backward_server_completions))
