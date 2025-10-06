@@ -8,7 +8,7 @@
 namespace DB
 {
 
-enum class SearchAnyAllMode : uint8_t
+enum class HasAnyAllTokensMode : uint8_t
 {
     Any,
     All
@@ -16,16 +16,16 @@ enum class SearchAnyAllMode : uint8_t
 
 namespace traits
 {
-struct SearchAnyTraits
+struct HasAnyTokensTraits
 {
-    static constexpr String name = "searchAny";
-    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::Any;
+    static constexpr String name = "hasAnyTokens";
+    static constexpr HasAnyAllTokensMode mode = HasAnyAllTokensMode::Any;
 };
 
-struct SearchAllTraits
+struct HasAllTokensTraits
 {
-    static constexpr String name = "searchAll";
-    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::All;
+    static constexpr String name = "hasAllTokens";
+    static constexpr HasAnyAllTokensMode mode = HasAnyAllTokensMode::All;
 };
 }
 
@@ -33,13 +33,13 @@ struct SearchAllTraits
 using Needles = absl::flat_hash_map<String, UInt64>;
 
 template <class SearchTraits>
-class FunctionSearchImpl : public IFunction
+class FunctionHasAnyAllTokens : public IFunction
 {
 public:
     static constexpr auto name = SearchTraits::name;
 
     static FunctionPtr create(ContextPtr context);
-    explicit FunctionSearchImpl<SearchTraits>(ContextPtr context);
+    explicit FunctionHasAnyAllTokens<SearchTraits>(ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }

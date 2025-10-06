@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3452
 aarch
 AArch
 accurateCast
@@ -1829,6 +1829,7 @@ multiIf
 multiline
 Multiline
 multilinestring
+multiquery
 MultiLineString
 multiMatchAllIndices
 multiMatchAny
@@ -2637,8 +2638,8 @@ SchemaInferenceMode
 schemas
 Schemas
 Schwartzian
-searchAll
-searchAny
+hasAnyTokens
+hasAllTokens
 SeasClick
 sectio
 seekable

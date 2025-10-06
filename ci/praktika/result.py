@@ -250,7 +250,7 @@ class Result(MetaClasses.Serializable):
         if not self.is_ok():
             # Suggest local command to rerun
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            command_info += f" [ --test TEST_NAME (if supported by the job)]"
+            command_info += f" --test TEST_NAME_1..TEST_NAME_N"
             self.set_info(command_info)
 
         return self
@@ -380,23 +380,37 @@ class Result(MetaClasses.Serializable):
         return result_copy
 
     @classmethod
-    def _flat_failed_leaves(cls, result_obj):
+    def _flat_failed_leaves(cls, result_obj, path=None):
         """
         Recursively flattens the result tree, returning a list of all failed leaf Result objects.
         A leaf is a Result with no sub-results or with only ok sub-results.
+        Also tracks the path to each result and adds it to result.ext['path'] as a list of names.
         """
+        if path is None:
+            path = [result_obj.name]
+        else:
+            path = path + [result_obj.name]
+
         # If this result is OK, skip it
         if result_obj.is_ok():
             return []
+
         # Otherwise, collect failed leaves from children
         leaves = []
         for r in result_obj.results:
             if r.is_ok():
                 continue
             elif not r.results:
+                # This is a leaf - add the path to its ext
+                if not hasattr(r, "ext") or r.ext is None:
+                    r.ext = {}
+                r.ext["result_tree_path"] = path + [
+                    r.name
+                ]  # store hierarchical path to the leaf so that report can build a navigation link to it
                 leaves.append(r)
             else:
-                leaves.extend(cls._flat_failed_leaves(r))
+                # Recursively process children with updated path
+                leaves.extend(cls._flat_failed_leaves(r, path=path))
         return leaves
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
@@ -414,7 +428,9 @@ class Result(MetaClasses.Serializable):
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
-                    self.results[i].results = self._flat_failed_leaves(result)
+                    self.results[i].results = self._flat_failed_leaves(
+                        result, path=[self.name]
+                    )
                 else:
                     self.results[i] = result
         self._update_status()
