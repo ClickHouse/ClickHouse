@@ -878,7 +878,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    context->getQueryContext()->addSkipIndexAccessInfo(index_and_condition.index->index.name);
+                    context->getQueryContext()->addSkipIndexAccessInfo(
+                        ranges.data_part->storage.getStorageID().getFullTableName(),
+                        index_and_condition.index->index.name
+                    );
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
