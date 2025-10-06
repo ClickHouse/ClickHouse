@@ -1400,7 +1400,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         v.setName(sot->mutable_est(), false);
         for (uint32_t i = 0; i < nalters; i++)
         {
-            const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable);
+            const uint32_t alter_refresh = 1;
             const uint32_t alter_query = 3;
             const uint32_t comment_view = 2;
             const uint32_t prob_space = alter_refresh + alter_query + comment_view;

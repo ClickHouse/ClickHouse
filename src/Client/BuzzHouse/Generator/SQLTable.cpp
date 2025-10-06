@@ -451,7 +451,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         BinaryExpr * bexpr = ttl_expr->mutable_comp_expr()->mutable_binary_expr();
         IntervalExpr * ie = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_interval();
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
-        std::uniform_int_distribution<int64_t> next_dist(-100, 100);
+        std::uniform_int_distribution<int64_t> next_dist(-15, 15);
 
         bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
@@ -1519,7 +1519,7 @@ void StatementGenerator::addTableColumnInternal(
         {
             generateSettingValues(rg, csettings, cd->mutable_setting_values());
         }
-        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
+        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 26)
         {
             flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
             generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
@@ -2284,7 +2284,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
+    if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
         flatTableColumnPath(flat_tuple | flat_nested, next.cols, [](const SQLColumn &) { return true; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
