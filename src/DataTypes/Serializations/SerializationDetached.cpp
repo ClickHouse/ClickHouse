@@ -62,12 +62,11 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     auto task = [wrapped_column = column,
                  nested_serialization = nested,
                  limit,
-                 format_settings = settings.format_settings,
-                 avg_value_size_hint = settings.avg_value_size_hint](const ColumnBLOB::BLOB & blob)
+                 format_settings = settings.format_settings](const ColumnBLOB::BLOB & blob)
     {
         // In case of alias columns, `column` might be a reference to the same column for a number of calls to this function.
         // To avoid deserializing into the same column multiple times, we clone the column here one more time.
-        return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings, avg_value_size_hint);
+        return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings);
     };
 
     auto column_blob = ColumnPtr(ColumnBLOB::create(std::move(task), column, limit));

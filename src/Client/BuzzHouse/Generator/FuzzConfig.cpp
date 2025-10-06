@@ -261,7 +261,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings}};
+           {"fixedstring", allow_fixed_strings},
+           {"qbit", allow_qbit}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -387,6 +388,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
+        {"hot_table_settings", [&](const JSONObjectType & value) { hot_table_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
