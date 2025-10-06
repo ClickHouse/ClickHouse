@@ -1,3 +1,4 @@
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -82,6 +83,10 @@ namespace DB::ServerSetting
 namespace HistogramMetrics
 {
     extern MetricFamily & KeeperResponseTime;
+    extern MetricFamily & KeeperClientEnqueueDuration;
+    extern MetricFamily & KeeperClientQueueDuration;
+    extern MetricFamily & KeeperClientSendDuration;
+    extern MetricFamily & KeeperClientRoundtripDuration;
 }
 
 namespace Metrics::ResponseTime
@@ -316,6 +321,12 @@ namespace Coordination
 {
 
 using namespace DB;
+
+HistogramMetrics::Metric & ZooKeeper::enqueue_duration_metric = HistogramMetrics::KeeperClientEnqueueDuration.withLabels({});
+HistogramMetrics::Metric & ZooKeeper::queue_duration_metric = HistogramMetrics::KeeperClientQueueDuration.withLabels({});
+HistogramMetrics::Metric & ZooKeeper::send_duration_metric = HistogramMetrics::KeeperClientSendDuration.withLabels({});
+HistogramMetrics::Metric & ZooKeeper::roundtrip_duration_metric = HistogramMetrics::KeeperClientRoundtripDuration.withLabels({});
+
 
 template <typename T>
 void ZooKeeper::write(const T & x)
@@ -795,6 +806,11 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
+                    auto dequeue_ts = clock::now();
+
+                    queue_duration_metric.observe(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.enqueue_ts).count());
+
                     if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
@@ -816,6 +832,11 @@ void ZooKeeper::sendThread()
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
+
+                    info.send_ts = clock::now();
+
+                    send_duration_metric.observe(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(send_ts - dequeue_ts).count());
 
                     logOperationIfNeeded(info.request);
 
@@ -1006,9 +1027,14 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.push_ts).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
+
+    auto receive_ts = clock::now();
+
+    roundtrip_duration_metric.observe(
+        std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.send_ts).count());
 
     try
     {
@@ -1225,7 +1251,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.push_ts).count();
 
                 if (request_info.callback)
                 {
@@ -1293,7 +1319,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.push_ts).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                         observeOperation(info.request.get(), response.get(), elapsed_microseconds);
                     }
@@ -1332,7 +1358,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        info.time = clock::now();
+        info.push_ts = clock::now();
         auto maybe_zk_log = getZooKeeperLog();
         if (maybe_zk_log)
         {
@@ -1367,6 +1393,11 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
             throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
         }
+
+        info.enqueue_ts = clock::now();
+
+        enqueue_duration_metric.observe(
+            std::chrono::duration_cast<std::chrono::milliseconds>(info.enqueue_ts - info.push_ts).count());
     }
     catch (...)
     {

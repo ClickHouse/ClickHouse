@@ -70,6 +70,42 @@ namespace HistogramMetrics
         {"operation"}
     );
 
+    MetricFamily & KeeperClientEnqueueDuration = Factory::instance().registerMetric(
+        "keeper_client_enqueue_duration_milliseconds",
+        "Time to push request to queue",
+        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000},
+        {"operation"}
+    );
+
+    MetricFamily & KeeperClientQueueDuration = Factory::instance().registerMetric(
+        "keeper_client_queue_duration_milliseconds",
+        "Time requests wait in queue before being sent to Keeper",
+        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {"operation"}
+    );
+
+    MetricFamily & KeeperClientSendDuration = Factory::instance().registerMetric(
+        "keeper_client_send_duration_milliseconds",
+        "Time to send request to Keeper after dequeuing",
+        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000},
+        {"operation"}
+    );
+
+    MetricFamily & KeeperClientRoundtripDuration = Factory::instance().registerMetric(
+        "keeper_client_roundtrip_duration_milliseconds",
+        "Time from sending request to receiving response from Keeper (network + Keeper processing)",
+        {1, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {"operation"}
+    );
+
+    MetricFamily & KeeperClientProcessResponseDuration = Factory::instance().registerMetric(
+        "keeper_client_process_response_duration_milliseconds",
+        "Time to process response received from Keeper",
+        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000},
+        {"operation"}
+    );
+
+
     Metric::Metric(const Buckets & buckets_)
         : buckets(buckets_)
         , counters(buckets.size() + 1)

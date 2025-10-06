@@ -93,6 +93,11 @@ namespace DB
     class AggregatedZooKeeperLog;
 }
 
+namespace HistogramMetrics
+{
+    struct Metric;
+}
+
 namespace Coordination
 {
 
@@ -272,7 +277,9 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
-        clock::time_point time;
+        clock::time_point push_ts;
+        clock::time_point enqueue_ts;
+        clock::time_point send_ts;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
@@ -359,6 +366,11 @@ private:
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
+
+    static HistogramMetrics::Metric & enqueue_duration_metric;
+    static HistogramMetrics::Metric & queue_duration_metric;
+    static HistogramMetrics::Metric & send_duration_metric;
+    static HistogramMetrics::Metric & roundtrip_duration_metric;
 };
 
 }
