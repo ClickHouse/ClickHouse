@@ -1509,6 +1509,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t attach_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t replace_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t comment_table = 2;
+            const uint32_t rewrite_parts = 8;
             const uint32_t prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column
                 + rename_column + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats
                 + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property
@@ -1516,7 +1517,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 + remove_projection + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
                 + drop_partition + drop_detached_partition + forget_partition + attach_partition + move_partition_to
                 + clear_column_partition + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl
-                + remove_ttl + attach_partition_from + replace_partition_from + comment_table;
+                + remove_ttl + attach_partition_from + replace_partition_from + comment_table + rewrite_parts;
             AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -1713,11 +1714,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + 1))
             {
-                ApplyDeleteMask * adm = ati->mutable_delete_mask();
+                OptionalPartitionExpr * ope = ati->mutable_delete_mask();
 
                 if (rg.nextBool())
                 {
-                    generateNextTablePartition(rg, false, t, adm->mutable_single_partition()->mutable_partition());
+                    generateNextTablePartition(rg, false, t, ope->mutable_single_partition()->mutable_partition());
                 }
             }
             else if (
@@ -2338,6 +2339,25 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + attach_partition_from + replace_partition_from + comment_table + 1))
             {
                 ati->set_comment(nextComment(rg));
+            }
+            else if (
+                rewrite_parts
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
+                       + attach_partition_from + replace_partition_from + comment_table + rewrite_parts + 1))
+            {
+                OptionalPartitionExpr * ope = ati->mutable_rewrite_parts();
+
+                if (rg.nextBool())
+                {
+                    generateNextTablePartition(rg, false, t, ope->mutable_single_partition()->mutable_partition());
+                }
             }
             else
             {

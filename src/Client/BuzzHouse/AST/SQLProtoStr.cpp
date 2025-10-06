@@ -4495,6 +4495,14 @@ CONV_FN(AlterItem, alter)
         case AlterType::kRemoveTtl:
             ret += "REMOVE TTL";
             break;
+        case AlterType::kRewriteParts:
+            ret += "REWRITE PARTS";
+            if (alter.rewrite_parts().has_single_partition())
+            {
+                ret += " IN ";
+                SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
+            }
+            break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());

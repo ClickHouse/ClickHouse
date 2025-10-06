@@ -3740,7 +3740,7 @@ message CreateDictionary {
     optional string comment = 13;
 }
 
-message ApplyDeleteMask {
+message OptionalPartitionExpr {
     optional SinglePartitionExpr single_partition = 1;
 }
 
@@ -3783,7 +3783,7 @@ message AlterItem {
         ColInPartition clear_column = 9;
         AddColumn modify_column = 10;
         CommentColumn comment_column = 11;
-        ApplyDeleteMask delete_mask = 12;
+        OptionalPartitionExpr delete_mask = 12;
         AddStatistics add_stats = 13;
         AddStatistics mod_stats = 14;
         ColumnPathList drop_stats = 15;
@@ -3819,11 +3819,12 @@ message AlterItem {
         MovePartition move_partition = 45;
         TTLExpr modify_ttl  = 46;
         bool remove_ttl = 47;
+        OptionalPartitionExpr rewrite_parts = 48;
         /// For views
-        SelectParen modify_query = 48;
-        RefreshableView refresh = 49;
+        SelectParen modify_query = 49;
+        RefreshableView refresh = 50;
         // For tables, views and databases
-        string comment = 50;
+        string comment = 51;
     }
 }
 
