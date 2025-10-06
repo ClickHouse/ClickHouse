@@ -976,59 +976,70 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     /// This size is usually greater than the window size.
     static constexpr size_t buf_size = 1024;
 
-    // If we are embedded into server, there is no need to access terminal device via opening a file.
-    // Actually we need to pass tty's name, if we don't want this condition statement,
-    // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
-    // So it's easier to just pass a descriptor, without the terminal name.
-    if (isEmbeeddedClient())
-    {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
-        return;
-    }
-
-    static constexpr auto tty_file_name = "/dev/tty";
-
-    if (is_interactive || progress == ProgressOption::TTY)
-    {
-        std::error_code ec;
-        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
-
-        if (!ec && exists(tty) && is_character_file(tty)
-            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
-        {
-            try
-            {
-                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
-
-                /// It is possible that the terminal file has writeable permissions
-                /// but we cannot write anything there. Check it with invisible character.
-                tty_buf->write('\0');
-                tty_buf->next();
-
-                return;
-            }
-            catch (const Exception & e)
-            {
-                tty_buf.reset();
-
-                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
-                    throw;
-
-                /// It is normal if file exists, indicated as writeable but still cannot be opened.
-                /// Fallback to other options.
-            }
-        }
-    }
+    /// Prefer to use an existing fd for the tty, from stdin/stdout/stderr, to allow redirecting
+    /// progress indication to a different terminal.
+    int tty_fd = -1;
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd, buf_size);
+        tty_fd = stderr_fd;
     }
-    else
+    else if (stdout_is_a_tty || isEmbeeddedClient())
     {
-        need_render_progress = false;
-        need_render_progress_table = false;
+        // If we are embedded into server, there is no need to access terminal device via opening a file.
+        // Actually we need to pass tty's name, if we don't want this condition statement,
+        // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
+        // So it's easier to just pass a descriptor, without the terminal name.
+        tty_fd = stdout_fd;
     }
+    else if (stdin_is_a_tty)
+    {
+        /// If stdin is a tty, it's writable, tty can't be readonly.
+        tty_fd = stdin_fd;
+    }
+
+    if (tty_fd != -1)
+    {
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(tty_fd, buf_size);
+        return;
+    }
+
+    /// If none of stdin/stdout/stderr are tty but progress rendering was requested, open /dev/tty.
+
+    static constexpr auto tty_file_name = "/dev/tty";
+
+    std::error_code ec;
+    std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+    if (!ec && exists(tty) && is_character_file(tty)
+        && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+    {
+        try
+        {
+            tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
+
+            /// It is possible that the terminal file has writeable permissions
+            /// but we cannot write anything there. Check it with invisible character.
+            tty_buf->write('\0');
+            tty_buf->next();
+
+            return;
+        }
+        catch (const Exception & e)
+        {
+            tty_buf.reset();
+
+            if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                throw;
+
+            /// It is normal if file exists, indicated as writeable but still cannot be opened.
+            /// Fallback to other options.
+        }
+    }
+
+    /// Failed to open /dev/tty.
+    need_render_progress = false;
+    need_render_progress_table = false;
 }
 
 void ClientBase::initKeystrokeInterceptor()
@@ -3359,6 +3370,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
+
+    if (options.count("oauth-url"))
+        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.count("oauth-client-id"))
+        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

@@ -5,6 +5,7 @@ sidebar_label: 'mysql'
 sidebar_position: 137
 slug: /sql-reference/table-functions/mysql
 title: 'mysql'
+doc_type: 'reference'
 ---
 
 # mysql Table Function

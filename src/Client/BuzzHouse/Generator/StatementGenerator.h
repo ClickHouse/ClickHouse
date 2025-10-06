@@ -127,6 +127,7 @@ enum class TableRequirement
 class StatementGenerator
 {
 public:
+    static const std::vector<std::vector<OutFormat>> outFormats;
     static const std::unordered_map<OutFormat, InFormat> outIn;
     static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
@@ -367,15 +368,17 @@ private:
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
-    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
+    void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
         RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, size_t nvalues, SettingValues * vals);
+    void generateHotTableSettingList(RandomGenerator & rg, SettingList * sl);
     void generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl);
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
     void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
+    void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);

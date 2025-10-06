@@ -18,6 +18,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
+namespace ProfileEvents
+{
+    extern const Event QueryPlanOptimizeMicroseconds;
+}
+
 namespace DB
 {
 
@@ -319,13 +324,16 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const ExplainPlanOptions & options)
+    const ExplainPlanOptions & options,
+    size_t max_description_lengs)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
-    const auto & description = step.getStepDescription();
+    auto description = step.getStepDescription();
+    if (max_description_lengs)
+        description = description.substr(0, max_description_lengs);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
@@ -387,11 +395,11 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    explainStep(step, settings, options);
+    explainStep(step, settings, options, 0);
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
 {
     checkInitialized();
 
@@ -414,7 +422,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options);
+            explainStep(*frame.node->step, settings, options, max_description_lengs);
             frame.is_description_printed = true;
         }
 
@@ -486,6 +494,8 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
+
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards

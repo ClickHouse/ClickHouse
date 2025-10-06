@@ -13,6 +13,7 @@
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -91,6 +92,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+    }
+
+    if (auto page_cache = getContext()->getPageCache())
+    {
+        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
+            "Current limit on the size of userspace page cache, in bytes." };
     }
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
@@ -286,7 +293,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
