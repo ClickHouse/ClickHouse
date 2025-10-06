@@ -20,7 +20,7 @@ public:
     InMemoryDirectoryPathMap(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name)
         : metric_directories(metric_directories_name, 0), metric_files(metric_files_name, 0)
     {
-        addOrReplacePath("",  RemotePathInfo{});
+        addOrReplacePath("", RemotePathInfo{});
     }
 
     /// Breadth-first order.
