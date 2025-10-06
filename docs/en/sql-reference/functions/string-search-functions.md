@@ -781,7 +781,7 @@ Column `input` must have a [text index][../../engines/table-engines/mergetree-fa
 The `input` string is tokenized by the tokenizer from the index definition.
 
 Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+For example, if you like to search for `ClickHouse` with index `tokenizer = ngrams(5)`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
@@ -798,7 +798,7 @@ Query:
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -819,7 +819,7 @@ Result:
 Query:
 
 ```sql
-SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 Result:
@@ -854,7 +854,7 @@ Column `input` must have a [text index][../../engines/table-engines/mergetree-fa
 The `input` string is tokenized by the tokenizer from the index definition.
 
 Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+For example, if you like to search for `ClickHouse` with index `tokenizer = ngrams(5)`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
@@ -871,7 +871,7 @@ Query:
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -892,7 +892,7 @@ Result:
 Query:
 
 ```sql
-SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 Result:
