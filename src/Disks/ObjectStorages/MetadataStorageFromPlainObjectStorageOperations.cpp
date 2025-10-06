@@ -298,11 +298,14 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 
     if (!path_map.addFile(path))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Parent directory for file '{}' does not exist.", path);
+
+    written = true;
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
-    path_map.removeFile(path);
+    if (written)
+        path_map.removeFile(path);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(

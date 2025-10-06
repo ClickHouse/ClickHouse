@@ -93,6 +93,8 @@ private:
     InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
 
+    bool written = false;
+
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
