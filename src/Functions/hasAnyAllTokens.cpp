@@ -70,9 +70,15 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
 namespace
 {
 
-bool isStringArray(const IDataType & type)
+/// Also accepts Array(Nothing) which is the type of Array([])
+bool isArrayOfStringType(const IDataType & type)
 {
-    return isArray(type) && isString(checkAndGetDataType<DataTypeArray>(type).getNestedType());
+    const auto * array_type = checkAndGetDataType<DataTypeArray>(&type);
+    if (!array_type)
+        return false;
+
+    const DataTypePtr & nested_type = array_type->getNestedType();
+    return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
 }
 
 }
@@ -87,7 +93,7 @@ DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const Co
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringArray), isColumnConst, "const Array(String)"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStringType), isColumnConst, "const Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
