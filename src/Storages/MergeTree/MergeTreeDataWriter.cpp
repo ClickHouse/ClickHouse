@@ -30,8 +30,6 @@
 #include <Common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Core/Settings.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
