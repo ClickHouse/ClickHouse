@@ -864,7 +864,7 @@ class ClickHouseCluster:
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
-        self.ytsaurus_port = 80
+        self._ytsaurus_port = None
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -901,6 +901,12 @@ class ClickHouseCluster:
             return self._nginx_port
         self._nginx_port = self.port_pool.get_port()
         return self._nginx_port
+
+    @property
+    def ytsaurus_port(self):
+        if not self._ytsaurus_port:
+            self._ytsaurus_port = self.port_pool.get_port()
+        return self._ytsaurus_port
 
     @property
     def kafka_port(self):
