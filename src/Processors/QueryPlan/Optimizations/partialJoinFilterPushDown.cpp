@@ -7,7 +7,15 @@
 #include <vector>
 
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
 {
 
 namespace
@@ -215,6 +223,8 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
     const auto filter_input_header = new_filter_node.children.at(0)->step->getOutputHeader();
 
     new_filter_node.step = std::make_unique<FilterStep>(filter_input_header, std::move(filter_dag), filter_column_name, true);
+}
+
 }
 
 }
