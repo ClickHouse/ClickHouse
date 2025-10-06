@@ -66,7 +66,6 @@ Settings:
 | `histograms`                 | true       | Expose histogram metrics from [system.histogram_metrics](/operations/system-tables/histogram_metrics) |
 | `dimensional_metrics`        | true       | Expose dimensional metrics from [system.dimensional_metrics](/operations/system-tables/dimensional_metrics) |
 
-
 Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
 ```bash
 curl 127.0.0.1:9363/metrics

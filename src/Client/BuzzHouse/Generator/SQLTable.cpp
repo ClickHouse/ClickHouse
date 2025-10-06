@@ -1698,7 +1698,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf2 += "[";
                 for (size_t i = 0; i < nlen; i++)
                 {
-                    if (i != 0)
+                    String buf;
+                    DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
+                    std::uniform_int_distribution<size_t> next_dist(UINT32_C(1), separators.size());
+
+                    std::shuffle(separators.begin(), separators.end(), rg.generator);
+                    const size_t nlen = next_dist(rg.generator);
+                    buf += "[";
+                    for (size_t i = 0; i < nlen; i++)
                     {
                         buf2 += ", ";
                     }
