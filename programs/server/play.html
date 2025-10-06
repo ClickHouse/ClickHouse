@@ -2228,7 +2228,7 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
-function getDataAsJson(){
+function getDataAsJson() {
     const dataTable = document.getElementById('data-table');
     const tableData = [];
     if (dataTable.rows.length > 0) {
@@ -2239,10 +2239,9 @@ function getDataAsJson(){
                 const rowData = {};
                 for (let j = 1; j < row.cells.length; j++) { // Skip row number column
                     const columnName = header[j-1].name;
-                    if (row.cells[j].textContent === "ᴺᵁᴸᴸ"){
+                    if (row.cells[j].textContent === "ᴺᵁᴸᴸ") {
                         rowData[columnName] = null;
-                    }
-                    else {
+                    } else {
                         rowData[columnName] = row.cells[j].textContent;
                     }
                 }
