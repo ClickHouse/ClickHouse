@@ -9,6 +9,8 @@
 #include <base/defines.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -227,6 +229,13 @@ public:
 
             callback(std::string(subdirectory.begin() + path.size(), subdirectory.end()) + "/");
         }
+    }
+
+    void print()
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & [path, info] : map)
+            LOG_TRACE(getLogger("InMemoryDirectoryPathMap"), "Path: {}, Remote: {}", path.string(), info.path);
     }
 
     void moveDirectory(const std::string & from, const std::string & to)
