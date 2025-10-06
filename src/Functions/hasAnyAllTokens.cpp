@@ -2,12 +2,13 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/FunctionDocumentation.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Common/FunctionDocumentation.h>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -66,6 +67,16 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 }
 
+namespace
+{
+
+bool isStringArray(const IDataType & type)
+{
+    return isArray(type) && isString(checkAndGetDataType<DataTypeArray>(type).getNestedType());
+}
+
+}
+
 template <class HasTokensTraits>
 DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
@@ -76,7 +87,7 @@ DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const Co
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringArray), isColumnConst, "const Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
