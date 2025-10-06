@@ -188,6 +188,9 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
     new_filter_node.children = {join_node.children[child_idx]};
     join_node.children[child_idx] = &new_filter_node;
 
+    if (filter_dag.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter DAG is expected to have only just the filter column in its output");
+
     auto filter_column_name = filter_dag.getOutputs().front()->result_name;
     // Let's keep the order inputs for the join
     std::multimap<std::string, const ActionsDAG::Node *> filter_inputs;
