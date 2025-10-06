@@ -608,9 +608,10 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
-        if (config.has(config_prefix + "." + key + ".object_storage_type")) {
+        if (config.has(config_prefix + "." + key + ".object_storage_type"))
+        {
             const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-            if (object_storage_type.find("azure") == std::string::npos)
+            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
             {
                 /// Then its not an azure config
                 continue;
@@ -619,13 +620,16 @@ void AzureSettingsByEndpoint::loadFromConfig(
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
-            if (!config.has(endpoint_path)) {
+            if (!config.has(endpoint_path))
+            {
                 endpoint_path = key_path + ".storage_account_url";
 
-                if (!config.has(endpoint_path)) {
+                if (!config.has(endpoint_path))
+                {
                     endpoint_path = key_path + ".endpoint";
 
-                    if (!config.has(endpoint_path)) {
+                    if (!config.has(endpoint_path))
+                    {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
                                         object_storage_type);
                     }
