@@ -48,7 +48,7 @@ namespace ErrorCodes
 namespace
 {
     template <typename T>
-    void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & allowed_role_ids)
+    void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & allowed_role_ids, const AccessControl & access_control)
     {
         ParserGrantQuery parser;
         parser.setParseWithoutGrantees();
@@ -88,7 +88,12 @@ namespace
             {
                 auto role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
                 if (!allowed_role_ids.contains(role_id))
-                    throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Role {} was not found", role_name);
+                {
+                    if (const auto role = access_control.find<Role>(role_name))
+                        role_id = *role;
+                    else
+                        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Role {} is not allowed", role_name);
+                }
 
                 roles_to_grant.push_back(role_id);
             }
@@ -105,6 +110,7 @@ namespace
         String user_name,
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
+        const AccessControl & access_control,
         bool allow_no_password,
         bool allow_plaintext_password)
     {
@@ -378,7 +384,7 @@ namespace
         if (grant_queries)
         {
             for (const auto & string_query : *grant_queries)
-                parseGrant(*user, string_query, allowed_role_ids);
+                parseGrant(*user, string_query, allowed_role_ids, access_control);
         }
         else
         {
@@ -429,7 +435,8 @@ namespace
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
         const String & role_name,
-        const std::unordered_set<UUID> & allowed_role_ids)
+        const std::unordered_set<UUID> & allowed_role_ids,
+        const AccessControl & access_control)
     {
         auto role = std::make_shared<Role>();
         role->setName(role_name);
@@ -444,7 +451,7 @@ namespace
             for (const auto & key : keys)
             {
                 const auto query = config.getString(grants_config + "." + key);
-                parseGrant(*role, query, allowed_role_ids);
+                parseGrant(*role, query, allowed_role_ids, access_control);
             }
         }
 
@@ -646,7 +653,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     {
         try
         {
-            users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed));
+            users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, access_control, no_password_allowed, plaintext_password_allowed));
         }
         catch (Exception & e)
         {
@@ -671,7 +678,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRoles(
     {
         try
         {
-            roles.push_back(parseRole(config, role_name, allowed_role_ids));
+            roles.push_back(parseRole(config, role_name, allowed_role_ids, access_control));
         }
         catch (Exception & e)
         {
