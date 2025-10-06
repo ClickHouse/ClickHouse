@@ -900,6 +900,16 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             }
         }
         break;
+        case BottomTypeNameType::kQbit: {
+            const QBit & qq = btn.qbit();
+
+            ret += "QBit(";
+            ret += FloatingPoints_Name(qq.subtype());
+            ret += ", ";
+            ret += std::to_string(qq.dimension());
+            ret += ")";
+        }
+        break;
         default: {
             if (lcard)
             {
@@ -2323,7 +2333,7 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
 
 CONV_FN(ArrowFlightFunc, afunc)
 {
-    ret += "arrowflight('";
+    ret += "arrowFlight('";
     ret += afunc.address();
     ret += "', '";
     ret += afunc.dataset();
@@ -3441,7 +3451,7 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
-    if (is_table && dt.is_temp())
+    if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3868,6 +3878,10 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
+    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    {
+        ret += "TEMPORARY ";
+    }
     if (replace)
     {
         ret += "TABLE";
@@ -4303,7 +4317,14 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kMatStats:
             ret += "MATERIALIZE STATISTICS ";
-            ColumnPathListToString(ret, 0, alter.mat_stats());
+            if (alter.mat_stats().has_cols())
+            {
+                ColumnPathListToString(ret, 0, alter.mat_stats().cols());
+            }
+            else
+            {
+                ret += "ALL";
+            }
             break;
         case AlterType::kMaterializeIndex:
             ret += "MATERIALIZE INDEX ";
@@ -4490,10 +4511,8 @@ CONV_FN(AlterItem, alter)
 
 CONV_FN(Alter, alter)
 {
-    const bool is_table = alter.sobject() == SQLObject::TABLE;
-
     ret += "ALTER ";
-    if (is_table && alter.is_temp())
+    if ((alter.sobject() == SQLObject::TABLE || alter.sobject() == SQLObject::VIEW) && alter.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4888,6 +4907,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DISABLE FAILPOINT ";
             ret += FailPoint_Name(cmd.disable_failpoint());
             break;
+        case CmdType::kIcebergMetadataCache:
+            ret += "DROP ICEBERG METADATA CACHE";
+            can_set_cluster = true;
+            break;
         default:
             ret += "FLUSH LOGS";
     }
@@ -4901,7 +4924,7 @@ CONV_FN(BackupRestoreObject, bobject)
 {
     const bool is_table = bobject.sobject() == SQLObject::TABLE;
 
-    if (is_table && bobject.is_temp())
+    if ((is_table || bobject.sobject() == SQLObject::VIEW) && bobject.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -5085,6 +5108,177 @@ CONV_FN(Kill, kil)
     }
 }
 
+CONV_FN(ShowObject, sh)
+{
+    if (sh.create())
+    {
+        ret += "CREATE ";
+    }
+    if ((sh.sobject() == SQLObject::TABLE || sh.sobject() == SQLObject::VIEW) && sh.is_temp())
+    {
+        ret += "TEMPORARY ";
+    }
+    ret += SQLObject_Name(sh.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, sh.object());
+}
+
+CONV_FN(ShowTables, sh)
+{
+    if (sh.full())
+    {
+        ret += "FULL ";
+    }
+    if (sh.is_temp())
+    {
+        ret += "TEMPORARY ";
+    }
+    ret += "TABLES";
+    if (sh.has_database())
+    {
+        ret += " FROM ";
+        DatabaseToString(ret, sh.database());
+    }
+}
+
+CONV_FN(ShowDictionaries, sh)
+{
+    ret += "DICTIONARIES";
+    if (sh.has_database())
+    {
+        ret += " FROM ";
+        DatabaseToString(ret, sh.database());
+    }
+}
+
+CONV_FN(ShowColumns, sh)
+{
+    if (sh.extended())
+    {
+        ret += "EXTENDED ";
+    }
+    if (sh.full())
+    {
+        ret += "FULL ";
+    }
+    ret += "COLUMNS FROM ";
+    TableToString(ret, true, sh.est().table());
+    if (sh.est().has_database())
+    {
+        ret += " FROM ";
+        DatabaseToString(ret, sh.est().database());
+    }
+}
+
+CONV_FN(ShowIndex, sh)
+{
+    if (sh.extended())
+    {
+        ret += "EXTENDED ";
+    }
+    ShowIndex_IndexShow_Name(sh.key());
+    ret += " FROM ";
+    TableToString(ret, true, sh.est().table());
+    if (sh.est().has_database())
+    {
+        ret += " FROM ";
+        DatabaseToString(ret, sh.est().database());
+    }
+}
+
+CONV_FN(ShowStatement, sh)
+{
+    ret += "SHOW ";
+    using ShowType = ShowStatement::ShowOneofCase;
+    switch (sh.show_oneof_case())
+    {
+        case ShowType::kObject:
+            ShowObjectToString(ret, sh.object());
+            break;
+        case ShowType::kDatabases:
+            ret += "DATABASES";
+            break;
+        case ShowType::kTables:
+            ShowTablesToString(ret, sh.tables());
+            break;
+        case ShowType::kColumns:
+            ShowColumnsToString(ret, sh.columns());
+            break;
+        case ShowType::kDictionaries:
+            ShowDictionariesToString(ret, sh.dictionaries());
+            break;
+        case ShowType::kIndexes:
+            ShowIndexToString(ret, sh.indexes());
+            break;
+        case ShowType::kProcesslist:
+            ret += "PROCESSLIST";
+            break;
+        case ShowType::kGrants:
+            ret += "GRANTS WITH IMPLICIT";
+            ret += sh.grants() ? " FINAL" : "";
+            break;
+        case ShowType::kUsers:
+            ret += "USERS";
+            break;
+        case ShowType::kRoles:
+            ret += sh.users() ? "CURRENT" : "ENABLED";
+            ret += " ROLES";
+            break;
+        case ShowType::kProfiles:
+            ret += sh.profiles() ? "SETTINGS " : "";
+            ret += "PROFILES";
+            break;
+        case ShowType::kPolicies:
+            ret += "POLICIES ON ";
+            ExprSchemaTableToString(ret, sh.policies());
+            break;
+        case ShowType::kQuotas:
+            ret += "QUOTAS";
+            break;
+        case ShowType::kQuota:
+            ret += sh.quota() ? "CURRENT " : "";
+            ret += "QUOTA";
+            break;
+        case ShowType::kAccess:
+            ret += "ACCESS";
+            break;
+        case ShowType::kCluster:
+            ret += "CLUSTER ";
+            ClusterToString(ret, false, sh.cluster());
+            break;
+        case ShowType::kClusters:
+            ret += "CLUSTERS";
+            break;
+        case ShowType::kSettings:
+            ret += sh.settings() ? "CHANGED " : "";
+            ret += "SETTINGS";
+            break;
+        case ShowType::kSetting:
+            ret += "SETTING ";
+            ret += sh.setting();
+            break;
+        case ShowType::kFilesystemCaches:
+            ret += "FILESYSTEM CACHES";
+            break;
+        case ShowType::kEngines:
+            ret += "ENGINES";
+            break;
+        case ShowType::kFunctions:
+            ret += "FUNCTIONS";
+            break;
+        case ShowType::kMerges:
+            ret += "MERGES";
+            break;
+        default:
+            ret += "DATABASES";
+    }
+    if (sh.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, sh.setting_values());
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5159,6 +5353,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kKill:
             KillToString(ret, query.kill());
+            break;
+        case QueryType::kShow:
+            ShowStatementToString(ret, query.show());
             break;
         default:
             ret += "SELECT 1";

@@ -10,28 +10,22 @@ import time
 import signal
 import sys
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 sys.path.append("..")
-from integration.helpers.cluster import is_port_free, ZOOKEEPER_CONTAINERS
-
+from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
+from sparkserver import (
+    get_unique_free_ports,
+    create_spark_http_server,
+    close_spark_http_server,
+)
 
 # Needs to get free ports before importing ClickHouseCluster
-def get_unique_free_ports(total: int) -> list[int]:
-    ports = []
-    for port in range(30000, 55000):
-        if is_port_free(port) and port not in ports:
-            ports.append(port)
-
-        if len(ports) == total:
-            return ports
-
-    raise Exception(f"Can't collect {total} ports. Collected: {len(ports)}")
-
-
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
 from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from integration.helpers.postgres_utility import get_postgres_conn
 from integration.helpers.s3_tools import (
     AzureUploader,
@@ -47,8 +41,6 @@ from properties import (
     modify_user_settings,
     modify_keeper_settings,
 )
-from httpserver import DolorHTTPServer
-from catalogs.datalakes import SparkHandler
 
 
 def ordered_pair(value):
@@ -248,6 +240,12 @@ parser.add_argument(
     help="Add 'allow_experimental_transactions' server setting",
 )
 parser.add_argument(
+    "--without-log-tables",
+    action="store_false",
+    dest="add_log_tables",
+    help="Add log tables server settings",
+)
+parser.add_argument(
     "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
@@ -419,18 +417,19 @@ for i in range(0, len(args.replica_values)):
         f"Server node{i} running on host {servers[i].hostname}, with IPv4 {servers[i].ip_address}, port 9000"
     )
 servers[len(servers) - 1].wait_start(8)
+servers[0].give_user_files_permissions()
 
 # Uploaders for object storage
 credentials_file = tempfile.NamedTemporaryFile()
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
-    os.environ["AWS_ACCESS_KEY_ID"] = minio_access_key
-    os.environ["AWS_SECRET_ACCESS_KEY"] = minio_secret_key
+    os.environ["AWS_ACCESS_KEY_ID"] = cluster.minio_access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = cluster.minio_secret_key
     os.environ["AWS_REGION"] = "us-east-1"
-    with open(credentials_file.name, "w") as file:
+    with open(credentials_file.name, "w+") as file:
         file.write(
-            f"[default]\naws_access_key_id = {minio_access_key}\naws_secret_access_key = {minio_secret_key}\n"
+            f"[default]\naws_access_key_id = {cluster.minio_access_key}\naws_secret_access_key = {cluster.minio_secret_key}\n"
         )
     os.environ["AWS_CONFIG_FILE"] = credentials_file.name
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
@@ -444,7 +443,6 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
-spark_handler = SparkHandler(cluster, args)
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -457,21 +455,7 @@ if args.with_postgresql:
 
 
 # Handler for HTTP server
-def datalakehandler(path, data, headers):
-    if path == "/sparkdatabase":
-        spark_handler.create_lake_database(cluster, data)
-        return True
-    if path == "/sparktable":
-        spark_handler.create_lake_table(cluster, data)
-        return True
-    return False
-
-
-catalog_server = DolorHTTPServer(
-    port=get_unique_free_ports(1)[0],
-    handler_kwargs={"callback": datalakehandler},
-)
-catalog_server.start()
+catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
@@ -489,9 +473,7 @@ def dolor_cleanup():
         cluster.shutdown(kill=True, ignore_fatal=True)
     except:
         pass
-    spark_handler.close_sessions()
-    if catalog_server.is_alive():
-        catalog_server.stop()
+    close_spark_http_server(catalog_server)
     if modified_server_settings:
         try:
             os.unlink(server_settings)

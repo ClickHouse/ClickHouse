@@ -111,11 +111,11 @@ StoragePtr TableFunctionURL::getStorage(
         return std::make_shared<StorageURLCluster>(
             global_context,
             parallel_replicas_cluster_name,
-            filename,
-            format,
-            compression_method,
+            source,
+            format_,
+            compression_method_,
             StorageID(getDatabaseName(), table_name),
-            columns,
+            getActualTableStructure(global_context, true),
             ConstraintsDescription{},
             configuration);
     }

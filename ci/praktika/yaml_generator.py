@@ -4,7 +4,6 @@ from typing import List
 from . import Artifact, Job, Workflow
 from .mangle import _get_workflows
 from .parser import WorkflowConfigParser
-from .runtime import RunConfig
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -139,6 +138,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -160,6 +160,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . {TEMP_DIR}/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -187,12 +188,6 @@ jobs:
         TEMPLATE_SETUP_ENVS_INPUTS = """\
           cat > {WORKFLOW_INPUTS_FILE} << 'EOF'
           ${{{{ toJson(github.event.inputs) }}}}
-          EOF\
-"""
-
-        TEMPLATE_SETUP_ENV_WF_CONFIG = """\
-          cat > {WORKFLOW_CONFIG_FILE} << 'EOF'
-          ${{{{ needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data }}}}
           EOF\
 """
 
@@ -229,11 +224,7 @@ jobs:
 """
 
         TEMPLATE_IF_EXPRESSION = """
-    if: ${{{{ !failure() && !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
-"""
-
-        TEMPLATE_IF_EXPRESSION_SKIPPED_OR_SUCCESS = """
-    if: ${{ !failure() && !cancelled() }}\
+    if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """
 
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
@@ -339,15 +330,6 @@ class PullRequestPushYamlGen:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENVS_INPUTS.format(
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
-                    )
-                )
-            if self.workflow_config.config._enabled_workflow_config():
-                secrets_envs.append(
-                    YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
-                        WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
-                            self.workflow_config.name
-                        ),
-                        WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
                     )
                 )
 

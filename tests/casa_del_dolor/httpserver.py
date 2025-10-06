@@ -10,7 +10,7 @@ import logging
 
 
 class DolorRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, callback=None, config=None, **kwargs):
+    def __init__(self, *args, callback=None, attachment=None, config=None, **kwargs):
         """
         Custom initializer for the request handler
 
@@ -19,6 +19,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             config: Configuration dictionary for the handler
         """
         self.callback = callback
+        self.attachment = attachment
         self.config = config if config is not None else {}
         self.logger = logging.getLogger(__name__)
 
@@ -32,10 +33,9 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         request_body = self.rfile.read(content_length)
 
         # Log the request
-        if self.config.get("verbose", True):
+        if self.config.get("verbose", False):
             self.logger.info(f"PUT request received at: {self.path}")
-            if self.config.get("headers", False):
-                self.logger.info(f"Headers: {self.headers}")
+            self.logger.info(f"Headers: {self.headers}")
             self.logger.info(f"Body: {request_body.decode('utf-8')}")
 
         # Process the request
@@ -52,29 +52,39 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             # Call the callback if provided
             response_ok = True
             if self.callback:
-                response_ok = self.callback(self.path, data, self.headers)
+                response_ok = self.callback(
+                    self.path, data, self.headers, self.attachment
+                )
 
             # Default response
             self.send_response(200 if response_ok else 400)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "OK" if response_ok else "Bad"}).encode("utf-8"))
+            self.wfile.write(
+                json.dumps({"status": "OK" if response_ok else "Bad"}).encode("utf-8")
+            )
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
             self.logger.error(str(e))
-            self.send_response(400)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
             error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
-            self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            try:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            except:
+                pass
         except Exception as e:
             # Handle other errors
             self.logger.error(str(e))
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
             error_response = {"status": "error", "message": f"Server error: {str(e)}"}
-            self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            try:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            except:
+                pass
 
     def log_message(self, format, *args):
         """Custom log format"""
@@ -82,7 +92,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 
 
 class DolorHTTPServer:
-    def __init__(self, host="localhost", port=8080, handler_kwargs=None):
+    def __init__(self, host="localhost", port=8080, attachment=None, handler_kwargs={}):
         """
         Initialize the threaded HTTP server
 
@@ -94,11 +104,13 @@ class DolorHTTPServer:
         """
         self.host = host
         self.port = port
-        self.handler_kwargs = handler_kwargs if handler_kwargs else {}
+        self.handler_kwargs = handler_kwargs
         self.server = None
         self.thread = None
         self.is_running = False
         self.logger = logging.getLogger(__name__)
+        self.attachment = attachment
+        self.handler_kwargs["attachment"] = self.attachment
 
     def start(self):
         """Start the server in a separate thread"""

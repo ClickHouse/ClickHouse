@@ -10,7 +10,33 @@ using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQu
 
 REGISTER_FUNCTION(CutQueryString)
 {
-    factory.registerFunction<FunctionCutQueryString>();
+    /// cutQueryString documentation
+    FunctionDocumentation::Description description_cutQueryString = R"(
+Removes the query string, including the question mark from a URL.
+    )";
+    FunctionDocumentation::Syntax syntax_cutQueryString = "cutQueryString(url)";
+    FunctionDocumentation::Arguments arguments_cutQueryString = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cutQueryString = {"Returns the URL with query string removed.", {"String"}};
+    FunctionDocumentation::Examples examples_cutQueryString = {
+    {
+        "Usage example",
+        R"(
+SELECT cutQueryString('http://example.com/path?query=value&param=123#fragment');
+        )",
+        R"(
+┌─cutQueryString('http://example.com/path?query=value&param=123#fragment')─┐
+│ http://example.com/path#fragment                                         │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cutQueryString = {1, 1};
+    FunctionDocumentation::Category category_cutQueryString = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_cutQueryString = {description_cutQueryString, syntax_cutQueryString, arguments_cutQueryString, returned_value_cutQueryString, examples_cutQueryString, introduced_in_cutQueryString, category_cutQueryString};
+
+    factory.registerFunction<FunctionCutQueryString>(documentation_cutQueryString);
 }
 
 }

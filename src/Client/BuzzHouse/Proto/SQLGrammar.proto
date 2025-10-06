@@ -2293,69 +2293,70 @@ enum OutFormat {
     OUT_CustomSeparated = 9;
     OUT_CustomSeparatedWithNames = 10;
     OUT_CustomSeparatedWithNamesAndTypes = 11;
-    OUT_JSON = 12;
-    OUT_JSONColumns = 13;
-    OUT_JSONColumnsWithMetadata = 14;
-    OUT_JSONCompact = 15;
-    OUT_JSONCompactColumns = 16;
-    OUT_JSONCompactEachRow = 17;
-    OUT_JSONCompactEachRowWithNames = 18;
-    OUT_JSONCompactEachRowWithNamesAndTypes = 19;
-    OUT_JSONCompactStrings = 20;
-    OUT_JSONCompactStringsEachRow = 21;
-    OUT_JSONCompactStringsEachRowWithNames = 22;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
-    OUT_JSONEachRow = 24;
-    OUT_JSONEachRowWithProgress = 25;
-    OUT_JSONLines = 26;
-    OUT_JSONObjectEachRow = 27;
-    OUT_JSONStrings = 28;
-    OUT_JSONStringsEachRow = 29;
-    OUT_JSONStringsEachRowWithProgress = 30;
-    OUT_LineAsString = 31;
-    OUT_LineAsStringWithNames = 32;
-    OUT_LineAsStringWithNamesAndTypes = 33;
-    OUT_Markdown = 34;
-    OUT_MsgPack = 35;
-    OUT_Native = 36;
-    OUT_Npy = 37;
-    OUT_Null = 38;
-    OUT_ODBCDriver2 = 39;
-    OUT_ORC = 40;
-    OUT_Parquet = 41;
-    OUT_Pretty = 42;
-    OUT_PrettyCompact = 43;
-    OUT_PrettyCompactMonoBlock = 44;
-    OUT_PrettyCompactNoEscapes = 45;
-    OUT_PrettyCompactNoEscapesMonoBlock = 46;
-    OUT_PrettyJSONEachRow = 47;
-    OUT_PrettyMonoBlock = 48;
-    OUT_PrettyNoEscapes = 49;
-    OUT_PrettyNoEscapesMonoBlock = 50;
-    OUT_PrettySpace = 51;
-    OUT_PrettySpaceMonoBlock = 52;
-    OUT_PrettySpaceNoEscapes = 53;
-    OUT_PrettySpaceNoEscapesMonoBlock = 54;
-    OUT_Prometheus = 55;
-    OUT_Protobuf = 56;
-    OUT_ProtobufList = 57;
-    OUT_ProtobufSingle = 58;
-    OUT_RawBLOB = 59;
-    OUT_RowBinary = 60;
-    OUT_RowBinaryWithNames = 61;
-    OUT_RowBinaryWithNamesAndTypes = 62;
-    OUT_SQLInsert = 63;
-    OUT_TabSeparated = 64;
-    OUT_TabSeparatedRaw = 65;
-    OUT_TabSeparatedRawWithNames = 66;
-    OUT_TabSeparatedRawWithNamesAndTypes = 67;
-    OUT_TabSeparatedWithNames = 68;
-    OUT_TabSeparatedWithNamesAndTypes = 69;
-    OUT_Template = 70;
-    OUT_TSKV = 71;
-    OUT_Values = 72;
-    OUT_Vertical = 73;
-    OUT_XML = 74;
+    OUT_Hash = 12;
+    OUT_JSON = 13;
+    OUT_JSONColumns = 14;
+    OUT_JSONColumnsWithMetadata = 15;
+    OUT_JSONCompact = 16;
+    OUT_JSONCompactColumns = 17;
+    OUT_JSONCompactEachRow = 18;
+    OUT_JSONCompactEachRowWithNames = 19;
+    OUT_JSONCompactEachRowWithNamesAndTypes = 20;
+    OUT_JSONCompactStrings = 21;
+    OUT_JSONCompactStringsEachRow = 22;
+    OUT_JSONCompactStringsEachRowWithNames = 23;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 24;
+    OUT_JSONEachRow = 25;
+    OUT_JSONEachRowWithProgress = 26;
+    OUT_JSONLines = 27;
+    OUT_JSONObjectEachRow = 28;
+    OUT_JSONStrings = 29;
+    OUT_JSONStringsEachRow = 30;
+    OUT_JSONStringsEachRowWithProgress = 31;
+    OUT_LineAsString = 32;
+    OUT_LineAsStringWithNames = 33;
+    OUT_LineAsStringWithNamesAndTypes = 34;
+    OUT_Markdown = 35;
+    OUT_MsgPack = 36;
+    OUT_Native = 37;
+    OUT_Npy = 38;
+    OUT_Null = 39;
+    OUT_ODBCDriver2 = 40;
+    OUT_ORC = 41;
+    OUT_Parquet = 42;
+    OUT_Pretty = 43;
+    OUT_PrettyCompact = 44;
+    OUT_PrettyCompactMonoBlock = 45;
+    OUT_PrettyCompactNoEscapes = 46;
+    OUT_PrettyCompactNoEscapesMonoBlock = 47;
+    OUT_PrettyJSONEachRow = 48;
+    OUT_PrettyMonoBlock = 49;
+    OUT_PrettyNoEscapes = 50;
+    OUT_PrettyNoEscapesMonoBlock = 51;
+    OUT_PrettySpace = 52;
+    OUT_PrettySpaceMonoBlock = 53;
+    OUT_PrettySpaceNoEscapes = 54;
+    OUT_PrettySpaceNoEscapesMonoBlock = 55;
+    OUT_Prometheus = 56;
+    OUT_Protobuf = 57;
+    OUT_ProtobufList = 58;
+    OUT_ProtobufSingle = 59;
+    OUT_RawBLOB = 60;
+    OUT_RowBinary = 61;
+    OUT_RowBinaryWithNames = 62;
+    OUT_RowBinaryWithNamesAndTypes = 63;
+    OUT_SQLInsert = 64;
+    OUT_TabSeparated = 65;
+    OUT_TabSeparatedRaw = 66;
+    OUT_TabSeparatedRawWithNames = 67;
+    OUT_TabSeparatedRawWithNamesAndTypes = 68;
+    OUT_TabSeparatedWithNames = 69;
+    OUT_TabSeparatedWithNamesAndTypes = 70;
+    OUT_Template = 71;
+    OUT_TSKV = 72;
+    OUT_Values = 73;
+    OUT_Vertical = 74;
+    OUT_XML = 75;
 }
 
 enum InOutFormat {
@@ -2976,6 +2977,11 @@ message Dynamic {
     optional uint32 ntypes = 1;
 }
 
+message QBit {
+    required FloatingPoints subtype = 1;
+    required uint32 dimension = 2;
+}
+
 message BottomTypeName {
     oneof bottom_one_of {
         Integers integers = 1;
@@ -2993,6 +2999,7 @@ message BottomTypeName {
         EnumDef enum_def = 13;
         bool IPv4 = 14;
         bool IPv6 = 15;
+        QBit qbit = 16;
     }
 }
 
@@ -3233,6 +3240,7 @@ enum TableEngineValues {
     ExternalDistributed = 40;
     MaterializedPostgreSQL = 41;
     ArrowFlight = 42;
+    Alias = 43;
 }
 
 enum TableEngineOption {
@@ -3545,6 +3553,13 @@ message AddStatistics {
     required ColumnStatistics stats = 2;
 }
 
+message MaterializeStatistics {
+    oneof statistics_oneof {
+        ColumnPathList cols = 1;
+        bool all = 2;
+    }
+}
+
 message AddIndex {
     required IndexDef new_idx = 1;
     optional AddWhere add_where = 2;
@@ -3622,17 +3637,18 @@ message CreateMatViewTo {
 
 message CreateView {
     required CreateReplaceOption create_opt = 1;
-    optional bool if_not_exists = 2;
-    optional bool materialized = 3;
-    required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
-    optional RefreshableView refresh = 6;
-    optional CreateMatViewTo to = 7;
-    optional TableEngine engine = 8;
-    optional bool populate = 9;
-    optional bool empty = 10;
-    required SelectParen select = 11;
-    optional string comment = 12;
+    optional bool is_temp = 2;
+    optional bool if_not_exists = 3;
+    optional bool materialized = 4;
+    required ExprSchemaTable est = 5;
+    optional Cluster cluster = 6;
+    optional RefreshableView refresh = 7;
+    optional CreateMatViewTo to = 8;
+    optional TableEngine engine = 9;
+    optional bool populate = 10;
+    optional bool empty = 11;
+    required SelectParen select = 12;
+    optional string comment = 13;
 }
 
 message DictionaryColumn {
@@ -3770,7 +3786,7 @@ message AlterItem {
         AddStatistics mod_stats = 14;
         ColumnPathList drop_stats = 15;
         ColumnPathList clear_stats = 16;
-        ColumnPathList mat_stats = 17;
+        MaterializeStatistics mat_stats = 17;
         AddIndex add_index = 18;
         IdxInPartition materialize_index = 19;
         Index drop_index = 20;
@@ -3984,8 +4000,9 @@ message SystemCommand {
         bool drop_query_condition_cache = 67;
         FailPoint enable_failpoint = 68;
         FailPoint disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
     }
-    optional Cluster cluster = 70;
+    optional Cluster cluster = 71;
 }
 
 message BackupRestoreObject {
@@ -4077,6 +4094,70 @@ message Kill {
     optional SettingValues setting_values = 7;
 }
 
+message ShowObject {
+    optional bool create = 1;
+    optional bool is_temp = 2;
+    required SQLObject sobject = 3;
+    required SQLObjectName object = 4;
+}
+
+message ShowTables {
+    optional bool full = 1;
+    optional bool is_temp = 2;
+    optional Database database = 3;
+}
+
+message ShowDictionaries {
+    optional Database database = 1;
+}
+
+message ShowColumns {
+    optional bool extended = 1;
+    optional bool full = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowIndex {
+    enum IndexShow {
+        INDEX = 1;
+        INDEXES = 2;
+        INDICES = 3;
+        KEYS = 4;
+    }
+    optional bool extended = 1;
+    required IndexShow key = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowStatement {
+    oneof show_oneof {
+        ShowObject object = 1;
+        bool databases = 2;
+        ShowTables tables = 3;
+        ShowColumns columns = 4;
+        ShowDictionaries dictionaries = 5;
+        ShowIndex indexes = 6;
+        bool processlist = 7;
+        bool grants = 8;// bool is used here
+        bool users = 9;
+        bool roles = 10; // bool is used here
+        bool profiles = 11; // bool is used here
+        ExprSchemaTable policies = 12;
+        bool quotas = 13;
+        bool quota = 14; // bool is used here
+        bool access = 15;
+        Cluster cluster = 16;
+        bool clusters = 17;
+        bool settings = 18; // bool is used here
+        string setting = 19;
+        bool filesystem_caches = 20;
+        bool engines = 21;
+        bool functions = 22;
+        bool merges = 23;
+    }
+    optional SettingValues setting_values = 24;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -4102,6 +4183,7 @@ message SQLQueryInner {
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
         Kill kill = 23;
+        ShowStatement show = 24;
     }
 }
 

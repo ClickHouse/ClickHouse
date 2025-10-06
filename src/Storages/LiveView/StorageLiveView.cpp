@@ -267,9 +267,6 @@ void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query
 
 void StorageLiveView::drop()
 {
-    auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeViewDependency(select_query_description.select_table_id, table_id);
-
     std::lock_guard lock(mutex);
     condition.notify_all();
 }
@@ -660,11 +657,6 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
             SelectQueryOptions(QueryProcessingStage::Complete));
         builder = interpreter.buildQueryPipeline();
     }
-
-    builder.addSimpleTransform([&](const SharedHeader & cur_header)
-    {
-        return std::make_shared<MaterializingTransform>(cur_header);
-    });
 
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

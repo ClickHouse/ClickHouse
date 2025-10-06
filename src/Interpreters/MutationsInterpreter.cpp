@@ -6,6 +6,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -528,12 +529,13 @@ static void validateUpdateColumns(
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
-                                    "Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
+                                    "Cannot UPDATE it", backQuote(column_name), backQuote(materialized));
                 }
             }
         }
 
-        if (!storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name))
+        auto ordinary_storage_column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+        if (!ordinary_storage_column)
         {
             /// Allow to override value of lightweight delete filter virtual column
             if (column_name == RowExistsColumn::name)
@@ -548,6 +550,16 @@ static void validateUpdateColumns(
             else
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
+            }
+        }
+        else
+        {
+            /// Check if we have a subcolumn of this column as a key column.
+            for (const auto & key_column : key_columns)
+            {
+                auto [key_column_name, key_subcolumn_name] = Nested::splitName(key_column);
+                if (key_column_name == column_name && ordinary_storage_column->type->hasSubcolumn(key_subcolumn_name))
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
             }
         }
     }
@@ -665,6 +677,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
             {
                 auto query = column.default_desc.expression->clone();
+                /// Replace all subcolumns to the getSubcolumn() to get only top level columns as required source columns.
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const auto & dependency : syntax_result->requiredSourceColumns())
                     if (updated_columns.contains(dependency))
@@ -844,9 +858,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                     {
                         auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
 
-                        auto materialized_column = makeASTFunction("_CAST",
+                        ASTPtr materialized_column = makeASTFunction("_CAST",
                             column.default_desc.expression->clone(),
                             type_literal);
+
+                        /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                        /// because otherwise subcolumns are extracted before the source column is updated and we get
+                        /// old subcolumns values.
+                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
                         stages.back().column_to_updated.emplace(
                             column.name,
@@ -909,6 +928,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
+            if (command.statistics_columns.empty())
+            {
+                for (const auto & column_desc : columns_desc)
+                {
+                    if (!column_desc.statistics.empty())
+                    {
+                        dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
+                        materialized_statistics.emplace(column_desc.name);
+                    }
+                }
+            }
             for (const auto & stat_column_name: command.statistics_columns)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
@@ -1007,6 +1038,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// But we still have to read at least one column.
                 dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
+        }
+        else if (command.type == MutationCommand::REWRITE_PARTS)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            addStageIfNeeded(command.mutation_version, true);
+            stages.back().affects_all_columns = true;
+
+            need_rebuild_indexes = true;
+            need_rebuild_projections = true;
         }
         else if (command.type == MutationCommand::READ_COLUMN)
         {

@@ -58,7 +58,7 @@ public:
     String getDataSourceDescription() const override { return url; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    void check(ContextPtr context) const override;
+    void check(ContextPtr context) override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
@@ -69,10 +69,12 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+protected:
+    void setURL(const std::string & url_);
+    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+
 private:
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
-    void setURL(const std::string & url_);
 
     String url;
     Path path;

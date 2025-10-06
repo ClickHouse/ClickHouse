@@ -24,11 +24,12 @@ struct PrewhereExprStep
 {
     enum Type
     {
+        None,
         Filter,
         Expression,
     };
 
-    Type type = Type::Filter;
+    Type type = Type::None;
     ExpressionActionsPtr actions;
     String filter_column_name;
 
@@ -170,6 +171,8 @@ private:
         size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
+
+        size_t currentTaskLastMark() const { return current_task_last_mark; }
 
     private:
         size_t current_mark = 0;

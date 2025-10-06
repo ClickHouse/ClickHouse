@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -248,7 +249,7 @@ void SerializationArray::enumerateStreams(
 
     auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
     auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationNumber<UInt64>>(),
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -477,9 +478,6 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
 
-    /// Adjust value size hint. Divide it to the average array size.
-    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
-
     nested->deserializeBinaryBulkWithMultipleStreams(
         nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
 
@@ -537,6 +535,16 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
+    }
+    else
+    {
+        skipWhitespaceIfAny(istr);
+        if (istr.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
+            return ReturnType(false);
+        }
     }
 
     auto on_error_no_throw = [&]()
