@@ -1,0 +1,2 @@
+CREATE TABLE system.foo\n(\n    `key` Int32\n)\nENGINE = `Null`
+CREATE TABLE system.foo\n(\n    `key` Int32\n)\nENGINE = `Null`

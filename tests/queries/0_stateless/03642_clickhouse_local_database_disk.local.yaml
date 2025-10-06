@@ -1,0 +1,9 @@
+database_disk:
+  disk: local
+
+storage_configuration:
+  disks:
+    local:
+      type: local
+      path:
+        "@from_env": CLICKHOUSE_LOCAL_DISK_PATH
