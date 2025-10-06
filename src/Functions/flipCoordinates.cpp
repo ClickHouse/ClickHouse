@@ -154,7 +154,7 @@ private:
 REGISTER_FUNCTION(FlipCoordinates)
 {
     FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
-    FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry);";
+    FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
     };
