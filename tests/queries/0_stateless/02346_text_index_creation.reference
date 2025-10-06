@@ -1,7 +1,8 @@
 Must not have no arguments.
 Test single tokenizer argument.
--- tokenizer must be default, ngram, split or no_op.
-Test ngram_size argument.
+-- tokenizer must be splitByNonAlpha, ngrams, splitByString or array.
+-- tokenizer can be identifier or function.
+Test ngram size.
 -- ngram size must be between 2 and 8.
 Test separators argument.
 -- separators must be array.
