@@ -510,17 +510,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
     {
-        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
-        for (const auto & expired_column : expired_columns)
-            part_serialization_infos.erase(expired_column);
-
         global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
         global_ctx->merging_columns = global_ctx->merging_columns.eraseNames(expired_columns);
         global_ctx->storage_columns = global_ctx->storage_columns.eraseNames(expired_columns);
-        global_ctx->new_data_part->setColumns(
-            global_ctx->storage_columns,
-            part_serialization_infos,
-            global_ctx->metadata_snapshot->getMetadataVersion());
     }
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
