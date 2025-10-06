@@ -36,7 +36,7 @@ BlockIO InterpreterShowProcesslistQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    BlockIO io = executeQuery(std::move(query), query_context, QueryFlags{ .internal = true }).second;
+    BlockIO io = executeQuery(query, query_context, QueryFlags{ .internal = true }).second;
     io.context_holder = std::move(query_context);
     return io;
 }
