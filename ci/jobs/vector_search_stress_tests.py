@@ -160,6 +160,7 @@ test_params_laion_5b_1m = {
 }
 
 test_params_hackernews_10m = {
+    LIMIT_N: None,
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
@@ -169,6 +170,7 @@ test_params_hackernews_10m = {
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
     TRUTH_SET_COUNT: 1000,
     RECALL_K: 100,
     MERGE_TREE_SETTINGS: None,
