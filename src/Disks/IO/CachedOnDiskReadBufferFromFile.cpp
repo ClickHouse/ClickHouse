@@ -1132,7 +1132,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         std::optional<size_t> object_size;
         std::optional<size_t> impl_read_until_position;
-        std::optional<std::string> read_stop_reason;
+        std::optional<std::string> impl_read_stop_reason;
         if (read_type != ReadType::CACHED)
         {
             object_size = implementation_buffer->tryGetFileSize();
@@ -1140,7 +1140,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
-                read_stop_reason = s3_buf->getStopReason();
+                impl_read_stop_reason = s3_buf->getStopReason();
             }
 #endif
         }
@@ -1152,11 +1152,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             "file offset: {}, "
             "read bytes: {}, "
             "object size: {}, "
-            "read stop reason: {}, "
             "initial read offset: {}, "
             "nextimpl working buffer offset: {},"
             "reading until: {}, "
             "read type: {}, "
+            "impl read stop reason: {}, "
             "impl working buffer size: {}, "
             "impl internal buffer size: {}, "
             "impl available: {}, "
@@ -1172,11 +1172,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             file_offset_of_buffer_end,
             size,
             object_size ? std::to_string(*object_size) : "None",
-            read_stop_reason ? *read_stop_reason : "None",
             first_offset,
             nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
+            impl_read_stop_reason ? *impl_read_stop_reason : "None",
             implementation_buffer->buffer().size(),
             implementation_buffer->internalBuffer().size(),
             implementation_buffer->available(),
