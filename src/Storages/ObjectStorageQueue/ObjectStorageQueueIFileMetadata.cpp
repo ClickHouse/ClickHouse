@@ -269,7 +269,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 }
 
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
-ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
+ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
     if (metadata_ref_count.load() > 1)
     {
@@ -300,7 +300,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
-    return prepareProcessingRequestsImpl(requests);
+    return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
 void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)

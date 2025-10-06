@@ -34,10 +34,12 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
 }
 
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
-ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests)
+ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
+    Coordination::Requests & requests,
+    const std::string & processing_id)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-    node_metadata.processing_id = getRandomASCIIString(10);
+    node_metadata.processing_id = processing_id;
     processor_info = getProcessorInfo(node_metadata.processing_id);
 
     SetProcessingResponseIndexes result;
@@ -64,7 +66,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
     Coordination::Requests requests;
-    auto result = prepareProcessingRequestsImpl(requests);
+    auto result = prepareProcessingRequestsImpl(requests, getRandomASCIIString(10));
 
     Coordination::Responses responses;
     bool is_retry = false;

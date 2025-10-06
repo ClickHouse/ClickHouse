@@ -231,20 +231,26 @@ ObjectStorageQueueSource::FileIterator::next()
                 size_t num_successful_objects = 0;
                 Strings processing_paths;
                 String processor_info;
+                String processing_id = getRandomASCIIString(10);
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->relative_path,
                         /* bucket_info */{}); /// No buckets for Unordered mode.
 
-                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
+                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
                     {
                         result_indexes[i] = set_processing_result.value();
                         ++num_successful_objects;
                         processing_paths.push_back(file_metadatas[i]->getProcessingPath());
+
+                        const auto & current_processor_info = file_metadatas[i]->getProcessorInfo();
                         if (processor_info.empty())
-                            processor_info = file_metadatas[i]->getProcessorInfo();
+                            processor_info = current_processor_info;
+
+                        chassert(processor_info == current_processor_info,
+                                 fmt::format("{} != {}", processor_info, current_processor_info));
                     }
                     else
                     {
@@ -270,7 +276,9 @@ ObjectStorageQueueSource::FileIterator::next()
                             auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
                             for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
-                                LOG_TEST(log, "Having {}, current processor: {}", processing_paths_responses[i].data, processor_info);
+                                LOG_TEST(log, "Path {} has processor: {}, current processor: {}",
+                                         processing_paths[i], processing_paths_responses[i].data, processor_info);
+
                                 if (processing_paths_responses[i].data != processor_info)
                                 {
                                     failed = true;

@@ -101,7 +101,9 @@ public:
         size_t failed_path_doesnt_exist_idx = 0;
         size_t create_processing_node_idx = 0;
     };
-    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
+    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(
+        Coordination::Requests & requests,
+        const std::string & processing_id);
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
@@ -136,7 +138,7 @@ protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
 
-    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &, const std::string &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
