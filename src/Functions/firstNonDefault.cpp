@@ -147,7 +147,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     };
     doc.category = {FunctionDocumentation::Category::Null};
 
-    doc.introduced_in = {25, 7};
+    doc.introduced_in = {25, 9};
     factory.registerFunction<FunctionFirstNonDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 
