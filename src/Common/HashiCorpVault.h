@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ public:
 
     String readSecret(const String & secret, const String & key);
 
-    bool isLoaded() { return loaded; }
+    bool isLoaded() const { return loaded; }
 
 private:
     void reset()

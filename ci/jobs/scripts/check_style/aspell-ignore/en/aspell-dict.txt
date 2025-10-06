@@ -1191,6 +1191,7 @@ hasColumnInTable
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
+hashicorp
 HashiCorp
 hashtables
 hasSubsequence
