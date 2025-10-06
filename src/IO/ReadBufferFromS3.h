@@ -33,6 +33,7 @@ private:
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason = "";
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
@@ -74,6 +75,10 @@ public:
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
