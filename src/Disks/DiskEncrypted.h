@@ -66,6 +66,13 @@ public:
         delegate->createDirectories(wrapped_path);
     }
 
+    void clearDirectory(const String & path) override
+    {
+        auto tx = createEncryptedTransaction();
+        tx->clearDirectory(path);
+        tx->commit();
+    }
+
     void moveDirectory(const String & from_path, const String & to_path) override
     {
         auto tx = createEncryptedTransaction();
@@ -134,7 +141,7 @@ public:
         const WriteSettings & settings) override
     {
         auto tx = createEncryptedTransaction();
-        auto result = tx->writeFileWithAutoCommit(path, buf_size, mode, settings);
+        auto result = tx->writeFile(path, buf_size, mode, settings);
         return result;
     }
 

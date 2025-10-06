@@ -104,7 +104,7 @@ SharedHeader getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
-            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.row_level_filter, query_info.prewhere_info);
+            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
             return std::make_shared<const Block>(std::move(header));
         }
         case QueryProcessingStage::WithMergeableState:

@@ -478,6 +478,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
 
+    /// Adjust value size hint. Divide it to the average array size.
+    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
+
     nested->deserializeBinaryBulkWithMultipleStreams(
         nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
 

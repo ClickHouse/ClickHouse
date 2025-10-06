@@ -130,7 +130,6 @@ void IDataType::forEachSubcolumn(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
-    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 }
 
@@ -183,7 +182,6 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     settings.position_independent_encoding = false;
     /// Don't enumerate dynamic subcolumns, they are handled separately.
     settings.enumerate_dynamic_streams = false;
-    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -292,45 +290,37 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
 }
 
-SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
+SerializationPtr IDataType::getDefaultSerialization() const
 {
-    if (override_default)
-        return override_default;
-
     if (custom_serialization)
         return custom_serialization;
 
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSparseSerialization(SerializationPtr override_default) const
+SerializationPtr IDataType::getSparseSerialization() const
 {
-    return std::make_shared<SerializationSparse>(getDefaultSerialization(override_default));
+    return std::make_shared<SerializationSparse>(getDefaultSerialization());
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind, SerializationPtr override_default) const
+SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization(override_default);
+        return getSparseSerialization();
 
     if (kind == ISerialization::Kind::DETACHED)
-        return std::make_shared<SerializationDetached>(getDefaultSerialization(override_default));
+        return std::make_shared<SerializationDetached>(getDefaultSerialization());
 
     if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return std::make_shared<SerializationDetached>(
-            supportsSparseSerialization() ? getSparseSerialization(override_default) : getDefaultSerialization(override_default));
+            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
 
-    return getDefaultSerialization(override_default);
+    return getDefaultSerialization();
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
     return getSerialization(info.getKind());
-}
-
-SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
-{
-    return getSerialization(*createSerializationInfo(settings));
 }
 
 // static
@@ -344,19 +334,6 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
     }
 
     return column.type->getSerialization(info);
-}
-
-// static
-SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings)
-{
-    if (column.isSubcolumn())
-    {
-        const auto & type_in_storage = column.getTypeInStorage();
-        auto serialization = type_in_storage->getSerialization(settings);
-        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), serialization);
-    }
-
-    return column.type->getSerialization(settings);
 }
 
 // static
@@ -438,7 +415,6 @@ bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } 
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
 bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
-bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
 \
 bool isColumnedAsNumber(TYPE data_type) \
 { \

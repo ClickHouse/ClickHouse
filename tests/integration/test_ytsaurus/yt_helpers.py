@@ -7,9 +7,13 @@ class YTsaurusCLI:
         self.cluster = cluster
         self.proxy = proxy
         self.port = port
-
-    def exec(self, command, retry_count=5, time_to_sleep=10):
-
+    
+    def exec(
+            self,
+            command,
+            retry_count=5,
+            time_to_sleep=10):
+    
         for retry in range(retry_count):
             try:
                 self.cluster.exec_in_container(
@@ -91,20 +95,23 @@ class YTsaurusCLI:
             [
                 "bash",
                 "-c",
-                "echo '{}' | yt {} '{}' --format '<encode_utf8=false;uuid_mode=text_yql>json'".format(
+                "echo '{}' | yt {} '{}' --format \'<uuid_mode=text_yql>json\'".format(
                     data, "insert-rows" if dynamic else "write-table", table_path
                 ),
             ],
         )
-
-    def write_table(self, table_path, data):
+    def write_table(
+        self,
+        table_path,
+        data
+    ):
         self.cluster.exec_in_container(
             self.cluster.get_container_id(self.proxy),
             [
                 "bash",
                 "-c",
-                "echo '{}' | yt {} '{}' --format '<encode_utf8=false;uuid_mode=text_yql>json'".format(
-                    data, "write-table", table_path
+                "echo '{}' | yt {} '{}' --format \'<uuid_mode=text_yql>json\'".format(
+                    data,  "write-table", table_path
                 ),
             ],
         )

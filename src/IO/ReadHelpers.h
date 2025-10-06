@@ -609,15 +609,6 @@ inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
         date = from;
 }
 
-inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
-{
-    if (unlikely(from < 0 || from > 0xFFFF))
-        return false;
-
-    date = from;
-    return true;
-}
-
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
 {
@@ -626,25 +617,13 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     LocalDate local_date;
 
     if constexpr (throw_exception)
-    {
         readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-        ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-        convertToDayNum(date, ret);
-    }
-    else
-    {
-        if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
-            return false;
+    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        return false;
 
-        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-        if (!ret)
-            return false;
-
-        if (!tryToConvertToDayNum(date, *ret))
-            return false;
-
-        return true;
-    }
+    ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+    convertToDayNum(date, ret);
+    return ReturnType(true);
 }
 
 template <typename ReturnType = void>
@@ -889,25 +868,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if constexpr (throw_exception)
-            {
-                if (unlikely(year == 0))
-                    datetime = 0;
-                else
-                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-            }
+            if (unlikely(year == 0))
+                datetime = 0;
             else
-            {
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
-                    return false;
-
-                /// For usual DateTime check if value is within supported range
-                if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
-                    return false;
-
-                datetime = *datetime_maybe;
-            }
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;

@@ -28,7 +28,7 @@ def run_echo_server():
         [
             "bash",
             "-c",
-            "python3 /http_auth_server.py > /var/log/clickhouse-server/http_auth_server.log 2>&1",
+            "python3 /http_auth_server.py > /http_auth_server.log 2>&1",
         ],
         detach=True,
         user="root",

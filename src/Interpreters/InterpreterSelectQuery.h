@@ -219,7 +219,7 @@ private:
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
     RowPolicyFilterPtr row_policy_filter;
-    FilterDAGInfoPtr row_policy_info;
+    FilterDAGInfoPtr filter_info;
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;

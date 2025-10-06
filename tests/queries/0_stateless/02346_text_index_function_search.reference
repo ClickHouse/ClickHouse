@@ -1,28 +1,4 @@
 Negative tests
-Test what happens hasAnyTokens/All are called on columns without index
--- It is expected that the default tokenizer is used
--- { echoOn }
-SELECT hasAnyTokens('a b', ['b']);
-1
-SELECT hasAnyTokens('a b', ['c']);
-0
-SELECT hasAnyTokens(materialize('a b'), ['b']);
-1
-SELECT hasAnyTokens(materialize('a b'), ['c']);
-0
---
-SELECT hasAllTokens('a b', ['a', 'b']);
-1
-SELECT hasAllTokens('a b', ['a', 'c']);
-0
-SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
-1
-SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
-0
-1
-2
-1
-2
 FixedString input columns
 [1]
 [1]
@@ -141,7 +117,7 @@ Combination with the tokens function
 []
 [4]
 Text index analysis
-hasAnyTokens is used during index analysis
+searchAny is used during index analysis
 Text index should choose none for non-existent term
 Description: text GRANULARITY 1
 Parts: 0/4
@@ -174,7 +150,7 @@ Text index should choose all 4 parts and 4096 granules
 Description: text GRANULARITY 1
 Parts: 4/4
 Granules: 4096/4096
-hasAllTokens is used during index analysis
+searchAll is used during index analysis
 Text index should choose none for non-existent term
 Description: text GRANULARITY 1
 Parts: 0/4

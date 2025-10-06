@@ -623,7 +623,6 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
-    {"CheckStat", static_cast<Int16>(Coordination::OpNum::CheckStat)},
 });
 }
 

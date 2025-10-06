@@ -56,7 +56,6 @@ namespace ProfileEvents
 {
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
-    extern const Event MergesRejectedByMemoryLimit;
 }
 
 namespace DB
@@ -1087,7 +1086,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         if (canEnqueueBackgroundTask())
             return {};
 
-        ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
         return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));

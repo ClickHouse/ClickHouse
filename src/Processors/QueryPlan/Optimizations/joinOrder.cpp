@@ -219,16 +219,10 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         auto pin_it = query_graph.pinned.find(edge);
         if (pin_it != query_graph.pinned.end())
         {
-            /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause.
-              * 2. The expression depends on a relation that was previously part of an OUTER JOIN.
-              * In the first case, the OUTER JOINed relation can only appear as a singleton in the `left` or `right` set.
-              * In the second case, the relation can be part of a bushy tree,
-              * so the expression is not strictly applied the first time its pinned relation is joined.
-              * Here, we just check if the expression is pinned to another join,
-              * which can be different from the expression's source relations.
-              */
-            if (!joined_rels.test(pin_it->second))
+            bool can_apply = (left.count() == 1 && left.test(pin_it->second)) ||
+                             (right.count() == 1 && right.test(pin_it->second));
+            if (!can_apply)
+                /// Pinned to different join
                 continue;
         }
 

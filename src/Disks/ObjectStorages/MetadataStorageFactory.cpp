@@ -194,8 +194,4 @@ void registerMetadataStorages()
 #endif
 }
 
-void MetadataStorageFactory::clearRegistry()
-{
-    registry.clear();
-}
 }

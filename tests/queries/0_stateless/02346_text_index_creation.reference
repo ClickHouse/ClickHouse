@@ -1,8 +1,7 @@
 Must not have no arguments.
 Test single tokenizer argument.
--- tokenizer must be splitByNonAlpha, ngrams, splitByString or array.
--- tokenizer can be identifier or function.
-Test ngram size.
+-- tokenizer must be default, ngram, split or no_op.
+Test ngram_size argument.
 -- ngram size must be between 2 and 8.
 Test separators argument.
 -- separators must be array.
@@ -13,9 +12,6 @@ Test bloom_filter_false_positive_rate argument.
 Test dictionary_block_size argument.
 -- dictionary_block_size must be an integer.
 -- dictionary_block_size must be bigger than 0.
-Test dictionary_block_frontcoding_compression argument.
--- dictionary_block_frontcoding_compression must be an integer.
--- dictionary_block_frontcoding_compression must be 0 or 1.
 Test max_cardinality_for_embedded_postings argument.
 -- max_cardinality_for_embedded_postings must be an integer.
 Parameters are shuffled.
@@ -26,16 +22,4 @@ Must be created on single column.
 A column must not have >1 text index
 -- CREATE TABLE
 -- ALTER TABLE
-Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.
--- Negative tests
--- Positive tests
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
+Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.

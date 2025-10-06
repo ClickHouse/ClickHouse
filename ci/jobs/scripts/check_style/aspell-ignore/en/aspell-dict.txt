@@ -165,9 +165,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
-arrowFlight
 ArrowCompression
-ArrowFlight
 ArrowStream
 ASan
 ascii
@@ -814,7 +812,6 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
-DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -2350,8 +2347,6 @@ py
 PyArrow
 PyCharm
 QATlib
-qbit
-QBit
 QEMU
 qryn
 QTCreator
@@ -2374,7 +2369,6 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
-quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive
@@ -2637,8 +2631,8 @@ SchemaInferenceMode
 schemas
 Schemas
 Schwartzian
-hasAnyTokens
-hasAllTokens
+searchAll
+searchAny
 SeasClick
 sectio
 seekable
@@ -2844,8 +2838,6 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentttest
 studentTTest
-studentTTestOneSample
-studentttestonesample
 subarray
 subarrays
 subBitmap
@@ -3002,7 +2994,6 @@ ThreadsActive
 ThreadsInOvercommitTracker
 throwif
 throwIf
-Tiering
 timeDiff
 TimescaleDB's
 timeseries
@@ -3090,10 +3081,8 @@ toJSONString
 tokenbf
 tokenization
 tokenize
-tokenizes
 tokenized
 tokenizer
-tokenizers
 tokenizing
 toLastDayOfMonth
 toLastDayOfWeek

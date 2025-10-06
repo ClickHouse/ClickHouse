@@ -140,7 +140,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!storage.canMoveConditionsToPrewhere())
         return;
 
-    if (source_step_with_filter->getPrewhereInfo())
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (storage_prewhere_info)
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -193,7 +194,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (optimize_result.prewhere_nodes.empty())
         return;
 
-    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+    PrewhereInfoPtr prewhere_info;
+    if (storage_prewhere_info)
+        prewhere_info = storage_prewhere_info->clone();
+    else
+        prewhere_info = std::make_shared<PrewhereInfo>();
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,

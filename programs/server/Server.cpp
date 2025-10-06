@@ -32,7 +32,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
@@ -270,7 +269,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
-    extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -370,11 +368,6 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
     extern const Metric IsServerShuttingDown;
-}
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & StartupScriptsFailureReason;
 }
 
 namespace ProfileEvents
@@ -946,9 +939,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        DimensionalMetrics::set(
-            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
-
+        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
+            "startup_scripts_failure_reason",
+            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+            {"error_name"}
+        );
+        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -2042,7 +2038,6 @@ try
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
-            global_context->setMaxNamedCollectionNumToWarn(new_server_settings[ServerSetting::max_named_collection_num_to_warn]);
             global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
             global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
