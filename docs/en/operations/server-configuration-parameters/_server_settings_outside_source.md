@@ -2473,7 +2473,7 @@ ClickHouse configuration:
 ```xml
 <clickhouse>
     <vault>
-      <url>http://openbao:1337</url>
+      <url>http://openbao:8200</url>
       <token>foobar</token>
     </vault>
 </clickhouse>
@@ -2498,7 +2498,7 @@ Secret maybe created by command:
 curl --header "X-Vault-Token: foobar" \
      --request POST \
      --data '{"data": {"password": "test"}}' \
-     http://openbao:1337/v1/secret/data/ch_secret
+     http://openbao:8200/v1/secret/data/ch_secret
 ```
 
 

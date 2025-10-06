@@ -1,6 +1,6 @@
 <clickhouse>
     <vault>
-      <url>http://wrong:1337</url>
+      <url>http://wrong:8200</url>
       <token>foobar</token>
     </vault>
 </clickhouse>

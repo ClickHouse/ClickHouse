@@ -22,11 +22,10 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_config_with_from_vault(started_cluster):
+def test_config_with_vault(started_cluster):
     assert (
         instance.query(
             "SELECT currentUser()", user="test_user", password="test_password"
         )
         == "test_user\n"
     )
-    assert True

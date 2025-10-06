@@ -4,7 +4,6 @@ services:
         restart: always
         environment:
             BAO_DEV_ROOT_TOKEN_ID: foobar
-            BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:1337"
-            BAO_ADDR: "http://0.0.0.0:1337"
+            BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
         ports:
-            - 1337:1337
+            - "8200:8200"

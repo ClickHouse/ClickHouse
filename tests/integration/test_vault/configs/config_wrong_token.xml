@@ -1,6 +1,6 @@
 <clickhouse>
     <vault>
-      <url>http://openbao:1337</url>
+      <url>http://openbao:8200</url>
       <token>WRONG</token>
     </vault>
 </clickhouse>

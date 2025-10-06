@@ -1752,13 +1752,13 @@ class ClickHouseCluster:
         self.with_vault = True
 
         self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_vault.yml")]
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_openbao.yml")]
         )
         self.base_vault_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_vault.yml"),
+            p.join(docker_compose_yml_dir, "docker_compose_openbao.yml"),
         )
         return self.base_vault_cmd
 
@@ -2662,7 +2662,7 @@ class ClickHouseCluster:
 
     def wait_vault_to_start(self):
         self.wait_for_url(
-            url=f"http://localhost:1337/v1/sys/health", timeout=300
+            url=f"http://localhost:8200/v1/sys/health", timeout=300
         )
 
     def wait_postgres_to_start(self, timeout=260):
