@@ -608,32 +608,37 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
-        const auto key_path = config_prefix + "." + key;
-        String endpoint_path = key_path + ".connection_string";
-
-        if (!config.has(endpoint_path))
-        {
-            endpoint_path = key_path + ".storage_account_url";
-
-            if (!config.has(endpoint_path))
+        if (config.has(config_prefix + "." + key + ".object_storage_type")) {
+            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+            if (object_storage_type.find("azure") == std::string::npos)
             {
-                endpoint_path = key_path + ".endpoint";
+                /// Then its not an azure config
+                continue;
+            }
 
-                if (!config.has(endpoint_path))
-                {
-                    /// Then its not an azure config
-                    continue;
+            const auto key_path = config_prefix + "." + key;
+            String endpoint_path = key_path + ".connection_string";
+
+            if (!config.has(endpoint_path)) {
+                endpoint_path = key_path + ".storage_account_url";
+
+                if (!config.has(endpoint_path)) {
+                    endpoint_path = key_path + ".endpoint";
+
+                    if (!config.has(endpoint_path)) {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
+                                        object_storage_type);
+                    }
                 }
             }
+
+            auto endpoint = AzureBlobStorage::processEndpoint(config, key_path);
+            auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
+
+            azure_settings.emplace(
+                    endpoint.storage_account_url,
+                    std::move(*request_settings));
         }
-
-        auto endpoint = AzureBlobStorage::processEndpoint(config, key_path);
-        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
-
-        azure_settings.emplace(
-                endpoint.storage_account_url,
-                std::move(*request_settings));
-
     }
 }
 
