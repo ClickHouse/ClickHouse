@@ -383,7 +383,7 @@
 	url = https://github.com/google/crc32c.git
 [submodule "contrib/StringZilla"]
 	path = contrib/StringZilla
-	url = https://github.com/ashvardanian/StringZilla.git
+	url = https://github.com/ClickHouse/StringZilla.git
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
