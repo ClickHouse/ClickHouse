@@ -1,4 +1,3 @@
-CAST
 DATE
 JSONKey
 MACNumToString
@@ -14,10 +13,6 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-accurateCast
-accurateCastOrDefault
-accurateCastOrNull
-asin
 caseWithExpression
 catboostEvaluate
 countSubstrings
@@ -80,7 +75,6 @@ dynamicType
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
-factorial
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
@@ -89,12 +83,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-formatRow
-formatRowNoNewline
-fromUnixTimestamp64Micro
-fromUnixTimestamp64Milli
-fromUnixTimestamp64Nano
-fromUnixTimestamp64Second
 generateRandomStructure
 generateSerialID
 getMaxTableNameLengthForDatabase
@@ -155,7 +143,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-parseDateTime
 parseDateTime64
 parseDateTime64InJodaSyntax
 parseDateTime64InJodaSyntaxOrNull
@@ -165,8 +152,6 @@ parseDateTime64OrZero
 parseDateTimeInJodaSyntax
 parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
-parseDateTimeOrNull
-parseDateTimeOrZero
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -206,7 +191,6 @@ sin
 structureToCapnProtoSchema
 structureToProtobufSchema
 svg
-toBool
 toDate32OrDefault
 toDateOrDefault
 toDateTime64OrDefault
@@ -216,7 +200,6 @@ toDecimal256OrDefault
 toDecimal32OrDefault
 toDecimal64OrDefault
 toDecimalString
-toFixedString
 toFloat32OrDefault
 toFloat64OrDefault
 toISOWeek
@@ -227,8 +210,6 @@ toInt32OrDefault
 toInt64OrDefault
 toInt8OrDefault
 toInterval
-toLowCardinality
-toStringCutToZero
 toUInt128OrDefault
 toUInt16OrDefault
 toUInt256OrDefault
@@ -236,10 +217,6 @@ toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
 toUUIDOrDefault
-toUnixTimestamp64Micro
-toUnixTimestamp64Milli
-toUnixTimestamp64Nano
-toUnixTimestamp64Second
 transactionLatestSnapshot
 transactionOldestSnapshot
 tuple
@@ -247,6 +224,5 @@ tupleNames
 validateNestedArraySizes
 variantElement
 variantType
-widthBucket
 windowID
 wkt

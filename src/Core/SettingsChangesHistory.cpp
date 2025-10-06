@@ -41,24 +41,38 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
+            {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+            {"rewrite_in_to_join", false, false, "New experimental setting"},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
+            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
+            {"allow_experimental_qbit_type", false, false, "New experimental setting"},
+            {"optimize_qbit_distance_function_reads", true, true, "New setting"},
+            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
+            {"optimize_empty_string_comparisons", false, true, "A new setting."},
+            {"query_plan_use_logical_join_step", true, true, "Added alias"},
+            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
+            {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
             {"show_processlist_include_internal", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
-            {"datalake_disk_name", "", "", "New setting."},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
-            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
-            {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
@@ -75,7 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
-            {"os_thread_priority", 0, 0, "Obsolete setting."},
+            {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -127,7 +141,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
@@ -143,7 +157,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -192,8 +206,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
+            {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -581,7 +595,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_json_ignore_unnecessary_fields", false, true, "Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields"},
             {"input_format_hive_text_allow_variable_number_of_columns", false, true, "Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values."},
             {"allow_experimental_database_replicated", false, true, "Database engine Replicated is now in Beta stage"},
-            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for sapce reservation in temporary data in filesystem cache"},
+            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for space reservation in temporary data in filesystem cache"},
             {"optimize_rewrite_sum_if_to_count_if", false, true, "Only available for the analyzer, where it works correctly"},
             {"azure_allow_parallel_part_upload", "true", "true", "Use multiple threads for azure multipart upload."},
             {"max_recursive_cte_evaluation_depth", DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, "Maximum limit on recursive CTE evaluation depth"},
@@ -602,7 +616,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"log_processors_profiles", false, true, "Enable by default"},
             {"function_locate_has_mysql_compatible_argument_order", false, true, "Increase compatibility with MySQL's locate function."},
             {"allow_suspicious_primary_key", true, false, "Forbid suspicious PRIMARY KEY/ORDER BY for MergeTree (i.e. SimpleAggregateFunction)"},
-            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
+            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for space reservation in filesystem cache"},
             {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
             {"analyzer_compatibility_join_using_top_level_identifier", false, false, "Force to resolve identifier in JOIN USING from projection"},
             {"distributed_insert_skip_read_only_replicas", false, false, "If true, INSERT into Distributed will skip read-only replicas"},
@@ -888,7 +902,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-
+            {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
+            {"serialization_info_version", "default", "default", "New setting"},
+            {"string_serialization_version", "default", "default", "New setting"},
+            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

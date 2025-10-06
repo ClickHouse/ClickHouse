@@ -98,16 +98,17 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
-bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
+void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
     std::lock_guard lock(table_snapshot_mutex);
-    return table_snapshot->update(context);
+    table_snapshot->update(context);
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t list_batch_size,
+    StorageMetadataPtr /*storage_metadata_snapshot*/,
     ContextPtr context) const
 {
     logMetadataFiles(context);
@@ -115,13 +116,13 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
-NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
+NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr /*local_context*/) const
 {
     std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getTableSchema();
 }
 
-void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
+void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
 {
     /// There can be missing columns because of ALTER ADD/DROP COLUMN.
     /// So to support reading from such tables it is enough to turn on this setting.
@@ -292,19 +293,28 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         name_and_type = result_name_and_type;
     }
 
-    /// If only virtual columns were requested, just read the smallest non-partitin column.
-    /// Because format header cannot be empty.
-    if (supports_subset_of_columns && columns_to_read.empty())
+    if (supports_subset_of_columns)
     {
-        auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-        NamesAndTypesList non_partition_columns;
-        for (const auto & name_and_type : table_columns)
-            if (!partition_columns.contains(name_and_type.name))
-                non_partition_columns.push_back(name_and_type);
-        columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+        /// If only virtual columns were requested, just read the smallest non-partitin column.
+        /// Because format header cannot be empty.
+        if (columns_to_read.empty())
+        {
+            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+            NamesAndTypesList non_partition_columns;
+            for (const auto & name_and_type : table_columns)
+                if (!partition_columns.contains(name_and_type.name))
+                    non_partition_columns.push_back(name_and_type);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+        }
+
+        info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
+    }
+    else
+    {
+        info.columns_description = storage_snapshot->getDescriptionForColumns(
+            storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical)).getNames());
     }
 
-    info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     /// Set format_header with columns that should be read from data.

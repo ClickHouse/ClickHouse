@@ -27,7 +27,16 @@ S3_BUCKET_TO_HTTP_ENDPOINT = {
 ENABLE_ARTIFACTS_REPORT = True
 
 COMPRESS_THRESHOLD_MB = 32
-TEXT_CONTENT_EXTENSIONS = [".txt", ".log", ".err", ".out", ".tsv", ".csv", ".json"]
+TEXT_CONTENT_EXTENSIONS = [
+    ".txt",
+    ".log",
+    ".err",
+    ".out",
+    ".tsv",
+    ".csv",
+    ".json",
+    ".jsonl",
+]
 
 DOCKERHUB_USERNAME = "robotclickhouse"
 DOCKERHUB_SECRET = "dockerhub_robot_password"

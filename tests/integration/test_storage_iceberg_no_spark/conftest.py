@@ -12,7 +12,7 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def started_cluster_iceberg_no_spark():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)

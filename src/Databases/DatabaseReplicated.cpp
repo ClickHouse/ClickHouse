@@ -1015,7 +1015,12 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
 
         ASTPtr zk_ast_ptr;
         if (zk_metadata_it != table_name_to_metadata_in_zk.end())
-            zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, zk_metadata_it->second);
+            zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
+                getContext(),
+                /*database_name_=*/getDatabaseName(),
+                /*zookeeper_path_=*/zookeeper_path,
+                /*node_name=*/table_name,
+                /*query=*/zk_metadata_it->second);
 
         auto local_query_with_secrets = local_ast_ptr ? local_ast_ptr->formatWithSecretsOneLine() : "";
         auto zookeeper_query_with_secrets = zk_ast_ptr ? zk_ast_ptr->formatWithSecretsOneLine() : "";
@@ -1046,7 +1051,12 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
     {
         if (!checked_tables.contains(table_name))
         {
-            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
+            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
+                getContext(),
+                /*database_name_=*/getDatabaseName(),
+                /*zookeeper_path_=*/zookeeper_path,
+                /*node_name=*/table_name,
+                table_metadata);
             auto zookeeper_query = zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr";
             LOG_ERROR(log, "Table {} exists in ZK, but missing locally: {}", table_name, zookeeper_query);
         }
@@ -1621,7 +1631,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// Note that table_name could contain a dot inside (e.g. .inner.1234-1234-1234-1234)
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
-        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
+        auto query_ast = parseQueryFromMetadataInZooKeeper(
+            getContext(),
+            /*database_name_=*/getDatabaseName(),
+            /*zookeeper_path_=*/zookeeper_path,
+            /*node_name=*/table_name,
+            /*query=*/create_table_query);
         tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()).dependencies);
     }
 
@@ -1657,7 +1672,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     return;
                 }
 
-                auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
+                auto query_ast = parseQueryFromMetadataInZooKeeper(
+                    getContext(),
+                    /*database_name_=*/getDatabaseName(),
+                    /*zookeeper_path_=*/zookeeper_path,
+                    /*node_name=*/table_name,
+                    /*query=*/create_query_string);
                 auto create_query_context = make_query_context();
 
                 NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
@@ -1785,7 +1805,8 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     return table_name_to_metadata;
 }
 
-ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const
+ASTPtr DatabaseReplicated::parseQueryFromMetadata(
+    ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description)
 {
     ParserCreateQuery parser;
     auto ast = parseQuery(
@@ -1793,14 +1814,14 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
         query,
         description,
         0,
-        getContext()->getSettingsRef()[Setting::max_parser_depth],
-        getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
+        context_->getSettingsRef()[Setting::max_parser_depth],
+        context_->getSettingsRef()[Setting::max_parser_backtracks]);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);
 
-    create.setDatabase(getDatabaseName());
+    create.setDatabase(database_name_);
     create.setTable(table_name);
     create.attach = false;
 
@@ -1812,10 +1833,11 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
 
     return ast;
 }
-ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(
+    ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query)
 {
-    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path, escapeForFileName(table_name));
-    return parseQueryFromMetadata(table_name, query, description);
+    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path_, escapeForFileName(node_name));
+    return parseQueryFromMetadata(context_, database_name_, node_name, query, description);
 }
 ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_name) const
 {
@@ -1823,7 +1845,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
     String description = fmt::format("in metadata {}", file_path);
     auto db_disk = getDisk();
     String query = DB::readMetadataFile(db_disk, file_path);
-    return parseQueryFromMetadata(table_name, query, description);
+    return parseQueryFromMetadata(getContext(), getDatabaseName(), table_name, query, description);
 }
 
 void DatabaseReplicated::dropReplica(

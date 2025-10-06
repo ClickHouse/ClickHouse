@@ -68,6 +68,7 @@
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
+    M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -303,6 +304,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
+    M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
@@ -322,6 +324,7 @@
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(NamedCollection, "Number of named collections") \
     M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
     M(PageCacheBytes, "Total size of userspace page cache in bytes") \
