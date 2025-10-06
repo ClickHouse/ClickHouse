@@ -2485,7 +2485,7 @@ Users configuration:
 <clickhouse>
     <users>
         <default>
-            <password from_hashicorp_vault="ch_secret" hashicorp_vault_key="password"/>
+            <password from_hashicorp_vault="username" hashicorp_vault_key="password"/>
             <profile>default</profile>
         </default>
     </users>
@@ -2498,7 +2498,7 @@ Secret maybe created by command:
 curl --header "X-Vault-Token: foobar" \
      --request POST \
      --data '{"data": {"password": "test"}}' \
-     http://hashicorpvault:8200/v1/secret/data/ch_secret
+     http://hashicorpvault:8200/v1/secret/data/username
 ```
 
 

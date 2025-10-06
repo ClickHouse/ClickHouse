@@ -14,7 +14,7 @@ def vault_startup_command():
     }
 
     requests.post(
-        "http://localhost:8200/v1/secret/data/ch_secret",
+        "http://localhost:8200/v1/secret/data/username",
         json=payload,
         headers=custom_headers,
     )

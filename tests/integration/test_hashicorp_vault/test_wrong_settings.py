@@ -50,5 +50,5 @@ def test_wrong_key():
     start_clickhouse(
         "configs/config.xml",
         "configs/users_wrong_key.xml",
-        "DB::Exception: Key WRONG not found in secret ch_secret of vault",
+        "DB::Exception: Key WRONG not found in secret username of vault",
     )
