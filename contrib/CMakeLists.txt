@@ -48,7 +48,6 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
 add_contrib (llvm-project-cmake llvm-project)
-add_contrib (StringZilla-cmake StringZilla)
 enable_dummy_launchers_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
@@ -81,6 +80,7 @@ add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
+add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy

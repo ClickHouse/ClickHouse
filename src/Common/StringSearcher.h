@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include <base/getPageSize.h>
-#include <Common/StringSearcher.h>
 #include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 
@@ -143,9 +142,9 @@ public:
         sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
         size_t needle_size = needle_end - needle;
 
-        if (needle_size <= 32)
+        if (needle_size < 32)
         {
-            /// For short needles   , we can use a simple loop and avoid function calls and the mask preparation
+            /// For short needles we can use a simple loop and avoid function calls and the mask preparation
             sz_cptr_t c = needle;
             while (c != needle_end && *c == *pos_cptr)
             {
