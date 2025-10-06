@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/intExp.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -10,21 +9,25 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -66,6 +69,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool materialize_skip_indexes_on_insert;
+    extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
@@ -82,6 +86,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -696,8 +702,26 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
+    /// Create skip indexes if setting materialize_skip_indexes_on_insert = true
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
-        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    {
+        const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
+        auto exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
+
+        /// Check if user specified list of indexes to exclude from materialize on INSERT
+        if (!exclude_indexes_string.empty())
+        {
+            std::unordered_set<String> exclude_index_names
+                = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+
+            for (const auto & index : index_descriptions)
+                if (!exclude_index_names.contains(index.name))
+                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+        }
+        else /// All indexes will be materialized on INSERT
+            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    }
+
 
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
@@ -826,7 +850,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings
+    {
+        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*data_settings)[MergeTreeSetting::serialization_info_version],
+        (*data_settings)[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -977,7 +1007,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings
+    {
+        (*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        true,
+        (*data.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*data.getSettings())[MergeTreeSetting::string_serialization_version],
+    };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

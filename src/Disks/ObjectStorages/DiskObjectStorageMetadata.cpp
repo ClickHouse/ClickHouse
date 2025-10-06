@@ -1,13 +1,8 @@
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Common/logger_useful.h>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -16,6 +11,12 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int LOGICAL_ERROR;
+}
+
+DiskObjectStorageMetadata::DiskObjectStorageMetadata(std::string compatible_key_prefix_, std::string metadata_file_path_)
+    : compatible_key_prefix(std::move(compatible_key_prefix_))
+    , metadata_file_path(std::move(metadata_file_path_))
+{
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -32,45 +33,45 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     UInt32 keys_count;
     readIntText(keys_count, buf);
     assertChar('\t', buf);
-    keys_with_meta.resize(keys_count);
+    objects.reserve(keys_count);
 
-    readIntText(total_size, buf);
+    int64_t serialized_total_size = 0;
+    readIntText(serialized_total_size, buf);
     assertChar('\n', buf);
 
+    int64_t serialized_objects_size = 0;
     for (UInt32 i = 0; i < keys_count; ++i)
     {
-        UInt64 object_size;
+        int64_t object_size = 0;
         readIntText(object_size, buf);
         assertChar('\t', buf);
 
-        keys_with_meta[i].metadata.size_bytes = object_size;
-
-        String key_value;
-        readEscapedString(key_value, buf);
+        std::string remote_path;
+        readEscapedString(remote_path, buf);
         assertChar('\n', buf);
 
         if (version == VERSION_ABSOLUTE_PATHS)
         {
-            if (!key_value.starts_with(compatible_key_prefix))
-                throw Exception(
-                    ErrorCodes::UNKNOWN_FORMAT,
-                    "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                    key_value,
-                    compatible_key_prefix,
-                    metadata_file_path);
+            if (!remote_path.starts_with(compatible_key_prefix))
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+                    "Remote path in metadata does not correspond to root path. Path: {}, Root path: {}, Metadata path: {}",
+                    remote_path, compatible_key_prefix, metadata_file_path);
 
-            keys_with_meta[i].key = ObjectStorageKey::createAsRelative(
-                compatible_key_prefix, key_value.substr(compatible_key_prefix.size()));
+            remote_path = ObjectStorageKey::createAsRelative(compatible_key_prefix, remote_path.substr(compatible_key_prefix.size())).serialize();
         }
         else if (version < VERSION_FULL_OBJECT_KEY)
         {
-            keys_with_meta[i].key = ObjectStorageKey::createAsRelative(compatible_key_prefix, key_value);
+            remote_path = ObjectStorageKey::createAsRelative(compatible_key_prefix, remote_path).serialize();
         }
-        else if (version >= VERSION_FULL_OBJECT_KEY)
-        {
-            keys_with_meta[i].key = ObjectStorageKey::createAsAbsolute(key_value);
-        }
+
+        const StoredObject & object = objects.emplace_back(remote_path, metadata_file_path, object_size);
+        serialized_objects_size += object.bytes_size;
     }
+
+    if (serialized_total_size != serialized_objects_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Serialized total bytes size of metadata file '{}' is not equal to real sum of blob sizes ({} != {})",
+            metadata_file_path, serialized_total_size, serialized_objects_size);
 
     readIntText(ref_count, buf);
     assertChar('\n', buf);
@@ -86,14 +87,6 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         readEscapedString(inline_data, buf);
         assertChar('\n', buf);
     }
-}
-
-void DiskObjectStorageMetadata::createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool read_only_)
-{
-    keys_with_meta.emplace_back(std::move(object_key), ObjectMetadata{.size_bytes = bytes_size, .last_modified = {}, .etag = "", .attributes = {}});
-    total_size = bytes_size;
-    ref_count = static_cast<uint32_t>(ref_count_);
-    read_only = read_only_;
 }
 
 void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
@@ -120,25 +113,24 @@ catch (...)
     return false;
 }
 
-void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
+void DiskObjectStorageMetadata::serialize(WriteBuffer & buf) const
 {
     constexpr UInt32 write_version = VERSION_FULL_OBJECT_KEY;
 
     writeIntText(write_version, buf);
-
     writeChar('\n', buf);
 
-    writeIntText(keys_with_meta.size(), buf);
+    writeIntText(objects.size(), buf);
     writeChar('\t', buf);
-    writeIntText(total_size, buf);
+    writeIntText(getTotalSize(objects), buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_key, object_meta] : keys_with_meta)
+    for (const auto & object : objects)
     {
-        writeIntText(object_meta.size_bytes, buf);
+        writeIntText(object.bytes_size, buf);
         writeChar('\t', buf);
 
-        writeEscapedString(object_key.serialize(), buf);
+        writeEscapedString(object.remote_path, buf);
         writeChar('\n', buf);
     }
 
@@ -153,44 +145,13 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
         writeEscapedString(inline_data, buf);
         writeChar('\n', buf);
     }
-
-    buf.finalize();
-    if (sync)
-        buf.sync();
 }
 
 String DiskObjectStorageMetadata::serializeToString() const
 {
     WriteBufferFromOwnString result;
-    serialize(result, false);
+    serialize(result);
     return result.str();
-}
-
-/// Load metadata by path or create empty if `create` flag is set.
-DiskObjectStorageMetadata::DiskObjectStorageMetadata(
-    String compatible_key_prefix_,
-    String metadata_file_path_)
-    : compatible_key_prefix(std::move(compatible_key_prefix_))
-    , metadata_file_path(std::move(metadata_file_path_))
-{
-}
-
-void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
-{
-    total_size += size;
-    keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}, {}});
-}
-
-ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
-{
-    if (keys_with_meta.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop last object from metadata {}. Metadata already empty", metadata_file_path);
-
-    ObjectKeyWithMetadata object = std::move(keys_with_meta.back());
-    keys_with_meta.pop_back();
-    total_size -= object.metadata.size_bytes;
-
-    return object;
 }
 
 }

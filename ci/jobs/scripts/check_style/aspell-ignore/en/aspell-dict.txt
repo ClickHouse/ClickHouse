@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3452
 aarch
 AArch
 accurateCast
@@ -814,6 +814,7 @@ DiskUnreserved
 DiskUsed
 displayName
 displaySecretsInShowAndSelect
+DistanceTransposed
 distinctdynamictypes
 distinctDynamicTypes
 distinctjsonpaths
@@ -1828,6 +1829,7 @@ multiIf
 multiline
 Multiline
 multilinestring
+multiquery
 MultiLineString
 multiMatchAllIndices
 multiMatchAny
@@ -2349,6 +2351,8 @@ py
 PyArrow
 PyCharm
 QATlib
+qbit
+QBit
 QEMU
 qryn
 QTCreator
@@ -2371,6 +2375,7 @@ quantileExactWeighted
 quantileexactweightedinterpolated
 quantileExactWeightedInterpolated
 quantileGK
+quantilePrometheusHistogram
 quantileInterpolatedWeighted
 quantiles
 quantilesExactExclusive
@@ -2633,8 +2638,8 @@ SchemaInferenceMode
 schemas
 Schemas
 Schwartzian
-searchAll
-searchAny
+hasAnyTokens
+hasAllTokens
 SeasClick
 sectio
 seekable
@@ -2998,6 +3003,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 throwif
 throwIf
+Tiering
 timeDiff
 TimescaleDB's
 timeseries
