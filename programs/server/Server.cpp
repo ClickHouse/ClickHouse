@@ -32,6 +32,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
@@ -370,6 +371,11 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
     extern const Metric IsServerShuttingDown;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & StartupScriptsFailureReason;
 }
 
 namespace ProfileEvents
@@ -941,12 +947,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
-            "startup_scripts_failure_reason",
-            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
-            {"error_name"}
-        );
-        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
+        DimensionalMetrics::set(
+            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
+
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
