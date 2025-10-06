@@ -5,7 +5,7 @@ SET max_parallel_replicas = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET allow_experimental_full_text_index = 1;
 
-CREATE TABLE test_text_index_lower (text String, INDEX idx_text text TYPE text(tokenizer='default')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE test_text_index_lower (text String, INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO test_text_index_lower (text) VALUES ('Hello, world!');
 
@@ -32,7 +32,7 @@ SELECT trim(explain) FROM
 
 DROP TABLE IF EXISTS test_text_index_lower;
 
-CREATE TABLE test_text_index_lower (text String, INDEX idx_text lower(text) TYPE text(tokenizer='default')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE test_text_index_lower (text String, INDEX idx_text lower(text) TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO test_text_index_lower (text) VALUES ('Hello, world!');
 

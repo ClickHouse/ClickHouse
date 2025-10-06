@@ -64,7 +64,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "tenant_id",
 };
 
-void StorageAzureConfiguration::check(ContextPtr context) const
+void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
