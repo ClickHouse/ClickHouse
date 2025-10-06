@@ -71,8 +71,11 @@ namespace ErrorCodes
     Minimum number of bytes/rows in a data part that can be stored in `Wide`
     format. You can set one, both or none of these settings.
     )", 0) \
+    DECLARE(UInt64, min_level_for_wide_part, 0, R"(
+    Minimal part level to create a data part in `Wide` format instead of `Compact`.
+    )", 0) \
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
-    Minimal number of rows to create part in wide format instead of compact
+    Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
     )", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
     The maximum number of streams (columns) that can be flushed in parallel
@@ -203,6 +206,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
     Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
+    use full type of storage for data part instead of packed
+    )", 0) \
+    DECLARE(UInt64, min_level_for_full_part_storage, 0, R"(
+    Only available in ClickHouse Cloud. Minimal part level to
     use full type of storage for data part instead of packed
     )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
@@ -2584,6 +2591,6 @@ void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
 
 bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
-    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
+    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 }

@@ -905,6 +905,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
+            {"min_level_for_wide_part", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

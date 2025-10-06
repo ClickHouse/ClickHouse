@@ -831,7 +831,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
-        .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
+        .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level))
         .withPartInfo(new_part_info)
         .build();
 
@@ -987,7 +987,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows()).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

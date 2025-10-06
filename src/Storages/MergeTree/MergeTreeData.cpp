@@ -269,6 +269,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsUInt64 min_level_for_wide_part;
 }
 
 namespace ServerSetting
@@ -4475,7 +4476,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 }
 
-MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const
+MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
@@ -4485,13 +4486,13 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
-    auto satisfies = [&](const auto & min_bytes_for, const auto & min_rows_for)
+    auto satisfies = [&](const auto & min_bytes_for, const auto & min_rows_for, const auto & min_level_for)
     {
-        return bytes_uncompressed < min_bytes_for || rows_count < min_rows_for;
+        return bytes_uncompressed < min_bytes_for || rows_count < min_rows_for || part_level < min_level_for;
     };
 
     auto part_type = PartType::Wide;
-    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part]))
+    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
     return {part_type, PartStorageType::Full};
@@ -9989,7 +9990,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
-        .withBytesAndRows(0, 0)
+        .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
 
