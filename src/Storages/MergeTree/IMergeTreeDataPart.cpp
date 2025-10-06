@@ -558,6 +558,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
+    serializations.clear();
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
