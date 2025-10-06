@@ -30,17 +30,20 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
 
     context = context_;
 
-    url = config.getString(config_prefix + ".url", "");
+    if (config.has(config_prefix))
+    {
+        url = config.getString(config_prefix + ".url", "");
 
-    if (url.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "url is not given for vault.");
+        if (url.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "url is not given for vault.");
 
-    token = config.getString(config_prefix + ".token", "");
+        token = config.getString(config_prefix + ".token", "");
 
-    if (token.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
+        if (token.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
 
-    loaded = true;
+        loaded = true;
+    }
 }
 
 String HashiCorpVault::readSecret(const String & secret, const String & key)
