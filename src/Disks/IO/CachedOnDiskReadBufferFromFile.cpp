@@ -1136,11 +1136,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         if (read_type != ReadType::CACHED)
         {
             object_size = implementation_buffer->tryGetFileSize();
+#if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 read_stop_reason = s3_buf->getStopReason();
             }
+#endif
         }
 
         throw Exception(
