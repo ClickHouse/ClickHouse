@@ -145,6 +145,7 @@ public:
 
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
+    void removeRecursive(const std::string &) override;
 
     /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;

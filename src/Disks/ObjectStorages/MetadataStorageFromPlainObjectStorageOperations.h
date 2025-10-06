@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <map>
+#include <memory>
 
 
 namespace DB
@@ -200,4 +201,31 @@ public:
      */
     void finalize() override;
 };
+
+class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
+{
+private:
+    std::filesystem::path path;
+
+    InMemoryDirectoryPathMap & path_map;
+    ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
+
+    std::filesystem::path tmp_path;
+
+    void inMemoryTreeMove(std::filesystem::path from, std::filesystem::path to);
+
+public:
+    MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
+        /// path_ must end with a trailing '/'.
+        std::filesystem::path && path_,
+        InMemoryDirectoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
+
+    void execute() override;
+    void undo() override;
+    void finalize() override;
+};
+
 }

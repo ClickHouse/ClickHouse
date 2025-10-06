@@ -226,6 +226,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     }
 }
 
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation>(
+        path, *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
+}
+
 void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
     if (metadata_storage.object_storage->isWriteOnce())
