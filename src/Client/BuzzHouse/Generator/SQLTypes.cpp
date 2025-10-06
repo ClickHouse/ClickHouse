@@ -179,9 +179,12 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        String buf = (!is_unsigned && rg.nextBool()) ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += (!is_unsigned && rg.nextBool()) ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -221,9 +224,12 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -456,9 +462,12 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
