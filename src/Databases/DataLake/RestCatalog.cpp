@@ -42,6 +42,9 @@ namespace DataLake
 
 static constexpr auto CONFIG_ENDPOINT = "config";
 static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
+/// 0x1F is a unit separator
+/// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
+static constexpr auto NAMESPACE_SEPARATOR = static_cast<char>(0x1F);
 
 namespace
 {
@@ -394,7 +397,7 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
         /// 0x1F is a unit separator
         /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
         if (!parent_param.empty())
-            parent_param += static_cast<char>(0x1F);
+            parent_param += NAMESPACE_SEPARATOR;
         parent_param += part;
     }
     return {{"parent", parent_param}};
@@ -467,7 +470,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
             const auto full_namespace = base_namespace.empty()
                 ? current_namespace
-                : base_namespace + "." + current_namespace;
+                : base_namespace + NAMESPACE_SEPARATOR + current_namespace;
 
             namespaces.push_back(full_namespace);
         }
