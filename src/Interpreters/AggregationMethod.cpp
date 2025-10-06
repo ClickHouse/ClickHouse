@@ -47,6 +47,10 @@ template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUIn
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 
+template struct AggregationMethodOneNumber<UInt8, HashMap<UInt8, AggregateDataPtr>>;
+template struct AggregationMethodOneNumber<UInt16, HashMap<UInt16, AggregateDataPtr>>;
+template struct AggregationMethodOneNumber<UInt32, HashMap<UInt32, AggregateDataPtr>>;
+
 template <typename TData, bool nullable>
 void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
