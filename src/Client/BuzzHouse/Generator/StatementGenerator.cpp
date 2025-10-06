@@ -122,6 +122,13 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
             one_arg_funcs.push_back(next);
         }
     }
+    for (const auto & entry : CommonCHFuncs)
+    {
+        if (entry.min_lambda_param == 0 && entry.min_args == 1)
+        {
+            one_arg_funcs.push_back(entry);
+        }
+    }
     /* Deterministic engines */
     likeEngsDeterministic = {MergeTree};
     if ((fc.engine_mask & allow_replacing_mergetree) != 0)

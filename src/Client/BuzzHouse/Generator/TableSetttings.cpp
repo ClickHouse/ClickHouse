@@ -112,23 +112,23 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"exclude_materialize_skip_indexes_on_merge",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
-            {
-                String res;
-                std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
-                const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+         {
+             String res;
+             std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
+             const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
 
-                std::shuffle(choices.begin(), choices.end(), rg.generator);
-                for (uint32_t i = 0; i < nchoices; i++)
-                {
-                    if (i != 0)
-                    {
-                        res += ",";
-                    }
-                    res += "i";
-                    res += std::to_string(choices[i]);
-                }
-                return "'" + res + "'";
-            },
+             std::shuffle(choices.begin(), choices.end(), rg.generator);
+             for (uint32_t i = 0; i < nchoices; i++)
+             {
+                 if (i != 0)
+                 {
+                     res += ",";
+                 }
+                 res += "i";
+                 res += std::to_string(choices[i]);
+             }
+             return "'" + res + "'";
+         },
          {},
          false)},
     {"finished_mutations_to_keep", rowsRangeSetting},
