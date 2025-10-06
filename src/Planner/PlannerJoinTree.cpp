@@ -1915,14 +1915,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
             if (!left_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
+                    "JOIN USING clause expected column identifier. Actual {}: {}",
+                    left_inner_column_node->getNodeTypeName(),
                     left_inner_column_node->formatASTForErrorMessage());
 
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
             auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
             if (!right_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
+                    "JOIN USING clause expected column identifier. Actual {}: {}",
+                    right_inner_column_node->getNodeTypeName(),
                     right_inner_column_node->formatASTForErrorMessage());
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
