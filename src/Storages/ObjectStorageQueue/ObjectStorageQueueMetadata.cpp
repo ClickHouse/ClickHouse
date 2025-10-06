@@ -828,7 +828,14 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             }
 
             if (!found)
+            {
+                if (is_retry)
+                {
+                    LOG_TRACE(log, "Table is unregistered after retry");
+                    return;
+                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+            }
 
             LOG_TRACE(log, "Registered count: {}, remove metadata: {}", count, remove_metadata_if_no_registered);
 
