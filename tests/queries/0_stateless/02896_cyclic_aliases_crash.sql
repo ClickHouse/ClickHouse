@@ -1,5 +1,6 @@
 
 SET max_ast_depth = 10_000_000;
+set enable_analyzer = 0; -- new analyzer resolves ambiguous aliases to alias reference.
 
 SELECT
     val,
