@@ -824,7 +824,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert."
+                "Could not perform insert. "
                 "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
                 "The threshold can be configured either in MergeTree settings or User settings, "
                 "using the following settings: "

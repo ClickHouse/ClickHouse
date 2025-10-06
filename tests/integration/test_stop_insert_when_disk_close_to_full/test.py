@@ -107,7 +107,7 @@ def test_insert_stops_when_disk_full(start_cluster):
             count += 1
     except QueryRuntimeException as e:
         assert "Could not perform insert" in str(e)
-        assert "free bytes left in the disk space" in str(e)
+        assert "The amount of free space" in str(e)
 
     free_space = int(
         node.query("SELECT free_space FROM system.disks WHERE name = 'disk1'").strip()
