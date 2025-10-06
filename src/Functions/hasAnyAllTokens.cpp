@@ -1,4 +1,4 @@
-#include <Functions/searchAnyAll.h>
+#include <Functions/hasAnyAllTokens.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -26,22 +26,22 @@ namespace ErrorCodes
 }
 
 template <class SearchTraits>
-FunctionPtr FunctionSearchImpl<SearchTraits>::create(ContextPtr context)
+FunctionPtr FunctionHasAnyAllTokens<SearchTraits>::create(ContextPtr context)
 {
-    return std::make_shared<FunctionSearchImpl>(context);
+    return std::make_shared<FunctionHasAnyAllTokens>(context);
 }
 
 template <class SearchTraits>
-FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
+FunctionHasAnyAllTokens<SearchTraits>::FunctionHasAnyAllTokens(ContextPtr context)
     : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
 {
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
+void FunctionHasAnyAllTokens<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
 {
     /// Index parameters can be set multiple times.
-    /// This happens exactly in a case that same searchAny/searchAll query is used again.
+    /// This happens exactly in a case that same hasAnyTokens/hasAllTokens query is used again.
     /// This is fine because the parameters would be same.
     if (token_extractor != nullptr)
         return;
@@ -50,7 +50,7 @@ void FunctionSearchImpl<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenE
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
+void FunctionHasAnyAllTokens<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
 {
     static constexpr size_t supported_number_of_needles = 64;
 
@@ -67,7 +67,7 @@ void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String>
 }
 
 template <class SearchTraits>
-DataTypePtr FunctionSearchImpl<SearchTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionHasAnyAllTokens<SearchTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (!allow_experimental_full_text_index)
         throw Exception(
@@ -91,7 +91,7 @@ constexpr size_t arg_needles = 1;
 template <typename T>
 concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
 
-void executeSearchAny(
+void executeHasAnyTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
@@ -116,7 +116,7 @@ void executeSearchAny(
     }
 }
 
-void executeSearchAll(
+void executeHasAllTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
@@ -166,17 +166,17 @@ void execute(
         return;
     }
 
-    if constexpr (SearchTraits::mode == SearchAnyAllMode::Any)
-        executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
-    else if constexpr (SearchTraits::mode == SearchAnyAllMode::All)
-        executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
+    if constexpr (SearchTraits::mode == HasAnyAllTokensMode::Any)
+        executeHasAnyTokens(token_extractor, col_input, input_rows_count, needles, col_result);
+    else if constexpr (SearchTraits::mode == HasAnyAllTokensMode::All)
+        executeHasAllTokens(token_extractor, col_input, input_rows_count, needles, col_result);
     else
         static_assert(false, "Unknown search mode value detected");
 }
 }
 
 template <class SearchTraits>
-ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
+ColumnPtr FunctionHasAnyAllTokens<SearchTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
     if (input_rows_count == 0)
@@ -244,24 +244,24 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     return col_result;
 }
 
-template class FunctionSearchImpl<traits::SearchAnyTraits>;
-template class FunctionSearchImpl<traits::SearchAllTraits>;
+template class FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>;
+template class FunctionHasAnyAllTokens<traits::HasAllTokensTraits>;
 
-REGISTER_FUNCTION(SearchAny)
+REGISTER_FUNCTION(HasAnyTokens)
 {
-    FunctionDocumentation::Description description_searchAny = R"(
+    FunctionDocumentation::Description description_hasAnyTokens = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
 The `input` column should have a text index defined for optimal performance.
 Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
 When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `default` tokenizer is used instead.
+If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -272,27 +272,27 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax_searchAny = "searchAny(input, ['needle1', 'needle2', ..., 'needleN'])";
-    FunctionDocumentation::Arguments arguments_searchAny = {
+    FunctionDocumentation::Syntax syntax_hasAnyTokens = "hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_searchAny = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_searchAny = {
+    FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_hasAnyTokens = {
     {
         "Usage example",
         R"(
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
 )
 ENGINE = MergeTree
 ORDER BY id;
 
 INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']
+SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']
         )",
         R"(
 ┌─count()─┐
@@ -303,7 +303,7 @@ SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -312,28 +312,28 @@ SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_searchAny = {25, 7};
-    FunctionDocumentation::Category category_searchAny = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_searchAny = {description_searchAny, syntax_searchAny, arguments_searchAny, returned_value_searchAny, examples_searchAny, introduced_in_searchAny, category_searchAny};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 7};
+    FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation_searchAny);
+    factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>>(documentation_hasAnyTokens);
 }
 
-REGISTER_FUNCTION(SearchAll)
+REGISTER_FUNCTION(HasAllTokens)
 {
-    FunctionDocumentation::Description description_searchAll = R"(
-Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
+    FunctionDocumentation::Description description_hasAllTokens = R"(
+Like [`hasAnyTokens`](#hasanytokens), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
 The `input` column should have a text index defined for optimal performance.
 Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
 When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `default` tokenizer is used instead.
+If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
 
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
@@ -344,27 +344,27 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax_searchAll = "searchAll(input, ['needle1', 'needle2', ..., 'needleN'])";
-    FunctionDocumentation::Arguments arguments_searchAll = {
+    FunctionDocumentation::Syntax syntax_hasAllTokens = "hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_searchAll = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_searchAll = {
+    FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_hasAllTokens = {
     {
         "Usage example",
         R"(
 CREATE TABLE table (
     id UInt32,
     msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
 )
 ENGINE = MergeTree
 ORDER BY id;
 
 INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -375,7 +375,7 @@ SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -384,10 +384,10 @@ SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_searchAll = {25, 7};
-    FunctionDocumentation::Category category_searchAll = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, arguments_searchAll, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 7};
+    FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation_searchAll);
+    factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAllTokensTraits>>(documentation_hasAllTokens);
 }
 }

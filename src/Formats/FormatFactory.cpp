@@ -72,7 +72,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     auto it = dict.find(boost::to_lower_copy(name));
     if (dict.end() != it)
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+    auto hints = this->getHints(name);
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -1009,4 +1010,8 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
+std::vector<String> FormatFactory::getAllRegisteredNames() const
+{
+    return KnownFormatNames::instance().getAllRegisteredNames();
+}
 }
