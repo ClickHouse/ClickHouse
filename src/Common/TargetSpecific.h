@@ -215,6 +215,10 @@ END_TARGET_SPECIFIC_CODE
 
 #elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
 
+    #ifndef USE_MULTITARGET_CODE
+        #  define USE_MULTITARGET_CODE 0
+    #endif
+
     #  define USE_ARM_MULTITARGET_CODE 1
 
     #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sve")))
@@ -251,11 +255,26 @@ END_TARGET_SPECIFIC_CODE
     #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
     #define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
 
+#elif defined(__GNUC__) && defined(__aarch64__)
+
+    #ifndef USE_MULTITARGET_CODE
+        #define USE_MULTITARGET_CODE 0
+    #endif
+
+    #define USE_ARM_MULTITARGET_CODE 0
+
+    #define DECLARE_SSE42_SPECIFIC_CODE(...)
+    #define DECLARE_AVX_SPECIFIC_CODE(...)
+    #define DECLARE_AVX2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512F_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BW_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
+
 #else
 
 #define USE_MULTITARGET_CODE 0
-
-#define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
