@@ -638,7 +638,7 @@ public:
 
             if (*haystack == l || *haystack == u)
             {
-                auto haystack_pos = haystack + first_needle_symbol_is_ascii;
+                const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
                 const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
                 if (compareTrivial(haystack_pos, haystack_end, needle_pos))
