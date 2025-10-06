@@ -232,6 +232,7 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::stringzilla)
+target_compile_definitions(clickhouse_common_io PUBLIC SZ_DYNAMIC_DISPATCH=1)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()

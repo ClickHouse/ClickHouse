@@ -21,29 +21,7 @@
 #    include <smmintrin.h>
 #endif
 
-#define SZ_AVOID_LIBC 1
-#define SZ_DEBUG 0
-#define SZ_DYNAMIC_DISPATCH 0
-#define SZ_IS_BIG_ENDIAN_ __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-
-#if USE_MULTITARGET_CODE
-#    define SZ_USE_SKYLAKE 1
-#    define SZ_USE_HASWELL 1
-#    define SZ_USE_WESTMERE 1
-#elif defined(__x86_64__) && defined(__AVX512__)
-#    define SZ_USE_SKYLAKE 1
-#elif defined(__x86_64__) && defined(__AVX2__)
-#    define SZ_USE_HASWELL 1
-#elif defined(__x86_64__) && defined(__SSE4_2__)
-#    define SZ_USE_WESTMERE 1
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
-#    define SZ_USE_SVE 1
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define SZ_USE_NEON 1
-#endif
-
-#include <stringzilla/compare.h>
-#include <stringzilla/find.h>
+#include <stringzilla/stringzilla.h>
 
 namespace DB
 {
@@ -90,51 +68,11 @@ class StringSearcher<true, ASCII> final : public StringSearcherBase
     sz_cptr_t const needle;
     sz_cptr_t const needle_end;
 
-    FindFunction * find;
-    EqualFunction * equal;
-
 public:
     StringSearcher(const UInt8 * needle_, size_t needle_size)
         : needle(reinterpret_cast<sz_cptr_t>(needle_))
         , needle_end(needle + needle_size)
     {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            find = sz_find_skylake;
-            equal = sz_equal_skylake;
-        }
-        else if (isArchSupported(TargetArch::AVX2))
-        {
-            find = sz_find_haswell;
-            equal = sz_equal_haswell;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            find = sz_find_westmere;
-            equal = sz_equal_westmere;
-        }
-        else
-        {
-            find = sz_find_serial;
-            equal = sz_equal_serial;
-        }
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
-        {
-            find = sz_find_sve;
-            equal = sz_equal_sve;
-        }
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-        {
-            find = sz_find_neon;
-            equal = sz_equal_neon;
-        }
-#else
-        {
-            find = sz_find_serial;
-            equal = sz_equal_serial;
-        }
-#endif
     }
 
     ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
@@ -153,7 +91,7 @@ public:
             }
             return c == needle_end;
         }
-        return equal(pos_cptr, needle, needle_size);
+        return sz_equal(pos_cptr, needle, needle_size);
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
@@ -165,7 +103,7 @@ public:
         size_t haystack_size = haystack_end - haystack;
         size_t needle_size = needle_end - needle;
 
-        const char * res = find(haystack_cptr, haystack_size, needle, needle_size);
+        const char * res = sz_find(haystack_cptr, haystack_size, needle, needle_size);
 
         if (!res)
             return haystack_end;
