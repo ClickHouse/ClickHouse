@@ -33,7 +33,7 @@ private:
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
-    std::string stop_reason = "";
+    std::string stop_reason;
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
