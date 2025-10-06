@@ -1953,7 +1953,6 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
-
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
             const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
@@ -2210,8 +2209,6 @@ try
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
-
-            // Vault::instance().load(*config, "vault");
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
@@ -2531,9 +2528,6 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
     }
-
-    // Vault::instance().load(config(), "vault");
-
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 

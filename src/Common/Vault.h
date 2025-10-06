@@ -3,9 +3,7 @@
 #include <base/types.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
-// #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3452
 aarch
 AArch
 accurateCast
@@ -1191,6 +1191,7 @@ hasColumnInTable
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
+HashiCorp
 hashtables
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2033,6 +2034,7 @@ ontime
 OnTime
 onwards
 OpenAI
+OpenBao
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
