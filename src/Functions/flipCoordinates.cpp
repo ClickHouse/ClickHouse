@@ -158,7 +158,7 @@ REGISTER_FUNCTION(FlipCoordinates)
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polugon", "MultiPolygon"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polygon", "MultiPolygon"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",
