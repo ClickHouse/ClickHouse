@@ -22,7 +22,7 @@
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
-#include <Common/Vault.h>
+#include <Common/HashiCorpVault.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
@@ -625,7 +625,7 @@ void ConfigProcessor::doIncludesRecursive(
         process_include(attr_nodes["from_env"], get_env_node, "Env variable is not set: ");
     }
 
-    if (attr_nodes["from_hashicorp_vault"] && Vault::instance().isLoaded())
+    if (attr_nodes["from_hashicorp_vault"] && HashiCorpVault::instance().isLoaded())
     {
         const auto * hashicorp_vault_key_node = node->attributes()->getNamedItem("hashicorp_vault_key");
 
@@ -636,7 +636,7 @@ void ConfigProcessor::doIncludesRecursive(
 
         auto get_vault_node = [&](const std::string & name) -> const Node *
         {
-            String vault_val = Vault::instance().readSecret(name, hashicorp_vault_key_node->getNodeValue());
+            String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_node->getNodeValue());
 
             vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
 

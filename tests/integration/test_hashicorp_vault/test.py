@@ -7,14 +7,14 @@ instance = cluster.add_instance(
     "instance",
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
-    with_vault=True,
+    with_hashicorp_vault=True,
 )
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.set_vault_startup_command(vault_startup_command)
+        cluster.set_hashicorp_vault_startup_command(vault_startup_command)
         cluster.start()
         yield cluster
 
@@ -22,7 +22,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_config_with_vault(started_cluster):
+def test_config_with_hashicorp_vault(started_cluster):
     assert (
         instance.query(
             "SELECT currentUser()", user="test_user", password="test_password"

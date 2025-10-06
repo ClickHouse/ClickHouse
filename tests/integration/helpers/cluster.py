@@ -634,8 +634,8 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
         self.with_ytsaurus = False
-        self.with_vault = False
-        self.pre_vault_startup_command = None
+        self.with_hashicorp_vault = False
+        self.pre_hashicorp_vault_startup_command = None
 
         # available when with_minio == True
         self.with_minio = False
@@ -1748,17 +1748,17 @@ class ClickHouseCluster:
         )
         return self.base_ytsaurus_cmd
 
-    def setup_vault(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_vault = True
+    def setup_hashicorp_vault(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hashicorp_vault = True
 
         self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_openbao.yml")]
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hashicorp_vault.yml")]
         )
         self.base_vault_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_openbao.yml"),
+            p.join(docker_compose_yml_dir, "docker_compose_hashicorp_vault.yml"),
         )
         return self.base_vault_cmd
 
@@ -1861,7 +1861,7 @@ class ClickHouseCluster:
         with_glue_catalog=False,
         with_hms_catalog=False,
         with_ytsaurus=False,
-        with_vault=False,
+        with_hashicorp_vault=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
         use_old_analyzer=None,
@@ -2262,9 +2262,9 @@ class ClickHouseCluster:
                 self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_vault:
+        if with_hashicorp_vault:
             cmds.append(
-                self.setup_vault(instance, env_variables, docker_compose_yml_dir)
+                self.setup_hashicorp_vault(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_prometheus_writer:
@@ -3658,12 +3658,12 @@ class ClickHouseCluster:
                 run_and_check(ytsarurus_start_cmd)
                 self.wait_ytsaurus_to_start()
 
-            if self.with_vault and self.base_vault_cmd:
+            if self.with_hashicorp_vault and self.base_vault_cmd:
                 vault_start_cmd = self.base_vault_cmd + common_opts
                 run_and_check(vault_start_cmd)
                 self.wait_vault_to_start()
-                if self.pre_vault_startup_command:
-                    self.pre_vault_startup_command()
+                if self.pre_hashicorp_vault_startup_command:
+                    self.pre_hashicorp_vault_startup_command()
 
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
@@ -3901,8 +3901,8 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
-    def set_vault_startup_command(self, command):
-        self.pre_vault_startup_command = command
+    def set_hashicorp_vault_startup_command(self, command):
+        self.pre_hashicorp_vault_startup_command = command
 
     def stop_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:

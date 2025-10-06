@@ -54,7 +54,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/Vault.h>
+#include <Common/HashiCorpVault.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1474,7 +1474,7 @@ try
         global_context->setConfig(loaded_config.configuration);
     }
 
-    Vault::instance().load(config(), "vault", global_context);
+    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
@@ -1936,7 +1936,7 @@ try
             extra_paths.emplace_back(key_path);
     }
 
-    Vault::instance().load(config(), "vault", global_context);
+    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,

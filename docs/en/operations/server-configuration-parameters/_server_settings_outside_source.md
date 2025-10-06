@@ -2448,9 +2448,9 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
-## vault (#vault)
+## hashicorp_vault (#hashicorp_vault)
 
-Configures OpenBao or HashiCorp Vault for secure secrets retrieval in configuration. Currently only token authentication is supported.
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently only token authentication is supported.
 
 The following settings can be configured by sub-tags:
 
@@ -2472,10 +2472,10 @@ ClickHouse configuration:
 
 ```xml
 <clickhouse>
-    <vault>
-      <url>http://openbao:8200</url>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
       <token>foobar</token>
-    </vault>
+    </hashicorp_vault>
 </clickhouse>
 ```
 
@@ -2498,7 +2498,7 @@ Secret maybe created by command:
 curl --header "X-Vault-Token: foobar" \
      --request POST \
      --data '{"data": {"password": "test"}}' \
-     http://openbao:8200/v1/secret/data/ch_secret
+     http://hashicorpvault:8200/v1/secret/data/ch_secret
 ```
 
 

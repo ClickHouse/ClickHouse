@@ -6,8 +6,8 @@ from .common import *
 
 def start_clickhouse(config, users, err_msg):
     cluster = ClickHouseCluster(__file__)
-    instance = cluster.add_instance("instance", main_configs=[config], user_configs=[users], with_vault=True)
-    cluster.set_vault_startup_command(vault_startup_command)
+    instance = cluster.add_instance("instance", main_configs=[config], user_configs=[users], with_hashicorp_vault=True)
+    cluster.set_hashicorp_vault_startup_command(vault_startup_command)
 
     failed_to_start = False
 

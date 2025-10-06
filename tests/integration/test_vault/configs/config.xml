@@ -1,6 +1,0 @@
-<clickhouse>
-    <vault>
-      <url>http://openbao:8200</url>
-      <token>foobar</token>
-    </vault>
-</clickhouse>

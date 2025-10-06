@@ -8,16 +8,16 @@
 namespace DB
 {
 
-class Vault
+class HashiCorpVault
 {
 public:
-    Vault()
+    HashiCorpVault()
     {
-        log = getLogger("Vault");
+        log = getLogger("HashiCorpVault");
         reset();
     }
 
-    static Vault & instance();
+    static HashiCorpVault & instance();
 
     /// Load data and throw exception if something went wrong.
     void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context_);

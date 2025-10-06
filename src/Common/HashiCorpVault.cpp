@@ -1,6 +1,6 @@
 #include <string>
 #include <Common/Exception.h>
-#include <Common/Vault.h>
+#include <Common/HashiCorpVault.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -18,13 +18,13 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-Vault & Vault::instance()
+HashiCorpVault & HashiCorpVault::instance()
 {
-    static Vault ret;
+    static HashiCorpVault ret;
     return ret;
 }
 
-void Vault::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context_)
+void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context_)
 {
     reset();
 
@@ -43,7 +43,7 @@ void Vault::load(const Poco::Util::AbstractConfiguration & config, const String 
     loaded = true;
 }
 
-String Vault::readSecret(const String & secret, const String & key)
+String HashiCorpVault::readSecret(const String & secret, const String & key)
 {
     LOG_DEBUG(log, "readSecret {} {}", secret, key);
 

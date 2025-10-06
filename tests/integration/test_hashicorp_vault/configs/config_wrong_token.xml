@@ -1,0 +1,6 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <token>WRONG</token>
+    </hashicorp_vault>
+</clickhouse>
