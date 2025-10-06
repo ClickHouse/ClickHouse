@@ -310,8 +310,8 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
             }
             else
             {
-                if (element.hasAttribute("vault_key"))
-                    element.removeAttribute("vault_key");
+                if (element.hasAttribute("hashicorp_vault_key"))
+                    element.removeAttribute("hashicorp_vault_key");
                 hideRecursive(node);
             }
         }
@@ -625,25 +625,25 @@ void ConfigProcessor::doIncludesRecursive(
         process_include(attr_nodes["from_env"], get_env_node, "Env variable is not set: ");
     }
 
-    if (attr_nodes["from_vault"] && Vault::instance().isLoaded())
+    if (attr_nodes["from_hashicorp_vault"] && Vault::instance().isLoaded())
     {
-        const auto * vault_key_node = node->attributes()->getNamedItem("vault_key");
+        const auto * hashicorp_vault_key_node = node->attributes()->getNamedItem("hashicorp_vault_key");
 
-        if (!vault_key_node || vault_key_node->getNodeValue().empty())
-            throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_vault' attribute and does not have valid 'vault_key' attribute");
+        if (!hashicorp_vault_key_node || hashicorp_vault_key_node->getNodeValue().empty())
+            throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
 
         XMLDocumentPtr vault_document;
 
         auto get_vault_node = [&](const std::string & name) -> const Node *
         {
-            String vault_val = Vault::instance().readSecret(name, vault_key_node->getNodeValue());
+            String vault_val = Vault::instance().readSecret(name, hashicorp_vault_key_node->getNodeValue());
 
-            vault_document = dom_parser.parseString("<from_vault>" + vault_val + "</from_vault>");
+            vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
 
             return getRootNode(vault_document.get());
         };
 
-        process_include(attr_nodes["from_vault"], get_vault_node, "Vault secret is not set: ");
+        process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");
     }
 
     if (included_something)

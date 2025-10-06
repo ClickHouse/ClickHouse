@@ -1,7 +1,7 @@
 <clickhouse>
     <users>
         <test_user>
-            <password from_vault="ch_secret" vault_key="password"/>
+            <password from_hashicorp_vault="ch_secret" hashicorp_vault_key="password"/>
             <profile>default</profile>
         </test_user>
     </users>

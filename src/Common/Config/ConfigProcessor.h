@@ -140,7 +140,7 @@ public:
     static std::string decryptValue(const std::string & codec_name, const std::string & value);
 #endif
 
-    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env", "from_vault"};
+    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env", "from_hashicorp_vault"};
 
 private:
     const std::string path;

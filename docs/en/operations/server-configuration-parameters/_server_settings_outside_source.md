@@ -2463,8 +2463,8 @@ Each section in ClickHouse configuration or users configuration may have the fol
 
 | Attributes             | Definition                                                                                                                                        |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `from_vault`                 | Name of secret.                                                           |
-| `vault_key`                | Name of secret's key                                                           |
+| `from_hashicorp_vault`                 | Name of secret.                                                           |
+| `hashicorp_vault_key`                | Name of secret's key                                                           |
 
 **Example**
 
@@ -2485,7 +2485,7 @@ Users configuration:
 <clickhouse>
     <users>
         <default>
-            <password from_vault="ch_secret" vault_key="password"/>
+            <password from_hashicorp_vault="ch_secret" hashicorp_vault_key="password"/>
             <profile>default</profile>
         </default>
     </users>
