@@ -1036,19 +1036,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     QueryTreeNodePtr alias_node = original_alias_node;
     bool resolved_from_cache = false;
-    if (!identifier_lookup.isTableExpressionLookup())
+    if (identifier_lookup.isExpressionLookup()
+        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
-        if (identifier_lookup.isExpressionLookup())
+        auto cached_it = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.find(identifier_bind_part);
+        if (cached_it != scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.end() && cached_it->second)
         {
-            auto cached_it = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.find(identifier_bind_part);
-            if (cached_it != scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.end() && cached_it->second)
-            {
-                alias_node = cached_it->second;
-                resolved_from_cache = true;
-            }
+            alias_node = cached_it->second;
+            resolved_from_cache = true;
         }
-
-        if (!resolved_from_cache)
+        else
         {
             alias_node = original_alias_node->clone();
             scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
@@ -1094,11 +1091,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
         alias_node = lookup_result.resolved_identifier;
     }
-    else if (!resolved_from_cache && node_type == QueryTreeNodeType::FUNCTION)
+    else if (node_type == QueryTreeNodeType::FUNCTION)
     {
         resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
-    else if (!resolved_from_cache && (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION))
+    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         if (identifier_resolve_context.allow_to_resolve_subquery_during_identifier_resolution)
             resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
