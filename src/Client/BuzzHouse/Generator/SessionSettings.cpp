@@ -464,6 +464,28 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
     /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
+    {"exclude_materialize_skip_indexes_on_insert",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+            {
+                String res;
+                std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
+                const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+
+                std::shuffle(choices.begin(), choices.end(), rg.generator);
+                for (uint32_t i = 0; i < nchoices; i++)
+                {
+                    if (i != 0)
+                    {
+                        res += ",";
+                    }
+                    res += "i";
+                    res += std::to_string(choices[i]);
+                }
+                return "'" + res + "'";
+            },
+         {},
+         false)},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
     {"extremes", trueOrFalseSettingNoOracle},
@@ -747,6 +769,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_statistics_on_insert", trueOrFalseSettingNoOracle},
     {"materialize_ttl_after_modify", trueOrFalseSettingNoOracle},
     {"materialized_views_ignore_errors", trueOrFalseSettingNoOracle},
+    {"materialized_views_squash_parallel_inserts", trueOrFalseSettingNoOracle},
     /// {"max_bytes_in_distinct", CHSetting(bytesRange, {}, false)},
     /// {"max_bytes_in_join", CHSetting(bytesRange, {"0", "1", "1000", "1000000"}, false)},
     /// {"max_bytes_in_set", CHSetting(bytesRange, {}, false)},

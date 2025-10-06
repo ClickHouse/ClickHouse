@@ -1674,38 +1674,41 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         break;
         case IndexType::IDX_text: {
-            static const DB::Strings & tokenizerVals = {"default", "ngram", "split", "no_op"};
+            String buf;
+            bool has_paren = rg.nextSmallNumber() < 8;
+            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array"};
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
-            idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
-            if (next_tokenizer == "ngram" && rg.nextBool())
+            buf += fmt::format("tokenizer = {}", next_tokenizer);
+            buf += has_paren ? "(" : "";
+            if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
-                idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
+                buf += std::to_string(next_dist(rg.generator));
             }
-            if (next_tokenizer == "split" && rg.nextBool())
+            else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
             {
-                String buf;
-                DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
+                String buf2;
+                DB::Strings separators = {"'叫'", "'😉'", "'a'", "'b'", "'c'", "','", "'\\\\'", "'\"'", "'\\''", "'\\t'", "'\\n'", "' '", "'1'", "'.'", "1", "2"};
                 std::uniform_int_distribution<size_t> next_dist(UINT32_C(1), separators.size());
 
                 std::shuffle(separators.begin(), separators.end(), rg.generator);
                 const size_t nlen = next_dist(rg.generator);
-                buf += "separators = [";
+                buf2 += "[";
                 for (size_t i = 0; i < nlen; i++)
                 {
                     if (i != 0)
                     {
-                        buf += ", ";
+                        buf2 += ", ";
                     }
-                    buf += "'";
-                    buf += separators[i];
-                    buf += "'";
+                    buf2 += separators[i];
                 }
-                buf += "]";
-                idef->add_params()->set_unescaped_sval(std::move(buf));
+                buf2 += "]";
+                buf += buf2;
             }
+            buf += has_paren ? ")" : "";
+            idef->add_params()->set_unescaped_sval(std::move(buf));
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 512);

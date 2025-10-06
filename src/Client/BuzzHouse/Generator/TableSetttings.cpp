@@ -109,6 +109,28 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_vertical_merge_algorithm", trueOrFalseSetting},
     {"enforce_index_structure_match_on_partition_manipulation", trueOrFalseSetting},
     {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalseSetting},
+    {"exclude_materialize_skip_indexes_on_merge",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+            {
+                String res;
+                std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
+                const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+
+                std::shuffle(choices.begin(), choices.end(), rg.generator);
+                for (uint32_t i = 0; i < nchoices; i++)
+                {
+                    if (i != 0)
+                    {
+                        res += ",";
+                    }
+                    res += "i";
+                    res += std::to_string(choices[i]);
+                }
+                return "'" + res + "'";
+            },
+         {},
+         false)},
     {"finished_mutations_to_keep", rowsRangeSetting},
     {"force_read_through_cache_for_merges", trueOrFalseSetting},
     {"fsync_after_insert", trueOrFalseSetting},
