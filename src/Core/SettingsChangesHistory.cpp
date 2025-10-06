@@ -46,7 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"query_plan_optimize_join_order_limit", 1, 0, "New setting"},
+            {"query_plan_optimize_join_order_limit", 0, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
