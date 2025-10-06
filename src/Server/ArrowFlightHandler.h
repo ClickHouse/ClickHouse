@@ -59,6 +59,7 @@ public:
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
 
 private:
+    arrow::Status tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const;
     arrow::Status evaluatePollDescriptor(const String & poll_descriptor);
 
     IServer & server;

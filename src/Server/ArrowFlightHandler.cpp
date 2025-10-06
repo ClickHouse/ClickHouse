@@ -33,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
 }
 
@@ -385,9 +386,10 @@ namespace
 class ArrowFlightHandler::CallsData
 {
 public:
-    CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_)
+    CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, LoggerPtr log_)
         : tickets_lifetime(tickets_lifetime_)
         , poll_descriptors_lifetime(poll_descriptors_lifetime_)
+        , log(log_)
     {
     }
 
@@ -397,6 +399,7 @@ public:
     std::shared_ptr<const TicketInfo> createTicket(ConstBlockPtr block, std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter)
     {
         String ticket = generateTicketName();
+        LOG_DEBUG(log, "Creating ticket {}", ticket);
         Timestamp current_time = now();
         auto expiration_time = calculateTicketExpirationTime(current_time);
         auto info = std::make_shared<TicketInfo>();
@@ -466,6 +469,7 @@ public:
         auto it = tickets.find(ticket);
         if (it != tickets.end())
         {
+            LOG_DEBUG(log, "Cancelling ticket {}", ticket);
             auto info = it->second;
             tickets.erase(it);
             if (info->expiration_time)
@@ -493,6 +497,7 @@ public:
         {
             poll_descriptor = generatePollDescriptorName();
         }
+        LOG_DEBUG(log, "Creating poll descriptor {}", poll_descriptor);
         auto current_time = now();
         auto expiration_time = calculatePollDescriptorExpirationTime(current_time);
         auto info = std::make_shared<PollDescriptorInfo>();
@@ -648,6 +653,7 @@ public:
         auto it = poll_descriptors.find(poll_descriptor);
         if (it != poll_descriptors.end())
         {
+            LOG_DEBUG(log, "Cancelling poll descriptor {}", poll_descriptor);
             auto info = it->second;
             poll_descriptors.erase(it);
             if (info->expiration_time)
@@ -671,6 +677,7 @@ public:
             auto it = tickets_by_expiration_time.begin();
             if (current_time <= it->first)
                 break;
+            LOG_DEBUG(log, "Cancelling expired ticket {}", it->second);
             tickets.erase(it->second);
             tickets_by_expiration_time.erase(it);
         }
@@ -679,6 +686,7 @@ public:
             auto it = poll_descriptors_by_expiration_time.begin();
             if (current_time <= it->first)
                 break;
+            LOG_DEBUG(log, "Cancelling expired poll descriptor {}", it->second);
             poll_descriptors.erase(it->second);
             poll_sessions.erase(it->second);
             poll_descriptors_by_expiration_time.erase(it);
@@ -757,6 +765,7 @@ private:
 
     const std::optional<Duration> tickets_lifetime;
     const std::optional<Duration> poll_descriptors_lifetime;
+    const LoggerPtr log;
     mutable std::mutex mutex;
     std::unordered_map<String, std::shared_ptr<const TicketInfo>> tickets TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::shared_ptr<const PollDescriptorInfo>> poll_descriptors TSA_GUARDED_BY(mutex);
@@ -780,10 +789,10 @@ ArrowFlightHandler::ArrowFlightHandler(IServer & server_, const Poco::Net::Socke
     , cancel_poll_descriptor_after_poll_flight_info(server.config().getBool("arrowflight.cancel_flight_descriptor_after_poll_flight_info", false))
     , calls_data(
           std::make_unique<CallsData>(
-              tickets_lifetime_seconds ? std::make_optional(std::chrono::seconds{tickets_lifetime_seconds})
-                                       : std::optional<Duration>{},
+              tickets_lifetime_seconds ? std::make_optional(std::chrono::seconds{tickets_lifetime_seconds}) : std::optional<Duration>{},
               poll_descriptors_lifetime_seconds ? std::make_optional(std::chrono::seconds{poll_descriptors_lifetime_seconds})
-                                                : std::optional<Duration>{}))
+                                                : std::optional<Duration>{},
+              log))
 {
 }
 
@@ -900,11 +909,10 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
     const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::FlightInfo> * info)
 {
-    setThreadName("ArrowFlight");
-    ThreadStatus thread_status;
-
-    try
+    auto impl = [&]
     {
+        LOG_INFO(log, "GetFlightInfo is called for descriptor {}", request.ToString());
+
         std::vector<arrow::flight::FlightEndpoint> endpoints;
         int64_t total_rows = 0;
         int64_t total_bytes = 0;
@@ -975,8 +983,10 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             }
         }
 
+        auto schema = ch_to_arrow_converter->getArrowSchema();
+
         auto flight_info_res = arrow::flight::FlightInfo::Make(
-            *ch_to_arrow_converter->getArrowSchema(),
+            *schema,
             request,
             endpoints,
             total_rows,
@@ -986,12 +996,10 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
         ARROW_RETURN_NOT_OK(flight_info_res);
         *info = std::make_unique<arrow::flight::FlightInfo>(std::move(flight_info_res).ValueOrDie());
 
+        LOG_INFO(log, "GetFlightInfo returns flight info {}", (*info)->ToString());
         return arrow::Status::OK();
-    }
-    catch (const Exception & e)
-    {
-        return arrow::Status::ExecutionError("GetFlightInfo failed: ", e.displayText());
-    }
+    };
+    return tryRunAndLogIfError("GetFlightInfo", impl);
 }
 
 
@@ -1000,11 +1008,9 @@ arrow::Status ArrowFlightHandler::GetSchema(
     const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::SchemaResult> * schema)
 {
-    setThreadName("ArrowFlight");
-    ThreadStatus thread_status;
-
-    try
+    auto impl = [&]
     {
+        LOG_INFO(log, "GetSchema is called for descriptor {}", request.ToString());
         std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
 
         if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
@@ -1042,12 +1048,10 @@ arrow::Status ArrowFlightHandler::GetSchema(
         ARROW_RETURN_NOT_OK(schema_res);
         *schema = std::make_unique<arrow::flight::SchemaResult>(*std::move(schema_res).ValueOrDie());
 
+        LOG_INFO(log, "GetSchema returns schema {}", ch_to_arrow_converter->getArrowSchema()->ToString());
         return arrow::Status::OK();
-    }
-    catch (const Exception & e)
-    {
-        return arrow::Status::ExecutionError("GetSchema failed: ", e.displayText());
-    }
+    };
+    return tryRunAndLogIfError("GetSchema", impl);
 }
 
 
@@ -1056,11 +1060,10 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
     const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::PollInfo> * info)
 {
-    setThreadName("ArrowFlight");
-    ThreadStatus thread_status;
-
-    try
+    auto impl = [&]
     {
+        LOG_INFO(log, "PollFlightInfo is called for descriptor {}", request.ToString());
+
         std::shared_ptr<const PollDescriptorInfo> poll_info;
         std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
         std::optional<PollDescriptorWithExpirationTime> next_poll_descriptor;
@@ -1152,12 +1155,10 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
         if (should_cancel_poll_descriptor)
             calls_data->cancelPollDescriptor(request.cmd);
 
+        LOG_INFO(log, "PollFlightInfo returns {}", (*info)->ToString());
         return arrow::Status::OK();
-    }
-    catch (const Exception & e)
-    {
-        return arrow::Status::ExecutionError("PollFlightInfo failed: ", e.displayText());
-    }
+    };
+    return tryRunAndLogIfError("PollFlightInfo", impl);
 }
 
 
@@ -1207,6 +1208,7 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
     }
     catch (...)
     {
+        tryLogCurrentException(log, "Poll: Failed to get next block");
         auto error_status = arrow::Status::ExecutionError("Poll: Failed to get next block: ", getCurrentExceptionMessage(/* with_stacktrace = */ false));
         calls_data->endEvaluationWithError(poll_descriptor, error_status);
         return error_status;
@@ -1227,16 +1229,15 @@ arrow::Status ArrowFlightHandler::DoGet(
     const arrow::flight::Ticket & request,
     std::unique_ptr<arrow::flight::FlightDataStream> * stream)
 {
-    setThreadName("ArrowFlight");
-    ThreadStatus thread_status;
-
-    try
+    auto impl = [&]
     {
+        LOG_INFO(log, "DoGet is called for ticket {}", request.ticket);
+
         Block header;
         std::vector<Chunk> chunks;
         std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter;
         bool should_cancel_ticket = false;
-    
+
         if (hasTicketPrefix(request.ticket))
         {
             auto ticket_info_res = calls_data->getTicketInfo(request.ticket);
@@ -1286,12 +1287,10 @@ arrow::Status ArrowFlightHandler::DoGet(
         if (should_cancel_ticket)
             calls_data->cancelTicket(request.ticket);
 
+        LOG_INFO(log, "DoGet succeeded");
         return arrow::Status::OK();
-    }
-    catch (const Exception & e)
-    {
-        return arrow::Status::ExecutionError("DoGet failed: ", e.displayText());
-    }
+    };
+    return tryRunAndLogIfError("DoGet", impl);
 }
 
 
@@ -1300,12 +1299,11 @@ arrow::Status ArrowFlightHandler::DoPut(
     std::unique_ptr<arrow::flight::FlightMessageReader> reader,
     std::unique_ptr<arrow::flight::FlightMetadataWriter> /*writer*/)
 {
-    setThreadName("ArrowFlight");
-    ThreadStatus thread_status;
-
-    try
+    auto impl = [&]
     {
         const auto & descriptor = reader->descriptor();
+        LOG_INFO(log, "DoPut is called for descriptor {}", descriptor.ToString());
+
         auto sql_res = convertPutDescriptorToSQL(descriptor);
         ARROW_RETURN_NOT_OK(sql_res);
         const String & sql = sql_res.ValueOrDie();
@@ -1339,13 +1337,31 @@ arrow::Status ArrowFlightHandler::DoPut(
         CompletedPipelineExecutor executor(pipeline);
         executor.execute();
 
+        LOG_INFO(log, "DoPut succeeded");
         return arrow::Status::OK();
-    }
-    catch (const Exception & e)
+    };
+    return tryRunAndLogIfError("DoPut", impl);
+}
+
+
+arrow::Status ArrowFlightHandler::tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const
+{
+    setThreadName("ArrowFlight");
+    ThreadStatus thread_status;
+    try
     {
-        return arrow::Status::ExecutionError("DoPut failed: ", e.displayText());
+        auto status = std::move(func)();
+        if (!status.ok())
+            LOG_ERROR(log, "{} failed: {}", method_name, status.ToString());
+        return status;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("{} failed", method_name));
+        return arrow::Status::ExecutionError(method_name, " failed: ", getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 }
+
 
 arrow::Status ArrowFlightHandler::DoAction(
     const arrow::flight::ServerCallContext & /*context*/,

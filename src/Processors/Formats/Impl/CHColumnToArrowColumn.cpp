@@ -1150,7 +1150,8 @@ namespace DB
     {
         std::vector<arrow::ArrayVector> table_data(columns_num);
 
-        const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : &chunks[0];
+        /// We use the first chunk to initialize the arrow schema.
+        const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();
         initializeArrowSchema(chunk_to_initialize_schema, columns_num, column_to_field_id);
 
         for (const auto & chunk : chunks)

@@ -210,7 +210,7 @@ public:
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert chunk to arrow stream: {}", reader_res.status().ToString());
         }
-        auto reader = reader_res.ValueOrDie();
+        const auto & reader = reader_res.ValueOrDie();
 
         std::shared_ptr<arrow::RecordBatch> batch;
         bool first_batch = true;
