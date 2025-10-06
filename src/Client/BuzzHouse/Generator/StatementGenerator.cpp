@@ -634,14 +634,11 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     const std::optional<String> & cluster = t.getCluster();
 
     t.setName(ot->mutable_est(), false);
-    if (t.isMergeTreeFamily())
+    if (rg.nextBool())
     {
-        if (rg.nextBool())
-        {
-            generateNextTablePartition(rg, false, t, ot->mutable_single_partition()->mutable_partition());
-        }
-        ot->set_cleanup(rg.nextSmallNumber() < 3);
+        generateNextTablePartition(rg, false, t, ot->mutable_single_partition()->mutable_partition());
     }
+    ot->set_cleanup(rg.nextSmallNumber() < 3);
     if (!strict && rg.nextSmallNumber() < 4)
     {
         const uint32_t noption = rg.nextMediumNumber();
@@ -710,7 +707,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
         t.setName(ct->mutable_est(), false);
-        if (t.isMergeTreeFamily() && rg.nextBool())
+        if (rg.nextBool())
         {
             generateNextTablePartition(rg, true, t, ct->mutable_single_partition()->mutable_partition());
         }
@@ -1129,7 +1126,7 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
 
 void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt)
 {
-    if (t.isMergeTreeFamily() && rg.nextBool())
+    if (rg.nextBool())
     {
         generateNextTablePartition(rg, false, t, upt->mutable_single_partition()->mutable_partition());
     }
@@ -1199,7 +1196,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
 
 void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del)
 {
-    if (t.isMergeTreeFamily() && rg.nextBool())
+    if (rg.nextBool())
     {
         generateNextTablePartition(rg, false, t, del->mutable_single_partition()->mutable_partition());
     }
@@ -1599,7 +1596,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), mcol->mutable_col());
                 this->entries.clear();
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, mcol->mutable_single_partition()->mutable_partition());
                 }
@@ -1635,7 +1632,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), ccol->mutable_col());
                 this->entries.clear();
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, ccol->mutable_single_partition()->mutable_partition());
                 }
@@ -1820,7 +1817,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 IdxInPartition * iip = ati->mutable_materialize_index();
 
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
                 }
@@ -1835,7 +1832,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 IdxInPartition * iip = ati->mutable_clear_index();
 
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
                 }
@@ -1979,7 +1976,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 ProjectionInPartition * pip = ati->mutable_materialize_projection();
 
                 pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
                 }
@@ -1996,7 +1993,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 ProjectionInPartition * pip = ati->mutable_clear_projection();
 
                 pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
-                if (t.isMergeTreeFamily() && rg.nextBool())
+                if (rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
                 }
