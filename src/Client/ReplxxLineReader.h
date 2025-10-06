@@ -98,6 +98,8 @@ private:
     replxx::Replxx::completions_t hint_completions;
     std::string hint_completions_context;
     int hint_completions_context_size = 0;
+    uint64_t vimbuffer = 0;
+    uint64_t vimbufferinner = 0;
 };
 
 }

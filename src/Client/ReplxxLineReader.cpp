@@ -32,6 +32,28 @@
 #include <skim.h>
 #endif
 
+enum {
+    MODE_INSERT,
+    MODE_NORMAL,
+    MODE_DELETE,
+    MODE_CHANGE,
+    MODE_REPLACE,
+    MODE_g,
+    MODE_f,
+    MODE_F,
+    MODE_t,
+    MODE_T,
+    MODE_DELETE_f,
+    MODE_DELETE_F,
+    MODE_DELETE_t,
+    MODE_DELETE_T,
+    MODE_CHANGE_f,
+    MODE_CHANGE_F,
+    MODE_CHANGE_t,
+    MODE_CHANGE_T,
+    MODE_END,
+};
+
 namespace
 {
 
@@ -408,9 +430,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_completion_callback(callback);
 
     rx.set_complete_on_empty(false);
-    rx.set_word_break_characters(word_break_characters);
+    rx.set_subword_break_characters(word_break_characters);
+    rx.set_word_break_characters(" \t\v\f\a\b\r");
     rx.set_ignore_case(true);
     rx.set_indent_multiline(false);
+    rx.set_escdelay(10);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -489,6 +513,339 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         rx.set_modify_callback([this] (std::string &, int &) { hint_selection = -1; });
     }
 
+    for (int mode = MODE_INSERT; mode < MODE_END; mode++) {
+        rx.bind_key(Replxx::KEY::ESCAPE, [this](char32_t) { vimbuffer = vimbufferinner = 0; rx.set_editing_mode(MODE_NORMAL); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
+    }
+    rx.bind_key(Replxx::KEY::ESCAPE, [this](char32_t code) { vimbuffer = vimbufferinner = 0; rx.invoke(Replxx::ACTION::MOVE_CURSOR_LEFT, code); rx.set_editing_mode(MODE_NORMAL); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_INSERT);
+    rx.bind_key('i', [this](char32_t) { rx.set_editing_mode(0); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('I', [this](char32_t code) { rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_BEGINING_OF_LINE, code); rx.set_editing_mode(MODE_INSERT); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('a', [this](char32_t code) { rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code); rx.set_editing_mode(MODE_INSERT); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('A', [this](char32_t code) { rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_END_OF_LINE, code); rx.set_editing_mode(MODE_INSERT); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('$', [this](char32_t code) { rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_END_OF_LINE, code); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key(Replxx::KEY::ENTER, [this](char32_t code) { rx.invoke(Replxx::ACTION::COMMIT_LINE, code); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('h', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+             rx.invoke(Replxx::ACTION::MOVE_CURSOR_LEFT, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key(Replxx::KEY::BACKSPACE, [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+             rx.invoke(Replxx::ACTION::MOVE_CURSOR_LEFT, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('j', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+             rx.invoke(Replxx::ACTION::LINE_NEXT, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('k', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+             rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('l', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+             rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('w', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_NEXT_SUBWORD, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('b', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_PREVIOUS_SUBWORD, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('W', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_NEXT_WORD, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('B', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_PREVIOUS_WORD, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('x', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_CHARACTER_UNDER_CURSOR, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('r', [this](char32_t) {
+        rx.set_editing_mode(MODE_REPLACE);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('s', [this](char32_t code) {
+        uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_CHARACTER_UNDER_CURSOR, code);
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('o', [this](char32_t code) {
+        vimbuffer = 0;
+        rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_END_OF_LINE, code);
+        rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('O', [this](char32_t code) {
+        vimbuffer = 0;
+        rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_BEGINING_OF_LINE, code);
+        rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('g', [this](char32_t) { rx.set_editing_mode(MODE_g); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('g', [this](char32_t) {
+        uint64_t line = vimbuffer == 0 ? 1 : vimbuffer;
+        vimbuffer = 0;
+        rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_LINE, line);
+        rx.set_editing_mode(MODE_NORMAL);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_g);
+    rx.bind_key('G', [this](char32_t) {
+        uint64_t line = vimbuffer;
+        vimbuffer = 0;
+        rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_LINE, line);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+    rx.bind_key('D', [this](char32_t code) { rx.invoke(Replxx::ACTION::KILL_TO_END_OF_LINE, code); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('d', [this](char32_t) { rx.set_editing_mode(MODE_DELETE); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('c', [this](char32_t) { rx.set_editing_mode(MODE_CHANGE); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('f', [this](char32_t) { rx.set_editing_mode(MODE_f); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('F', [this](char32_t) { rx.set_editing_mode(MODE_F); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('t', [this](char32_t) { rx.set_editing_mode(MODE_t); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+    rx.bind_key('T', [this](char32_t) { rx.set_editing_mode(MODE_T); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+
+    rx.bind_key('f', [this](char32_t) { rx.set_editing_mode(MODE_DELETE_f); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_DELETE);
+    rx.bind_key('F', [this](char32_t) { rx.set_editing_mode(MODE_DELETE_F); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_DELETE);
+    rx.bind_key('t', [this](char32_t) { rx.set_editing_mode(MODE_DELETE_t); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_DELETE);
+    rx.bind_key('T', [this](char32_t) { rx.set_editing_mode(MODE_DELETE_T); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_DELETE);
+
+    rx.bind_key('f', [this](char32_t) { rx.set_editing_mode(MODE_CHANGE_f); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_CHANGE);
+    rx.bind_key('F', [this](char32_t) { rx.set_editing_mode(MODE_CHANGE_F); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_CHANGE);
+    rx.bind_key('t', [this](char32_t) { rx.set_editing_mode(MODE_CHANGE_t); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_CHANGE);
+    rx.bind_key('T', [this](char32_t) { rx.set_editing_mode(MODE_CHANGE_T); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_CHANGE);
+
+    rx.bind_key('w', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_UNTIL_NEXT_SUBWORD, code);
+        rx.set_editing_mode(MODE_NORMAL);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_DELETE);
+    rx.bind_key('W', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_UNTIL_NEXT_WORD, code);
+        rx.set_editing_mode(MODE_NORMAL);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_DELETE);
+    rx.bind_key('w', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_UNTIL_NEXT_SUBWORD, code);
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_CHANGE);
+    rx.bind_key('W', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++)
+            rx.invoke(Replxx::ACTION::DELETE_UNTIL_NEXT_WORD, code);
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_CHANGE);
+    rx.bind_key('d', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++) {
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_BEGINING_OF_LINE, code);
+            rx.invoke(Replxx::ACTION::KILL_TO_END_OF_LINE, code);
+            /* Weird hack because Replxx is acting weird.
+             * rx.invoke(Replxx::ACTION::DELETE_CHARACTER_UNDER_CURSOR, code); */
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
+            rx.invoke(Replxx::ACTION::DELETE_CHARACTER_LEFT_OF_CURSOR, code);
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_LEFT, code);
+        }
+        rx.set_editing_mode(MODE_NORMAL);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_DELETE);
+    rx.bind_key('c', [this](char32_t code) {
+        uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+        vimbuffer = vimbufferinner = 0;
+        for (uint64_t rep = 0; rep < reps; rep++) {
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_BEGINING_OF_LINE, code);
+            rx.invoke(Replxx::ACTION::KILL_TO_END_OF_LINE, code);
+        }
+        rx.set_editing_mode(MODE_INSERT);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_CHANGE);
+
+    for (char c = 33; c < 127; c++) {
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
+            vimbuffer = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_CHARACTER_UNDER_CURSOR, code);
+                rx.invoke(Replxx::ACTION::INSERT_CHARACTER, code);
+            }
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_LEFT, code);
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_REPLACE);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_CHARACTER, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_f);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_CHARACTER_REVERSE, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_F);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_CHARACTER, code);
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_t);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_CHARACTER_REVERSE, code);
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_T);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_UNTIL_CHARACTER, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_INSERT);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_CHANGE_f);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_UNTIL_CHARACTER, code);
+            }
+            rx.set_editing_mode(MODE_INSERT);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_CHANGE_t);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_UNTIL_CHARACTER, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_DELETE_f);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_UNTIL_CHARACTER, code);
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_DELETE_t);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_BACKWARDS_UNTIL_CHARACTER, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_INSERT);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_CHANGE_F);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_BACKWARDS_UNTIL_CHARACTER, code);
+            }
+            rx.set_editing_mode(MODE_INSERT);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_CHANGE_T);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_BACKWARDS_UNTIL_CHARACTER, Replxx::KEY::meta(code));
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_DELETE_F);
+        rx.bind_key(c, [this](char32_t code) {
+            uint64_t reps = (vimbuffer == 0 ? 1 : vimbuffer) * (vimbufferinner == 0 ? 1 : vimbufferinner);
+            vimbuffer = vimbufferinner = 0;
+            for (uint64_t rep = 0; rep < reps; rep++) {
+                rx.invoke(Replxx::ACTION::DELETE_BACKWARDS_UNTIL_CHARACTER, code);
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }, MODE_DELETE_T);
+    }
+
+    for (char c = '0'; c <= '9'; c++) {
+        for (int mode = MODE_NORMAL; mode < MODE_g; mode++)
+            rx.bind_key(c, [this](char32_t code) { vimbuffer = 10 * vimbuffer + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
+        for (int mode = MODE_g + 1; mode < MODE_END; mode++)
+            rx.bind_key(c, [this](char32_t code) { vimbufferinner = 10 * vimbufferinner + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
+    }
+    rx.bind_key('0', [this](char32_t code) {
+        if (vimbuffer == 0)
+            rx.invoke(Replxx::ACTION::MOVE_CURSOR_TO_BEGINING_OF_LINE, code);
+        else
+            vimbuffer = 10 * vimbuffer;
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
@@ -523,6 +880,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-j to ENTER action.
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
+    rx.bind_key(Replxx::KEY::ENTER, [this, commit_action](char32_t code) { rx.set_editing_mode(MODE_INSERT); return commit_action(code); }, MODE_NORMAL);
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
@@ -605,6 +963,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
     {
+        rx.bind_key('v', [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
         rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
         rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
     }
