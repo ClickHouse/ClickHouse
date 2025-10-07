@@ -622,7 +622,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
-    bool /* throw_on_error */) const
+    bool throw_on_error) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
@@ -631,8 +631,9 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {
-        throw Exception(
-            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+        if (throw_on_error)
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+        return {};
     }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
