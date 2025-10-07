@@ -2455,7 +2455,7 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
-## hashicorp_vault (#hashicorp_vault)
+## hashicorp_vault {#hashicorp_vault}
 
 Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently only token authentication is supported.
 
@@ -2507,7 +2507,6 @@ curl --header "X-Vault-Token: foobar" \
      --data '{"data": {"password": "test"}}' \
      http://hashicorpvault:8200/v1/secret/data/username
 ```
-
 
 ## workload_path {#workload_path}
 
