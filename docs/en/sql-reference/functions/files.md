@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Files'
 sidebar_label: 'Files'
+sidebar_position: 75
 slug: /sql-reference/functions/files
 title: 'Files'
-doc_type: 'reference'
 ---
 
 ## file {#file}
@@ -14,7 +14,7 @@ Also see table function [file](../table-functions/file.md).
 
 **Syntax**
 
-```sql
+``` sql
 file(path[, default])
 ```
 
@@ -27,6 +27,6 @@ file(path[, default])
 
 Inserting data from files a.txt and b.txt into a table as strings:
 
-```sql
+``` sql
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
 ```

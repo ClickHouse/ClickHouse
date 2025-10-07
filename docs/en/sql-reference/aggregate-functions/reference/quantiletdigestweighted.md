@@ -4,7 +4,6 @@ description: 'Computes an approximate quantile of a numeric data sequence using 
 sidebar_position: 179
 slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
 title: 'quantileTDigestWeighted'
-doc_type: 'reference'
 ---
 
 # quantileTDigestWeighted
@@ -23,7 +22,7 @@ Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://
 
 **Syntax**
 
-```sql
+``` sql
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
@@ -49,13 +48,13 @@ Type:
 
 Query:
 
-```sql
+``` sql
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
 Result:
 
-```text
+``` text
 ┌─quantileTDigestWeighted(number, 1)─┐
 │                                4.5 │
 └────────────────────────────────────┘

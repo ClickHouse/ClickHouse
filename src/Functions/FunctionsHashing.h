@@ -13,14 +13,13 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
-#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/evp.h>
+#    include <openssl/md5.h>
 #endif
 
 #include <bit>
@@ -65,7 +64,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -249,22 +247,12 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        MD5_CTX ctx;
+        MD5_Init(&ctx);
+        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD5_Final(buf.char_data, &ctx);
 
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
-
-        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
+        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }
@@ -1083,7 +1071,7 @@ private:
                         key = Impl::getKey(key_cols, i);
                 const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 if constexpr (first)
                     vec_to[i] = hash;
@@ -1660,7 +1648,7 @@ private:
             {
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1691,7 +1679,7 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(
                     level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1708,7 +1696,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0]);
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
             }
 
             return col_to;

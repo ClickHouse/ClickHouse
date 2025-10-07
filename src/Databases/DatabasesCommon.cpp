@@ -12,7 +12,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageDictionary.h>
@@ -43,8 +42,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int BAD_ARGUMENTS;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
 {
@@ -71,9 +68,6 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
-
-    if (columns_desc.getInsertable().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
     DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
@@ -129,7 +123,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 }
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
 {
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
@@ -219,8 +213,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 
-    if (validate_new_create_query)
-        validateCreateQuery(ast_create_query, context);
+    validateCreateQuery(ast_create_query, context);
 }
 
 
@@ -310,18 +303,18 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.out_file = nullptr;
 }
 
-String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
+String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
 {
-    auto read_buf = disk->readFile(file_path, getReadSettingsForMetadata());
+    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
     String content;
     readStringUntilEOF(content, *read_buf);
 
     return content;
 }
 
-void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata)
+void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
 {
-    auto out = disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
     writeString(content, *out);
 
     out->next();
@@ -331,29 +324,9 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
-{
-    if (!command.comment)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
-
-    String old_database_comment = db->getDatabaseComment();
-    db->setDatabaseComment(command.comment.value());
-
-    try
-    {
-        DatabaseCatalog::instance().updateMetadataFile(db);
-    }
-    catch (...)
-    {
-        db->setDatabaseComment(old_database_comment);
-        throw;
-    }
-}
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_)
-    , WithContext(context_->getGlobalContext())
-    , log(getLogger(logger))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
 {
 }
 
@@ -573,7 +546,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
             create->setTable(it->name());
         }
 
-        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

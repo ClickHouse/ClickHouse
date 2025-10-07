@@ -7,17 +7,13 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTViewTargets.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
 
 
 namespace DB
@@ -37,7 +33,7 @@ namespace ErrorCodes
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
-    resolveParameterizedAlias(ast);
+    resolveParametrizedAlias(ast);
 
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
@@ -47,23 +43,6 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
-        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
-        {
-            ASTPtr names = create_user_query->names;
-            visitChildren(names);
-        }
-        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
-                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
-        {
-            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
-
-            visit(to_table_ast);
-
-            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
-
-            visitChildren(ast);
-        }
         else
             visitChildren(ast);
     }
@@ -178,7 +157,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     ast_identifier->children.clear();
 }
 
-void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
+void ReplaceQueryParameterVisitor::resolveParametrizedAlias(ASTPtr & ast)
 {
     auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)
