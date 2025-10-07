@@ -29,6 +29,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zstd \
         zip \
         clang-tidy-${LLVM_VERSION} \
+    && dpkg --force-depends --remove libstdc++-11-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

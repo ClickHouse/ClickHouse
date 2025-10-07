@@ -460,6 +460,8 @@ else ()
                 "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
                 "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
                 "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DCMAKE_C_FLAGS=-nodefaultlibs -lc"
+                "-DCMAKE_CXX_FLAGS=-nodefaultlibs -lc"
                 "-Dprotobuf_BUILD_TESTS=0"
                 "-Dprotobuf_BUILD_CONFORMANCE=0"
                 "-Dprotobuf_BUILD_EXAMPLES=0"

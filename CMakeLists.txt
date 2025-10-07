@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
+# We do not have libstdc++ in build image, so all compiler invocations should not try to use it.
+set(CMAKE_CXX_FLAGS -nodefaultlibs)
+set(CMAKE_C_FLAGS -nodefaultlibs)
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
