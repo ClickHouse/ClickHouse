@@ -144,6 +144,7 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMutation;
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
+    extern const Event MergesRejectedByMemoryLimit;
 }
 
 namespace CurrentMetrics
@@ -4127,6 +4128,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
         if (!canEnqueueBackgroundTask())
         {
+            ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
             LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),

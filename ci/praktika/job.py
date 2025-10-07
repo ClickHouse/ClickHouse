@@ -130,6 +130,11 @@ class Job:
             """
             return copy.deepcopy(self)
 
+        def set_name(self, name):
+            res = copy.deepcopy(self)
+            res.name = name
+            return res
+
         def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
@@ -162,6 +167,11 @@ class Job:
                     Utils.raise_with_error(
                         f"Invalid artifact type {type(artifact_name_)} for [{artifact_name_}]"
                     )
+            return res
+
+        def set_runs_on(self, runs_on):
+            res = copy.deepcopy(self)
+            res.runs_on = runs_on
             return res
 
         def unset_provides(self, artifact_keyword):
