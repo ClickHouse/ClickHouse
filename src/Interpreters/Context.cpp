@@ -2364,13 +2364,13 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
-void Context::addSkipIndexAccessInfo(const String & table_name, const String & skip_index_name)
+void Context::addSkipIndexAccessInfo(const String & full_table_name, const String & skip_index_name)
 {
     if (skip_index_name.empty())
         return;
 
     std::lock_guard lock(query_access_info->mutex);
-    query_access_info->skip_indexes.emplace(table_name + "." + skip_index_name);
+    query_access_info->skip_indexes.emplace(full_table_name + "." + skip_index_name);
 }
 
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
