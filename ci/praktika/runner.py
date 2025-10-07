@@ -232,6 +232,9 @@ class Runner:
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
+        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
+        if preserve_stdio:
+            print("WARNING: Preserving stdio")
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
@@ -288,7 +291,11 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            # enable tty mode & interactive for docker if we have real tty
+            tty = ""
+            if preserve_stdio:
+                tty = "-it"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -302,8 +309,11 @@ class Runner:
             cmd += f" --test {test}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(cmd, timeout=job.timeout) as process:
+        with TeePopen(
+            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio
+        ) as process:
             start_time = Utils.timestamp()
+
             if Path((Result.experimental_file_name_static())).exists():
                 # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
                 Path(Result.experimental_file_name_static()).unlink()

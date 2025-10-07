@@ -12,6 +12,10 @@ doc_type: 'reference'
 
 # CoalescingMergeTree
 
+:::note Available from version 25.6
+This table engine is available from version 25.6 and higher in both OSS and Cloud.
+:::
+
 This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row that contains the latest non-NULL values for each column.
 
 This enables column-level upserts, meaning you can update only specific columns rather than entire rows.

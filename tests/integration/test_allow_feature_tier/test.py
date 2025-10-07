@@ -154,6 +154,7 @@ def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     """
     )
     assert output == ""
+    assert error == ""
 
     output, error = instance.query_and_get_answer_with_error(
         """
