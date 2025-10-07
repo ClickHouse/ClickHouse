@@ -1035,24 +1035,29 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             scope.scope_node->formatASTForErrorMessage());
 
     QueryTreeNodePtr alias_node = original_alias_node;
-    bool resolved_from_cache = false;
-    if (identifier_lookup.isExpressionLookup()
-        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
-    {
-        auto cached_it = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.find(identifier_bind_part);
-        if (cached_it != scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node.end() && cached_it->second)
-        {
-            alias_node = cached_it->second;
-            resolved_from_cache = true;
-        }
-        else
-        {
-            alias_node = original_alias_node->clone();
-            scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
-        }
-    }
 
     auto node_type = alias_node->getNodeType();
+
+    auto & aliased_expression_cache = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node;
+    bool use_aliased_expression_cache = identifier_lookup.isExpressionLookup()
+        // If there's an aggregate function in the stack don't use alias cache
+        // because expressions in aggregate functions can have different transformations
+        // applied to them - IE - conversion to Nullable.
+        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
+
+    bool resolved_from_cache = false;
+    if (use_aliased_expression_cache)
+    {
+        auto cached_it = aliased_expression_cache.find(identifier_bind_part);
+        if (cached_it != aliased_expression_cache.end() && cached_it->second)
+        {
+            resolved_from_cache = true;
+            alias_node = cached_it->second;
+        }
+        else
+            alias_node = original_alias_node->clone();
+    } else if (!identifier_lookup.isTableExpressionLookup())
+        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
@@ -1069,36 +1074,39 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         return {};
     }
 
-    /// Resolve expression if necessary
-    if (!resolved_from_cache && node_type == QueryTreeNodeType::IDENTIFIER)
+    if (!resolved_from_cache)
     {
-        scope_to_resolve_alias_expression->pushExpressionNode(alias_node);
-
-        auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
-        auto identifier = alias_identifier_node.getIdentifier();
-        IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
-        if (alias_node->hasOriginalAST())
-            alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
-        auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
-
-        scope_to_resolve_alias_expression->popExpressionNode();
-
-        if (!lookup_result.resolved_identifier)
+        /// Resolve expression if necessary
+        if (node_type == QueryTreeNodeType::IDENTIFIER)
         {
-            // Resolve may succeed in another place or scope
-            return {};
-        }
+            scope_to_resolve_alias_expression->pushExpressionNode(alias_node);
 
-        alias_node = lookup_result.resolved_identifier;
-    }
-    else if (node_type == QueryTreeNodeType::FUNCTION)
-    {
-        resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    }
-    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-    {
-        if (identifier_resolve_context.allow_to_resolve_subquery_during_identifier_resolution)
-            resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
+            auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
+            auto identifier = alias_identifier_node.getIdentifier();
+            IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
+            if (alias_node->hasOriginalAST())
+                alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
+            auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
+
+            scope_to_resolve_alias_expression->popExpressionNode();
+
+            if (!lookup_result.resolved_identifier)
+            {
+                // Resolve may succeed in another place or scope
+                return {};
+            }
+
+            alias_node = lookup_result.resolved_identifier;
+        }
+        else if (node_type == QueryTreeNodeType::FUNCTION)
+        {
+            resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+        else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        {
+            if (identifier_resolve_context.allow_to_resolve_subquery_during_identifier_resolution)
+                resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
+        }
     }
 
     if (identifier_lookup.isExpressionLookup() && alias_node)
@@ -1108,13 +1116,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         {
             // Remember resolved type for typo correction
             scope_to_resolve_alias_expression->aliases.alias_name_to_expression_type[identifier_bind_part] = alias_node->getResultType();
-        }
-
-        if (!identifier_lookup.isTableExpressionLookup())
-        {
-            auto & cached_map = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node;
-            if (!resolved_from_cache && !cached_map.contains(identifier_bind_part))
-                cached_map.emplace(identifier_bind_part, alias_node);
         }
     }
 
@@ -1143,6 +1144,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 identifier_lookup.isFunctionLookup() ? "function" : "table expression",
                 scope.scope_node->formatASTForErrorMessage());
         }
+    }
+
+    if (!resolved_from_cache && use_aliased_expression_cache)
+    {
+        if (!resolved_from_cache && !aliased_expression_cache.contains(identifier_bind_part))
+            aliased_expression_cache.emplace(identifier_bind_part, alias_node);
     }
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
