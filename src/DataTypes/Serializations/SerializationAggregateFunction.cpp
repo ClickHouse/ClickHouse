@@ -146,14 +146,12 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
     {
         // Get the argument types for the aggregate function
         const auto & argument_types = function->getArgumentTypes();
-        
         if (argument_types.size() == 1)
         {
             // Single argument - parse the value directly
             auto temp_column = argument_types[0]->createColumn();
             ReadBufferFromString buf(value_str);
             argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
-            
             // Add the value to the aggregate state
             const IColumn * columns[] = {temp_column.get()};
             function->add(place, columns, 0, &arena);
@@ -162,12 +160,10 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
         {
             // Multiple arguments - parse as tuple
             ReadBufferFromString buf(value_str);
-            
             // Parse tuple manually - expect format like (val1,val2,val3)
             if (buf.eof() || *buf.position() != '(')
                 throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, 
                     "Expected tuple format for multi-argument aggregate function, got: '{}'", value_str);
-            
             ++buf.position(); // skip '('
             
             std::vector<MutableColumnPtr> temp_columns;
@@ -184,16 +180,13 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
                 temp_columns.push_back(argument_types[i]->createColumn());
                 argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
             }
-            
             if (buf.eof() || *buf.position() != ')')
                 throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                     "Expected closing parenthesis in tuple, got: '{}'", value_str);
-            
             // Add the values to the aggregate state
             std::vector<const IColumn *> columns_ptrs;
             for (const auto & col : temp_columns)
                 columns_ptrs.push_back(col.get());
-                
             function->add(place, columns_ptrs.data(), 0, &arena);
         }
     }
@@ -202,7 +195,6 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
         function->destroy(place);
         throw;
     }
-
     column_concrete.getData().push_back(place);
 }
 
@@ -246,7 +238,6 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
                 // Single argument
                 auto temp_column = argument_types[0]->createColumn();
                 argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
-                
                 const IColumn * columns[] = {temp_column.get()};
                 function->add(place, columns, 0, &arena);
             }
@@ -256,9 +247,7 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
                 if (buf.eof() || *buf.position() != '(')
                     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                         "Expected tuple format for multi-argument aggregate function in array, got: '{}'", array_str);
-                
                 ++buf.position(); // skip '('
-                
                 std::vector<MutableColumnPtr> temp_columns;
                 for (size_t i = 0; i < argument_types.size(); ++i)
                 {
@@ -269,27 +258,21 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
                                 "Expected comma in tuple within array, got: '{}'", array_str);
                         ++buf.position(); // skip ','
                     }
-                    
                     temp_columns.push_back(argument_types[i]->createColumn());
                     argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
                 }
-                
                 if (buf.eof() || *buf.position() != ')')
                     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                         "Expected closing parenthesis in tuple within array, got: '{}'", array_str);
                 ++buf.position(); // skip ')'
-                
                 // Add the values to the aggregate state
                 std::vector<const IColumn *> columns_ptrs;
                 for (const auto & col : temp_columns)
                     columns_ptrs.push_back(col.get());
-                    
                 function->add(place, columns_ptrs.data(), 0, &arena);
             }
-            
             ++row;
         }
-        
         if (buf.eof() || *buf.position() != ']')
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                 "Expected closing bracket in array, got: '{}'", array_str);
