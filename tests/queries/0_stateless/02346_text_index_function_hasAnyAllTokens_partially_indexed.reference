@@ -57,7 +57,7 @@ Expression ((Project names + Projection))
             Granules: 2/4
           Ranges: 1
 --
--- Test that splitByNonAlpha tokenizer is applied even to column part which is not materialized
+-- Test that splitByNonAlpha tokenizer is applied even to column part which does not have a materialized text index
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar']);
 [2,4,6]
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar$']); -- test default tokenizer
