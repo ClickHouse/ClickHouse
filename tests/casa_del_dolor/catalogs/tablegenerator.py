@@ -68,10 +68,6 @@ class LakeTableGenerator:
         pass
 
     @abstractmethod
-    def set_table_location(self, next_location: str) -> str:
-        return ""
-
-    @abstractmethod
     def set_basic_properties(self) -> dict[str, str]:
         return {}
 
@@ -109,7 +105,6 @@ class LakeTableGenerator:
         file_format: str,
         deterministic: bool,
         next_storage: TableStorage,
-        next_location: str,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -146,7 +141,6 @@ class LakeTableGenerator:
             table_name,
             columns_spark,
             deterministic,
-            next_location,
             LakeFormat.lakeformat_from_str(self.get_format()),
             self.write_format,
             next_storage,
@@ -161,7 +155,7 @@ class LakeTableGenerator:
             )
             ddl += f" PARTITIONED BY ({",".join(random_subset)})"
 
-        ddl += self.set_table_location(next_location)
+        # ddl += self.set_table_location(next_location) no location needed yet
 
         properties = self.set_basic_properties()
         # Add table properties
@@ -248,9 +242,6 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "iceberg"
-
-    def set_table_location(self, next_location: str) -> str:
-        return ""
 
     def set_basic_properties(self) -> dict[str, str]:
         properties = {}
@@ -499,7 +490,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.avro.compression-codec": lambda: random.choice(
-                        ["snappy", "bzip2", "xz", "uncompressed"]
+                        ["snappy", "bzip2", "uncompressed"]
                     )
                 }
             )
@@ -545,7 +536,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option == 2:
-            res = f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
+            res = f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 # Add options
                 options = {
@@ -719,9 +710,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "delta"
-
-    def set_table_location(self, next_location: str) -> str:
-        return f" LOCATION '{next_location}'"
 
     def set_basic_properties(self) -> dict[str, str]:
         return {}

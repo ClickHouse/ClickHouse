@@ -782,16 +782,6 @@ logger.jetty.level = warn
             catalog_type = self.catalogs[catalog_name].catalog_type
             self.catalogs_lock.release()
 
-        # To fix, this is not right for some catalogs
-        next_location = ""
-        if next_storage == TableStorage.S3:
-            next_location = f"s3a://{cluster.minio_bucket}/{catalog_name}"
-        elif next_storage == TableStorage.Azure:
-            next_location = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
-        elif next_storage == TableStorage.Local:
-            next_location = f"file://{get_local_base_path(catalog_name)}"
-        next_location += f"/test/{data["table_name"]}"
-
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
             data["database_name"],
@@ -800,7 +790,6 @@ logger.jetty.level = warn
             data["format"],
             data["deterministic"] > 0,
             next_storage,
-            next_location,
         )
         next_session = self.get_next_session(
             cluster,

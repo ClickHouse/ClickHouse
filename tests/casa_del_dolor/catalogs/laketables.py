@@ -116,7 +116,6 @@ class SparkTable:
         _table_name: str,
         _columns: dict[str, SparkColumn],
         _deterministic: bool,
-        _location: str,
         _lake_format: LakeFormat,
         _file_format: FileFormat,
         _storage: TableStorage,
@@ -126,7 +125,6 @@ class SparkTable:
         self.table_name = _table_name
         self.columns = _columns
         self.deterministic = _deterministic
-        self.location = _location
         self.lake_format = _lake_format
         self.file_format = _file_format
         self.storage = _storage
