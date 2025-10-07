@@ -42,6 +42,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
+    ParserKeyword s_rewrite_parts(Keyword::REWRITE_PARTS);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_modify_query(Keyword::MODIFY_QUERY);
@@ -431,19 +432,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_materialize_statistics.ignore(pos, expected))
             {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
-                    return false;
-
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTICS;
                 command->detach = false;
-
-                if (s_in_partition.ignore(pos, expected))
+                if (!ParserKeyword(Keyword::ALL).ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    if (s_if_exists.ignore(pos, expected))
+                        command->if_exists = true;
+
+                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
                         return false;
+
+                    if (s_in_partition.ignore(pos, expected))
+                    {
+                        if (!parser_partition.parse(pos, command_partition, expected))
+                            return false;
+                    }
                 }
             }
             else if (s_add_projection.ignore(pos, expected))
@@ -737,12 +740,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->snapshot_name = ast_snapshot_name->as<ASTLiteral &>().value.safeGet<String>();
-                if (!s_from.ignore(pos, expected))
-                    return false;
-                if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
-                    return false;
-                command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 command->type = ASTAlterCommand::UNLOCK_SNAPSHOT;
+                /// unlock snapshot <uuid> from s3(...), but `from (s3...)` is optional
+                if (s_from.ignore(pos, expected))
+                {
+                    if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
+                        return false;
+                    command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                }
             }
             else if (bool is_modify = s_modify_column.ignore(pos, expected); is_modify || s_alter_column.ignore(pos, expected))
             {
@@ -897,6 +902,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_materialize_ttl.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
+            else if (s_rewrite_parts.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::REWRITE_PARTS;
 
                 if (s_in_partition.ignore(pos, expected))
                 {

@@ -24,6 +24,8 @@ public:
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
+    Type getType() const override { return Type::SLRU; }
+
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
     size_t getElementsCount(const CachePriorityGuard::Lock &) const override;
@@ -33,6 +35,8 @@ public:
     size_t getElementsCountApprox() const override;
 
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+
+    double getSLRUSizeRatio() const override { return size_ratio; }
 
     void check(const CachePriorityGuard::Lock &) const override;
 
@@ -57,6 +61,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
@@ -67,6 +72,8 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         const CachePriorityGuard::Lock &) override;
+
+    void resetEvictionPos(const CachePriorityGuard::Lock &) override;
 
     void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
 
@@ -102,6 +109,7 @@ private:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock & lock);
 

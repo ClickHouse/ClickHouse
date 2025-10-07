@@ -2,6 +2,7 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,7 +24,10 @@
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <algorithm>
 #include <stack>
+#include <string>
+#include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
@@ -136,7 +140,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-size_t ActionsDAG::Node::getHash() const
+UInt64 ActionsDAG::Node::getHash() const
 {
     SipHash hash_state;
     updateHash(hash_state);
@@ -756,8 +760,13 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
+    std::unordered_map<const Node *, const Node *> copy_map;
+    return cloneSubDAG(outputs, copy_map, remove_aliases);
+}
+
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases)
+{
     ActionsDAG actions;
-    std::unordered_map<const Node *, Node *> copy_map;
 
     struct Frame
     {
@@ -820,7 +829,22 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+            try
+            {
+                res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+            }
+            catch (Exception & e)
+            {
+                std::string arguments_description;
+                for (const auto & arg : arguments)
+                {
+                    if (!arguments_description.empty())
+                        arguments_description += ", ";
+                    arguments_description += arg.dumpStructure();
+                }
+                e.addMessage("while executing function {} on arguments {}", node->function->getName(), arguments_description);
+                throw;
+            }
             break;
         }
 
@@ -935,7 +959,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
     size_t input_rows_count,
-    bool throw_on_error)
+    bool throw_on_error,
+    bool skip_materialize)
 {
     chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
 
@@ -1005,7 +1030,14 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                                         node->result_name);
 
                     if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
+                    {
+                        if (node->type == ActionType::FUNCTION && skip_materialize && node->function_base->getName() == "materialize")
+                        {
+                            node_to_column[node] = arguments.at(0);
+                        }
+
                         node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
+                    }
                 }
             }
 
@@ -1363,9 +1395,6 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
         if (*it == col)
             break;
 
-    if (it == inputs.end())
-        return false;
-
     /// Check column has no dependent.
     for (const auto & node : nodes)
         for (const auto * child : node.children)
@@ -1380,24 +1409,42 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
-        if (&(*jt) == *it)
+        if (&(*jt) == col)
         {
             nodes.erase(jt);
             break;
         }
     }
 
-    inputs.erase(it);
+    if (it != inputs.end())
+        inputs.erase(it);
     return true;
+}
+
+void ActionsDAG::removeFromOutputs(const std::string & node_name)
+{
+    auto it = std::find_if(
+        outputs.begin(),
+        outputs.end(),
+        [&node_name](const Node * node)
+        {
+            return node->result_name == node_name;
+        });
+
+    if (it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found node with {} in the outputs of ActionsDAG\n{}", node_name, dumpDAG());
+    outputs.erase(it);
+
+    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::clone() const
 {
-    std::unordered_map<const Node *, Node *> old_to_new_nodes;
+    std::unordered_map<const Node *, const Node *> old_to_new_nodes;
     return clone(old_to_new_nodes);
 }
 
-ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const
+ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, const Node *> & old_to_new_nodes) const
 {
     ActionsDAG actions;
 
@@ -1755,6 +1802,12 @@ ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 
 void ActionsDAG::mergeInplace(ActionsDAG && second)
 {
+    std::unordered_map<const Node *, const Node *> inputs_map;
+    mergeInplace(std::move(second), inputs_map, false);
+}
+
+void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Node *, const Node *> & inputs_map, bool remove_dangling_inputs)
+{
     auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
@@ -1766,7 +1819,6 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     /// The second element is the number of removes (cause one node may be repeated several times in result).
     std::unordered_map<const Node *, size_t> removed_first_result;
     /// Map inputs of `second` to nodes of `first`.
-    std::unordered_map<const Node *, const Node *> inputs_map;
 
     /// Update inputs list.
     {
@@ -1828,6 +1880,13 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
 
         first.outputs.swap(second.outputs);
     }
+
+    if (remove_dangling_inputs)
+        std::erase_if(second.nodes, [&inputs_map](const auto & node)
+        {
+            auto mapit = inputs_map.find(&node);
+            return mapit != inputs_map.end() && mapit->second != &node;
+        });
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
@@ -1913,6 +1972,13 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         if (node_to_move_it->type == ActionType::INPUT)
             inputs.push_back(&(*node_to_move_it));
     }
+}
+
+void ActionsDAG::unite(ActionsDAG && second)
+{
+    nodes.splice(nodes.end(), std::move(second.nodes));
+    inputs.append_range(second.inputs);
+    outputs.append_range(second.outputs);
 }
 
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
@@ -2480,11 +2546,6 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 
 }
 
-/// Create actions which calculate conjunction of selected nodes.
-/// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
-///
-/// Result actions add single column with conjunction result (it is always first in outputs).
-/// No other columns are added or removed.
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
@@ -2651,18 +2712,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         return {};
 
     chassert(predicate->result_type);
-
-    if (conjunction.rejected.size() == 1)
-    {
-        chassert(conjunction.rejected.front()->result_type);
-
-        if (conjunction.allowed.front()->type == ActionType::COLUMN
-            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
-        {
-            /// No further optimization can be done
-            return {};
-        }
-    }
 
     auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
@@ -2931,10 +2980,29 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
-        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
+        if (new_children.size() == 1)
         {
-            /// Rejected set has only one predicate. And the type is the same as the result_type.
-            /// Just add alias.
+            /// Rejected set has only one predicate.
+            /// Fix the result type and add an alias.
+            auto & child = new_children.front();
+
+            if (!removes_filter)
+            {
+                /// Preserve the original type if the column is needed in the result.
+                if (isFloat(removeLowCardinalityAndNullable(child->result_type)))
+                {
+                    /// For floating point types, it's not enough to cast to just UInt8.
+                    /// Because counstants like 0.1 will be casted to 0, which is inconsistent with e.g. "1 and 0.1"
+                    DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
+                    if (isNullableOrLowCardinalityNullable(child->result_type))
+                        cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
+                    child = &addCast(*child, cast_type, {});
+                }
+
+                if (!child->result_type->equals(*predicate->result_type))
+                    child = &addCast(*child, predicate->result_type, {});
+            }
+
             Node node;
             node.type = ActionType::ALIAS;
             node.result_name = predicate->result_name;
@@ -2946,17 +3014,7 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         {
             /// Predicate is function AND, which still have more then one argument
             /// or it has one argument of the wrong type.
-            /// Just update children and rebuild it.
-            if (new_children.size() == 1)
-            {
-                Node node;
-                node.type = ActionType::COLUMN;
-                node.result_name = "1";
-                node.column = DataTypeUInt8().createColumnConst(0, 1u);
-                node.result_type = std::make_shared<DataTypeUInt8>();
-                const auto * const_col = &nodes.emplace_back(std::move(node));
-                new_children.emplace_back(const_col);
-            }
+            /// Update children and rebuild it.
             predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
@@ -3503,7 +3561,7 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
     if (!const_column)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize non-constant column {}", value.getName());
+            "Cannot serialize non-constant column {} as constant", value.getName());
 
     const auto & data = const_column->getDataColumn();
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
@@ -3564,27 +3622,70 @@ static MutableColumnPtr deserializeConstant(
     return ColumnConst::create(std::move(column), 0);
 }
 
+std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const
+{
+    std::unordered_map<const Node *, size_t> node_to_id;
+    for (const auto & node : nodes)
+        node_to_id.emplace(&node, node_to_id.size());
+
+    if (nodes.size() != node_to_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    return node_to_id;
+}
+
+std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
+{
+    return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
+}
+
+/// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
+static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
+{
+    if (already_added_nodes.contains(node))
+        return;
+
+    for (const auto * child : node->children)
+        addChildrenBeforeNode(reordered_nodes, already_added_nodes, child);
+
+    reordered_nodes.push_back(node);
+    already_added_nodes.insert(node);
+};
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
 
-    std::unordered_map<const Node *, size_t> node_to_id;
-    for (const auto & node : nodes)
-        node_to_id.emplace(&node, node_to_id.size());
+    /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
+    std::vector<const Node *> reordered_nodes;
+    {
+        std::unordered_set<const Node *> already_added_nodes;
+        for (const auto & node : nodes)
+            addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
+    }
 
-    if (nodes_size != node_to_id.size())
+    std::unordered_map<const Node *, size_t> node_to_id;
+    for (const auto * node : reordered_nodes)
+        node_to_id.emplace(node, node_to_id.size());
+
+    if (nodes.size() != node_to_id.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
 
-    for (const auto & node : nodes)
+    for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
     {
+        const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
         writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
-            writeVarUInt(node_to_id.at(child), out);
+        {
+            auto child_id = node_to_id.at(child);
+            chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
+            writeVarUInt(child_id, out);
+        }
 
         /// Serialize column if it is present
         const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);

@@ -95,7 +95,32 @@ public:
 
 REGISTER_FUNCTION(GeohashDecode)
 {
-    factory.registerFunction<FunctionGeohashDecode>();
+    FunctionDocumentation::Description description = R"(
+Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into longitude and latitude coordinates.
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashDecode(hash_str)";
+    FunctionDocumentation::Arguments arguments = {
+        {"hash_str", "Geohash-encoded string to decode.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a tuple of `(longitude, latitude)` with `Float64` precision.",
+        {"Tuple(Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            "SELECT geohashDecode('ezs42') AS res",
+            R"(
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashDecode>(documentation);
 }
 
 }

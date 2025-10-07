@@ -6,6 +6,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SignalHandlers.h>
+#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -259,11 +260,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
-
-#if USE_GWP_ASAN
-    GWPAsan::initFinished();
-#endif
-
 }
 
 

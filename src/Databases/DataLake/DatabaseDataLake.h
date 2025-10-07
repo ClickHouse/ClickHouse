@@ -47,7 +47,8 @@ public:
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded) const override;
+        bool skip_not_loaded,
+        bool skip_data_lake_catalog) const override;
 
 
     void shutdown() override {}
@@ -55,6 +56,17 @@ public:
     ASTPtr getCreateDatabaseQuery() const override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
+    void createTable(
+        ContextPtr /*context*/,
+        const String & /*name*/,
+        const StoragePtr & /*table*/,
+        const ASTPtr & /*query*/) override {}
+
+    void dropTable( /// NOLINT
+        ContextPtr context_,
+        const String & name,
+        bool /*sync*/) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -76,7 +88,7 @@ private:
     void validateSettings();
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
-    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(
+    std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
         DataLakeStorageSettingsPtr storage_settings) const;
 

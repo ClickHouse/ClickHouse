@@ -177,7 +177,7 @@ class TableCheckSource : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
-        : ISource(getSingleValueBlock(0))
+        : ISource(std::make_shared<const Block>(getSingleValueBlock(0)))
         , databases(databases_)
         , context(context_)
         , log(log_)
@@ -185,7 +185,7 @@ public:
     }
 
     TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, LoggerPtr log_)
-        : ISource(getSingleValueBlock(0))
+        : ISource(std::make_shared<const Block>(getSingleValueBlock(0)))
         , table_check_task(table_check_task_)
         , log(log_)
     {
@@ -341,10 +341,10 @@ private:
 class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
-    explicit TableCheckResultEmitter(Block input_header)
-        : IAccumulatingTransform(input_header, getSingleValueBlock(1).cloneEmpty())
+    explicit TableCheckResultEmitter(SharedHeader input_header)
+        : IAccumulatingTransform(input_header, std::make_shared<const Block>(getSingleValueBlock(1).cloneEmpty()))
     {
-        column_position_to_check = input_header.getPositionByName("is_passed");
+        column_position_to_check = input_header->getPositionByName("is_passed");
     }
 
     String getName() const override { return "TableCheckResultEmitter"; }
@@ -444,7 +444,7 @@ BlockIO InterpreterCheckQuery::execute()
         /// Create one source and N workers
         auto & worker_source_port = worker_source->getPort();
 
-        auto resize_processor = std::make_shared<ResizeProcessor>(worker_source_port.getHeader(), 1, num_streams);
+        auto resize_processor = std::make_shared<ResizeProcessor>(worker_source_port.getSharedHeader(), 1, num_streams);
         processors->emplace_back(resize_processor);
 
         connect(worker_source_port, resize_processor->getInputs().front());
@@ -462,7 +462,7 @@ BlockIO InterpreterCheckQuery::execute()
     OutputPort * resize_outport;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
-        Block header = processors->back()->getOutputs().front().getHeader();
+        auto header = processors->back()->getOutputs().front().getSharedHeader();
 
         /// Merge output of all workers
         auto resize_processor = std::make_shared<ResizeProcessor>(header, worker_ports.size(), 1);
@@ -480,7 +480,7 @@ BlockIO InterpreterCheckQuery::execute()
     if (settings[Setting::check_query_single_value_result])
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
-        Block header = processors->back()->getOutputs().front().getHeader();
+        auto header = processors->back()->getOutputs().front().getSharedHeader();
 
         /// Merge all results into single value
         auto emitter_processor = std::make_shared<TableCheckResultEmitter>(header);

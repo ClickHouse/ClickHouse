@@ -40,6 +40,10 @@ public:
 
     String dump() const;
 
+    /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
+    /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
+    void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
+
     String name;
     DataTypePtr type;
 
@@ -101,6 +105,9 @@ public:
     NameSet getNameSet() const;
     DataTypes getTypes() const;
 
+    /// Creates a mapping from name to the type
+    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
+
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
 
@@ -127,6 +134,10 @@ public:
     size_t getPosByName(const std::string & name) const noexcept;
 
     String toNamesAndTypesDescription() const;
+    /// Same as NamesAndTypesList::readText, but includes `type_in_storage`.
+    void readTextWithNamesInStorage(ReadBuffer & buf);
+    /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.
+    void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

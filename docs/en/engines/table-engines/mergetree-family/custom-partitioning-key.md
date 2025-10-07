@@ -4,9 +4,10 @@ sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
 slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 title: 'Custom Partitioning Key'
+doc_type: 'guide'
 ---
 
-# Custom Partitioning Key
+# Custom partitioning key
 
 :::note
 In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months.

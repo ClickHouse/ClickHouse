@@ -4,8 +4,8 @@
 #include <Columns/ColumnSparse.h>
 
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -43,6 +43,20 @@ String IDataType::getPrettyName(size_t indent) const
     if (custom_name)
         return custom_name->getName();
     return doGetPrettyName(indent);
+}
+
+void IDataType::updateHash(SipHash & hash) const
+{
+    if (custom_name)
+    {
+        hash.update(custom_name->getName().size());
+        hash.update(custom_name->getName());
+    }
+    else
+        hash.update(size_t(0));
+
+    hash.update(getTypeId());
+    updateHashImpl(hash);
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
@@ -116,6 +130,7 @@ void IDataType::forEachSubcolumn(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
+    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 }
 
@@ -168,6 +183,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     settings.position_independent_encoding = false;
     /// Don't enumerate dynamic subcolumns, they are handled separately.
     settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -248,6 +264,7 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
 {
+    column.reserve(column.size() + n);
     for (size_t i = 0; i < n; ++i)
         insertDefaultInto(column);
 }
@@ -275,37 +292,45 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
 }
 
-SerializationPtr IDataType::getDefaultSerialization() const
+SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
 {
+    if (override_default)
+        return override_default;
+
     if (custom_serialization)
         return custom_serialization;
 
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSparseSerialization() const
+SerializationPtr IDataType::getSparseSerialization(SerializationPtr override_default) const
 {
-    return std::make_shared<SerializationSparse>(getDefaultSerialization());
+    return std::make_shared<SerializationSparse>(getDefaultSerialization(override_default));
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
+SerializationPtr IDataType::getSerialization(ISerialization::Kind kind, SerializationPtr override_default) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization();
+        return getSparseSerialization(override_default);
 
     if (kind == ISerialization::Kind::DETACHED)
-        return std::make_shared<SerializationDetached>(getDefaultSerialization());
+        return std::make_shared<SerializationDetached>(getDefaultSerialization(override_default));
 
     if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return std::make_shared<SerializationDetached>(
-            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
+            supportsSparseSerialization() ? getSparseSerialization(override_default) : getDefaultSerialization(override_default));
 
-    return getDefaultSerialization();
+    return getDefaultSerialization(override_default);
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
     return getSerialization(info.getKind());
+}
+
+SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
+{
+    return getSerialization(*createSerializationInfo(settings));
 }
 
 // static
@@ -319,6 +344,19 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
     }
 
     return column.type->getSerialization(info);
+}
+
+// static
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings)
+{
+    if (column.isSubcolumn())
+    {
+        const auto & type_in_storage = column.getTypeInStorage();
+        auto serialization = type_in_storage->getSerialization(settings);
+        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), serialization);
+    }
+
+    return column.type->getSerialization(settings);
 }
 
 // static
@@ -400,6 +438,7 @@ bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } 
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
 bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
+bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
 \
 bool isColumnedAsNumber(TYPE data_type) \
 { \

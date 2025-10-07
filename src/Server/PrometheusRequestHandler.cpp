@@ -1,6 +1,7 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <IO/HTTPCommon.h>
+#include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
@@ -89,6 +90,12 @@ public:
 
         if (config().expose_errors)
             metrics_writer().writeErrors(out);
+
+        if (config().expose_histograms)
+            metrics_writer().writeHistogramMetrics(out);
+
+        if (config().expose_dimensional_metrics)
+            metrics_writer().writeDimensionalMetrics(out);
     }
 };
 
@@ -215,12 +222,16 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-            std::make_unique<SnappyReadBuffer>(wrapReadBufferReference(request.getStream()))};
 
         prometheus::WriteRequest write_request;
-        if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+
+        {
+            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
+                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+
+            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+        }
 
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusRemoteWriteProtocol protocol{table, context};
@@ -233,7 +244,6 @@ public:
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
-        response.send();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");
@@ -262,12 +272,15 @@ public:
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusRemoteReadProtocol protocol{table, context};
 
-        ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-            std::make_unique<SnappyReadBuffer>(wrapReadBufferReference(request.getStream()))};
-
         prometheus::ReadRequest read_request;
-        if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+
+        {
+            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
+                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+
+            if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+        }
 
         prometheus::ReadResponse read_response;
 

@@ -4,6 +4,7 @@ description: 'System table containing a list of database engines supported by th
 keywords: ['system table', 'database_engines']
 slug: /operations/system-tables/database_engines
 title: 'system.database_engines'
+doc_type: 'reference'
 ---
 
 Contains the list of database engines supported by the server.
@@ -17,7 +18,7 @@ Example:
 ```sql
 SELECT *
 FROM system.database_engines
-WHERE name in ('Atomic', 'Lazy', 'Ordinary')
+WHERE name IN ('Atomic', 'Lazy', 'Ordinary')
 ```
 
 ```text

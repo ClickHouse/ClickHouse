@@ -1,4 +1,4 @@
-#include "CachedOnDiskReadBufferFromFile.h"
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -108,6 +108,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
+        .user_id = user.user_id,
     };
 
     current_file_segment_counters.reset();
@@ -453,6 +454,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     chassert(file_segment.range() == range);
     chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
+    /// We set position to the end of file segment end,
+    /// and not to read_until_position, because in case of concurrent queries
+    /// which read the same file segment from different offsets
+    /// (same different threads of the same query), it will allow read buffer to be reused,
+    /// reducing number of s3 requests. This does apply however only to case when
+    /// those different threads hold the file segment at the same time, making its ref count > 2.
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
     switch (read_type)
@@ -541,7 +548,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download, /*force_shrink_to_downloaded_size=*/false);
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
@@ -565,7 +572,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 
     if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
     {
-        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download, /*force_shrink_to_downloaded_size=*/false);
         file_segments = {};
     }
 }
@@ -818,7 +825,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(file_offset_of_buffer_end <= read_until_position);
+    chassert(
+        file_offset_of_buffer_end <= read_until_position,
+        fmt::format("file_offset_of_buffer_end {}, read_until_position {}", file_offset_of_buffer_end, read_until_position));
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -828,6 +837,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
+    chassert(!internal_buffer.empty());
     const size_t original_buffer_size = internal_buffer.size();
     if (!original_buffer_size)
         throw Exception(
@@ -991,6 +1001,14 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
+        if (implementation_buffer->internalBuffer().empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Internal buffer cannot be empty (use external buffer: {}; {})",
+                use_external_buffer, getInfoForLog());
+        }
+
         result = implementation_buffer->next();
 
         watch.stop();
@@ -1115,18 +1133,26 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         else
             download_finished_time = "None";
 
+        std::optional<size_t> object_size;
+        if (read_type != ReadType::CACHED)
+        {
+            object_size = implementation_buffer->tryGetFileSize();
+        }
+
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Having zero bytes, but range is not finished: "
             "result: {}, "
             "file offset: {}, "
             "read bytes: {}, "
+            "object size: {}, "
             "initial read offset: {}, "
             "nextimpl working buffer offset: {},"
             "reading until: {}, "
             "read type: {}, "
             "working buffer size: {}, "
             "internal buffer size: {}, "
+            "available: {}, "
             "finished download time: {}, "
             "cache file size: {}, "
             "cache file path: {}, "
@@ -1136,12 +1162,14 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             result,
             file_offset_of_buffer_end,
             size,
+            object_size ? std::to_string(*object_size) : "None",
             first_offset,
             nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
-            implementation_buffer->buffer().size(),
-            implementation_buffer->internalBuffer().size(),
+            buffer().size(),
+            internalBuffer().size(),
+            available(),
             download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
@@ -1197,7 +1225,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     size_t new_pos = offset;
 
-    if (allow_seeks_after_first_read && !use_external_buffer)
+    if (allow_seeks_after_first_read)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {

@@ -1,6 +1,8 @@
-#include "MetadataOperationsHolder.h"
+#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
+
+#include <exception>
 
 namespace DB
 {
@@ -10,28 +12,23 @@ namespace ErrorCodes
 extern const int FS_METADATA_ERROR;
 }
 
-void MetadataOperationsHolder::rollback(std::unique_lock<SharedMutex> & lock, size_t until_pos)
+void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
-    /// Otherwise everything is alright
-    if (state == MetadataStorageTransactionState::FAILED)
+    for (int64_t i = until_pos; i >= 0; --i)
     {
-        for (int64_t i = until_pos; i >= 0; --i)
+        try
         {
-            try
-            {
-                operations[i]->undo(lock);
-            }
-            catch (Exception & ex)
-            {
-                state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
-                ex.addMessage(fmt::format("While rolling back operation #{}", i));
-                throw;
-            }
+            operations[i]->undo();
         }
-    }
-    else
-    {
-        /// Nothing to do, transaction committed or not even started to commit
+        catch (...)
+        {
+            state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
+
+            rollback_reason.addMessage(fmt::format("While rolling back operation #{}", i));
+            rollback_reason.addMessage(getExceptionMessage(std::current_exception(), /*with_stacktrace=*/true));
+
+            return;
+        }
     }
 }
 
@@ -47,7 +44,7 @@ void MetadataOperationsHolder::addOperation(MetadataOperationPtr && operation)
     operations.emplace_back(std::move(operation));
 }
 
-void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
+void MetadataOperationsHolder::commit()
 {
     if (state != MetadataStorageTransactionState::PREPARING)
         throw Exception(
@@ -56,25 +53,29 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
             toString(state),
             toString(MetadataStorageTransactionState::PREPARING));
 
+    for (size_t i = 0; i < operations.size(); ++i)
     {
-        std::unique_lock lock(metadata_mutex);
-        for (size_t i = 0; i < operations.size(); ++i)
+        try
         {
-            try
-            {
-                operations[i]->execute(lock);
-            }
-            catch (Exception & ex)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
-                state = MetadataStorageTransactionState::FAILED;
-                rollback(lock, i);
-                throw;
-            }
+            operations[i]->execute();
+        }
+        catch (Exception & error)
+        {
+            state = MetadataStorageTransactionState::FAILED;
+
+            error.addMessage(fmt::format("While committing metadata operation #{}", i));
+            rollback(i, error);
+
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            error.rethrow();
         }
     }
 
+    state = MetadataStorageTransactionState::COMMITTED;
+}
+
+void MetadataOperationsHolder::finalize() noexcept
+{
     /// Do it in "best effort" mode
     for (size_t i = 0; i < operations.size(); ++i)
     {
@@ -87,7 +88,6 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to finalize operation #{}", i));
         }
     }
-
-    state = MetadataStorageTransactionState::COMMITTED;
 }
+
 }

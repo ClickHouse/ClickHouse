@@ -68,6 +68,9 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
+struct ChangelogFileOperation;
+using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
+
 /// changelog_fromindex_toindex.bin
 /// [fromindex, toindex] <- inclusive
 struct ChangelogFileDescription
@@ -86,6 +89,8 @@ struct ChangelogFileDescription
 
     bool deleted = false;
 
+    std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
+
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 
@@ -95,6 +100,14 @@ struct ChangelogFileDescription
         std::lock_guard lock(file_mutex);
         fn();
     }
+
+    std::string getPathSafe()
+    {
+        std::lock_guard lock(file_mutex);
+        return path;
+    }
+
+    void waitAllAsyncOperations();
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
@@ -109,7 +122,9 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t latest_logs_cache_entry_count_threshold = 0;
     uint64_t commit_logs_cache_size_threshold = 0;
+    uint64_t commit_logs_cache_entry_count_threshold = 0;
 };
 
 struct FlushSettings
@@ -216,7 +231,7 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_);
+        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
         void addEntry(uint64_t index, size_t size, CacheEntry log_entry);
         void addEntry(IndexToCacheEntryNode && node);
@@ -241,6 +256,8 @@ private:
         bool hasSpaceAvailable(size_t log_entry_size) const;
         void clear();
 
+        bool hasUnlimitedSpace() const;
+
         /// Mapping log_id -> log_entry
         mutable IndexToCacheEntry cache;
         size_t cache_size = 0;
@@ -248,6 +265,7 @@ private:
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
+        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
@@ -409,8 +427,12 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
-    /// Clean useless log files in a background thread
-    void cleanLogThread();
+    /// Thread for operations on changelog file, e.g. removing the file
+    void backgroundChangelogOperationsThread();
+
+    void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
+    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
@@ -424,10 +446,9 @@ private:
     LogEntryStorage entry_storage;
 
     uint64_t max_log_id = 0;
-    /// For compaction, queue of delete not used logs
-    /// 128 is enough, even if log is not removed, it's not a problem
-    ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
-    std::unique_ptr<ThreadFromGlobalPool> clean_log_thread;
+
+    ConcurrentBoundedQueue<ChangelogFileOperationPtr> changelog_operation_queue{std::numeric_limits<size_t>::max()};
+    std::unique_ptr<ThreadFromGlobalPool> background_changelog_operations_thread;
 
     struct AppendLog
     {

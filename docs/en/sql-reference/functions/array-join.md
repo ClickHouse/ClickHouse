@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for arrayJoin function'
 sidebar_label: 'arrayJoin'
-sidebar_position: 15
 slug: /sql-reference/functions/array-join
 title: 'arrayJoin function'
+doc_type: 'reference'
 ---
 
 # arrayJoin function
@@ -16,6 +16,11 @@ The `arrayJoin` function takes each row and generates a set of rows (unfold).
 
 This function takes an array as an argument, and propagates the source row to multiple rows for the number of elements in the array.
 All the values in columns are simply copied, except the values in the column where this function is applied; it is replaced with the corresponding array value.
+
+:::note
+If the array is empty, `arrayJoin` produces no rows.
+To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](./array-functions.md#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
+:::
 
 For example:
 
@@ -87,11 +92,11 @@ Example:
 
 ```sql
 SELECT
-    arrayJoin(dice) as first_throw,
+    arrayJoin(dice) AS first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
+    arrayJoin(arrayConcat(dice, [])) AS second_throw -- intentionally changed expression to force re-evaluation
 FROM (
-    SELECT [1, 2, 3, 4, 5, 6] as dice
+    SELECT [1, 2, 3, 4, 5, 6] AS dice
 );
 ```
 

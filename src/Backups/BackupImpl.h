@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include <Backups/BackupFactory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
@@ -48,6 +49,13 @@ public:
         const ArchiveParams & archive_params_,
         std::shared_ptr<IBackupWriter> writer_);
 
+    /// UNLOCK
+    BackupImpl(
+        const BackupInfo & backup_info_,
+        const ArchiveParams & archive_params_,
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_);
+
     ~BackupImpl() override;
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
@@ -72,7 +80,7 @@ public:
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const override;
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
@@ -80,6 +88,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
 
 private:
     void open();
@@ -91,6 +100,13 @@ private:
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
     void readBackupMetadata() TSA_REQUIRES(mutex);
+
+#if CLICKHOUSE_CLOUD
+    size_t copyFileToDiskByObjectKey(const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const;
+#endif
+
+    String getObjectKey(const String & file_name) const;
+    std::unique_ptr<ReadBufferFromFileBase> readFileByObjectKey(const BackupFileInfo & info) const;
 
     /// Returns the base backup or null if there is no base backup.
     std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
@@ -107,7 +123,8 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    std::unique_ptr<ReadBufferFromFileBase> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
+    std::unique_ptr<ReadBufferFromFileBase>
+    readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
@@ -115,12 +132,17 @@ private:
     const bool use_archive;
     const ArchiveParams archive_params;
     const OpenMode open_mode;
+    /// Used to write data to destinated object storage.
     std::shared_ptr<IBackupWriter> writer;
+    /// Used to read data from backup files.
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
     std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
-        SnapshotReaderCreator lightweight_snapshot_reader_creator;
+    SnapshotReaderCreator lightweight_snapshot_reader_creator;
+    String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
+    String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
+
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;

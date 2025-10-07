@@ -6,7 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -22,8 +22,8 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context);
 
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
-    const Block & left_header,
-    const Block & right_header,
+    SharedHeader left_header,
+    SharedHeader right_header,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context);

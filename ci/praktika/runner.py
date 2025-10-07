@@ -1,3 +1,4 @@
+import dataclasses
 import glob
 import json
 import os
@@ -51,6 +52,23 @@ class Runner:
         pr = pr or -1
         if branch:
             pr = 0
+        digest_dockers = {}
+        for docker in workflow.dockers:
+            digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, workflow.dockers
+            )
+        workflow_config = RunConfig(
+            name=workflow.name,
+            digest_jobs={},
+            digest_dockers=digest_dockers,
+            sha="",
+            cache_success=[],
+            cache_success_base64=[],
+            cache_artifacts={},
+            cache_jobs={},
+            filtered_jobs={},
+            custom_data={},
+        )
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
@@ -75,25 +93,17 @@ class Runner:
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
+            EVENT_TIME="",
+            WORKFLOW_DATA={
+                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
+                    "outputs": {
+                        "data": json.dumps(
+                            {"workflow_config": dataclasses.asdict(workflow_config)}
+                        )
+                    }
+                }
+            },
         ).dump()
-        workflow_config = RunConfig(
-            name=workflow.name,
-            digest_jobs={},
-            digest_dockers={},
-            sha="",
-            cache_success=[],
-            cache_success_base64=[],
-            cache_artifacts={},
-            cache_jobs={},
-            filtered_jobs={},
-            custom_data={},
-        )
-        for docker in workflow.dockers:
-            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, workflow.dockers
-            )
-
-        workflow_config.dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -206,6 +216,10 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
+                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
+                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
+                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
+                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -218,13 +232,16 @@ class Runner:
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
+        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
+        if preserve_stdio:
+            print("WARNING: Preserving stdio")
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).digest_dockers
+                    RunConfig.from_workflow_data().digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -251,7 +268,7 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
+                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
                 )
                 if Utils.is_arm():
                     docker_tag += "_arm"
@@ -274,7 +291,11 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            # enable tty mode & interactive for docker if we have real tty
+            tty = ""
+            if preserve_stdio:
+                tty = "-it"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -288,8 +309,11 @@ class Runner:
             cmd += f" --test {test}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(cmd, timeout=job.timeout) as process:
+        with TeePopen(
+            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio
+        ) as process:
             start_time = Utils.timestamp()
+
             if Path((Result.experimental_file_name_static())).exists():
                 # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
                 Path(Result.experimental_file_name_static()).unlink()
@@ -395,6 +419,14 @@ class Runner:
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(job_outputs)}",
+                file=f,
+            )
+
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
@@ -473,12 +505,20 @@ class Runner:
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
+                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
+                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
+                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+                assert url_secret and user_secret and passwd_secret
+                # request all secret at once to avoid rate limiting
+                url, user, pwd = (
+                    url_secret.join_with(user_secret)
+                    .join_with(passwd_secret)
+                    .get_value()
+                )
                 ci_db = CIDB(
-                    url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
-                    passwd=workflow.get_secret(
-                        Settings.SECRET_CI_DB_PASSWORD
-                    ).get_value(),
+                    url=url,
+                    user=user,
+                    passwd=pwd,
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
@@ -575,6 +615,20 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Failed to merge the PR: [{e}]")
                 traceback.print_exc()
+
+        # finally, set the status flag for GH Actions
+        pipeline_status = Result.Status.SUCCESS
+        if not result.is_ok():
+            if result.is_failure() and result.do_not_block_pipeline_on_failure():
+                # job explicitly says to not block ci even though result is failure
+                pass
+            else:
+                pipeline_status = Result.Status.FAILED
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"pipeline_status={pipeline_status}",
+                file=f,
+            )
 
         return is_ok
 

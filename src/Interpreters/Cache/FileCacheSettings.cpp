@@ -1,4 +1,4 @@
-#include "FileCacheSettings.h"
+#include <Interpreters/Cache/FileCacheSettings.h>
 
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>

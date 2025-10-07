@@ -42,7 +42,6 @@
                          #"\{quorum_reads\}" (str (boolean (:quorum test)))
                          #"\{snapshot_distance\}" (str (:snapshot-distance test))
                          #"\{stale_log_gap\}" (str (:stale-log-gap test))
-                         #"\{inject_auth\}" (str (:inject-auth test))
                          #"\{reserved_log_items\}" (str (:reserved-log-items test))}]
     (reduce #(clojure.string/replace %1 (get %2 0) (get %2 1)) config-template replacement-map)))
 

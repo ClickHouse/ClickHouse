@@ -45,7 +45,7 @@ PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader());
     pipeline.complete(lazy_format);
 }
 
@@ -144,6 +144,7 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     {
          block.info.bucket_num = agg_info->bucket_num;
          block.info.is_overflows = agg_info->is_overflows;
+         block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
 
     return true;
