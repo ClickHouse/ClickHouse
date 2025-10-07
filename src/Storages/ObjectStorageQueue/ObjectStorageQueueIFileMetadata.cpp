@@ -191,19 +191,21 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             /* iteration_cleanup */[&]{},
             /* on_error */[&] { is_retry = true; });
 
-            /// If it is a retry, we could have failed after actually successfully executing remove,
-            /// so ZNONONE is expected in this case.
-            if (is_retry && code == Coordination::Error::ZNONODE)
+            if (code == Coordination::Error::ZOK)
                 return;
 
-            if (code != Coordination::Error::ZOK
-                && !Coordination::isHardwareError(code)
-                && code != Coordination::Error::ZBADVERSION
-                && code != Coordination::Error::ZNONODE)
+            if (Coordination::isHardwareError(code))
             {
-                LOG_WARNING(log, "Unexpected error while removing processing node: {}", code);
-                chassert(false);
+                LOG_WARNING(log, "Keeper session expired and retries did not help. "
+                            "Will rely on automatic processing node cleanup");
+                return;
             }
+
+            LOG_WARNING(
+                log, "Unexpected error while removing processing node: {} (path: {})",
+                code, processing_node_path);
+
+            chassert(false);
         }
         catch (...)
         {
@@ -404,19 +406,8 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
     if (Coordination::isHardwareError(code))
     {
-        LOG_TRACE(log, "Keeper session expired, processing will be automatically reset");
-        return;
-    }
-
-    if (responses[0]->error == Coordination::Error::ZBADVERSION
-        || responses[0]->error == Coordination::Error::ZNONODE
-        || responses[1]->error == Coordination::Error::ZNONODE)
-    {
-        LOG_TRACE(
-            log, "Processing node no longer exists ({}) "
-            "while resetting processing state. "
-            "This could be as a result of expired keeper session. ",
-            processing_node_path);
+        LOG_WARNING(log, "Keeper session expired and retries did not help. "
+                    "Will rely on automatic processing node cleanup");
         return;
     }
 
