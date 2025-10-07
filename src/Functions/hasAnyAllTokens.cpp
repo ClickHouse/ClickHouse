@@ -2,12 +2,13 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/FunctionDocumentation.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Common/FunctionDocumentation.h>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -25,20 +26,20 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-template <class SearchTraits>
-FunctionPtr FunctionHasAnyAllTokens<SearchTraits>::create(ContextPtr context)
+template <class HasTokensTraits>
+FunctionPtr FunctionHasAnyAllTokens<HasTokensTraits>::create(ContextPtr context)
 {
     return std::make_shared<FunctionHasAnyAllTokens>(context);
 }
 
-template <class SearchTraits>
-FunctionHasAnyAllTokens<SearchTraits>::FunctionHasAnyAllTokens(ContextPtr context)
+template <class HasTokensTraits>
+FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr context)
     : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
 {
 }
 
-template <class SearchTraits>
-void FunctionHasAnyAllTokens<SearchTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
+template <class HasTokensTraits>
+void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same hasAnyTokens/hasAllTokens query is used again.
@@ -49,8 +50,8 @@ void FunctionHasAnyAllTokens<SearchTraits>::setTokenExtractor(std::unique_ptr<IT
     token_extractor = std::move(new_token_extractor_);
 }
 
-template <class SearchTraits>
-void FunctionHasAnyAllTokens<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
+template <class HasTokensTraits>
+void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & tokens)
 {
     static constexpr size_t supported_number_of_needles = 64;
 
@@ -66,8 +67,24 @@ void FunctionHasAnyAllTokens<SearchTraits>::setSearchTokens(const std::vector<St
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 }
 
-template <class SearchTraits>
-DataTypePtr FunctionHasAnyAllTokens<SearchTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+namespace
+{
+
+/// Also accepts Array(Nothing) which is the type of Array([])
+bool isArrayOfStringType(const IDataType & type)
+{
+    const auto * array_type = checkAndGetDataType<DataTypeArray>(&type);
+    if (!array_type)
+        return false;
+
+    const DataTypePtr & nested_type = array_type->getNestedType();
+    return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+}
+
+}
+
+template <class HasTokensTraits>
+DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (!allow_experimental_full_text_index)
         throw Exception(
@@ -76,7 +93,7 @@ DataTypePtr FunctionHasAnyAllTokens<SearchTraits>::getReturnTypeImpl(const Colum
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStringType), isColumnConst, "const Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
@@ -85,9 +102,6 @@ DataTypePtr FunctionHasAnyAllTokens<SearchTraits>::getReturnTypeImpl(const Colum
 
 namespace
 {
-constexpr size_t arg_input = 0;
-constexpr size_t arg_needles = 1;
-
 template <typename T>
 concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
 
@@ -150,7 +164,7 @@ void executeHasAllTokens(
     }
 }
 
-template <class SearchTraits>
+template <class HasTokensTraits>
 void execute(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
@@ -166,19 +180,22 @@ void execute(
         return;
     }
 
-    if constexpr (SearchTraits::mode == HasAnyAllTokensMode::Any)
+    if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
         executeHasAnyTokens(token_extractor, col_input, input_rows_count, needles, col_result);
-    else if constexpr (SearchTraits::mode == HasAnyAllTokensMode::All)
+    else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
         executeHasAllTokens(token_extractor, col_input, input_rows_count, needles, col_result);
     else
         static_assert(false, "Unknown search mode value detected");
 }
 }
 
-template <class SearchTraits>
-ColumnPtr FunctionHasAnyAllTokens<SearchTraits>::executeImpl(
+template <class HasTokensTraits>
+ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
+    constexpr size_t arg_input = 0;
+    constexpr size_t arg_needles = 1;
+
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
@@ -220,9 +237,9 @@ ColumnPtr FunctionHasAnyAllTokens<SearchTraits>::executeImpl(
         DefaultTokenExtractor default_token_extractor;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<SearchTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
+            execute<HasTokensTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<SearchTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+            execute<HasTokensTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
 
     }
     else
@@ -236,9 +253,9 @@ ColumnPtr FunctionHasAnyAllTokens<SearchTraits>::executeImpl(
                 arguments[arg_input].name);
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+            execute<HasTokensTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+            execute<HasTokensTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
     }
 
     return col_result;
