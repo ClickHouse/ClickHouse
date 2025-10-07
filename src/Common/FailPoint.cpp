@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 };
 
 #if USE_LIBFIU
@@ -127,6 +128,8 @@ namespace FailPoints
 APPLY_FOR_FAILPOINTS(M, M, M, M)
 #undef M
 }
+
+#ifdef FIU_ENABLE
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
@@ -261,5 +264,39 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
     }
 }
 
+#else // FIU_ENABLE
+
+void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::wait(const String &)
+{
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
+
+    if (!fail_point_names.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+}
+
+#endif // FIU_ENABLE
 
 }
