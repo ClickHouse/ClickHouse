@@ -29,6 +29,8 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
+    Type getType() const override { return Type::LRU; }
+
     size_t getSize(const CachePriorityGuard::Lock &) const override { return state->current_size; }
 
     size_t getElementsCount(const CachePriorityGuard::Lock &) const override { return state->current_elements_num; }
@@ -60,6 +62,7 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
@@ -87,6 +90,14 @@ public:
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
+    void resetEvictionPos(const CachePriorityGuard::Lock &) override { eviction_pos = queue.end(); }
+
+    /// Used only for unit test.
+    size_t getEvictionPos()
+    {
+        return std::distance(queue.begin(), eviction_pos);
+    }
+
 private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
@@ -96,6 +107,7 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
+    LRUQueue::iterator eviction_pos;
 
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);
@@ -112,6 +124,7 @@ private:
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
     void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
+    LRUQueue::iterator iterateImpl(LRUQueue::iterator start_pos, IterateFunc func, const CachePriorityGuard::Lock &);
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
@@ -121,7 +134,10 @@ private:
         EvictionCandidates & res,
         FileCacheReserveStat & stat,
         StopConditionFunc stop_condition,
+        bool continue_from_last_eviction_pos,
         const CachePriorityGuard::Lock &);
+
+    void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
     void holdImpl(
         size_t size,
