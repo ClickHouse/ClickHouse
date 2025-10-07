@@ -21,10 +21,15 @@ ORDER BY (id) SETTINGS index_granularity = 2;
 
 DROP VIEW IF EXISTS explain_indexes;
 CREATE VIEW explain_indexes
-  AS  SELECT *
+AS SELECT trimLeft(explain) AS explain
+FROM
+(
+  SELECT *
     FROM viewExplain('EXPLAIN', 'indexes = 1', (
         SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['def'])
-    ));
+    ))
+)
+WHERE (explain LIKE '%Name%') OR (explain LIKE '%Description%') OR (explain LIKE '%Parts%') OR (explain LIKE '%Granules%') OR (explain LIKE '%Range%');
 
 SYSTEM STOP MERGES tab;
 

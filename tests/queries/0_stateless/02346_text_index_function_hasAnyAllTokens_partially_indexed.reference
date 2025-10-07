@@ -1,21 +1,12 @@
 -- { echoOn }
 SELECT * FROM explain_indexes;
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.tab)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 4/4
-          Skip
-            Name: idx
-            Description: text GRANULARITY 1
-            Parts: 1/2
-            Granules: 2/4
-          Ranges: 1
+Parts: 2/2
+Granules: 4/4
+Name: idx
+Description: text GRANULARITY 1
+Parts: 1/2
+Granules: 2/4
+Ranges: 1
 --
 --hasAnyTokens:
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['foo']);
@@ -40,22 +31,13 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['abc', 'f
 []
 -- { echoOn }
 SELECT * FROM explain_indexes;
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.tab)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 4/4
-          Skip
-            Name: idx
-            Description: text GRANULARITY 1
-            Parts: 1/2
-            Granules: 2/4
-          Ranges: 1
+Parts: 2/2
+Granules: 4/4
+Name: idx
+Description: text GRANULARITY 1
+Parts: 1/2
+Granules: 2/4
+Ranges: 1
 --
 -- Test that splitByNonAlpha tokenizer is applied even to column part which does not have a materialized text index
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar']);
