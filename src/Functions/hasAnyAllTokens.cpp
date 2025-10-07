@@ -252,8 +252,6 @@ REGISTER_FUNCTION(HasAnyTokens)
     FunctionDocumentation::Description description_hasAnyTokens = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
-Alias: `hasAnyToken`
-
 The `input` column should have a text index defined for optimal performance.
 Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
@@ -326,8 +324,6 @@ REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
 Like [`hasAnyTokens`](#hasanytokens), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
-
-Alias: `hasAllToken`
 
 The `input` column should have a text index defined for optimal performance.
 Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.

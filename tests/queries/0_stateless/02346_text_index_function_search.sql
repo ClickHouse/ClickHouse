@@ -52,6 +52,12 @@ SELECT hasAllTokens('a b', ['a', 'b']);
 SELECT hasAllTokens('a b', ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
+
+SELECT 'Test singular aliases';
+SELECT hasAnyToken('a b', ['b']);
+SELECT hasAnyToken('a b', ['c']);
+SELECT hasAllToken('a b', ['b']);
+SELECT hasAllToken('a b', ['c']);
 -- { echoOff }
 
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
@@ -115,7 +121,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abc', 'foo']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'ba']);
-SELECT groupArray(id) FROM tab WHERE hasAnyToken(message, ['fo', 'ba']); -- test alias
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['fo', 'ba']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['ab']);
@@ -124,7 +130,7 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'foo']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'bar']);
-SELECT groupArray(id) FROM tab WHERE hasAllToken(message, ['abc', 'fo']); -- test alias
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'fo']);
 
 --- Test for FixedString needles
 --- Not a systematic test, just to see that FixedString needles work in principle
