@@ -154,6 +154,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
+    try
     {
         const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
         LOG_INFO(getLogger("AsynchronousMetrics"),
@@ -161,6 +162,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
         cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("AsynchronousMetrics"), "cgroups are not available");
     }
 
 
