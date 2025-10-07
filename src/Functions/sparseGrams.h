@@ -175,7 +175,7 @@ private:
                     .left_index = possible_left_position,
                     .right_index = next_right_position,
                     .symbols_between = length
-                });        
+                });
         }
 
         /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
