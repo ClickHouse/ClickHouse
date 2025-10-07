@@ -61,9 +61,6 @@ class StringSearcher;
 template <bool ASCII>
 class StringSearcher<true, ASCII> final : public StringSearcherBase
 {
-    using FindFunction = decltype(sz_find);
-    using EqualFunction = decltype(sz_equal);
-
     /// string to be searched for
     sz_cptr_t const needle;
     sz_cptr_t const needle_end;
