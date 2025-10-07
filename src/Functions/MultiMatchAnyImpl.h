@@ -83,7 +83,7 @@ struct MultiMatchAnyImpl
         [[maybe_unused]] size_t input_rows_count)
     {
 #if !USE_VECTORSCAN
-        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "ClickHouse has been built without Hyperscan functions");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse has been built without Hyperscan functions");
 #else
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
@@ -190,7 +190,7 @@ struct MultiMatchAnyImpl
         [[maybe_unused]] size_t input_rows_count)
     {
 #if !USE_VECTORSCAN
-        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "ClickHouse has been built without Hyperscan functions");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse has been built without Hyperscan functions");
 #else
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
