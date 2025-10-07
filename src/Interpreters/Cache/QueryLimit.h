@@ -13,7 +13,7 @@ public:
     class QueryContext;
     using QueryContextPtr = std::shared_ptr<QueryContext>;
 
-    QueryContextPtr tryGetQueryContext(const CachePriorityGuard::WriteLock & lock);
+    QueryContextPtr tryGetQueryContext(const CacheStateGuard::Lock & lock);
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,

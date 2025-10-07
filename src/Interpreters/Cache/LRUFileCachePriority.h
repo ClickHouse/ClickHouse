@@ -69,7 +69,7 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
-        const CacheStateGuard::Lock &,
+        const CacheStateGuard::Lock *,
         bool best_effort = false) override;
 
     bool collectCandidatesForEviction(
@@ -147,7 +147,8 @@ private:
     LRUIterator add(
         EntryPtr entry,
         const CachePriorityGuard::WriteLock &,
-        const CacheStateGuard::Lock &);
+        const CacheStateGuard::Lock *);
+
     LRUIterator move(
         LRUIterator & it,
         LRUFileCachePriority & other,

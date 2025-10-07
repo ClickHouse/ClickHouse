@@ -119,44 +119,44 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
 }
 
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
-    KeyMetadataPtr key_metadata,
-    size_t offset,
-    size_t size,
-    const UserInfo &,
-    const CachePriorityGuard::WriteLock & lock,
-    const CacheStateGuard::Lock & state_lock,
-    bool is_startup)
+    [[maybe_unused]]KeyMetadataPtr key_metadata,
+    [[maybe_unused]]size_t offset,
+    [[maybe_unused]]size_t size,
+    [[maybe_unused]]const UserInfo &,
+    [[maybe_unused]]const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock *,
+    [[maybe_unused]]bool is_startup)
 {
     IteratorPtr iterator;
-    if (is_startup)
-    {
-        /// If it is server startup, we put entries in any queue it will fit in,
-        /// but with preference for probationary queue,
-        /// because we do not know the distribution between queues after server restart.
-        if (probationary_queue.canFit(size, /* elements */1, state_lock))
-        {
-            auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
-            iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
-        }
-        else
-        {
-            auto lru_iterator = protected_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
-            iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), true);
-        }
-    }
-    else
-    {
-        auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
-        iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
-    }
+    //if (is_startup)
+    //{
+    //    /// If it is server startup, we put entries in any queue it will fit in,
+    //    /// but with preference for probationary queue,
+    //    /// because we do not know the distribution between queues after server restart.
+    //    if (probationary_queue.canFit(size, /* elements */1, state_lock))
+    //    {
+    //        auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
+    //        iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
+    //    }
+    //    else
+    //    {
+    //        auto lru_iterator = protected_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
+    //        iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), true);
+    //    }
+    //}
+    //else
+    //{
+    //    auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock);
+    //    iterator = std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
+    //}
 
-    if (getSize(state_lock) > max_size || getElementsCount(state_lock) > max_elements)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Violated cache limits. "
-            "Added {} for {} element ({}:{}). Current state: {}",
-            size, iterator->getType(), key_metadata->key, offset, getStateInfoForLog(state_lock));
-    }
+    //if (getSize(state_lock) > max_size || getElementsCount(state_lock) > max_elements)
+    //{
+    //    throw Exception(
+    //        ErrorCodes::LOGICAL_ERROR, "Violated cache limits. "
+    //        "Added {} for {} element ({}:{}). Current state: {}",
+    //        size, iterator->getType(), key_metadata->key, offset, getStateInfoForLog(state_lock));
+    //}
 
     return iterator;
 }
@@ -345,7 +345,7 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
 {
     try
     {
-        return queue.add(entry, lock, state_lock);
+        return queue.add(entry, lock, &state_lock);
     }
     catch (...)
     {

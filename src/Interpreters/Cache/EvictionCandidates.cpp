@@ -87,6 +87,23 @@ void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey
     candidates_bytes += candidate->size();
 }
 
+void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
+{
+    while (!queue_entries_to_invalidate.empty())
+    {
+        auto iterator = queue_entries_to_invalidate.back();
+        iterator->invalidate();
+        queue_entries_to_invalidate.pop_back();
+
+        /// Remove entry from per query priority queue.
+        //if (query_context)
+        //{
+        //    //const auto & entry = iterator->getEntry();
+        //    //query_context->remove(entry->key, entry->offset, lock);
+        //}
+    }
+}
+
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock & lock)
 {
     /// Remove queue entries of eviction candidates.
@@ -247,7 +264,7 @@ bool EvictionCandidates::needFinalize() const
 }
 
 void EvictionCandidates::finalize(
-    FileCacheQueryLimit::QueryContext * query_context,
+    FileCacheQueryLimit::QueryContext * ,
     const CachePriorityGuard::WriteLock & lock)
 {
     chassert(lock.owns_lock());
@@ -258,19 +275,7 @@ void EvictionCandidates::finalize(
     if (hold_space)
         hold_space->release();
 
-    while (!queue_entries_to_invalidate.empty())
-    {
-        auto iterator = queue_entries_to_invalidate.back();
-        iterator->invalidate();
-        queue_entries_to_invalidate.pop_back();
-
-        /// Remove entry from per query priority queue.
-        if (query_context)
-        {
-            //const auto & entry = iterator->getEntry();
-            //query_context->remove(entry->key, entry->offset, lock);
-        }
-    }
+    //invalidateQueueEntries();
 
     for (auto & func : on_finalize)
         func(lock);

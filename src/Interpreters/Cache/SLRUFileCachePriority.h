@@ -53,7 +53,7 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
-        const CacheStateGuard::Lock &,
+        const CacheStateGuard::Lock *,
         bool is_startup = false) override;
 
     bool collectCandidatesForEviction(

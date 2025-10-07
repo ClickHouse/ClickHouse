@@ -18,7 +18,7 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CachePriorityGuard::WriteLock &)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheStateGuard::Lock &)
 {
     if (!isQueryInitialized())
         return nullptr;

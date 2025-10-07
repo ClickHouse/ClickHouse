@@ -22,6 +22,8 @@ public:
     /// In ordinary eviction we would do this in finalize().
     void removeQueueEntries(const CachePriorityGuard::WriteLock &);
 
+    void invalidateQueueEntries(const CacheStateGuard::Lock &);
+
     /// Whether finalize() is required.
     bool needFinalize() const;
 

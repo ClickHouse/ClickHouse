@@ -35,6 +35,7 @@ public:
 
         std::atomic<size_t> size;
         size_t hits = 0;
+        bool invalidated = false;
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
@@ -186,7 +187,7 @@ public:
         size_t size,
         const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
-        const CacheStateGuard::Lock &,
+        const CacheStateGuard::Lock *,
         bool best_effort = false) = 0;
 
     /// `reservee` is the entry for which are reserving now.

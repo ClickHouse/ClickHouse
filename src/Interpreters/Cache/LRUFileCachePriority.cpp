@@ -54,12 +54,14 @@ void LRUFileCachePriority::State::sub(uint64_t size_, uint64_t elements_)
 
     if (size_)
     {
+        chassert(size >= size_);
         size -= size_;
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size_);
     }
 
     if (elements_)
     {
+        chassert(elements_num >= elements_);
         elements_num -= elements_;
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, elements_);
     }
@@ -87,7 +89,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     size_t size,
     const UserInfo &,
     const CachePriorityGuard::WriteLock & lock,
-    const CacheStateGuard::Lock & state_lock,
+    const CacheStateGuard::Lock * state_lock,
     bool)
 {
     return std::make_shared<LRUIterator>(add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock));
@@ -96,13 +98,13 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     EntryPtr entry,
     const CachePriorityGuard::WriteLock &,
-    const CacheStateGuard::Lock & state_lock)
+    const CacheStateGuard::Lock * state_lock)
 {
-    if (entry->size == 0)
+    if (entry->size && !state_lock)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Adding zero size entries to LRU queue is not allowed "
+            "Adding non-zero size entry without state lock "
             "(key: {}, offset: {})", entry->key, entry->offset);
     }
 
@@ -122,17 +124,18 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 #endif
 
-    if (!canFit(entry->size, 1, state_lock))
+    if (entry->size && !canFit(entry->size, 1, *state_lock))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add a new entry {}. Current state: {}",
-            entry->toString(), getStateInfoForLog(state_lock));
+            entry->toString(), getStateInfoForLog(*state_lock));
     }
 
     auto iterator = queue.insert(queue.end(), entry);
 
-    state->add(entry->size, 1, state_lock);
+    if (entry->size)
+        state->add(entry->size, 1, *state_lock);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
@@ -222,7 +225,7 @@ LRUFileCachePriority::iterateImpl(
 
         const auto & entry = **it;
 
-        if (entry.size == 0)
+        if (entry.invalidated)
         {
             /// entry.size == 0 means that queue entry was invalidated,
             /// valid (active) queue entries always have size > 0,
@@ -249,7 +252,7 @@ LRUFileCachePriority::iterateImpl(
         }
 
         auto locked_key = entry.key_metadata->tryLock();
-        if (!locked_key || entry.size == 0)
+        if (!locked_key || entry.invalidated)
         {
             /// locked_key == nullptr means that the cache key of
             /// the file segment of this queue entry no longer exists.
@@ -351,28 +354,27 @@ IFileCachePriority::EvictionInfo LRUFileCachePriority::checkEvictionInfo(
 
     const size_t available_size = max_size.load() - state->getSize(lock);
     if (available_size < size)
+    {
         info.size_to_evict = size - available_size;
+    }
 
     const size_t available_elements = max_elements.load() - state->getElementsCount(lock);
     if (available_elements < elements)
         info.elements_to_evict = elements - available_elements;
 
-    if ((info.size_to_evict && available_size) || (info.elements_to_evict && available_elements))
-    {
-        /// As eviction is done without a cache priority lock,
-        /// then if some space was partially available and some needed
-        /// to be freed via eviction, we need to make sure that this
-        /// partially available space is still available
-        /// after we finish with eviction for non-available space.
-        /// So we create a space holder for the currently available part
-        /// of the required space for the duration of eviction of the other
-        /// currently non-available part of the space.
-        info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
-            info.size_to_evict ? available_size : 0,
-            info.elements_to_evict ? available_elements : 0,
-            *this,
-            lock);
-    }
+    /// As eviction is done without a cache priority lock,
+    /// then if some space was partially available and some needed
+    /// to be freed via eviction, we need to make sure that this
+    /// partially available space is still available
+    /// after we finish with eviction for non-available space.
+    /// So we create a space holder for the currently available part
+    /// of the required space for the duration of eviction of the other
+    /// currently non-available part of the space.
+    info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
+        info.size_to_evict ? available_size : size,
+        info.elements_to_evict ? available_elements : elements,
+        *this,
+        lock);
     return info;
 }
 
@@ -532,6 +534,7 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     const auto & entry = *iterator;
     cache_priority->state->sub(entry->size, 1);
     entry->size = 0;
+    entry->invalidated = true;
 
     LOG_TEST(cache_priority->log,
              "Invalidated entry in LRU queue {}: {}",
@@ -557,7 +560,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheSt
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry->toString());
 
-    cache_priority->state->add(size, 0, lock);
+    cache_priority->state->add(size, entry->size > 0 ? 0 : 1, lock);
     entry->size += size;
 
     cache_priority->check(lock);
@@ -568,6 +571,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
     assertValid();
 
     const auto & entry = *iterator;
+    chassert(entry->size >= 0);
     chassert(entry->size >= size);
 
     LOG_TEST(cache_priority->log,

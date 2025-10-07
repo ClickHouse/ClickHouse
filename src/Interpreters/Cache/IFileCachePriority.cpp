@@ -51,6 +51,9 @@ void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));
     }
+
+    if (getSize(lock) > (1ull << 63) || getElementsCount(lock) > (1ull << 63))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 }
 
 std::string IFileCachePriority::EvictionInfo::formatForLog() const
