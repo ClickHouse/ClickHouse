@@ -269,14 +269,9 @@ public:
         end = end_;
 
         symbol_iterator = NGramSymbolIterator(pos, end, min_ngram_length - 1);
-<<<<<<< HEAD
         for (size_t i = 0; i < min_ngram_length - 2; ++i)
             if (!symbol_iterator.increment())
                 return;
-=======
-        for (size_t i = 0; i < min_ngram_length - 2 && !symbol_iterator.isEnd(); ++i)
-            symbol_iterator.increment();
->>>>>>> 329ee336934 (maybe fix failures...)
     }
 
     /// Get the next token, if any, or return false.

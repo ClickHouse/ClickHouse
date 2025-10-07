@@ -216,6 +216,7 @@ struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramT
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    bool supportsStringLike() const override { return true; }
 
 private:
     mutable SparseGramsImpl<true> sparse_grams_iterator;
