@@ -776,7 +776,7 @@ logger.jetty.level = warn
         next_session.stop()
         return True
 
-    def update_or_check_table(self, cluster, data, update: bool) -> bool:
+    def update_or_check_table(self, cluster, data) -> bool:
         res = False
         catalog_name = data["catalog_name"]
         next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
@@ -791,7 +791,7 @@ logger.jetty.level = warn
         try:
             res = (
                 self.data_generator.update_table(next_session, next_table)
-                if update
+                if random.randint(1, 10) < 9
                 else self.table_check.check_table(cluster, next_session, next_table)
             )
         except:
