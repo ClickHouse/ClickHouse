@@ -189,6 +189,7 @@ def main():
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": f"{Utils.cwd()}/ci/tmp/clickhouse",
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
+        "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
     }
     test_results = []
@@ -199,7 +200,7 @@ def main():
 
     if args.test:
         test_result_specific = Result.from_pytest_run(
-            command=f"{' '.join(args.test)} --pdb {repeat_option}",
+            command=f"{' '.join(args.test)} {repeat_option}",  # TODO: support passing --pdb for debugging
             cwd="./tests/integration/",
             env=test_env,
             pytest_report_file=f"{temp_path}/pytest.jsonl",
