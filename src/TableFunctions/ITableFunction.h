@@ -118,9 +118,16 @@ protected:
 
     String getFunctionURINormalized() const
     {
-        Poco::URI uri(getFunctionURI());
-        uri.normalize();
-        return uri.toString();
+        try
+        {
+            Poco::URI uri(getFunctionURI());
+            uri.normalize();
+            return uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return "";
+        }
     }
 };
 
