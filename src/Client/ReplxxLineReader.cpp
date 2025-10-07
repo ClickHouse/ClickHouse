@@ -833,9 +833,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     }
 
     for (char c = '0'; c <= '9'; c++) {
-        for (int mode = MODE_NORMAL; mode < MODE_g; mode++)
-            rx.bind_key(c, [this](char32_t code) { vimbuffer = 10 * vimbuffer + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
-        for (int mode = MODE_g + 1; mode < MODE_END; mode++)
+        rx.bind_key(c, [this](char32_t code) { vimbuffer = 10 * vimbuffer + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
+        for (int mode = MODE_DELETE; mode <= MODE_REPLACE; mode++)
             rx.bind_key(c, [this](char32_t code) { vimbufferinner = 10 * vimbufferinner + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
     }
     rx.bind_key('0', [this](char32_t code) {
