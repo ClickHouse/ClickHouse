@@ -570,31 +570,14 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
     path = base_path;
     tmp_path = "remove_recursive." + getRandomASCIIString(16);
-}
-
-void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTreeMove(const std::filesystem::path & from, const std::filesystem::path & to)
-{
-    LOG_TRACE(log, "Moving directory tree form '{}' to '{}'", from, to);
-
-    std::unordered_set<std::string> subdirs = {""};
-    path_map.iterateSubdirectories(from.string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
-    for (const auto & subdir : subdirs)
-    {
-        auto sub_path_to = to / subdir;
-        auto sub_path_from = from / subdir;
-
-        LOG_TRACE(log, "Moving '{}' to '{}'", sub_path_from, sub_path_to);
-
-        /// parent_path() removes the trailing '/'.
-        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
-    }
+    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", path_map, object_storage, metadata_key_prefix);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
     if (path_map.existsLocalPath(path))
     {
-        inMemoryTreeMove(path, tmp_path);
+        move_to_tmp_op->execute();
         moved = true;
     }
 }
@@ -603,7 +586,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 {
     if (moved)
     {
-        inMemoryTreeMove(tmp_path, path);
+        move_to_tmp_op->undo();
     }
 }
 

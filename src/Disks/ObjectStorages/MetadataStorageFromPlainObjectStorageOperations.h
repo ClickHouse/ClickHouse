@@ -214,9 +214,8 @@ private:
     const LoggerPtr log;
 
     std::filesystem::path tmp_path;
+    std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
     bool moved = false;
-
-    void inMemoryTreeMove(const std::filesystem::path & from, const std::filesystem::path & to);
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
