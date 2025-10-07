@@ -8,7 +8,7 @@ class YTsaurusCLI:
         self.proxy = proxy
         self.port = port
 
-    def exec(self, command, retry_count=5, time_to_sleep=10):
+    def exec(self, command, retry_count=100, time_to_sleep=0.5):
 
         for retry in range(retry_count):
             try:
@@ -38,8 +38,8 @@ class YTsaurusCLI:
         dynamic=False,
         schema=None,
         sorted_columns=set(),
-        retry_count=5,
-        time_to_sleep=10,
+        retry_count=100,
+        time_to_sleep=0.5,
     ):
 
         schema_arribute = ""
