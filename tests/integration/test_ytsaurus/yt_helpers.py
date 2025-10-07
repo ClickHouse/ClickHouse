@@ -130,7 +130,9 @@ class YTsaurusCLI:
         )
 
 
-YT_HOST = "ytsaurus_backend1"
-YT_PORT = 80
-YT_URI = f"http://{YT_HOST}:{YT_PORT}"
-YT_DEFAULT_TOKEN = "password"
+class YtsaurusURIHelper:
+    def __init__(self, port, host="ytsaurus_backend1", token="password"):
+        self.host = host
+        self.port = port
+        self.token = token
+        self.uri = f"http://{self.host}:{self.port}"
