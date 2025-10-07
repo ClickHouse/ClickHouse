@@ -91,7 +91,7 @@ VALUES
 SELECT * FROM explain_indexes;
 
 --
--- Test that splitByNonAlpha tokenizer is applied even to column part which is not materialized
+-- Test that splitByNonAlpha tokenizer is applied even to column part which does not have a materialized text index
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar']);
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar$']); -- test default tokenizer
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, tokens('bar$', 'splitByNonAlpha'));
