@@ -1,7 +1,7 @@
 services:
     openldap:
-        image: bitnami/openldap:2.6.8
-        restart: always
+        image: bitnamilegacy/openldap:2.6.8
+        stop_grace_period: 5s
         environment:
             LDAP_ROOT: dc=example,dc=org
             LDAP_ADMIN_DN: cn=admin,dc=example,dc=org
