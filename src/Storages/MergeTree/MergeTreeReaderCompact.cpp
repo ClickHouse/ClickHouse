@@ -272,7 +272,7 @@ void MergeTreeReaderCompact::readData(
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
 
-                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
+                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column, serialization);
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())
