@@ -6982,7 +6982,6 @@ Only useful for testing and development (missing ORDER BY is a source of non-det
     )", 0) \
     DECLARE(Int64, optimize_const_name_size, 256, R"(
 Replace with scalar and use hash as a name for large constants (size is estimated by name length).
-)", 0) \
 
 Possible values:
 
