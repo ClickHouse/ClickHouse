@@ -34,6 +34,7 @@ private:
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason;
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
@@ -79,6 +80,10 @@ public:
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
