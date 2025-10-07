@@ -3907,7 +3907,6 @@ enum FailPoint {
     lazy_pipe_fds_fail_close = 42;
     infinite_sleep = 43;
     stop_moving_part_before_swap_with_active = 44;
-    slowdown_index_analysis = 45;
     replicated_merge_tree_all_replicas_stale = 46;
     zero_copy_lock_zk_fail_before_op = 47;
     zero_copy_lock_zk_fail_after_op = 48;

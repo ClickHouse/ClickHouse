@@ -116,11 +116,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-namespace FailPoints
-{
-    extern const char slowdown_index_analysis[];
-}
-
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
     : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
@@ -2030,11 +2025,6 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (query_status)
             query_status->checkTimeLimit();
-
-        fiu_do_on(FailPoints::slowdown_index_analysis,
-        {
-            sleepForMilliseconds(1000);
-        });
 
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))
