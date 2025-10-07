@@ -98,7 +98,7 @@ TRUNCATE TABLE test_agg_single_${CLICKHOUSE_DATABASE};
 INSERT INTO test_agg_single_${CLICKHOUSE_DATABASE} VALUES (400, '999');
 SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single_${CLICKHOUSE_DATABASE} WHERE user_id = 400 GROUP BY user_id;"
 echo -e "400\t999" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_agg_single_${CLICKHOUSE_DATABASE} FORMAT TabSeparated"
-${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single_${CLICKHOUSE_DATABASE} WHERE user_id = 400;"
+${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single_${CLICKHOUSE_DATABASE} WHERE user_id = 400 GROUP BY user_id;"
 
 echo "=== Test 9: Error handling - invalid format ==="
 out1="$(${CLICKHOUSE_CLIENT} -q "
