@@ -1,6 +1,6 @@
 -- Tags: distributed, zookeeper
 
-CREATE TABLE test ON CLUSTER test_shard_localhost
+CREATE TABLE test
 (
     val UInt64
 )
@@ -13,4 +13,4 @@ WITH cte AS (SELECT 2718) INSERT INTO test SELECT * FROM cte;
 
 SELECT * FROM test ORDER BY val;
 
-DROP TABLE test ON CLUSTER test_shard_localhost;
+DROP TABLE test;
