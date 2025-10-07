@@ -168,13 +168,14 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             bool is_retry = false;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
+                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
                 if (is_retry)
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,
                     /// but then if we retry - we can remove a newly recreated node,
-                    /// therefore try to minimize the risk with this check.
-                    if (!checkProcessingOwnership())
+                    /// therefore avoid this with this check.
+                    if (!checkProcessingOwnership(zk_client))
                     {
                         LOG_TEST(log, "Will not remove processing node, ownership changed");
                         code = Coordination::Error::ZOK;
@@ -183,10 +184,8 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 }
                 else
                 {
-                    chassert(checkProcessingOwnership());
+                    chassert(checkProcessingOwnership(zk_client));
                 }
-
-                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
                 code = zk_client->tryRemove(processing_node_path);
             },
             /* iteration_cleanup */[&]{},
@@ -257,28 +256,21 @@ std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string 
     return oss.str();
 }
 
-bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership()
+bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
 {
     if (processor_info.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor info is not set");
 
-    std::optional<std::string> data;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        std::string data_tmp;
-        if (zk_client->tryGet(processing_node_path, data_tmp))
-            data = data_tmp;
-    });
-
-    if (!data.has_value())
+    std::string data;
+    /// No retries, because they must be done on a higher level.
+    if (!zk_client->tryGet(processing_node_path, data))
         return false;
 
     LOG_TEST(
         log, "Processing node {} has processor: {}, current processor: {}",
-        processing_node_path, data.value(), processor_info);
+        processing_node_path, data, processor_info);
 
-    return data.value() == processor_info;
+    return data == processor_info;
 }
 
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
@@ -390,8 +382,8 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
             /// It is possible that we fail "after operation",
             /// e.g. we successfully removed the node, but did not get confirmation,
             /// but then if we retry - we can remove a newly recreated node,
-            /// therefore try to minimize the risk with this check.
-            if (!checkProcessingOwnership())
+            /// therefore avoid this with this check.
+            if (!checkProcessingOwnership(zk_client))
             {
                 LOG_TEST(log, "Will not remove processing node, ownership changed");
                 code = Coordination::Error::ZOK;
@@ -400,7 +392,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         }
         else
         {
-            chassert(checkProcessingOwnership());
+            chassert(checkProcessingOwnership(zk_client));
         }
         code = zk_client->tryMulti(requests, responses);
     },

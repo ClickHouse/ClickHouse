@@ -60,28 +60,26 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .processor_info = processor_info_ }))
     , log(log_)
 {
-    chassert(checkBucketOwnership());
-}
-
-bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership()
-{
-    std::optional<std::string> data;
+#ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        std::string data_tmp;
-        if (zk_client->tryGet(bucket_info->bucket_lock_path, data_tmp))
-            data = data_tmp;
+        chassert(checkBucketOwnership(ObjectStorageQueueMetadata::getZooKeeper(log)));
     });
+#endif
+}
 
-    if (!data.has_value())
+bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
+{
+    std::string data;
+    /// No retries, because they must be done on a higher level.
+    if (!zk_client->tryGet(bucket_info->bucket_lock_path, data))
         return false;
 
     LOG_TEST(
         log, "Bucket lock node {} has owner: {}, current owner: {}",
-        bucket_info->bucket_lock_path, data.value(), bucket_info->processor_info);
+        bucket_info->bucket_lock_path, data, bucket_info->processor_info);
 
-    return data.value() == bucket_info->processor_info;
+    return data == bucket_info->processor_info;
 }
 
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
@@ -103,8 +101,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
             /// It is possible that we fail "after operation",
             /// e.g. we successfully removed the node, but did not get confirmation,
             /// but then if we retry - we can remove a newly recreated node,
-            /// therefore try to minimize the risk with this check.
-            if (!checkBucketOwnership())
+            /// therefore avoid this with this check.
+            if (!checkBucketOwnership(zk_client))
             {
                 LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
                 code = Coordination::Error::ZOK;
@@ -113,7 +111,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         }
         else
         {
-            chassert(checkBucketOwnership());
+            chassert(checkBucketOwnership(zk_client));
         }
         code = zk_client->tryRemove(bucket_info->bucket_lock_path);
     },

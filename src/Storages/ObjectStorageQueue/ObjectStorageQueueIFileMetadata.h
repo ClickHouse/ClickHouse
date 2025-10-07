@@ -11,6 +11,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class ZooKeeperWithFaultInjection;
+
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
@@ -166,7 +168,7 @@ protected:
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
 
-    bool checkProcessingOwnership();
+    bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
     static std::string getNodeName(const std::string & path);
 
