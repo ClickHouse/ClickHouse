@@ -200,7 +200,10 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNClast_value, 0, 0, 1, 1, true),
     CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false)};
 
-const CHFunction materialize = CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1);
+const std::vector<CHFunction> CommonCHFuncs
+    = {CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
+       CHFunction(SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
+       CHFunction(SQLFunc::FUNCtoLowCardinality, 0, 0, 1, 1)};
 
 const std::vector<CHFunction> CHFuncs = {
     /// Arithmetic Functions
@@ -226,6 +229,10 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmultiplyDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCdivideDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCbyteSwap, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCdivideOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCintDivOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCmoduloOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpositiveModuloOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCicebergBucket, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCicebergTruncate, 0, 0, 2, 2),
     /// String and array functions
@@ -326,6 +333,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayLevenshteinDistance, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCarrayLevenshteinDistanceWeighted, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCarraySimilarity, 0, 0, 4, 4),
+    CHFunction(SQLFunc::FUNCarrayExcept, 0, 0, 2, 2),
     /// Bit functions
     CHFunction(SQLFunc::FUNCbitAnd, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCbitOr, 0, 0, 2, 2),
@@ -381,12 +389,14 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmakeDate32, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCmakeDateTime, 0, 0, 6, 7),
     CHFunction(SQLFunc::FUNCmakeDateTime64, 0, 0, 6, 7),
-    CHFunction(SQLFunc::FUNCtoTimeZone, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCtimeZoneOf, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCtimeZoneOffset, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoTimezone, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCtimezoneOf, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimezoneOffset, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoYear, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoYearNumSinceEpoch, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoQuarter, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoMonth, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoMonthNumSinceEpoch, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfYear, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfWeek, 0, 0, 1, 1),
@@ -474,8 +484,16 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCsubtractTupleOfIntervals, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCtimeSlots, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCdateName, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCdateTrunc, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCmonthName, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtimeDiff, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCYYYYMMDDToDate, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCYYYYMMDDToDate32, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCYYYYMMDDhhmmssToDateTime, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCYYYYMMDDhhmmssToDateTime64, 0, 0, 1, 3),
+    CHFunction(SQLFunc::FUNCtoYYYYMM, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCtoYYYYMMDD, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCtoYYYYMMDDhhmmss, 0, 0, 1, 2),
     /// Distance
     CHFunction(SQLFunc::FUNCL1Norm, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCL2Norm, 0, 0, 1, 1),
@@ -484,6 +502,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCLpNorm, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCL1Distance, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCL2Distance, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCL2DistanceTransposed, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCL2SquaredDistance, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCLinfDistance, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCLpDistance, 0, 0, 3, 3),
@@ -702,7 +721,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCifNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCnullIf, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCassumeNotNull, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCfirstNonDefault, 0, 0, 1, ulimited_params),
     /// String replace
     CHFunction(SQLFunc::FUNCoverlay, 0, 0, 3, 4),
     CHFunction(SQLFunc::FUNCoverlayUTF8, 0, 0, 3, 4),
@@ -784,6 +803,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChasTokenOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitiveOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNChasAllTokens, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNChasAnyTokens, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcompareSubstrings, 0, 0, 5, 5),
     /// Split strings
     CHFunction(SQLFunc::FUNCsplitByChar, 0, 0, 2, ulimited_params),
@@ -1067,7 +1088,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCparseDateTime64BestEffortOrZero, 0, 0, 1, 3),
     CHFunction(SQLFunc::FUNCparseDateTime64BestEffortUSOrNull, 0, 0, 1, 3),
     CHFunction(SQLFunc::FUNCparseDateTime64BestEffortUSOrZero, 0, 0, 1, 3),
-    CHFunction(SQLFunc::FUNCtoLowCardinality, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Milli, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Micro, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Nano, 0, 0, 1, 1),
@@ -1190,6 +1210,11 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCs2RectUnion, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCs2RectIntersection, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCsvg, 0, 0, 1, 2),
+    /// Financial
+    CHFunction(SQLFunc::FUNCfinancialInternalRateOfReturn, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCfinancialInternalRateOfReturnExtended, 0, 0, 2, 4),
+    CHFunction(SQLFunc::FUNCfinancialNetPresentValue, 0, 0, 2, 3),
+    CHFunction(SQLFunc::FUNCfinancialNetPresentValueExtended, 0, 0, 3, 4),
     /// Other
     CHFunction(SQLFunc::FUNChostname, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCfqdn, 0, 0, 0, 0),
@@ -1197,7 +1222,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCvisibleWidth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoTypeName, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCbyteSize, 0, 0, 1, ulimited_params),
-    materialize,
     CHFunction(SQLFunc::FUNCignore, 0, 0, 0, ulimited_params),
     CHFunction(SQLFunc::FUNCisConstant, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCbar, 0, 0, 4, 4),
@@ -1240,11 +1264,12 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCgenerateULID, 0, 0, 1, 2),
     /// Time
     CHFunction(SQLFunc::FUNCtimestamp, 0, 0, 1, 2),
-    CHFunction(SQLFunc::FUNCtimeZone, 0, 0, 0, 0),
-    CHFunction(SQLFunc::FUNCserverTimeZone, 0, 0, 0, 0),
+    CHFunction(SQLFunc::FUNCtimezone, 0, 0, 0, 0),
+    CHFunction(SQLFunc::FUNCserverTimezone, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCnow, 0, 0, 0, 1),
     CHFunction(SQLFunc::FUNCnow64, 0, 0, 0, 1),
     CHFunction(SQLFunc::FUNCnowInBlock, 0, 0, 0, 1),
+    CHFunction(SQLFunc::FUNCnowInBlock64, 0, 0, 0, 1),
     CHFunction(SQLFunc::FUNCtoday, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCyesterday, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCformatDateTime, 0, 0, 2, 3),
