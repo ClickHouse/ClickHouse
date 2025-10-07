@@ -197,7 +197,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -1030,13 +1029,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
-    /// TODO: Should we consider row-policy filter here?
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
         read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
         fault(thread_local_rng) &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
+        !query_info.row_level_filter &&
         !query_info.prewhere_info &&
         !lazily_read_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
@@ -1826,23 +1825,7 @@ static void buildIndexes(
     if (settings[Setting::ignore_data_skipping_indices].changed)
     {
         const auto & indices = settings[Setting::ignore_data_skipping_indices].toString();
-        Tokens tokens(indices.data(), indices.data() + indices.size(), settings[Setting::max_query_size]);
-        IParser::Pos pos(tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
-        Expected expected;
-
-        /// Use an unordered list rather than string vector
-        auto parse_single_id_or_literal = [&]
-        {
-            String str;
-            if (!parseIdentifierOrStringLiteral(pos, expected, str))
-                return false;
-
-            ignored_index_names.insert(std::move(str));
-            return true;
-        };
-
-        if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
+        ignored_index_names = parseIdentifiersOrStringLiteralsToSet(indices, settings);
     }
 
     UsefulSkipIndexes skip_indexes;

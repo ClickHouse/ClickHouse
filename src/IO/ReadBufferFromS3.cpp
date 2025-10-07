@@ -85,7 +85,10 @@ bool ReadBufferFromS3::nextImpl()
     if (read_until_position)
     {
         if (read_until_position == offset)
+        {
+            stop_reason = fmt::format("Last read position was reached ({})", read_until_position.load());
             return false;
+        }
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
@@ -108,6 +111,7 @@ bool ReadBufferFromS3::nextImpl()
                     log, "Impl was released, but expected read range is not finished. "
                     "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
             }
+            stop_reason = fmt::format("Connection was released (read offset: {}/{})", offset.load(), read_until_position.load());
             return false;
         }
 
@@ -186,6 +190,7 @@ bool ReadBufferFromS3::nextImpl()
         read_all_range_successfully = true;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
+        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
         return false;
     }
 
@@ -199,6 +204,7 @@ bool ReadBufferFromS3::nextImpl()
     if (impl->isStreamEof() || is_read_until_position)
         impl->releaseResult();
 
+    stop_reason = "";
     return true;
 }
 
@@ -406,6 +412,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
+    stop_reason = "";
     read_all_range_successfully = false;
 
     /**
