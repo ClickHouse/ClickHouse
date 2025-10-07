@@ -77,11 +77,63 @@ namespace DB::Setting
 
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
+static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
 namespace DB::Iceberg
 {
 
 using namespace DB;
+static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+{
+    constexpr std::string_view metadata_suffix = ".metadata.json";
+
+    auto compression_method = chooseCompressionMethod(path, "auto");
+
+    /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
+    /// but somewhere in the middle of the file name, before metadata.json suffix.
+    /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
+    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
+    if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
+        compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
+
+    return compression_method;
+}
+
+
+static bool isTemporaryMetadataFile(const String & file_name)
+{
+    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
+    return Poco::UUID{}.tryParse(substring);
+}
+
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+{
+    String file_name = std::filesystem::path(path).filename();
+    if (isTemporaryMetadataFile(file_name))
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
+            path);
+    }
+    String version_str;
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    /// <V>-<random-uuid>.metadata.json
+    else
+        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
+
+    return MetadataFileWithInfo{
+        .version = std::stoi(version_str),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
+}
+
 
 void writeMessageToFile(
     const String & data,
@@ -89,10 +141,12 @@ void writeMessageToFile(
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const std::string & write_if_none_match,
+    const std::string & write_if_match,
     CompressionMethod compression_method)
 {
     auto write_settings = context->getWriteSettings();
-    write_settings.s3_write_if_none_match = write_if_none_match;
+    write_settings.object_storage_write_if_none_match = write_if_none_match;
+    write_settings.object_storage_write_if_match = write_if_match;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     if (compression_method != CompressionMethod::None)
@@ -113,7 +167,7 @@ bool writeMetadataFileAndVersionHint(
     const std::string & metadata_file_path,
     const std::string & metadata_file_content,
     const std::string & version_hint_path,
-    const std::string & version_hint_content,
+    std::string version_hint_content,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
     DB::CompressionMethod compression_method,
@@ -124,7 +178,7 @@ bool writeMetadataFileAndVersionHint(
         if (object_storage->exists(StoredObject(metadata_file_path)))
             return false;
 
-        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", compression_method);
+        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", "", compression_method);
     }
     catch (...)
     {
@@ -134,24 +188,31 @@ bool writeMetadataFileAndVersionHint(
 
     if (try_write_version_hint)
     {
+        if (version_hint_content.starts_with('/'))
+            version_hint_content = version_hint_content.substr(1);
+
         size_t i = 0;
-        while (i < 10)
+        while (i < MAX_TRANSACTION_RETRIES)
         {
             StoredObject object_info(version_hint_path);
             std::string version_hint_value;
-            std::string etag = "*";
+            std::string etag;
+            std::string write_if_none_match = "*";
             if (object_storage->exists(object_info))
             {
                 auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
                 version_hint_value = object_data;
                 etag = object_metadata.etag;
+                write_if_none_match.clear();
             }
 
-            if (version_hint_value < metadata_file_path)
+            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value);
+            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content);
+            if (old_version < new_version)
             {
                 try
                 {
-                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, /* write-if-none-match */ etag);
+                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, write_if_none_match, /* write-if-match */ etag);
                     break;
                 }
                 catch (...)
@@ -160,7 +221,9 @@ bool writeMetadataFileAndVersionHint(
                 }
             }
             else
+            {
                 break;
+            }
             ++i;
         }
     }
@@ -362,57 +425,6 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
     return json.extract<Poco::JSON::Object::Ptr>();
-}
-
-static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
-{
-    constexpr std::string_view metadata_suffix = ".metadata.json";
-
-    auto compression_method = chooseCompressionMethod(path, "auto");
-
-    /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
-    /// but somewhere in the middle of the file name, before metadata.json suffix.
-    /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
-    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
-    if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
-        compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
-
-    return compression_method;
-}
-
-
-static bool isTemporaryMetadataFile(const String & file_name)
-{
-    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
-    return Poco::UUID{}.tryParse(substring);
-}
-
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
-{
-    String file_name = std::filesystem::path(path).filename();
-    if (isTemporaryMetadataFile(file_name))
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
-            path);
-    }
-    String version_str;
-    /// v<V>.metadata.json
-    if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-    /// <V>-<random-uuid>.metadata.json
-    else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
-
-    return MetadataFileWithInfo{
-        .version = std::stoi(version_str),
-        .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Returns type and required
@@ -895,7 +907,13 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-        std::string result_metadata_path = std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file;
+
+        std::string storage_prefix = std::filesystem::path(prefix_storage_path) / "metadata";
+
+        std::string result_metadata_path = metadata_file;
+        if (!metadata_file.starts_with(storage_prefix))
+            result_metadata_path = fs::path(storage_prefix) / metadata_file;
+
         return getMetadataFileAndVersion(result_metadata_path);
     }
     else

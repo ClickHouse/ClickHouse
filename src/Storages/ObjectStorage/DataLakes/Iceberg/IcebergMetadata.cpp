@@ -157,6 +157,7 @@ IcebergMetadata::initializePersistentTableComponents(IcebergMetadataFilesCachePt
 {
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, getConfiguration(), cache_ptr, context_, log.get());
+    LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, getConfiguration(), cache_ptr, context_, log, compression_method);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
@@ -577,12 +578,12 @@ void IcebergMetadata::createInitial(
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", compression_method);
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*");
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*", "");
     }
 
     if (catalog)

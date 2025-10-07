@@ -29,16 +29,17 @@ void writeMessageToFile(
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
     const std::string & write_if_none_match,
+    const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
 /// Maybe return false if failed to write metadata.json
-/// Will try to write hint multiple times, but will not report failure to write hint (optional)
+/// Will try to write hint multiple times, but will not report failure to write hint.
 bool writeMetadataFileAndVersionHint(
     const std::string & metadata_file_path,
     const std::string & metadata_file_content,
     const std::string & version_hint_path,
-    const std::string & version_hint_content,
+    std::string version_hint_content,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
     DB::CompressionMethod compression_method,
