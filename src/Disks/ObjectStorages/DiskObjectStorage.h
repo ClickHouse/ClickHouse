@@ -152,6 +152,12 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
 
+    std::unique_ptr<ReadBufferFromFileBase> readFileFromStorageObjects(
+        const StoredObjects & storage_objects,
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const;
+
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
         const ReadSettings & settings,
