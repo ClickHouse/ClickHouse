@@ -11,12 +11,25 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
 
+
+static DataTypePtr getEstimatesDataType()
+{
+    DataTypes types
+    {
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+    };
+    Names names{"min", "max", "cardinality"};
+    return std::make_shared<DataTypeTuple>(types, names);
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -67,9 +80,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_ttl_min",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
         {"column_ttl_max",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
         {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
-        {"estimated_cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The estimated cardinality of the column."},
-        {"estimated_min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "The estimated minimum value of the column."},
-        {"estimated_max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "The estimated maximum value of the column."},
+        {"estimates",                                  getEstimatesDataType(), "The estimates of the statistics of the column."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
@@ -293,28 +304,26 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+                if (estimate_it != estimates->end())
+                {
+                    Tuple estimates_field;
+                    const auto & estimate = estimate_it->second;
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_min.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_min.value());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+                    auto add_field = [&](const auto & value)
+                    {
+                        estimates_field.push_back(value.has_value() ? Field(value.value()) : Field());
+                    };
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_max.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_max.value());
+                    add_field(estimate.estimated_min);
+                    add_field(estimate.estimated_max);
+                    add_field(estimate.estimated_cardinality);
+
+                    columns[res_index++]->insert(estimates_field);
+                }
                 else
+                {
                     columns[res_index++]->insertDefault();
+                }
             }
 
             auto serialization = part->getSerialization(column.name);
