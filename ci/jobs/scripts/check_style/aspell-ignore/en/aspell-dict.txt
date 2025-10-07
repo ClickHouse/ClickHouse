@@ -2095,6 +2095,7 @@ hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
 hasall
 hasany
+hashicorp
 hashtables
 haversine
 hdbc
