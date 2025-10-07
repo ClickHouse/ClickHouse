@@ -122,8 +122,20 @@ def main():
                 strict=True,
             )
 
-    Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
-    Shell.check(f"{temp_path}/clickhouse --version", verbose=True, strict=True)
+    clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
+    if info.is_local_run:
+        if Path(clickhouse_path).is_file():
+            pass
+        elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
+            clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
+        elif Path(f"{Utils.cwd()}/clickhouse").is_file():
+            clickhouse_path = f"{Utils.cwd()}/clickhouse"
+        else:
+            raise FileNotFoundError(f"Clickhouse binary not found")
+    print(f"Using ClickHouse binary at [{clickhouse_path}]")
+
+    Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
+    Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
 
     if not Shell.check("docker info > /dev/null", verbose=True):
         _start_docker_in_docker()
@@ -184,9 +196,9 @@ def main():
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": f"{Utils.cwd()}/programs/server",
-        "CLICKHOUSE_TESTS_SERVER_BIN_PATH": f"{Utils.cwd()}/ci/tmp/clickhouse",
-        "CLICKHOUSE_BINARY": f"{Utils.cwd()}/ci/tmp/clickhouse",  # some test cases support alternative binary location
-        "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": f"{Utils.cwd()}/ci/tmp/clickhouse",
+        "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
+        "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
+        "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
