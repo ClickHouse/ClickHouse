@@ -66,7 +66,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id) SETTINGS index_granularity = 2;
 
-SYSTEM STOP MERGES;
+SYSTEM STOP MERGES tab;
 
 -- bar# tests that same tokenizer is used for brute force search
 INSERT INTO tab(id, message)
@@ -146,5 +146,5 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['bar']);
 
 DROP TABLE tab;
 DROP VIEW explain_indexes;
-SYSTEM START MERGES;
+SYSTEM START MERGES tab;
 
