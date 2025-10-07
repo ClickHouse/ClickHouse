@@ -19,13 +19,13 @@ You can reproduce CI integration test jobs locally using the same orchestration 
 
 - **Run a specific test within a CI job**
   ```bash
-  python -m ci.praktika run "Integration tests (amd_asan, 4/5)" \
+  python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
     --test "test_storage_delta/test.py::test_single_log_file"
 
   # With specified test, the batch index in the job name (e.g., 4/5) is irrelevant locally, but
   # it must still match an actual job name from CI for the command to work.
 
-  # The build token (e.g., amd_asan) is only a label used in CI reports. For
+  # The build token (e.g., amd_binary) is only a label used in CI reports. For
   # local runs, your architecture and build type are determined by your host
   # and the binary you provide.
   ```
