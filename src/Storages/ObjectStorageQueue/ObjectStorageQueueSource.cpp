@@ -683,7 +683,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     continue;
                 }
 
-                auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+                auto acquired_bucket = metadata->tryAcquireBucket(bucket);
                 if (!acquired_bucket)
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
@@ -739,7 +739,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 return {object_info, nullptr, current_bucket_holder->getBucketInfo()};
             }
 
-            auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+            auto acquired_bucket = metadata->tryAcquireBucket(bucket);
             if (acquired_bucket)
             {
                 bucket_holder_it->second.push_back(acquired_bucket);

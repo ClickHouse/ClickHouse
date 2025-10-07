@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-          <s3queue_keeper_fault_injection_probablility>0.01</s3queue_keeper_fault_injection_probablility>
+          <s3queue_keeper_fault_injection_probablility>0.005</s3queue_keeper_fault_injection_probablility>
         </default>
     </profiles>
 </clickhouse>

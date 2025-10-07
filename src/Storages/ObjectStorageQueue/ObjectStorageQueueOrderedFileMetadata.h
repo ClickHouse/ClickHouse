@@ -18,6 +18,7 @@ public:
     {
         Bucket bucket;
         std::string bucket_lock_path;
+        std::string processor_info;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
@@ -41,7 +42,6 @@ public:
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
-        const Processor & processor,
         bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
@@ -91,6 +91,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     BucketHolder(
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
+        const std::string & processor_info_,
         LoggerPtr log_);
 
     ~BucketHolder();
@@ -100,6 +101,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
+
+    bool checkBucketOwnership();
 
     void release();
 

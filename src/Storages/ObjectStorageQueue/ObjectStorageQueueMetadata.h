@@ -145,8 +145,7 @@ public:
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
-    tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
     static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log);
     static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);

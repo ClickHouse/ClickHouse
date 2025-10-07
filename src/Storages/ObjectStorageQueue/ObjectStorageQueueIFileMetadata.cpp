@@ -168,12 +168,29 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             bool is_retry = false;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
-                /// FIXME: It is possible that we fail "after operation",
-                /// e.g. we successfully removed the node, but did not get confirmation,
-                /// but then if we retry - we can remove a newly recreated node :(
+                if (is_retry)
+                {
+                    /// It is possible that we fail "after operation",
+                    /// e.g. we successfully removed the node, but did not get confirmation,
+                    /// but then if we retry - we can remove a newly recreated node,
+                    /// therefore try to minimize the risk with this check.
+                    if (!checkProcessingOwnership())
+                    {
+                        LOG_TEST(log, "Will not remove processing node, ownership changed");
+                        code = Coordination::Error::ZOK;
+                        return;
+                    }
+                }
+                else
+                {
+                    chassert(checkProcessingOwnership());
+                }
+
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
                 code = zk_client->tryRemove(processing_node_path);
-            }, [&] { is_retry = true; });
+            },
+            /* iteration_cleanup */[&]{},
+            /* on_error */[&] { is_retry = true; });
 
             /// If it is a retry, we could have failed after actually successfully executing remove,
             /// so ZNONONE is expected in this case.
@@ -238,6 +255,30 @@ std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string 
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
+}
+
+bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership()
+{
+    if (processor_info.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor info is not set");
+
+    std::optional<std::string> data;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        std::string data_tmp;
+        if (zk_client->tryGet(processing_node_path, data_tmp))
+            data = data_tmp;
+    });
+
+    if (!data.has_value())
+        return false;
+
+    LOG_TEST(
+        log, "Processing node {} has processor: {}, current processor: {}",
+        processing_node_path, data.value(), processor_info);
+
+    return data.value() == processor_info;
 }
 
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
@@ -307,6 +348,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 {
     if (success)
     {
+        chassert(!file_state.has_value() || *file_state == FileStatus::State::None);
         created_processing_node = true;
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
@@ -343,14 +385,24 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        /// If it is a retry, we could have failed after successfully removing processing node.
-        /// FIXME: It is possible that we fail "after operation",
-        /// e.g. we successfully removed the node, but did not get confirmation,
-        /// but then if we retry - we can remove a newly recreated node :(
-        if (is_retry && !zk_client->exists(processing_node_path))
-            code = Coordination::Error::ZOK;
+        if (is_retry)
+        {
+            /// It is possible that we fail "after operation",
+            /// e.g. we successfully removed the node, but did not get confirmation,
+            /// but then if we retry - we can remove a newly recreated node,
+            /// therefore try to minimize the risk with this check.
+            if (!checkProcessingOwnership())
+            {
+                LOG_TEST(log, "Will not remove processing node, ownership changed");
+                code = Coordination::Error::ZOK;
+                return;
+            }
+        }
         else
-            code = zk_client->tryMulti(requests, responses);
+        {
+            chassert(checkProcessingOwnership());
+        }
+        code = zk_client->tryMulti(requests, responses);
     },
     /* iteration_cleanup */[]{},
     /* on_error */[&] { is_retry = true; });

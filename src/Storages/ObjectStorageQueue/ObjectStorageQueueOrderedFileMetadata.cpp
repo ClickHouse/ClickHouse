@@ -52,12 +52,36 @@ namespace
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
+    const std::string & processor_info_,
     LoggerPtr log_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
-        .bucket_lock_path = bucket_lock_path_}))
+        .bucket_lock_path = bucket_lock_path_,
+        .processor_info = processor_info_ }))
     , log(log_)
 {
+    chassert(checkBucketOwnership());
+}
+
+bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership()
+{
+    std::optional<std::string> data;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        std::string data_tmp;
+        if (zk_client->tryGet(bucket_info->bucket_lock_path, data_tmp))
+            data = data_tmp;
+    });
+
+    if (!data.has_value())
+        return false;
+
+    LOG_TEST(
+        log, "Bucket lock node {} has owner: {}, current owner: {}",
+        bucket_info->bucket_lock_path, data.value(), bucket_info->processor_info);
+
+    return data.value() == bucket_info->processor_info;
 }
 
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
@@ -73,10 +97,25 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     bool is_retry = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        /// FIXME: It is possible that we fail "after operation",
-        /// e.g. we successfully removed the node, but did not get confirmation,
-        /// but then if we retry - we can remove a newly recreated node :(
-        code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryRemove(bucket_info->bucket_lock_path);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        if (is_retry)
+        {
+            /// It is possible that we fail "after operation",
+            /// e.g. we successfully removed the node, but did not get confirmation,
+            /// but then if we retry - we can remove a newly recreated node,
+            /// therefore try to minimize the risk with this check.
+            if (!checkBucketOwnership())
+            {
+                LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
+                code = Coordination::Error::ZOK;
+                return;
+            }
+        }
+        else
+        {
+            chassert(checkBucketOwnership());
+        }
+        code = zk_client->tryRemove(bucket_info->bucket_lock_path);
     },
     /* iteration_cleanup */[&]{},
     /* on_error */[&] { is_retry = true; });
@@ -192,7 +231,6 @@ ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetad
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
-    const Processor & processor,
     bool /*use_persistent_processing_nodes_*/,
     LoggerPtr log_)
 {
@@ -209,7 +247,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 #endif
 
     const auto bucket_lock_path = bucket_path / "lock";
-    const auto processor_info = getProcessorInfo(processor);
+    const auto processor_info = getProcessorInfo(getRandomASCIIString(10));
 
     Coordination::Error code;
     bool is_retry = false;
@@ -236,11 +274,12 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TEST(log_, "Processor {} acquired bucket {} for processing", processor, bucket);
+        LOG_TEST(log_, "Processor {} acquired bucket {} for processing", processor_info, bucket);
 
         return std::make_shared<BucketHolder>(
             bucket,
             bucket_lock_path,
+            processor_info,
             log_);
     }
 

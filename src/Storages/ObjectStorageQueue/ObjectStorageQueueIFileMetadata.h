@@ -101,9 +101,11 @@ public:
         size_t failed_path_doesnt_exist_idx = 0;
         size_t create_processing_node_idx = 0;
     };
+    /// Prepare requests, required to set file as processing.
     std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(
         Coordination::Requests & requests,
         const std::string & processing_id);
+    /// Prepare requests, required to reset file's processing state.
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
@@ -112,7 +114,7 @@ public:
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
-    /// which we find out after attempting to set file as processing.
+    /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
 
     /// Set a starting point for processing.
@@ -163,6 +165,8 @@ protected:
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
+
+    bool checkProcessingOwnership();
 
     static std::string getNodeName(const std::string & path);
 
