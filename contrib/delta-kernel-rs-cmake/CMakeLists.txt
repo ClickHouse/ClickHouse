@@ -68,4 +68,4 @@ corrosion_set_env_vars(delta_kernel_ffi
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
 add_dependencies(_cargo-build_delta_kernel_ffi OpenSSL::Crypto OpenSSL::SSL)
-add_library(ch_contrib::delta_kernel_rs ALIAS delta_kernel_ffi)
+add_library(ch_rust::delta_kernel_rs ALIAS delta_kernel_ffi)

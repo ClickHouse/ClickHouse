@@ -52,11 +52,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
+            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
             {"optimize_qbit_distance_function_reads", true, true, "New setting"},
-            {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
+            {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"inject_random_order_for_select_without_order_by", false, false, "New setting"},
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
@@ -73,7 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
+            {"query_plan_optimize_join_order_limit", 1, 0, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
@@ -906,6 +908,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
+            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
+            {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
@@ -915,6 +919,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
             {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
+            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
@@ -931,9 +936,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
             {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
+            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
+            /// RELEASE CLOSED
+            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
@@ -941,6 +949,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
+            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
@@ -953,7 +962,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_election_check_period_ms", 30000, 30000, "New setting"},
             {"shared_merge_tree_merge_coordinator_min_period_ms", 1, 1, "New setting"},
             {"shared_merge_tree_merge_coordinator_max_period_ms", 10000, 10000, "New setting"},
-            {"shared_merge_tree_merge_coordinator_factor", 2, 2, "New setting"},
+            {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "New setting"},
             {"shared_merge_tree_merge_worker_fast_timeout_ms", 100, 100, "New setting"},
             {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},
