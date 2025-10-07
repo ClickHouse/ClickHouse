@@ -480,7 +480,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
-    bool throw_on_error) const
+    bool /* throw_on_error */) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
