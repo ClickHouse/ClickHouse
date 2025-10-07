@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/misc.h>
-#include <Functions/searchAnyAll.h>
+#include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -81,7 +81,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
 {
-    if (element.function == RPNElement::FUNCTION_SEARCH_ALL
+    if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
         || element.function == RPNElement::FUNCTION_AND
         || element.function == RPNElement::FUNCTION_EQUALS
         || (element.function == RPNElement::FUNCTION_MATCH && element.text_search_queries.size() == 1))
@@ -93,8 +93,8 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
 bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String & function_name)
 {
     return function_name == "hasToken"
-        || function_name == "searchAny"
-        || function_name == "searchAll";
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens";
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
@@ -158,8 +158,8 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS,
-         RPNElement::FUNCTION_SEARCH_ANY,
-         RPNElement::FUNCTION_SEARCH_ALL,
+         RPNElement::FUNCTION_HAS_ANY_TOKENS,
+         RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
@@ -180,14 +180,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
+        else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAnyTokenFromQuery(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL
+        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
             || element.function == RPNElement::FUNCTION_EQUALS
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS)
@@ -427,7 +427,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
-    if (function_name == "searchAny" || function_name == "searchAll")
+    if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
     {
         std::vector<String> search_tokens;
 
@@ -446,21 +446,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
         chassert(adaptor != nullptr);
 
-        if (function_name == "searchAny")
+        if (function_name == "hasAnyTokens")
         {
-            out.function = RPNElement::FUNCTION_SEARCH_ANY;
+            out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, search_tokens));
 
-            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> &>(*adaptor->getFunction());
+            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
         }
         else
         {
-            out.function = RPNElement::FUNCTION_SEARCH_ALL;
+            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, search_tokens));
 
-            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> &>(*adaptor->getFunction());
+                auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
         }
