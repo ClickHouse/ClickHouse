@@ -24,6 +24,8 @@ public:
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
+    Type getType() const override { return Type::SLRU; }
+
     size_t getSize(const CacheStateGuard::Lock & lock) const override;
     size_t getSizeApprox() const override;
 

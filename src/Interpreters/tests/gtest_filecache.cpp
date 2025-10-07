@@ -1517,18 +1517,17 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto user = FileCache::getCommonUser();
 
+    CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto cache_lock = cache_guard.readLock();
     auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
-        cache_lock.unlock();
-
         IFileCachePriority::IteratorPtr it;
         {
             auto write_lock = cache_guard.writeLock();
-            it = priority.add(key_metadata, offset, size, user, write_lock);
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, offset, size, user, write_lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
 
@@ -1547,7 +1546,6 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
         LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
 
-        cache_lock.lock();
         return it;
     };
 
@@ -1559,7 +1557,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto it1 = add_file_segment(0, 10);
     auto it2 = add_file_segment(10, 10);
 
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
     ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
 
     //FileCacheReserveStat stat;

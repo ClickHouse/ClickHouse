@@ -110,7 +110,7 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
 
     if (reservee)
     {
-        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
+        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
         if (slru_iterator->is_protected)
             return protected_queue.canFit(size, elements, lock);
         return probationary_queue.canFit(size, elements, lock);
@@ -193,7 +193,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     //    return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, continue_from_last_eviction_pos, user_id, lock);
     //}
 
-    //auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
+    //auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
     //bool success = false;
 
     ///// If `reservee` is not nullptr (e.g. is already in some queue),
@@ -233,7 +233,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock & lock, const CacheStateGuard::Lock & state_lock)
 {
-    auto * candidate_it = assert_cast<SLRUIterator *>(iterator.get());
+    auto * candidate_it = assert_cast<SLRUIterator *>(iterator->getNestedOrThis());
     if (!candidate_it->is_protected)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,

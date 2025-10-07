@@ -94,8 +94,18 @@ public:
         virtual void invalidate() = 0;
 
         virtual QueueEntryType getType() const = 0;
+
+        virtual const Iterator * getNestedOrThis() const { return this; }
+        virtual Iterator * getNestedOrThis() { return this; }
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
+
+    struct UsageStat
+    {
+        size_t size;
+        size_t elements;
+    };
+    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.
@@ -136,6 +146,15 @@ public:
 
 
     virtual ~IFileCachePriority() = default;
+
+    enum class Type
+    {
+        LRU,
+        SLRU,
+        LRU_OVERCOMMIT,
+        SLRU_OVERCOMMIT,
+    };
+    virtual Type getType() const = 0;
 
     size_t getSizeLimit(const CacheStateGuard::Lock &) const { return max_size; }
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }

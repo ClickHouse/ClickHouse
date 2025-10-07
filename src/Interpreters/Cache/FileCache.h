@@ -208,6 +208,11 @@ public:
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
+    IFileCachePriority::Type getEvictionPolicyType();
+
+    using UsageStat = IFileCachePriority::UsageStat;
+    std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+
     void deactivateBackgroundOperations();
 
     CachePriorityGuard::WriteLock lockCache() const;

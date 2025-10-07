@@ -67,7 +67,7 @@ def get_spark(cluster : ClickHouseCluster):
             )
     return builder.master("local").getOrCreate()
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def started_cluster_iceberg():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)

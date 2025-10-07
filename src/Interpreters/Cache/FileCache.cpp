@@ -1782,6 +1782,18 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
     return main_priority->dump(cache_guard.readLock());
 }
 
+IFileCachePriority::Type FileCache::getEvictionPolicyType()
+{
+    assertInitialized();
+    return main_priority->getType();
+}
+
+std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
+{
+    assertInitialized();
+    return main_priority->getUsageStatPerClient();
+}
+
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 {
     assertInitialized();

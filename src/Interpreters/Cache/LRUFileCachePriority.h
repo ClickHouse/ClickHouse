@@ -43,6 +43,8 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
+    Type getType() const override { return Type::LRU; }
+
     size_t getSize(const CacheStateGuard::Lock & lock) const override { return state->getSize(lock); }
     size_t getSizeApprox() const override { return state->getSizeApprox(); }
 
