@@ -65,8 +65,6 @@ void ReplicatedMergeTreeSinkPatch::finishDelayedChunk(const ZooKeeperWithFaultIn
 
 TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)
 {
-    storage.throwLightweightUpdateIfNeeded(block.block.bytes());
-
     auto partition_id = getPartitionIdForPatch(block.partition);
     auto data_version = getDataVersionInPartition(partition_id);
 

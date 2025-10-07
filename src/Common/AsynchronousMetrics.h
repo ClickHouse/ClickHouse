@@ -92,15 +92,8 @@ protected:
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
-    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
     void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
-
-    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
-    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
-
-    using Clock = std::chrono::steady_clock;
-    mutable std::optional<Clock::time_point> mem_overload_started;
-    mutable std::optional<Clock::time_point> cpu_overload_started;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -158,7 +151,6 @@ private:
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> process_status TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 
@@ -200,7 +192,6 @@ private:
         ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
     };
 
-    ProcStatValuesCPU cgroup_values_all_cpus TSA_GUARDED_BY(data_mutex){};
     ProcStatValuesCPU proc_stat_values_all_cpus TSA_GUARDED_BY(data_mutex) {};
     ProcStatValuesOther proc_stat_values_other TSA_GUARDED_BY(data_mutex) {};
     std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu TSA_GUARDED_BY(data_mutex);
@@ -256,14 +247,6 @@ private:
     std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
     void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
     void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
-
-    void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
-
-    void applyCgroupNormalizedCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values,
-        double num_cpus_to_normalize,
-        const ProcStatValuesCPU & delta_values_all_cpus,
-        double multiplier);
 
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);

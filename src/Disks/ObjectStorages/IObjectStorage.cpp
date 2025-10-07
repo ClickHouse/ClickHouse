@@ -44,6 +44,18 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
+std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    try
+    {
+        return getObjectMetadata(path);
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();

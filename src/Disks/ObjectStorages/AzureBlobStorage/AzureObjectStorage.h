@@ -29,10 +29,8 @@ public:
         AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
-        const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
-        const String & description_,
-        const String & common_key_prefix_);
+        const String & description_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -46,7 +44,7 @@ public:
     std::string getRootPrefix() const override { return object_namespace; }
 
     /// Object keys are unique within the object namespace (container + prefix).
-    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
+    std::string getCommonKeyPrefix() const override { return ""; }
 
     std::string getDescription() const override { return description; }
 
@@ -57,7 +55,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -72,8 +71,6 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
-
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -107,11 +104,6 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
-    {
-        return connection_params;
-    }
-
 private:
     void removeObjectImpl(
         const StoredObject & object,
@@ -127,10 +119,6 @@ private:
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
-
-    const String common_key_prefix;
-
-    const AzureBlobStorage::ConnectionParams connection_params;
 
     LoggerPtr log;
 };

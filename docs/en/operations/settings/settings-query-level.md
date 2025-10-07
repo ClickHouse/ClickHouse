@@ -3,7 +3,6 @@ description: 'Settings at the query-level'
 sidebar_label: 'Query-level Session Settings'
 slug: /operations/settings/query-level
 title: 'Query-level Session Settings'
-doc_type: 'reference'
 ---
 
 ## Overview {#overview}
@@ -36,6 +35,7 @@ The order of priority for defining a setting is:
     [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query)
     clause of the SELECT query. The setting value is applied only to that query
     and is reset to the default or previous value after the query is executed.
+
 
 ## Converting a setting to its default value {#converting-a-setting-to-its-default-value}
 
@@ -146,6 +146,7 @@ IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f2
 -- highlight-next-line
 SETTINGS PROFILE log_ingest
 ```
+
 
 ### Using XML to create a settings profile and user {#using-xml-to-create-a-settings-profile-and-user}
 

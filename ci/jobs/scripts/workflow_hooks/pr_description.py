@@ -183,7 +183,7 @@ def check_labels(category, info):
             pr_labels_to_remove.append(label)
 
     if info.pr_number:
-        changed_files = info.get_kv_data("changed_files")
+        changed_files = info.get_custom_data("changed_files")
         if "contrib/" in " ".join(changed_files):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 

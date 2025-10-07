@@ -63,12 +63,6 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
     }
 }
 
-void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
-{
-    const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());
-    sketch.merge(other->sketch);
-}
-
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
     Sketch::vector_bytes bytes = sketch.serialize();

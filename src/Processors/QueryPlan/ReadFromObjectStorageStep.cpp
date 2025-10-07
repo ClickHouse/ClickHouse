@@ -58,14 +58,6 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 }
 
-void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
-{
-    info = updateFormatPrewhereInfo(info, prewhere_info_value);
-    query_info.prewhere_info = prewhere_info_value;
-    prewhere_info = prewhere_info_value;
-    output_header = std::make_shared<const Block>(info.source_header);
-}
-
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator();
@@ -83,27 +75,14 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
-
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag, context, configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context));
-    format_filter_info->prewhere_info = prewhere_info;
+    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
+    parser_group->column_mapper = configuration->getColumnMapper();
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            getName(),
-            object_storage,
-            configuration,
-            storage_snapshot,
-            info,
-            format_settings,
-            context,
-            max_block_size,
-            iterator_wrapper,
-            parser_shared_resources,
-            format_filter_info,
-            need_only_count);
+            getName(), object_storage, configuration, info, format_settings,
+            context, max_block_size, iterator_wrapper, parser_group, need_only_count);
 
         pipes.emplace_back(std::move(source));
     }
@@ -129,8 +108,8 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
-        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
+        configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
+        context, predicate, filter_actions_dag.get(), virtual_columns, nullptr, context->getFileProgressCallback());
 }
 
 }

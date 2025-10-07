@@ -81,13 +81,13 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
     if (!join)
         return 0;
-    auto & join_operator = join->getJoinOperator();
-    if (join_operator.strictness != JoinStrictness::All)
+    auto & join_info = join->getJoinInfo();
+    if (join_info.strictness != JoinStrictness::All)
         return 0;
-    if (!join->typeChangingSides().empty())
+    if (join->useNulls())
         return 0;
-    bool check_left_stream = isRightOrFull(join_operator.kind);
-    bool check_right_stream = isLeftOrFull(join_operator.kind);
+    bool check_left_stream = isRightOrFull(join_info.kind);
+    bool check_right_stream = isLeftOrFull(join_info.kind);
     if (!check_left_stream && !check_right_stream)
         return 0;
 
@@ -106,26 +106,8 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
 
     if (!left_stream_safe || !right_stream_safe)
-    {
-        if (join_operator.kind == JoinKind::Full)
-        {
-            if (left_stream_safe)
-            {
-                /// Rows with default values in the left stream are always filtered out.
-                join_operator.kind = JoinKind::Left;
-                return 1;
-            }
-            if (right_stream_safe)
-            {
-                /// Rows with default values in the right stream are always filtered out.
-                join_operator.kind = JoinKind::Right;
-                return 1;
-            }
-        }
         return 0;
-    }
-
-    join_operator.kind = JoinKind::Inner;
+    join_info.kind = JoinKind::Inner;
     return 1;
 }
 

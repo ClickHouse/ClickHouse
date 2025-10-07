@@ -670,13 +670,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
-            bool use_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
-            if (use_analyzer && has_table_virtual_column
-                && (common_processed_stage != QueryProcessingStage::FetchColumns
-                    || std::dynamic_pointer_cast<StorageMerge>(storage)
-                    || std::dynamic_pointer_cast<StorageDistributed>(storage)))
-                real_column_names.emplace_back("_table");
-
             /// If there are no real columns requested from this table, we will read the smallest column.
             /// We should remember it to not include this column in the result.
             bool is_smallest_column_requested = false;
@@ -941,18 +934,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
         /// Consider only non-virtual columns of storage while checking for _table and _database columns.
         /// I.e. always override virtual columns with these names from underlying table (if any).
-        /// if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
-        /// {
-        ///     auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
-        ///     auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+        if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
+        {
+            auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
+            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
 
-        ///     auto function_node = std::make_shared<FunctionNode>("__actionName");
-        ///     function_node->getArguments().getNodes().push_back(std::move(table_name_node));
-        ///     function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
-        ///     function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
 
-        ///     column_name_to_node.emplace("_table", function_node);
-        /// }
+            column_name_to_node.emplace("_table", function_node);
+        }
 
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_database"))
         {
@@ -1100,7 +1093,7 @@ void ReadFromMerge::addVirtualColumns(
         }
 
         if (has_table_virtual_column && common_header->has(table_column)
-            && processed_stage == QueryProcessingStage::FetchColumns && !plan_header->has(table_column))
+            && child.stage == QueryProcessingStage::FetchColumns && !plan_header->has(table_column))
         {
             ColumnWithTypeAndName column;
             column.name = table_column;
@@ -1203,9 +1196,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     QueryPlan plan;
 
-    bool must_return_interpreter_select_query_plan
-        = use_analyzer && processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
-    if (processed_stage <= storage_stage && !must_return_interpreter_select_query_plan)
+    if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, we must request at least one other column.
         Names real_column_names = real_column_names_read_from_the_source_table;
@@ -1233,7 +1224,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
-    else
+    else if (processed_stage > storage_stage || use_analyzer)
     {
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
@@ -1482,7 +1473,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 }

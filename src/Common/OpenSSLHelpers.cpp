@@ -58,56 +58,6 @@ void encodeSHA256(const void * text, size_t size, unsigned char * out)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal failed: {}", getOpenSSLErrors());
 }
 
-std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
-{
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-
-    if (!ctx)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    if (EVP_DigestSignInit(ctx, nullptr, EVP_sha256(), nullptr, pkey) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    if (EVP_DigestSignUpdate(ctx, data.data(), data.size()) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    size_t signature_length = 0;
-    if (EVP_DigestSignFinal(ctx, nullptr, &signature_length) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    std::string signature(signature_length, 0);
-    if (EVP_DigestSignFinal(ctx, reinterpret_cast<unsigned char *>(signature.data()), &signature_length) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    EVP_MD_CTX_free(ctx);
-    signature.resize(signature_length);
-
-    return signature;
-}
-
-bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
-{
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-
-    if (!ctx)
-        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, pkey) != 1)
-        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    if (EVP_DigestVerifyUpdate(ctx, data.data(), data.size()) != 1)
-        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
-
-    int result = EVP_DigestVerifyFinal(
-        ctx,
-        reinterpret_cast<const unsigned char*>(signature.data()),
-        static_cast<int>(signature.size())
-    );
-    EVP_MD_CTX_free(ctx);
-
-    return result == 1;
-}
-
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)
 {
     std::vector<uint8_t> result(EVP_MAX_MD_SIZE);

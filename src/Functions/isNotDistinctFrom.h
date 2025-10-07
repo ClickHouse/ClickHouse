@@ -14,8 +14,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct NameFunctionIsNotDistinctFrom { static constexpr auto name = "isNotDistinctFrom"; };
-
 /**
   * Performs null-safe comparison.
   * equals(NULL, NULL) is NULL, while isNotDistinctFrom(NULL, NULL) is true.
@@ -25,7 +23,7 @@ struct NameFunctionIsNotDistinctFrom { static constexpr auto name = "isNotDistin
 class FunctionIsNotDistinctFrom : public IFunction
 {
 public:
-    static constexpr auto name = NameFunctionIsNotDistinctFrom::name;
+    static constexpr auto name = "isNotDistinctFrom";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotDistinctFrom>(); }
 

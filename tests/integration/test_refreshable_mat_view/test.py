@@ -466,9 +466,9 @@ def test_long_query_cancel(fn_setup_tables):
 
 @pytest.fixture(scope="function")
 def fn3_setup_tables():
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
 
     node.query(f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
 

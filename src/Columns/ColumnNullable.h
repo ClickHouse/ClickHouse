@@ -67,11 +67,9 @@ public:
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -232,7 +230,6 @@ public:
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
 
 private:

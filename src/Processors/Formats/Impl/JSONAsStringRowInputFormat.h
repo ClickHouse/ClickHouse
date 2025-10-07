@@ -74,7 +74,9 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
+        if (settings.json.allow_json_type)
+            return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
+        return {{"json", std::make_shared<DataTypeObjectDeprecated>("json", false)}};
     }
 
 private:

@@ -38,37 +38,29 @@ public:
         return active_metadatas[path];
     }
 
-    std::shared_ptr<DB::IDisk> getMetadataDisk(const std::string & path)
-    {
-        std::unique_lock<std::mutex> lock(active_metadatas_mutex);
-        chassert(active_disks.contains(path));
-        return active_disks[path];
-    }
-
     void TearDown() override
     {
         for (const auto & [path, metadata] : active_metadatas)
             metadata->shutdown();
 
-        for (const auto & [_, disk] : active_disks)
-            fs::remove_all(disk->getPath());
+        if (!local_disk_metadata_dir.empty())
+            fs::remove_all(local_disk_metadata_dir);
     }
 
 private:
     std::shared_ptr<DB::IMetadataStorage> createMetadataStorage(const std::string & path)
     {
-        const auto local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
+        local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
         fs::create_directories(local_disk_metadata_dir);
-
-        auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path);
-
+        auto metadata_disk = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
+        auto metadata = std::make_shared<DB::MetadataStorageFromDisk>(metadata_disk, path);
         return metadata;
     }
 
+    using MetadataPtr = std::shared_ptr<DB::IMetadataStorage>;
+    std::unordered_map<std::string, MetadataPtr> active_metadatas;
     std::mutex active_metadatas_mutex;
-    std::unordered_map<std::string, std::shared_ptr<DB::IMetadataStorage>> active_metadatas;
-    std::unordered_map<std::string, std::shared_ptr<DB::IDisk>> active_disks;
+    std::string local_disk_metadata_dir;
 };
 
 TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
@@ -663,6 +655,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsInsertPartSimple)
     EXPECT_EQ(metadata->listDirectory("data/database/table/all_0_0_0/").size(), 9);
 }
 
+
 TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsInsertPartDuplicateDirCreate)
 {
     auto metadata = getMetadataStorage("/TestValidComplexOperationsInsertPartDuplicateDirCreate");
@@ -697,6 +690,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsInsertPartDuplicateDirCr
     EXPECT_EQ(metadata->readInlineDataToString("data/database/table/all_0_0_0/serialization_info.json"), "hello there");
     EXPECT_EQ(metadata->listDirectory("data/database/table/all_0_0_0/").size(), 10);
 }
+
 
 TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsInsertPartProjections)
 {
@@ -743,6 +737,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsInsertPartProjections)
     EXPECT_EQ(metadata->listDirectory("data/database/table/all_0_0_0/coolprojection.proj").size(), 3);
 }
 
+
 TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsMutatePart)
 {
     auto metadata = getMetadataStorage("/TestValidComplexOperationsMutatePart");
@@ -780,6 +775,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsMutatePart)
     EXPECT_EQ(metadata->readInlineDataToString("data/database/table/all_0_0_0_5/stolbets.bin"), "binarydata_source");
     EXPECT_EQ(metadata->readInlineDataToString("data/database/table/all_0_0_0_5/stolbets.mrk2"), "otherdata_source");
 }
+
 
 TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsMutatePartWithProjections)
 {
@@ -971,6 +967,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsRemovePartOrdinary)
     EXPECT_FALSE(metadata->existsDirectory("data/database/table/all_0_0_0"));
 }
 
+
 TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsRemovePartBadCase)
 {
     auto metadata = getMetadataStorage("/TestValidComplexOperationsRemovePartBadCase");
@@ -1019,6 +1016,7 @@ TEST_F(MetadataLocalDiskTest, TestValidComplexOperationsMovePartDetached)
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/detached/broken_all_0_0_0"));
     EXPECT_EQ(metadata->listDirectory("data/database/table/detached/broken_all_0_0_0").size(), 3);
 }
+
 
 TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
 {
@@ -1088,6 +1086,10 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 2);
     EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 2);
 
+    /// MetadataStorageFromDiskTransaction::removeRecursive DOES NOT handle hardlinks count
+    /// only DiskObjectStorageTransaction::removeSharedRecursive handles it right
+    /// when MergeTreeDataPart is removed it uses DiskObjectStorageTransaction.
+
     /// Remove original dir and check hardlinks count again
     {
         auto rm_transaction = metadata->createTransaction();
@@ -1098,10 +1100,10 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/backup_all_0_0_0"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/all_0_0_0"));
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/all_0_0_0_1"));
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.bin"), 1);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.mrk2"), 1);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 1);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.bin"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/stolbets.mrk2"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/primary.idx"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/backup_all_0_0_0/someprojection.proj/columns.txt"), 2);
 
     /// Remove backup dir and check hardlinks count again
     {
@@ -1113,137 +1115,12 @@ TEST_F(MetadataLocalDiskTest, TestValidConcurrentHardlinks)
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/backup_all_0_0_0"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("data/database/table/all_0_0_0"));
     EXPECT_TRUE(metadata->existsDirectory("data/database/table/all_0_0_0_1"));
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.bin"), 0);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.mrk2"), 0);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/primary.idx"), 0);
-    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/columns.txt"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.bin"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/stolbets.mrk2"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/primary.idx"), 2);
+    EXPECT_EQ(metadata->getHardlinkCount("data/database/table/all_0_0_0_1/someprojection.proj/columns.txt"), 2);
 }
 
-TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackHardlinks)
-{
-    auto metadata = getMetadataStorage("/TestUnlinkRollbackHardlinks");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->createEmptyMetadataFile("file");
-        tx->createHardLink("file", "file-link-1");
-        tx->createHardLink("file", "file-link-2");
-        tx->commit();
-    }
-
-    EXPECT_EQ(metadata->getHardlinkCount("file-link-1"), 2);
-
-    /// Check that rolled back undo will not break real hardlinks on files
-    {
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("file-link-1");
-        tx->unlinkFile("file");
-        tx->createEmptyMetadataFile("non-existing/fail-tx");
-        EXPECT_THROW(tx->commit(), std::exception);
-    }
-
-    EXPECT_EQ(metadata->getHardlinkCount("file"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("file-link-1"), 2);
-    EXPECT_EQ(metadata->getHardlinkCount("file-link-2"), 2);
-}
-
-TEST_F(MetadataLocalDiskTest, TestFoldedRemoveRecursiveRollback)
-{
-    auto metadata = getMetadataStorage("/TestUnlinkRollbackHardlinks");
-
-    /// From committed state
-    {
-        auto tx_1 = metadata->createTransaction();
-        tx_1->createDirectoryRecursive("a/b/c/d/e");
-        tx_1->writeStringToFile("a/b/c/d/e/truth", "Reality is an illusion, the universe is a hologram");
-        tx_1->commit();
-
-        EXPECT_EQ(metadata->readFileToString("a/b/c/d/e/truth"), "Reality is an illusion, the universe is a hologram");
-
-        auto tx_2 = metadata->createTransaction();
-        tx_2->removeRecursive("a/b/c/d/e");
-        tx_2->removeRecursive("a/b/c/d");
-        tx_2->removeRecursive("a/b/c");
-        tx_2->removeRecursive("a/b");
-        tx_2->createEmptyMetadataFile("non-existing/fail-tx");
-        EXPECT_THROW(tx_2->commit(), std::exception);
-
-        EXPECT_EQ(metadata->readFileToString("a/b/c/d/e/truth"), "Reality is an illusion, the universe is a hologram");
-
-        auto tx_3 = metadata->createTransaction();
-        tx_3->removeRecursive("a/b");
-        tx_3->removeDirectory("a");
-        tx_3->commit();
-
-        EXPECT_FALSE(metadata->existsFile("a/b/c/d/e/truth"));
-        EXPECT_FALSE(metadata->existsDirectory("a"));
-    }
-
-    /// From uncommitted state
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectoryRecursive("a/b/c/d/e");
-        tx->writeStringToFile("a/b/c/d/e/truth", "Reality is an illusion, the universe is a hologram");
-        tx->removeRecursive("a/b/c/d/e");
-        tx->removeRecursive("a/b/c/d");
-        tx->removeRecursive("a/b/c");
-        tx->removeDirectory("a/b");
-        tx->commit();
-
-        EXPECT_FALSE(metadata->existsDirectory("a/b"));
-        EXPECT_TRUE(metadata->existsDirectory("a"));
-    }
-}
-
-TEST_F(MetadataLocalDiskTest, TestTruncate)
-{
-    auto metadata = getMetadataStorage("/TestTruncate");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-1"), 100);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-2"), 200);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-3"), 100);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-4"), 400);
-        tx->commit();
-    }
-
-    EXPECT_EQ(metadata->getStorageObjects("file").size(), 4);
-
-    /// Check that truncate combines
-    {
-        auto tx = metadata->createTransaction();
-        auto outcome_1 = tx->truncateFile("file", 300);  /// blob-1 + blob-2
-        auto outcome_2 = tx->truncateFile("file", 100);  /// blob-1
-        tx->commit();
-
-        EXPECT_EQ(outcome_1->objects_to_remove.size(), 2);
-        EXPECT_EQ(outcome_1->objects_to_remove[0].remote_path, "blob-4");
-        EXPECT_EQ(outcome_1->objects_to_remove[1].remote_path, "blob-3");
-
-        EXPECT_EQ(outcome_2->objects_to_remove.size(), 1);
-        EXPECT_EQ(outcome_2->objects_to_remove[0].remote_path, "blob-2");
-    }
-
-    EXPECT_EQ(metadata->getStorageObjects("file").size(), 1);
-    EXPECT_EQ(metadata->getStorageObjects("file").front().remote_path, "blob-1");
-}
-
-TEST_F(MetadataLocalDiskTest, TestRecursiveCyclicRemove)
-{
-    auto metadata = getMetadataStorage("/TestRecursiveCyclicRemove");
-    auto disk = getMetadataDisk("/TestRecursiveCyclicRemove");
-
-    disk->createDirectory("root");
-    disk->createDirectorySymlink("root", "root/root");
-
-    /// Check that remove recursive will not hang
-    {
-        auto tx = metadata->createTransaction();
-        tx->removeRecursive("root");
-        EXPECT_THROW(tx->commit(), std::exception);
-    }
-}
 
 TEST_F(MetadataLocalDiskTest, TestNonExistingObjects)
 {

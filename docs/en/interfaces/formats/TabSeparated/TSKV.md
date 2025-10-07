@@ -6,7 +6,6 @@ keywords: ['TSKV']
 output_format: true
 slug: /interfaces/formats/TSKV
 title: 'TSKV'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -30,6 +29,7 @@ SearchPhrase=photos of dog breeds    count()=1091
 SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
+
 
 ```sql title="Query"
 SELECT * FROM t_null FORMAT TSKV
