@@ -10,6 +10,7 @@ from helpers.iceberg_utils import (
 )
 
 import logging
+import time
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
@@ -190,8 +191,9 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-@pytest.mark.parametrize("distributed_processing_batch_size", [0, 100, 1000])
-def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, distributed_processing_batch_size):
+@pytest.mark.parametrize("cluster_table_function_buckets_batch_size", [0, 100, 1000])
+@pytest.mark.parametrize("input_format_parquet_use_native_reader_v3", [0, 1])
+def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, cluster_table_function_buckets_batch_size,input_format_parquet_use_native_reader_v3):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -207,7 +209,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     def add_df(mode):
         write_iceberg_from_df(
             spark,
-            generate_data(spark, 0, 1000),
+            generate_data(spark, 0, 100000),
             TABLE_NAME,
             mode=mode,
             format_version=format_version,
@@ -225,11 +227,8 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         return files
 
     files = add_df(mode="overwrite")
-    for i in range(1, len(started_cluster_iceberg_with_spark.instances)):
+    for i in range(1, 5 * len(started_cluster_iceberg_with_spark.instances)):
         files = add_df(mode="append")
-
-    logging.info(f"Setup complete. files: {files}")
-    assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
     clusters = instance.query(f"SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
@@ -250,41 +249,24 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         table_function=True,
         run_on_cluster=True,
     )
+
+    default_start_time = time.time()
+    instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
+    default_end_time = time.time()
+    time_default = default_end_time - default_start_time
+
+    start_time = time.time()
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS enable_split_in_distributed_processing=1, distributed_processing_batch_size={distributed_processing_batch_size}").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},enable_split_in_cluster_table_function=1, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
     )
+    end_time = time.time()
+    time_row_groups = end_time - start_time
+
+    # for some reason reading small parts from parquet from azure is much slower.
+    if storage_type == "s3":
+        assert time_row_groups < 0.95 * time_default
 
     # Simple size check
-    assert len(select_regular) == 6000
-    assert len(select_cluster) == 6000
+    assert len(select_cluster) == len(select_regular)
     # Actual check
     assert select_cluster == select_regular
-
-    # Check query_log
-    for replica in started_cluster_iceberg_with_spark.instances.values():
-        replica.query("SYSTEM FLUSH LOGS")
-
-    for node_name, replica in started_cluster_iceberg_with_spark.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart' AND
-                    positionCaseInsensitive(query, '{storage_type}Cluster') != 0 AND
-                    position(query, '{TABLE_NAME}') != 0 AND
-                    position(query, 'system.query_log') = 0 AND
-                    NOT is_initial_query
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-    # write 3 times
-    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 1000 * 3

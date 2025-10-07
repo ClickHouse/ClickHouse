@@ -14,6 +14,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <mutex>
 #include <lz4.h>
 
 #if USE_SNAPPY
@@ -262,7 +263,7 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
-void Reader::prefilterAndInitRowGroups()
+void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -307,6 +308,10 @@ void Reader::prefilterAndInitRowGroups()
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
+        /*if (row_groups_to_read && !row_groups_to_read->contains(row_group_idx))
+        {
+            continue;
+        }*/
         const auto * meta = &file_metadata.row_groups[row_group_idx];
         if (meta->num_rows <= 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
@@ -324,7 +329,7 @@ void Reader::prefilterAndInitRowGroups()
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.row_group_idx = row_group_idx;
+        row_group.need_to_process = !(row_groups_to_read && !row_groups_to_read->contains(row_group_idx));
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 
@@ -979,24 +984,25 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     ///  It seems that this would be very rare in practice. If it turns out to be a problem, it's easy
     ///  to add coalescing of nearby short ranges here, similar to coalescing read ranges, initializing
     ///  `filter` to keep only the rows covered by ranges.)
-    for (const auto [start, end] : row_ranges)
     {
-        for (size_t substart = start; substart < end; substart += rows_per_subgroup)
+        for (const auto [start, end] : row_ranges)
         {
-            size_t subend = std::min(end, substart + rows_per_subgroup);
+            for (size_t substart = start; substart < end; substart += rows_per_subgroup)
+            {
+                size_t subend = std::min(end, substart + rows_per_subgroup);
 
-            RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
-            row_subgroup.start_row_idx = substart;
-            row_subgroup.filter.rows_pass = subend - substart;
-            row_subgroup.filter.rows_total = row_subgroup.filter.rows_pass;
+                RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
+                row_subgroup.start_row_idx = substart;
+                row_subgroup.filter.rows_pass = row_group.need_to_process ? subend - substart : 0;
+                row_subgroup.filter.rows_total = subend - substart;
 
-            row_subgroup.columns.resize(primitive_columns.size());
-            row_subgroup.output.resize(extended_sample_block.columns());
-            if (options.format.defaults_for_omitted_fields)
-                row_subgroup.block_missing_values.init(sample_block->columns());
+                row_subgroup.columns.resize(primitive_columns.size());
+                row_subgroup.output.resize(extended_sample_block.columns());
+                if (options.format.defaults_for_omitted_fields)
+                    row_subgroup.block_missing_values.init(sample_block->columns());
+            }
         }
     }
-
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
@@ -1910,7 +1916,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     return res;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
 {
     for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
@@ -1961,7 +1967,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
-        if (rows_pass == 0)
+        if (rows_pass == 0 || !row_group.need_to_process)
         {
             /// Whole row group was filtered out.
             row_subgroup.filter.rows_pass = 0;
@@ -1986,7 +1992,8 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
 
         row_subgroup.filter.filter = std::move(mut_filter.getData());
-        row_subgroup.filter.rows_pass = rows_pass;
+        if (row_group.need_to_process)
+            row_subgroup.filter.rows_pass = rows_pass;
     }
 }
 

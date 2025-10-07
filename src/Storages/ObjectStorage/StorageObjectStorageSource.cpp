@@ -67,7 +67,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
-    extern const SettingsBool enable_split_in_distributed_processing;
+    extern const SettingsBool enable_split_in_cluster_table_function;
 }
 
 namespace ErrorCodes
@@ -209,9 +209,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 configuration->getNamespace(),
                 local_context);
         }
-        if (local_context->getSettingsRef()[Setting::enable_split_in_distributed_processing])
+        if (local_context->getSettingsRef()[Setting::enable_split_in_cluster_table_function])
         {
-            iter = std::make_shared<ObjectIteratorSplittedByRowGroups>(
+            iter = std::make_shared<ObjectIteratorSplittedByBuckets>(
                 std::move(iter),
                 configuration,
                 object_storage,
@@ -586,8 +586,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
-        if (object_info->chunks_to_read)
-            input_format->setChunksToRead(*object_info->chunks_to_read);
+        if (object_info->buckets_to_read)
+            input_format->setBucketsToRead(*object_info->buckets_to_read);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

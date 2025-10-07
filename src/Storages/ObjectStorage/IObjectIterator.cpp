@@ -15,7 +15,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 distributed_processing_batch_size;
+    extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -76,7 +76,7 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
     return {};
 }
 
-ObjectIteratorSplittedByRowGroups::ObjectIteratorSplittedByRowGroups(
+ObjectIteratorSplittedByBuckets::ObjectIteratorSplittedByBuckets(
     ObjectIterator iterator_,
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -88,7 +88,7 @@ ObjectIteratorSplittedByRowGroups::ObjectIteratorSplittedByRowGroups(
 {
 }
 
-ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
+ObjectInfoPtr ObjectIteratorSplittedByBuckets::next(size_t id)
 {
     if (!pending_objects_info.empty())
     {
@@ -111,7 +111,7 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
     auto bucket_sizes = input_format->getChunksByteSizes();
     if (bucket_sizes)
     {
-        size_t bucket_size = getContext()->getSettingsRef()[Setting::distributed_processing_batch_size];
+        size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
         std::vector<std::vector<size_t>> buckets;
         size_t current_weight = 0;
         buckets.push_back({});
@@ -133,7 +133,7 @@ ObjectInfoPtr ObjectIteratorSplittedByRowGroups::next(size_t id)
         for (const auto & bucket : buckets)
         {
             auto copy_object_info = *last_object_info;
-            copy_object_info.chunks_to_read = bucket;
+            copy_object_info.buckets_to_read = bucket;
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }

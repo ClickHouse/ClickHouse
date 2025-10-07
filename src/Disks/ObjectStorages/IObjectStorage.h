@@ -117,7 +117,7 @@ struct RelativePathWithMetadata
     /// Delta lake related object metadata.
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
-    std::optional<std::vector<size_t>> chunks_to_read;
+    std::optional<std::vector<size_t>> buckets_to_read;
 
     String getIdentifier() const;
 

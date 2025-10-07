@@ -643,16 +643,11 @@ std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
     return sizes;
 }
 
-void ParquetBlockInputFormat::setChunksToRead(const std::vector<size_t> & chunks_to_read)
+void ParquetBlockInputFormat::setBucketsToRead(const std::vector<size_t> & buckets_to_read_)
 {
     arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
     metadata = parquet::ReadMetaData(arrow_file);
-    std::unordered_set<size_t> set_to_read(chunks_to_read.begin(), chunks_to_read.end());
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-    {
-        if (!set_to_read.contains(i))
-            skip_row_groups.insert(i);
-    }
+    buckets_to_read = buckets_to_read_;
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -681,6 +676,16 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
+    if (buckets_to_read)
+    {
+        std::unordered_set<size_t> set_to_read(buckets_to_read->begin(), buckets_to_read->end());
+        for (int i = 0; i < metadata->num_row_groups(); ++i)
+        {
+            if (!set_to_read.contains(i))
+                skip_row_groups.insert(i);
+        }
+    }
+
     const bool prefetch_group = io_pool != nullptr;
 
     std::shared_ptr<arrow::Schema> schema;

@@ -18,7 +18,7 @@ struct ClusterFunctionReadTaskResponse
 
     /// Data path (object path, in case of object storage).
     String path;
-    std::optional<std::vector<size_t>> chunks_to_read = std::nullopt;
+    std::optional<std::vector<size_t>> buckets_to_read = std::nullopt;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
 

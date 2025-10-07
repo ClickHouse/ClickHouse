@@ -154,13 +154,13 @@ def write_iceberg_from_df(
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
             ).tableProperty(
-                "write.parquet.row-group-size-bytes", "10485"  # 1MB
+                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).using("iceberg").create()
         else:
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
             ).tableProperty(
-                "write.parquet.row-group-size-bytes", "10485"  # 1MB
+                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).partitionedBy(partition_by).using("iceberg").create()
     else:
         df.writeTo(table_name).append()

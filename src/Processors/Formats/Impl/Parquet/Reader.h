@@ -389,8 +389,9 @@ struct Reader
     {
         const parq::RowGroup * meta;
 
-        size_t row_group_idx; // in parquet file
+        //size_t row_group_idx; // in parquet file
 
+        bool need_to_process = false;
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
@@ -472,7 +473,7 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
-    void prefilterAndInitRowGroups();
+    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -504,7 +505,7 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
 
-    void applyPrewhere(RowSubgroup & row_subgroup);
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter

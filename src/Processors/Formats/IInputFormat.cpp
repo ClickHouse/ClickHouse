@@ -66,7 +66,7 @@ void IInputFormat::onFinish()
     resetReadBuffer();
 }
 
-void IInputFormat::setChunksToRead(const std::vector<size_t> & /*chunks_to_read*/)
+void IInputFormat::setBucketsToRead(const std::vector<size_t> & /*buckets_to_read*/)
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
 }

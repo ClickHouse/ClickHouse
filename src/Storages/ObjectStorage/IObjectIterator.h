@@ -43,10 +43,10 @@ private:
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
 
-class ObjectIteratorSplittedByRowGroups : public IObjectIterator, private WithContext
+class ObjectIteratorSplittedByBuckets : public IObjectIterator, private WithContext
 {
 public:
-    ObjectIteratorSplittedByRowGroups(
+    ObjectIteratorSplittedByBuckets(
         ObjectIterator iterator_,
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,

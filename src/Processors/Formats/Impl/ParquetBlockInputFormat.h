@@ -73,7 +73,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
     std::optional<std::vector<size_t>> getChunksByteSizes() override;
-    void setChunksToRead(const std::vector<size_t> & chunks_to_read) override;
+    void setBucketsToRead(const std::vector<size_t> & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -299,6 +299,7 @@ private:
 
     const FormatSettings format_settings;
     std::unordered_set<int> skip_row_groups;
+    std::optional<std::vector<size_t>> buckets_to_read;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
