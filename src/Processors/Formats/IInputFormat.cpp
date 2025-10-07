@@ -11,7 +11,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
- 
+
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
 
