@@ -8,10 +8,10 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 
 #include <memory>
-#include <shared_mutex>
 
 namespace DB
 {
@@ -231,7 +231,7 @@ private:
     const bool write_cache_per_user_directory;
 
     LoggerPtr log;
-    mutable std::shared_mutex key_prefix_directory_mutex;
+    mutable SharedMutex key_prefix_directory_mutex;
 
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {

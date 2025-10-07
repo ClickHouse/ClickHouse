@@ -75,11 +75,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString datalake_disk_name;
-}
-
 static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",
@@ -128,11 +123,11 @@ std::string StorageS3Configuration::getPathInArchive() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
-void StorageS3Configuration::check(ContextPtr context) const
+void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
 
