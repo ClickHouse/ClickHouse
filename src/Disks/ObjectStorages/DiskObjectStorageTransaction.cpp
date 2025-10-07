@@ -4,9 +4,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #if ENABLE_DISTRIBUTED_CACHE
-#include <Disks/IO/WriteBufferFromDistributedCache.h>
-#include <Interpreters/Context.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
@@ -927,8 +925,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     [[maybe_unused]] bool use_distributed_cache = false;
     size_t use_buffer_size = buf_size;
 #if ENABLE_DISTRIBUTED_CACHE
-    use_distributed_cache = settings.write_through_distributed_cache
-        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az);
+    use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(settings, object_storage);
+
     if (use_distributed_cache && settings.distributed_cache_settings.write_through_cache_buffer_size)
         use_buffer_size = settings.distributed_cache_settings.write_through_cache_buffer_size;
 #endif
@@ -943,25 +941,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
-    {
-        auto connection_info = DistributedCache::getConnectionInfo(object_storage);
-        if (connection_info)
-        {
-            auto global_context = Context::getGlobalContextInstance();
-            auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
-                query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
-
-            impl = std::make_unique<WriteBufferFromDistributedCache>(
-                path,
-                object,
-                settings,
-                connection_info,
-                std::move(impl),
-                std::move(timeouts));
-        }
-    }
+        impl = DistributedCache::writeWithDistributedCache(path, *object, settings, object_storage, std::move(impl));
 #endif
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(

@@ -427,8 +427,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if (sfunc || afunc || lfunc)
+        if ((sfunc || afunc || lfunc) && !t.isAnyQueueEngine())
         {
+            /// Queue tables don't support settings in table function counterparts
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
 
@@ -512,6 +513,8 @@ auto StatementGenerator::getQueryTableLambda()
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic)
+            /* Don't use tables with Dolor integration when async requests can insert between oracle queries */
+            && (tt.integration != IntegrationCall::Dolor || !fc.allow_async_requests || this->allow_not_deterministic)
             /* May require MergeTree table */
             && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
@@ -581,7 +584,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
                 {
                     names.push_back(path.cname);
                 }
-                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), std::move(names)));
+                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), names));
             }
             this->table_entries.clear();
             this->levels[this->current_level].rels.emplace_back(rel);
@@ -695,6 +698,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
         chassert(!next_cte.cols.empty());
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
+        chassert(!next_cte.cols.empty());
         for (const auto & entry : next_cte.cols)
         {
             chassert(!entry.path.empty() && !entry.path[0].empty());
@@ -926,7 +930,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.push_back("mark");
-            marks.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            marks.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
@@ -1115,7 +1119,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.back() = "_parent" + npath.back();
-            parents.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            parents.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
     }
@@ -1345,7 +1349,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     const GroupCol & gcol = rg.pickRandomly(available_cols);
     const uint32_t noption = rg.nextLargeNumber();
 
-    if (noption < 761)
+    if (noption < 751)
     {
         /// Binary expr
         Expr * lexpr = nullptr;
@@ -1382,7 +1386,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, rexpr);
         }
     }
-    else if (noption < 901)
+    else if (noption < 851)
     {
         /// Between expr
         const uint32_t noption2 = rg.nextMediumNumber();
@@ -1412,7 +1416,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, expr3);
         }
     }
-    else if (noption < 971)
+    else if (noption < 901)
     {
         /// Is null expr
         Expr * isexpr = nullptr;
@@ -1436,7 +1440,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         refColumn(rg, gcol, isexpr);
     }
-    else if (noption < 981)
+    else if (noption < 931)
     {
         /// Like expr
         Expr * expr1 = nullptr;
@@ -1464,14 +1468,19 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             expr2 = sfc->add_args()->mutable_expr();
         }
         refColumn(rg, gcol, expr1);
-        if (rg.nextSmallNumber() < 5)
+        if (rg.nextBool())
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
+            generateLikeExpr(rg, expr2);
         }
         else
         {
             addWhereSide(rg, available_cols, expr2);
         }
+    }
+    else if (noption < 961)
+    {
+        /// Search expr
+        refColumn(rg, gcol, generatePartialSearchExpr(rg, expr));
     }
     else if (noption < 991)
     {

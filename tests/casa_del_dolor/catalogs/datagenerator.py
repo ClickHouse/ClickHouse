@@ -1,10 +1,11 @@
-import traceback
 import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
 import math
 import logging
 import string
+import threading
+import traceback
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -169,10 +170,11 @@ SOME_STRINGS = [
 
 class LakeDataGenerator:
     def __init__(self, query_logger):
-        self._min_nested = 0
-        self._max_nested = 100
-        self._min_str_len = 0
-        self._max_str_len = 100
+        self._thread_local = threading.local()
+        self._thread_local._min_nested = 0
+        self._thread_local._max_nested = 100
+        self._thread_local._min_str_len = 0
+        self._thread_local._max_str_len = 100
         self.logger = logging.getLogger(__name__)
         self.spark_query_logger = query_logger
 
@@ -264,18 +266,22 @@ class LakeDataGenerator:
             return self._rand_decimal(dtype.precision, dtype.scale)
         if isinstance(dtype, StringType):
             return self._rand_string(
-                random.randint(self._min_str_len, self._max_str_len)
+                random.randint(
+                    self._thread_local._min_str_len, self._thread_local._max_str_len
+                )
             )
         if isinstance(dtype, (CharType, VarcharType)):
             return self._rand_string(
                 random.randint(
-                    min(dtype.length, self._min_str_len),
-                    min(dtype.length, self._max_str_len),
+                    min(dtype.length, self._thread_local._min_str_len),
+                    min(dtype.length, self._thread_local._max_str_len),
                 )
             )
         if isinstance(dtype, BinaryType):
             return self._rand_binary(
-                random.randint(self._min_str_len, self._max_str_len)
+                random.randint(
+                    self._thread_local._min_str_len, self._thread_local._max_str_len
+                )
             )
         if isinstance(dtype, DateType):
             return self._rand_date()
@@ -284,7 +290,9 @@ class LakeDataGenerator:
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
-            n = random.randint(self._min_nested, self._max_nested)
+            n = random.randint(
+                self._thread_local._min_nested, self._thread_local._max_nested
+            )
             return [
                 self._random_value_for_type(dtype.elementType, elem_null_rate)
                 for _ in range(n)
@@ -292,7 +300,9 @@ class LakeDataGenerator:
         if isinstance(dtype, MapType):
             # Keys: must be non-null and hashable; values may be null only if allowed
             value_null_rate = null_rate if dtype.valueContainsNull else 0.0
-            n = random.randint(self._min_nested, self._max_nested)
+            n = random.randint(
+                self._thread_local._min_nested, self._thread_local._max_nested
+            )
             out = {}
             attempts = 0
             # Keep drawing until we have n unique, non-null keys (cap attempts)
@@ -313,7 +323,11 @@ class LakeDataGenerator:
                 nr = null_rate if f.nullable else 0.0
                 obj[f.name] = self._random_value_for_type(f.dataType, nr)
             return Row(**obj)
-        return self._rand_string(random.randint(self._min_str_len, self._max_str_len))
+        return self._rand_string(
+            random.randint(
+                self._thread_local._min_str_len, self._thread_local._max_str_len
+            )
+        )
 
     def _map_type_to_insert(self, dtype):
         # Char and Varchar have to be Strings
@@ -348,10 +362,14 @@ class LakeDataGenerator:
         Build a DataFrame of random rows for the given schema (types as strings are fine).
         """
         # Set limits
-        self._min_nested = random.randint(0, 100)
-        self._max_nested = max(self._min_nested, random.randint(0, 100))
-        self._min_str_len = random.randint(0, 100)
-        self._max_str_len = max(self._min_str_len, random.randint(0, 100))
+        self._thread_local._min_nested = random.randint(0, 100)
+        self._thread_local._max_nested = max(
+            self._thread_local._min_nested, random.randint(0, 100)
+        )
+        self._thread_local._min_str_len = random.randint(0, 100)
+        self._thread_local._max_str_len = max(
+            self._thread_local._min_str_len, random.randint(0, 100)
+        )
         null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
         struct1 = StructType(
@@ -362,6 +380,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         struct2 = StructType(
@@ -372,6 +391,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         rows = []
@@ -392,8 +412,9 @@ class LakeDataGenerator:
 
     def run_query(self, session, query: str):
         self.logger.info(f"Running query: {query}")
-        with open(self.spark_query_logger, "a") as f:
-            f.write(query + "\n")
+        # Ignore spark_query_logger at the moment because this is multithreaded
+        # with open(self.spark_query_logger, "a") as f:
+        #    f.write(query + "\n")
         session.sql(query)
 
     def merge_into_table(self, spark: SparkSession, table: SparkTable):
