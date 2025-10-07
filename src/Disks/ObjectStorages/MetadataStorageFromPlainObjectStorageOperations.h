@@ -42,10 +42,8 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    bool write_finalized = false;
-
-    std::unique_ptr<WriteBufferFromFileBase>
-    createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
+    void executeMoveImpl(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(

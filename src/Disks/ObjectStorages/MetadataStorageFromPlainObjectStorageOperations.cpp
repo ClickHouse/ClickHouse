@@ -178,25 +178,23 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     return write_buf;
 }
 
-void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute( /* metadata_lock */)
+void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::executeMoveImpl(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content)
 {
-    LOG_TRACE(
-        getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    constexpr bool validate_content = true;
-#else
-    constexpr bool validate_content = false;
-#endif
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", from, to);
 
     std::unordered_set<std::string> subdirs = {""};
-    path_map.iterateSubdirectories(path_from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
+    path_map.iterateSubdirectories(from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
     for (const auto & subdir : subdirs)
     {
-        auto sub_path_to = path_to / subdir;
-        auto sub_path_from = path_from / subdir;
+        auto sub_path_to = to / subdir;
+        auto sub_path_from = from / subdir;
 
         auto write_buf = createWriteBuf(sub_path_from, sub_path_to, validate_content);
+
+        /// parent_path() removes the trailing '/'.
+        /// Let's move in memory first to be able to see this move in undo in case of error.
+        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
+
         writeString(sub_path_to.string(), *write_buf);
 
         fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
@@ -206,27 +204,25 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute( /* me
 
         write_buf->finalize();
 
-        /// parent_path() removes the trailing '/'.
-        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
-
-        LOG_TEST(
-            getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moved directory '{}' to '{}'", sub_path_from, sub_path_to);
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moved directory '{}' to '{}'", sub_path_from, sub_path_to);
     }
+}
 
-    write_finalized = true;
+void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    constexpr bool validate_content = true;
+#else
+    constexpr bool validate_content = false;
+#endif
+
+    executeMoveImpl(path_from, path_to, validate_content);
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
-    if (write_finalized)
-    {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
-        path_map.moveDirectory(path_to.parent_path(), path_from.parent_path());
-
-        auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
-        writeString(path_from.string(), *write_buf);
-        write_buf->finalize();
-    }
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
+    executeMoveImpl(path_to, path_from, /*validate_content=*/false);
 }
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
