@@ -115,16 +115,16 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abc', 'foo']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'ba']);
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['fo', 'ba']);
+SELECT groupArray(id) FROM tab WHERE hasAnyToken(message, ['fo', 'ba']); -- test alias
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc']);
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['ab']);
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['ab']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'foo']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'bar']);
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'fo']);
+SELECT groupArray(id) FROM tab WHERE hasAllToken(message, ['abc', 'fo']); -- test alias
 
 --- Test for FixedString needles
 --- Not a systematic test, just to see that FixedString needles work in principle
@@ -288,7 +288,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('foo ba', 'spl
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('fo ba', 'splitByNonAlpha'));
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('abc', 'splitByNonAlpha'));
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('ab', 'splitByNonAlpha'));
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('ab', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('foo', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('bar', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('abc foo', 'splitByNonAlpha'));
