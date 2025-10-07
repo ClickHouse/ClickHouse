@@ -1,6 +1,9 @@
+#include <exception>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -154,7 +157,9 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
 
 StorageObjectStorageSink::~StorageObjectStorageSink()
 {
-    if (isCancelled())
+    LOG_TRACE(getLogger("StorageObjectStorageSink"), "Destructor of StorageObjectStorageSink for path: {}, isCanceled: {} exceptions: {}", path, isCancelled(), std::uncaught_exceptions());
+
+    if (isCancelled() || std::uncaught_exceptions() > 0)
         cancelBuffers();
 }
 
