@@ -23,6 +23,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 struct RepareEntry
@@ -273,12 +274,17 @@ try
     MutableDataPartStoragePtr part_storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "./", part_dir);
     auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*part_storage);
     MergeTreeIndexGranularityInfo index_granularity_info(*mark_type, 8192, 10 * 1024 * 1024);
+
+    bool has_broken = false;
     bool need_repair = false;
 
     if (!mark_type)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No mark type found in the input directory '{}'", part_dir);
 
     std::cerr << "Mark type: (" << mark_type->describe() << ")" << std::endl;
+
+    if (mark_type->with_substreams)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Repairing parts with substreams is not supported");
 
     NamesAndTypesList columns;
     SerializationInfoByName infos({});
@@ -318,6 +324,7 @@ try
             if (repare_entry.status == RepareEntry::Status::Broken)
             {
                 std::cout << "Column " << column.name << " is broken and cannot be repaired" << std::endl;
+                has_broken = true;
             }
             else if (repare_entry.status == RepareEntry::Status::NeedRepare)
             {
@@ -368,6 +375,7 @@ try
             if (repare_entry.status == RepareEntry::Status::Broken)
             {
                 std::cout << "Column " << column.name << " is broken and cannot be repaired" << std::endl;
+                has_broken = true;
             }
             else if (repare_entry.status == RepareEntry::Status::NeedRepare)
             {
@@ -390,7 +398,16 @@ try
         out->finalize();
     }
 
-    return (need_repair && dry_run) ? 1 : 0;
+    if (!has_broken && !need_repair)
+        std::cout << "OK" << std::endl;
+
+    if (has_broken)
+        return 1;
+
+    if (need_repair && dry_run)
+        return 2;
+
+    return 0;
 }
 catch (...)
 {
