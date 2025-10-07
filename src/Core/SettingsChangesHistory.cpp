@@ -907,9 +907,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
-            {"min_level_for_wide_part", 0, 0, "New setting"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
+            {"min_level_for_wide_part", 0, 0, "New setting"},
+            {"min_level_for_full_part_storage", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

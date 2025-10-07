@@ -269,7 +269,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
-    extern const MergeTreeSettingsUInt64 min_level_for_wide_part;
+    extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
 }
 
 namespace ServerSetting
