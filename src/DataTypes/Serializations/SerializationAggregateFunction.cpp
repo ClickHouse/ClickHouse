@@ -226,7 +226,6 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
                         "Expected comma in array, got: '{}'", array_str);
                 ++buf.position(); // skip ','
             }
-            
             if (argument_types.size() == 1)
             {
                 // Single argument
