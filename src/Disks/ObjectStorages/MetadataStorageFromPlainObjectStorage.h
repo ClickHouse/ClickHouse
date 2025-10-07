@@ -22,6 +22,14 @@ class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
+struct ObjectMetadataEntry
+{
+    uint64_t file_size;
+    time_t last_modified;
+};
+using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
+using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadataEntry>>;
+
 /// Object storage is used as a filesystem, in a limited form:
 /// - no directory concept, files only
 /// - no stat/chmod/...
@@ -38,18 +46,11 @@ private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
 protected:
-    struct ObjectMetadataEntry
-    {
-        uint64_t file_size;
-        time_t last_modified;
-    };
-    using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
-
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
     const String storage_path_full;
 
-    mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
+    mutable ObjectMetadataCachePtr object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 

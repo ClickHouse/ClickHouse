@@ -209,6 +209,7 @@ private:
 
     InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
+    ObjectMetadataCachePtr object_metadata_cache;
     const std::string metadata_key_prefix;
     const LoggerPtr log;
 
@@ -223,6 +224,7 @@ public:
         std::filesystem::path && path_,
         InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
+        ObjectMetadataCachePtr object_metadata_cache_,
         const std::string & metadata_key_prefix_);
 
     void execute() override;

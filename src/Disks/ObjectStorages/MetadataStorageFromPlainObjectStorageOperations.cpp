@@ -555,10 +555,12 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::filesystem::path && path_,
     InMemoryDirectoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
+    ObjectMetadataCachePtr object_metadata_cache_,
     const std::string & metadata_key_prefix_)
     : path(std::move(path_))
     , path_map(path_map_)
     , object_storage(std::move(object_storage_))
+    , object_metadata_cache(std::move(object_metadata_cache_))
     , metadata_key_prefix(metadata_key_prefix_)
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
@@ -634,6 +636,13 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 
             auto file_object_key = object_storage->generateObjectKeyForPath(file_path, std::nullopt).serialize();
             objects_to_remove.emplace_back(file_object_key, file_path);
+
+            if (object_metadata_cache)
+            {
+                SipHash hash;
+                hash.update(file_object_key);
+                object_metadata_cache->remove(hash.get128());
+            }
         }
     }
 
