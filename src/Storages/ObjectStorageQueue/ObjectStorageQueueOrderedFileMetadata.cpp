@@ -2,7 +2,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Core/Field.h>
 #include <Interpreters/Context.h>
@@ -245,7 +244,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 #endif
 
     const auto bucket_lock_path = bucket_path / "lock";
-    const auto processor_info = getProcessorInfo(getRandomASCIIString(10));
+    const auto processor_info = getProcessorInfo(generateProcessingID());
 
     Coordination::Error code;
     bool is_retry = false;
@@ -294,8 +293,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
 
-    node_metadata.processing_id = getRandomASCIIString(10);
-    auto processor_info = getProcessorInfo(node_metadata.processing_id);
+    processor_info = getProcessorInfo(generateProcessingID());
 
     const size_t max_num_tries = 100;
     Coordination::Error code;

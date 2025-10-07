@@ -17,7 +17,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <shared_mutex>

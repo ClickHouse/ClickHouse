@@ -79,6 +79,8 @@ public:
     const std::string & getProcessingPath() const { return processing_node_path; }
     const std::string & getProcessorInfo() const { return processor_info; }
 
+    static std::string generateProcessingID();
+
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
@@ -132,7 +134,6 @@ public:
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
-        std::string processing_id; /// For ephemeral processing node.
 
         std::string toString() const;
         static NodeMetadata fromString(const std::string & metadata_str);

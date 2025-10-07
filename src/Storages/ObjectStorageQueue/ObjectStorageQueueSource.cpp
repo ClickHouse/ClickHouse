@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/parseGlobs.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/Settings.h>
@@ -231,7 +230,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 size_t num_successful_objects = 0;
                 Strings processing_paths;
                 String processor_info;
-                String processing_id = getRandomASCIIString(10);
+                const auto processing_id = ObjectStorageQueueIFileMetadata::generateProcessingID();
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(

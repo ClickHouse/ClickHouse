@@ -1,6 +1,5 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Interpreters/Context.h>
@@ -39,8 +38,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
     const std::string & processing_id)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-    node_metadata.processing_id = processing_id;
-    processor_info = getProcessorInfo(node_metadata.processing_id);
+    processor_info = getProcessorInfo(processing_id);
 
     SetProcessingResponseIndexes result;
 
@@ -66,7 +64,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
     Coordination::Requests requests;
-    auto result = prepareProcessingRequestsImpl(requests, getRandomASCIIString(10));
+    auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
 
     Coordination::Responses responses;
     bool is_retry = false;

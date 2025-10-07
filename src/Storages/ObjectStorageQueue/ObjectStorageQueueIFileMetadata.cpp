@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -98,7 +99,7 @@ std::string ObjectStorageQueueIFileMetadata::NodeMetadata::toString() const
     json.set("last_processed_timestamp", now());
     json.set("last_exception", last_exception);
     json.set("retries", retries);
-    json.set("processing_id", processing_id);
+    json.set("processor_id", ""); /// Remains for compatibility
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -117,7 +118,6 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
     metadata.last_processed_timestamp = json->getValue<UInt64>("last_processed_timestamp");
     metadata.last_exception = json->getValue<String>("last_exception");
     metadata.retries = json->getValue<UInt64>("retries");
-    metadata.processing_id = json->getValue<String>("processing_id");
     return metadata;
 }
 
@@ -258,6 +258,11 @@ std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string 
     return oss.str();
 }
 
+std::string ObjectStorageQueueIFileMetadata::generateProcessingID()
+{
+    return getRandomASCIIString(10);
+}
+
 bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
 {
     if (processor_info.empty())
@@ -343,6 +348,8 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
     if (success)
     {
         chassert(!file_state.has_value() || *file_state == FileStatus::State::None);
+        chassert(!processor_info.empty());
+
         created_processing_node = true;
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
@@ -362,6 +369,8 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
+    chassert(created_processing_node);
+
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
