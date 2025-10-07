@@ -22,6 +22,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
 }
 
 struct RepareEntry
