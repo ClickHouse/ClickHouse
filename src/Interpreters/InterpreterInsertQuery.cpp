@@ -9,6 +9,8 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -80,6 +82,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace MergeTreeSetting
@@ -469,23 +472,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
-        async_insert, /*skip_destination_table*/ no_destination,
+        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
         getContext());
 
-    size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
+    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
-    if (!settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved())
-    {
-        sink_streams_size = 1;
-    }
-
-    std::vector<Chain> sink_chains;
-    for (size_t i = 0; i < sink_streams_size; ++i)
-    {
-        sink_chains.push_back(insert_dependencies->createChainWithDependencies());
-    }
-
-    pipeline.resize(sink_streams_size);
+    pipeline.resize(insert_dependencies->getSinkStreamSize());
 
     if (should_squash)
     {
@@ -689,11 +681,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, query_sample_block,
-        async_insert, /*skip_destination_table*/ no_destination,
+        table,
+        query_ptr,
+        query_sample_block,
+        async_insert,
+        /*skip_destination_table*/ no_destination,
+        /*max_insert_threads*/ 1,
         getContext());
 
-    Chain chain = insert_dependencies->createChainWithDependencies();
+    auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    chassert(chains.size() == 1);
+    auto chain = std::move(chains.front());
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
@@ -760,6 +758,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
+            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
             if (joined_tables.tablesCount() == 1)
                 src_storage = joined_tables.getLeftTableStorage();

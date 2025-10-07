@@ -251,10 +251,10 @@ public:
     }
 #endif
 
-    void modifyFormatSettings(FormatSettings & settings_) const override
+    void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
         assertInitialized();
-        current_metadata->modifyFormatSettings(settings_);
+        current_metadata->modifyFormatSettings(settings_, local_context);
     }
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
