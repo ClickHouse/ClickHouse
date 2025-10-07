@@ -27,6 +27,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
 extern const int FAULT_INJECTED;
+extern const int LOGICAL_ERROR;
 };
 
 namespace FailPoints
