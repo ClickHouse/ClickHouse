@@ -210,11 +210,12 @@ private:
     InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
+    const LoggerPtr log;
 
     std::filesystem::path tmp_path;
     bool moved = false;
 
-    void inMemoryTreeMove(std::filesystem::path from, std::filesystem::path to);
+    void inMemoryTreeMove(const std::filesystem::path & from, const std::filesystem::path & to);
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(

@@ -560,18 +560,19 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     , path_map(path_map_)
     , object_storage(std::move(object_storage_))
     , metadata_key_prefix(metadata_key_prefix_)
-    , tmp_path("remove_recursive." + getRandomASCIIString(16))
+    , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     std::string base_path = path;
     if (base_path.ends_with('/'))
         base_path.pop_back();
 
     path = base_path;
+    tmp_path = "remove_recursive." + getRandomASCIIString(16);
 }
 
-void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTreeMove(std::filesystem::path from, std::filesystem::path to)
+void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTreeMove(const std::filesystem::path & from, const std::filesystem::path & to)
 {
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"), "Moving directory tree form '{}' to '{}'", from, to);
+    LOG_TRACE(log, "Moving directory tree form '{}' to '{}'", from, to);
 
     std::unordered_set<std::string> subdirs = {""};
     path_map.iterateSubdirectories(from.string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
@@ -580,8 +581,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTree
         auto sub_path_to = to / subdir;
         auto sub_path_from = from / subdir;
 
-        path_map.print();
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"), "Moving '{}' to '{}'", sub_path_from, sub_path_to);
+        LOG_TRACE(log, "Moving '{}' to '{}'", sub_path_from, sub_path_to);
 
         /// parent_path() removes the trailing '/'.
         path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
@@ -617,10 +617,9 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     for (const auto & subdir : subdirs)
     {
         auto subdir_path = tmp_path / subdir;
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"), "Removing directory '{}'", subdir_path);
+        LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         /// Info should exist since it's lifetime is bounded to execution of this operation, because tmp path is unique.
-        path_map.print();
         auto directory_info = path_map.getRemotePathInfoIfExists(subdir_path.parent_path()).value();
         auto metadata_object_key = createMetadataObjectKey(directory_info.path, metadata_key_prefix);
         objects_to_remove.emplace_back(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
@@ -631,7 +630,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         for (const auto & file : files)
         {
             auto file_path = subdir_path / file;
-            LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"), "Removing file '{}'", file_path);
+            LOG_TRACE(log, "Removing file '{}'", file_path);
 
             auto file_object_key = object_storage->generateObjectKeyForPath(file_path, std::nullopt).serialize();
             objects_to_remove.emplace_back(file_object_key, file_path);
@@ -642,9 +641,9 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     for (const auto & subdir : subdirs)
     {
         auto subdir_path = tmp_path / subdir;
-        path_map.print();
-        bool is_removed = path_map.removePathIfExists(subdir_path.parent_path());
-        chassert(is_removed, subdir_path);
+        const bool is_removed = path_map.removePathIfExists(subdir_path.parent_path());
+        if (!is_removed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't remove '{}' path from in memory map. Probably it does not exist. It is a bug.", subdir_path);
     }
 
     object_storage->removeObjectsIfExist(objects_to_remove);
