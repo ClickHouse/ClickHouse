@@ -494,39 +494,87 @@ CONV_FN(SpecialVal, val)
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::min());
+            if (val.paren())
+            {
+                ret += "::Int32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::max());
+            if (val.paren())
+            {
+                ret += "::Int32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::min());
+            if (val.paren())
+            {
+                ret += "::Int64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::max());
+            if (val.paren())
+            {
+                ret += "::Int64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT128:
             ret += "-170141183460469231731687303715884105728";
+            if (val.paren())
+            {
+                ret += "::Int128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT128:
             ret += "170141183460469231731687303715884105727";
+            if (val.paren())
+            {
+                ret += "::Int128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT256:
             ret += "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+            if (val.paren())
+            {
+                ret += "::Int256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
             ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+            if (val.paren())
+            {
+                ret += "::Int256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
             ret += std::to_string(std::numeric_limits<uint32_t>::max());
+            if (val.paren())
+            {
+                ret += "::UInt32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT64:
             ret += std::to_string(std::numeric_limits<uint64_t>::max());
+            if (val.paren())
+            {
+                ret += "::UInt64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT128:
             ret += "340282366920938463463374607431768211455";
+            if (val.paren())
+            {
+                ret += "::UInt128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
             ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+            if (val.paren())
+            {
+                ret += "::UInt256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
             ret += "'1970-01-01'";
