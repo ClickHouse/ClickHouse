@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
-#include "Interpreters/Context_fwd.h"
 
 #if USE_PARQUET
 
