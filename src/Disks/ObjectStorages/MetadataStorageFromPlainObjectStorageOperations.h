@@ -212,6 +212,7 @@ private:
     const std::string metadata_key_prefix;
 
     std::filesystem::path tmp_path;
+    bool moved = false;
 
     void inMemoryTreeMove(std::filesystem::path from, std::filesystem::path to);
 

@@ -571,6 +571,8 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTreeMove(std::filesystem::path from, std::filesystem::path to)
 {
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"), "Moving directory tree form '{}' to '{}'", from, to);
+
     std::unordered_set<std::string> subdirs = {""};
     path_map.iterateSubdirectories(from.string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
     for (const auto & subdir : subdirs)
@@ -588,16 +590,26 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::inMemoryTree
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
-    inMemoryTreeMove(path, tmp_path);
+    if (path_map.existsLocalPath(path))
+    {
+        inMemoryTreeMove(path, tmp_path);
+        moved = true;
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 {
-    inMemoryTreeMove(tmp_path, path);
+    if (moved)
+    {
+        inMemoryTreeMove(tmp_path, path);
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 {
+    if (!moved)
+        return;
+
     StoredObjects objects_to_remove;
 
     std::unordered_set<std::string> subdirs = {""};
