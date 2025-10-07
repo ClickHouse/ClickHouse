@@ -88,6 +88,7 @@ private:
 
             if (++num_increments >= n)
                 left_iterator = getNextPosition(left_iterator);
+
             return true;
         }
 
@@ -174,7 +175,7 @@ private:
                     .left_index = possible_left_position,
                     .right_index = next_right_position,
                     .symbols_between = length
-                });
+                });        
         }
 
         /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
@@ -347,7 +348,7 @@ public:
             {
                 start = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                end = reinterpret_cast<Pos>(&src_data[current_src_offset]) - 1;
+                end = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 impl.set(start, end);
                 while (impl.get(start, end))
                     res_data.push_back(hasher(start, end - start));
