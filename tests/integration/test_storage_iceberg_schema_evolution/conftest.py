@@ -21,7 +21,7 @@ def get_spark():
         )
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
@@ -30,7 +30,7 @@ def get_spark():
     )
     return builder.master("local").getOrCreate()
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def started_cluster_iceberg_schema_evolution():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)

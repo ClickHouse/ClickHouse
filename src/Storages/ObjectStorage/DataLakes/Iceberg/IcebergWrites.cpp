@@ -36,6 +36,7 @@
 #include <Common/randomSeed.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Columns/IColumn.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
@@ -79,8 +80,8 @@ namespace Setting
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsUInt64 max_iceberg_data_file_rows;
-extern const SettingsUInt64 max_iceberg_data_file_bytes;
+extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 }
 
 namespace DataLakeStorageSetting
@@ -227,7 +228,12 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_)
+FileNamesGenerator::FileNamesGenerator(
+    const String & table_dir_,
+    const String & storage_dir_,
+    bool use_uuid_in_metadata_,
+    CompressionMethod compression_method_,
+    const String & format_name_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
@@ -236,6 +242,7 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String &
     , storage_metadata_dir(storage_dir + "metadata/")
     , use_uuid_in_metadata(use_uuid_in_metadata_)
     , compression_method(compression_method_)
+    , format_name(boost::to_lower_copy(format_name_))
 {
 }
 
@@ -251,6 +258,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 }
 
 FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
@@ -268,6 +276,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
+    format_name = other.format_name;
 
     return *this;
 }
@@ -277,8 +286,8 @@ FileNamesGenerator::Result FileNamesGenerator::generateDataFileName()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}data-{}.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}data-{}.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}data-{}.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}data-{}.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
@@ -341,8 +350,8 @@ FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
     auto uuid_str = uuid_generator.createRandom().toString();
 
     return Result{
-        .path_in_metadata = fmt::format("{}{}-deletes.parquet", data_dir, uuid_str),
-        .path_in_storage = fmt::format("{}{}-deletes.parquet", storage_data_dir, uuid_str)
+        .path_in_metadata = fmt::format("{}{}-deletes.{}", data_dir, uuid_str, format_name),
+        .path_in_storage = fmt::format("{}{}-deletes.{}", storage_data_dir, uuid_str, format_name)
     };
 }
 
@@ -1084,7 +1093,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
+
     size_t partitions_count = partition_num_to_first_row.size();
+    chassert(partitions_count > 0);
     std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
     result_columns.reserve(partitions_count);
 
@@ -1309,7 +1320,7 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, /* if_not_updated_before */ true);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
@@ -1324,14 +1335,14 @@ IcebergStorageSink::IcebergStorageSink(
 
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -1378,8 +1389,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
         if (!writer_per_partition_key.contains(partition_key))
         {
             auto writer = MultipleFileWriter(
-                context->getSettingsRef()[Setting::max_iceberg_data_file_rows],
-                context->getSettingsRef()[Setting::max_iceberg_data_file_bytes],
+                context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file],
+                context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 current_schema->getArray(Iceberg::f_fields),
                 filename_generator,
                 object_storage,

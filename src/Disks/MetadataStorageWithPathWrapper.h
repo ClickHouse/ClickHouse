@@ -55,19 +55,14 @@ public:
         delegate->writeInlineDataToFile(wrappedPath(path), data);
     }
 
-    void createEmptyMetadataFile(const std::string & path) override
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override
     {
-        delegate->createEmptyMetadataFile(wrappedPath(path));
+        delegate->createMetadataFile(wrappedPath(path), objects);
     }
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override
     {
-        delegate->createMetadataFile(wrappedPath(path), object_key, size_in_bytes);
-    }
-
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
-    {
-        delegate->addBlobToMetadata(wrappedPath(path), object_key, size_in_bytes);
+        delegate->addBlobToMetadata(wrappedPath(path), object);
     }
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override
@@ -137,9 +132,9 @@ public:
         return delegate->unlinkMetadata(wrappedPath(path));
     }
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override
     {
-        return delegate->truncateFile(wrappedPath(src_path), target_size);
+        return delegate->truncateFile(wrappedPath(src_path), size);
     }
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override

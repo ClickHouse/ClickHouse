@@ -5,7 +5,6 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
-
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
     for job in JobConfigs.functional_tests_jobs
@@ -41,7 +40,11 @@ workflow = Workflow.Config(
             for job in JobConfigs.build_jobs
         ],
         *[
-            job.set_dependency(REGULAR_BUILD_NAMES)
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.release_build_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
@@ -54,11 +57,7 @@ workflow = Workflow.Config(
             for j in JobConfigs.functional_tests_jobs
         ],
         JobConfigs.bugfix_validation_it_job.set_dependency(
-            [
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                JobConfigs.tidy_build_arm_jobs[0].name,
-            ]
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
@@ -70,7 +69,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        JobConfigs.integration_test_asan_flaky_pr_job,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.docker_sever.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
@@ -130,7 +129,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
     workflow_filter_hooks=[should_skip_job],

@@ -3,7 +3,6 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -33,6 +32,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -195,20 +195,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
-    SerializationInfoByName serialization_infos;
-
+    SerializationInfoByName serialization_infos({});
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            SerializationInfo::Settings settings{ratio_of_defaults, false};
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failed to load file {} of data part {}, with error {}",
+                IMergeTreeDataPart::SERIALIZATION_FILE_NAME,
+                data_part->name,
+                getCurrentExceptionMessage(true));
         }
     }
 
@@ -216,7 +218,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto it = serialization_infos.find(column.name);
         return it == serialization_infos.end()
-            ? column.type->getDefaultSerialization()
+            ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
     };
 
@@ -289,10 +291,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projections_on_disk.insert(file_name);
             continue;
         }
-
-        /// Exclude files written by text index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
-            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.

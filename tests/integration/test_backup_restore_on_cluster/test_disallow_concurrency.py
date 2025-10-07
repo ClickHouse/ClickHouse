@@ -1,5 +1,6 @@
 import concurrent
 import os.path
+import tempfile
 import re
 import time
 from random import randint
@@ -15,12 +16,14 @@ num_nodes = 2
 
 
 def generate_cluster_def():
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/cluster_for_test_disallow_concurrency.xml",
-    )
+    dir = os.path.dirname(os.path.realpath(__file__))
+    path = os.path.join(dir, "./_gen/cluster_for_test_disallow_concurrency.xml")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+
+    # Atomic write of the temporary file (since this code can be run in parallel for tests discovery)
+    temp_path = None
+    with tempfile.NamedTemporaryFile(mode='w', dir=dir, delete=False) as f:
+        temp_path = f.name
         f.write(
             """
         <clickhouse>
@@ -48,6 +51,7 @@ def generate_cluster_def():
         </clickhouse>
         """
         )
+    os.rename(temp_path, path)
     return path
 
 

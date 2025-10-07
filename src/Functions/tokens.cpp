@@ -129,7 +129,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+                "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', and 'array'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))

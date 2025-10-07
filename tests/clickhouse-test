@@ -1229,6 +1229,8 @@ class MergeTreeSettingsRandomizer:
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "serialization_info_version": lambda: random.choice(["default", "with_types"]),
+        "string_serialization_version": lambda: random.choice(["default", "with_size_stream"]),
     }
 
     @staticmethod
@@ -1594,6 +1596,10 @@ class TestCase:
             return FailureReason.NO_LONG
 
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
+            return FailureReason.REPLICATED_DB
+
+        # RocksDB tests cannot be used with replicated database as, in our CI, the databases share the same user_files
+        if tags and ("use-rocksdb" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
         if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
@@ -3625,6 +3631,10 @@ def main(args):
         sys.exit(1)
     else:
         print("All tests have finished.")
+
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
 
     if args.report_logs_stats:
         try:

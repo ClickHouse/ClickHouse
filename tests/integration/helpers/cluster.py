@@ -2,6 +2,7 @@ import base64
 import concurrent
 import errno
 import http.client
+import json
 import logging
 import os
 import os.path as p
@@ -19,8 +20,6 @@ import time
 import traceback
 import urllib.parse
 import uuid
-from glob import glob
-from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -41,12 +40,10 @@ try:
     import pymongo
     import pymysql
     import nats
+    from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
-    from confluent_kafka.avro.cached_schema_registry_client import (
-        CachedSchemaRegistryClient,
-    )
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -208,39 +205,56 @@ def is_port_free(port: int) -> bool:
 
 class PortPoolManager:
     """
-    This class is used for distribution of ports allocated to single pytest-xdist worker
-    It can be used by multiple ClickHouseCluster instances
+    Thread/process-safe port pool manager using a JSON file and filelock.
+    Ensures only one worker modifies ports.json at a time.
     """
 
-    # Shared between instances
-    all_ports = None
-    free_ports = None
+    PORTS_FILE = Path("/tmp/ports.json")
+    LOCK_FILE = PORTS_FILE.with_suffix(".lock")
+    START_PORT = 30000
+    END_PORT = 50000
 
-    def __init__(self):
-        self.used_ports = []
+    @classmethod
+    def get_port(cls):
+        lock = FileLock(str(cls.LOCK_FILE))
 
-        if self.all_ports is None:
-            worker_ports = os.getenv("WORKER_FREE_PORTS")
-            ports = [int(p) for p in worker_ports.split(" ")]
+        try:
+            with lock.acquire(timeout=5):
+                return cls._allocate_port()
+        except Timeout:
+            # Force unlock if lock file is stale
+            print(f"[WARN] Lock timeout exceeded, removing {cls.LOCK_FILE}")
+            try:
+                os.remove(cls.LOCK_FILE)
+            except FileNotFoundError:
+                pass
+            # Retry once after force unlock
+            with lock:
+                return cls._allocate_port()
 
-            # Static vars
-            PortPoolManager.all_ports = ports
-            PortPoolManager.free_ports = ports
+    @classmethod
+    def _allocate_port(cls):
+        if cls.PORTS_FILE.exists():
+            with open(cls.PORTS_FILE, "r", encoding="utf-8") as f:
+                ports = json.load(f)
+        else:
+            ports = {"used_ports": []}
 
-    def get_port(self):
-        for port in self.free_ports:
+        used_ports = ports["used_ports"]
+
+        for port in range(cls.START_PORT, cls.END_PORT):
+            if port in used_ports:
+                continue
             if is_port_free(port):
-                self.free_ports.remove(port)
-                self.used_ports.append(port)
+                used_ports.append(port)
+                ports_data = {
+                    "used_ports": used_ports,
+                }
+                with open(cls.PORTS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(ports_data, f, indent=2)
                 return port
 
-        raise Exception(
-            f"No free ports: {self.all_ports}",
-        )
-
-    def return_used_ports(self):
-        self.free_ports.extend(self.used_ports)
-        self.used_ports.clear()
+        raise Exception(f"No free ports available in range {cls.START_PORT} - {cls.END_PORT}")
 
 
 def docker_exec(*args: str) -> Tuple[str, ...]:
@@ -654,6 +668,9 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
+        # Make it cleaner
+        self.minio_access_key = minio_access_key
+        self.minio_secret_key = minio_secret_key
 
         self.spark_session = None
         self.with_iceberg_catalog = False
@@ -862,7 +879,6 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
-            # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
                 # The jars are now linked to "$SPARK_HOME/jars" and we don't
@@ -964,9 +980,6 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1846,7 +1859,7 @@ class ClickHouseCluster:
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
-        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in DEBUG and ASAN build (i.e. if not explicitly set to false)
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
         with_remote_database_disk=None,
         with_azurite=False,
         with_cassandra=False,
@@ -1927,7 +1940,18 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            # Not enabled in public
+            # FIXME: https://github.com/ClickHouse/ClickHouse/issues/87656
+            #
+            # if ClickHouseInstance.is_local_server_asan_build == None:
+            #     build_opts = subprocess.check_output(
+            #         f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
+            #         stderr=subprocess.STDOUT,
+            #         shell=True,
+            #     ).decode()
+            #     ClickHouseInstance.is_local_server_asan_build = (
+            #         "-fsanitize=address" in build_opts
+            #     )
+            # with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
             with_remote_database_disk = False
 
         if with_remote_database_disk:
@@ -3223,7 +3247,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images)(run_and_check, images_pull_cmd)
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3800,7 +3824,10 @@ class ClickHouseCluster:
 
         if self.with_net_trics:
             try:
-                self.docker_net_lock.release()
+                if self.docker_net_lock is not None:
+                    self.docker_net_lock.release()
+                else:
+                    logging.debug("docker_net_lock is None, nothing to release")
             except Exception as e:
                 logging.warning(f"Failed to release lock: {e}")
 
@@ -3950,7 +3977,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - /debug:/debug:ro
+            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -3999,6 +4026,7 @@ services:
 
 
 class ClickHouseInstance:
+    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
@@ -4201,7 +4229,7 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
+        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4738,6 +4766,12 @@ class ClickHouseInstance:
             user="root",
         )
 
+    def give_user_files_permissions(self):
+        self.exec_in_container(
+            ["bash", "-c", f"chown -R {str(os.getuid())}:{str(os.getgid())} /var/lib/clickhouse/user_files"],
+            user="root",
+        )
+
     def contains_in_log(
         self,
         substring,
@@ -4810,20 +4844,14 @@ class ClickHouseInstance:
         filename="/var/log/clickhouse-server/clickhouse-server.log",
         timeout=30,
         repetitions=1,
-        look_behind_lines=100,
+        look_behind_lines=10000,
     ):
         start_time = time.time()
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
-                'timeout {} stdbuf -o0 -e0 tail -Fn{} "{}" | stdbuf -o0 -e0 tee /dev/stderr | grep -Em {} {}'.format(
-                    timeout,
-                    look_behind_lines,
-                    filename,
-                    repetitions,
-                    shlex.quote(regexp),
-                ),
+                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
             ]
         )
 
@@ -5576,6 +5604,7 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
+                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR
                 )
             )
 

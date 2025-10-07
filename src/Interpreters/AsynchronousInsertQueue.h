@@ -5,11 +5,12 @@
 #include <Processors/Chunk.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
+#include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
-#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -92,9 +93,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<String, Block>
+    struct DataChunk : public std::variant<TrackedString, Block>
     {
-        using std::variant<String, Block>::variant;
+        using std::variant<TrackedString, Block>::variant;
 
         size_t byteSize() const
         {
@@ -125,7 +126,7 @@ private:
             }, *this);
         }
 
-        const String * asString() const { return std::get_if<String>(this); }
+        const TrackedString * asString() const { return std::get_if<TrackedString>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -222,7 +223,7 @@ private:
         void updateWithCurrentTime();
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         TimePoints time_points;
     };
 

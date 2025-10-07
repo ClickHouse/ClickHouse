@@ -4,6 +4,7 @@ sidebar_label: 'Data types binary encoding specification.'
 sidebar_position: 56
 slug: /sql-reference/data-types/data-types-binary-encoding
 title: 'Data types binary encoding specification'
+doc_type: 'reference'
 ---
 
 # Data types binary encoding specification
@@ -67,6 +68,7 @@ The table below describes how each data type is represented in binary format. Ea
 | `BFloat16`                                                                                                | `0x31`                                                                                                                                                                                                                                                                                                                                                                     |
 | `Time`                                                                                                    | `0x32`                                                                                                                                                                                                                                                                                                                                                                     |
 | `Time64(P)`                                                                                               | `0x34<uint8_precision>`                                                                                                                                                                                                                                                                                                                                                    |
+| `QBit(T, N)`                                                                                              | `0x36<element_type_encoding><var_uint_dimension>`                                                                                                                                                                                                                                                                                                                          |
 
 For type `JSON` byte `uint8_serialization_version` indicates the version of the serialization. Right now the version is always 0 but can change in future if new arguments will be introduced for `JSON` type.
 

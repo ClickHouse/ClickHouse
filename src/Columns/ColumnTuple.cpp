@@ -193,12 +193,17 @@ void ColumnTuple::insertData(const char *, size_t)
 void ColumnTuple::insert(const Field & x)
 {
     const auto & tuple = x.safeGet<Tuple>();
-
     const size_t tuple_size = columns.size();
+
     if (tuple.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            tuple.size(),
+            tuple_size);
 
     ++column_length;
+
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -236,12 +241,17 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
-
     const size_t tuple_size = columns.size();
+
     if (src.columns.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src.columns.size(),
+            tuple_size);
 
     ++column_length;
+
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
@@ -256,10 +266,15 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     const size_t tuple_size = columns.size();
     if (src_tuple.columns.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src_tuple.columns.size(),
+            tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+
     column_length += length;
 }
 
@@ -329,6 +344,27 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
+StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (columns.empty())
+    {
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
+    }
+
+    StringRef res(begin, 0);
+    for (const auto & column : columns)
+    {
+        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
     for (const auto & column : columns)
@@ -361,6 +397,19 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 
     for (auto & column : columns)
         pos = column->deserializeAndInsertFromArena(pos);
+
+    return pos;
+}
+
+const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    ++column_length;
+
+    if (columns.empty())
+        return pos + 1;
+
+    for (auto & column : columns)
+        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
 
     return pos;
 }
@@ -847,6 +896,13 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 
     for (size_t i = 0; i != columns.size(); ++i)
         columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
+}
+
+void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
 

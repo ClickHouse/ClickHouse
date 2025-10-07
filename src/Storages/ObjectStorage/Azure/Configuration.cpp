@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "tenant_id",
 };
 
-void StorageAzureConfiguration::check(ContextPtr context) const
+void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
@@ -267,6 +268,27 @@ bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std
     }
 
     return true;
+}
+
+void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    disk = context->getDisk(disk_name);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
+
+    connection_params = azure_object_storage.getConnectionParameters();
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
+
+    blob_path = "/" + parsing_result.path_suffix;
+    setPathForRead(blob_path.path + "/");
+    setPaths({blob_path.path + "/"});
+
+    blobs_paths = {blob_path};
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
@@ -608,7 +630,22 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (disk)
+    {
+        if (format == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (structure == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
+    }
+    else if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
