@@ -1,3 +1,4 @@
+#include <chrono>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
@@ -83,28 +84,21 @@ namespace DB::ServerSetting
 namespace HistogramMetrics
 {
     extern MetricFamily & KeeperResponseTime;
-    extern MetricFamily & KeeperClientEnqueueDuration;
-    extern MetricFamily & KeeperClientQueueDuration;
-    extern MetricFamily & KeeperClientSendDuration;
+    extern Metric & KeeperClientQueueDuration;
+    extern Metric & KeeperClientSendDuration;
     extern MetricFamily & KeeperClientRoundtripDuration;
 }
 
-namespace Metrics::ResponseTime
+template <typename Response>
+void instrumentResponseTimeMetric(std::function<void(const Response &)> & callback, HistogramMetrics::Metric & histogram)
 {
-    using namespace DB;
-
-    template <typename Response>
-    void instrument(std::function<void(const Response &)> & callback, HistogramMetrics::Metric & histogram)
+    callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
     {
-        callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
-        {
-            const Int64 response_time = timer.elapsedMilliseconds();
-            histogram.observe(response_time);
-            return callback(response);
-        };
-    }
+        const Int64 response_time = timer.elapsedMilliseconds();
+        histogram.observe(response_time);
+        return callback(response);
+    };
 }
-
 
 /** ZooKeeper wire protocol.
 
@@ -321,11 +315,6 @@ namespace Coordination
 {
 
 using namespace DB;
-
-HistogramMetrics::Metric & ZooKeeper::enqueue_duration_metric = HistogramMetrics::KeeperClientEnqueueDuration.withLabels({});
-HistogramMetrics::Metric & ZooKeeper::queue_duration_metric = HistogramMetrics::KeeperClientQueueDuration.withLabels({});
-HistogramMetrics::Metric & ZooKeeper::send_duration_metric = HistogramMetrics::KeeperClientSendDuration.withLabels({});
-HistogramMetrics::Metric & ZooKeeper::roundtrip_duration_metric = HistogramMetrics::KeeperClientRoundtripDuration.withLabels({});
 
 
 template <typename T>
@@ -808,7 +797,8 @@ void ZooKeeper::sendThread()
 
                     auto dequeue_ts = clock::now();
 
-                    queue_duration_metric.observe(
+                    HistogramMetrics::observe(
+                        HistogramMetrics::KeeperClientQueueDuration,
                         std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.enqueue_ts).count());
 
                     if (info.request->xid != close_xid)
@@ -835,8 +825,9 @@ void ZooKeeper::sendThread()
 
                     info.send_ts = clock::now();
 
-                    send_duration_metric.observe(
-                        std::chrono::duration_cast<std::chrono::milliseconds>(send_ts - dequeue_ts).count());
+                    HistogramMetrics::observe(
+                        HistogramMetrics::KeeperClientSendDuration,
+                        std::chrono::duration_cast<std::chrono::milliseconds>(info.send_ts - dequeue_ts).count());
 
                     logOperationIfNeeded(info.request);
 
@@ -897,7 +888,7 @@ void ZooKeeper::receiveThread()
                 {
                     /// Operations are ordered by xid (and consequently, by time).
                     earliest_operation = operations.begin()->second;
-                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
+                    auto earliest_operation_deadline = earliest_operation->create_ts + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
                     if (now > earliest_operation_deadline)
                         throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
                                         args.operation_timeout_ms, earliest_operation->request->getPath());
@@ -1027,14 +1018,16 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.push_ts).count();
+        auto receive_ts = clock::now();
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.create_ts).count();
+
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
+
+        HistogramMetrics::observe(
+            HistogramMetrics::KeeperClientRoundtripDuration,
+            {toMetricLabel(request_info.request->getOpNum())},
+            std::chrono::duration_cast<std::chrono::milliseconds>(receive_ts - request_info.create_ts).count());
     }
-
-    auto receive_ts = clock::now();
-
-    roundtrip_duration_metric.observe(
-        std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.send_ts).count());
 
     try
     {
@@ -1251,7 +1244,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.push_ts).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.create_ts).count();
 
                 if (request_info.callback)
                 {
@@ -1319,7 +1312,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.push_ts).count();
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.create_ts).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                         observeOperation(info.request.get(), response.get(), elapsed_microseconds);
                     }
@@ -1358,7 +1351,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        info.push_ts = clock::now();
+        info.create_ts = clock::now();
         auto maybe_zk_log = getZooKeeperLog();
         if (maybe_zk_log)
         {
@@ -1386,6 +1379,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         maybeInjectSendFault();
 
+        info.enqueue_ts = clock::now();
+
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
             if (requests_queue.isFinished())
@@ -1393,11 +1388,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
             throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
         }
-
-        info.enqueue_ts = clock::now();
-
-        enqueue_duration_metric.observe(
-            std::chrono::duration_cast<std::chrono::milliseconds>(info.enqueue_ts - info.push_ts).count());
     }
     catch (...)
     {
@@ -1526,13 +1516,12 @@ void ZooKeeper::create(
 
     request.acls = std::move(final_acls);
 
-    static HistogramMetrics::Metric & create_metric = HistogramMetrics::KeeperResponseTime.withLabels({"create"});
-    Metrics::ResponseTime::instrument(callback, create_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"create"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCreateRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CreateResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
 }
@@ -1546,13 +1535,12 @@ void ZooKeeper::remove(
     request.path = path;
     request.version = version;
 
-    static HistogramMetrics::Metric & remove_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove"});
-    Metrics::ResponseTime::instrument(callback, remove_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
@@ -1569,13 +1557,12 @@ void ZooKeeper::removeRecursive(
     request.path = path;
     request.remove_nodes_limit = remove_nodes_limit;
 
-    static HistogramMetrics::Metric & remove_recursive_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove_recursive"});
-    Metrics::ResponseTime::instrument(callback, remove_recursive_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"remove_recursive"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
@@ -1588,14 +1575,13 @@ void ZooKeeper::exists(
     ZooKeeperExistsRequest request;
     request.path = path;
 
-    static HistogramMetrics::Metric & exists_metric = HistogramMetrics::KeeperResponseTime.withLabels({"exists"});
-    Metrics::ResponseTime::instrument(callback, exists_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"exists"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
     request_info.watch = watch;
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 }
@@ -1609,14 +1595,13 @@ void ZooKeeper::get(
     ZooKeeperGetRequest request;
     request.path = path;
 
-    static HistogramMetrics::Metric & get_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get"});
-    Metrics::ResponseTime::instrument(callback, get_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
     request_info.watch = watch;
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
 }
@@ -1633,13 +1618,12 @@ void ZooKeeper::set(
     request.data = data;
     request.version = version;
 
-    static HistogramMetrics::Metric & set_metric = HistogramMetrics::KeeperResponseTime.withLabels({"set"});
-    Metrics::ResponseTime::instrument(callback, set_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"set"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SetResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
 }
@@ -1668,15 +1652,14 @@ void ZooKeeper::list(
 
     request->path = path;
 
-    static HistogramMetrics::Metric & list_metric = HistogramMetrics::KeeperResponseTime.withLabels({"list"});
-    Metrics::ResponseTime::instrument(callback, list_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"list"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     if (watch)
         request_info.watch = std::move(watch);
     request_info.request = std::move(request);
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
 }
@@ -1691,13 +1674,12 @@ void ZooKeeper::check(
     request.path = path;
     request.version = version;
 
-    static HistogramMetrics::Metric & check_metric = HistogramMetrics::KeeperResponseTime.withLabels({"check"});
-    Metrics::ResponseTime::instrument(callback, check_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"check"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCheckRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
 }
@@ -1709,13 +1691,12 @@ void ZooKeeper::sync(
     ZooKeeperSyncRequest request;
     request.path = path;
 
-    static HistogramMetrics::Metric & sync_metric = HistogramMetrics::KeeperResponseTime.withLabels({"sync"});
-    Metrics::ResponseTime::instrument(callback, sync_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"sync"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
@@ -1733,13 +1714,12 @@ void ZooKeeper::reconfig(
     request.new_members = new_members;
     request.version = version;
 
-    static HistogramMetrics::Metric & reconfig_metric = HistogramMetrics::KeeperResponseTime.withLabels({"reconfig"});
-    Metrics::ResponseTime::instrument(callback, reconfig_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"reconfig"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperReconfigRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ReconfigResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperReconfig);
 }
@@ -1756,13 +1736,12 @@ void ZooKeeper::getACL(const String & path, GetACLCallback callback)
     ZooKeeperGetACLRequest request;
     request.path = path;
 
-    static HistogramMetrics::Metric & get_acl_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get_acl"});
-    Metrics::ResponseTime::instrument(callback, get_acl_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"get_acl"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetACLRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
-
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGetACL);
 }
@@ -1810,8 +1789,8 @@ void ZooKeeper::multi(
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
     }
 
-    static HistogramMetrics::Metric & multi_metric = HistogramMetrics::KeeperResponseTime.withLabels({"multi"});
-    Metrics::ResponseTime::instrument(callback, multi_metric);
+    static HistogramMetrics::Metric & total_response_time_metric = HistogramMetrics::KeeperResponseTime.withLabels({"multi"});
+    instrumentResponseTimeMetric(callback, total_response_time_metric);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));

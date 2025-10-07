@@ -397,10 +397,30 @@ extern const std::vector<Metric> keeper_metrics
 #undef M
 }
 
+#define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperServerPreprocessRequestDurationMetricFamily) \
+    M(KeeperServerProcessRequestDuration) \
+    M(KeeperServerQueueDurationMetricFamily) \
+    M(KeeperServerSendDurationMetricFamily) \
+
+
 namespace HistogramMetrics
 {
-    std::vector<MetricFamily *> keeper_histograms;
+#define M(NAME) extern MetricFamily & NAME;
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+
+
+std::vector<MetricFamily *> keeper_histograms
+{
+#define M(NAME) &NAME,
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+};
+
 }
+
+#undef APPLY_FOR_KEEPER_HISTOGRAMS
 
 namespace DimensionalMetrics
 {
