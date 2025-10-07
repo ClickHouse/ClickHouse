@@ -1136,7 +1136,6 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -5032,18 +5031,22 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
     std::optional<SystemLogs> system_logs;
     {
-        SharedLockGuard lock2(shared->mutex);
-        if (!shared->system_logs)
+        std::lock_guard<std::mutex> lock(mutex_shared_context);
+        if (!shared)
             return;
-        system_logs.emplace(*shared->system_logs);
+
+        {
+            SharedLockGuard lock2(shared->mutex);
+            if (!shared->system_logs)
+                return;
+            system_logs.emplace(*shared->system_logs);
+        }
     }
 
+    /// Must be called without mutex_shared_context to avoid deadlock:
+    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
     system_logs->handleCrash();
 }
 
@@ -6866,16 +6869,6 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
-}
-
-void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
-{
-    storage_alias_behaviour = storage_alias_behaviour_;
-}
-
-uint8_t Context::getStorageAliasBehaviour() const
-{
-    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const

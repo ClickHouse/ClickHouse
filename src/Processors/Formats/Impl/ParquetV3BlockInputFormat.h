@@ -29,8 +29,7 @@ public:
 
     size_t getApproxBytesReadForChunk() const override
     {
-        /// TODO [parquet]:
-        return 0;
+        return previous_approx_bytes_read_for_chunk;
     }
 
     std::optional<std::vector<size_t>> getChunksByteSizes() override;
@@ -50,6 +49,7 @@ private:
     bool reported_count = false; // if need_only_count
 
     BlockMissingValues previous_block_missing_values;
+    size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
     std::optional<std::vector<size_t>> buckets_to_read;

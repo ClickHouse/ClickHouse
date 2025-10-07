@@ -127,7 +127,7 @@ public:
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
 
-    virtual void check(ContextPtr context) const;
+    virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
@@ -138,7 +138,10 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
-    virtual bool hasExternalDynamicMetadata() { return false; }
+    // This function is used primarily for datalake storages to check if we need to update metadata
+    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
+    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
+    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -146,7 +149,7 @@ public:
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, std::shared_ptr<RelativePathWithMetadata>) const { return {}; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const {}
+    virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual void addDeleteTransformers(
         std::shared_ptr<RelativePathWithMetadata> object_info,
@@ -165,7 +168,8 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -176,17 +180,14 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
+        StorageMetadataPtr /*storage_metadata*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -239,7 +240,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForObject(std::shared_ptr<RelativePathWithMetadata> /**/) const { return nullptr; }
 
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }

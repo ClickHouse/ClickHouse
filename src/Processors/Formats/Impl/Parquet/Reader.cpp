@@ -269,10 +269,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
     extended_sample_block_data_types = extended_sample_block.getDataTypes();
-    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
+    const auto & row_level_filter = format_filter_info->row_level_filter;
+    const auto & prewhere_info = format_filter_info->prewhere_info;
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
+    if (row_level_filter && !row_level_filter->do_remove_column)
+        schemer.external_columns.push_back(row_level_filter->column_name);
     if (prewhere_info && !prewhere_info->remove_prewhere_column)
         schemer.external_columns.push_back(prewhere_info->prewhere_column_name);
     schemer.prepareForReading();
@@ -306,6 +309,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         /*if (row_groups_to_read && !row_groups_to_read->contains(row_group_idx))
@@ -317,6 +321,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
+
+        total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -330,6 +336,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.need_to_process = !(row_groups_to_read && !row_groups_to_read->contains(row_group_idx));
+        row_group.row_group_idx = row_group_idx;
+        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 
@@ -456,7 +464,7 @@ void Reader::prepareBloomFilterCondition()
 
 void Reader::initializePrefetches()
 {
-    bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info
+    bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -602,8 +610,9 @@ void Reader::initializePrefetches()
 
 void Reader::preparePrewhere()
 {
-    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
-    if (!prewhere_info)
+    const auto & row_level_filter = format_filter_info->row_level_filter;
+    const auto & prewhere_info = format_filter_info->prewhere_info;
+    if (!prewhere_info && !row_level_filter)
         return;
 
     /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
@@ -614,25 +623,30 @@ void Reader::preparePrewhere()
 
     /// Convert ActionsDAG to ExpressionActions.
     ExpressionActionsSettings actions_settings;
-    if (prewhere_info->row_level_filter.has_value())
+    if (row_level_filter)
     {
-        ExpressionActions actions(prewhere_info->row_level_filter->clone(), actions_settings);
+        ExpressionActions actions(row_level_filter->actions.clone(), actions_settings);
+        prewhere_steps.push_back(PrewhereStep
+        {
+            .actions = std::move(actions),
+            .result_column_name = row_level_filter->column_name,
+        });
+
+        if (!row_level_filter->do_remove_column)
+            prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(row_level_filter->column_name);
+    }
+    if (prewhere_info)
+    {
+        ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
         prewhere_steps.push_back(PrewhereStep
             {
                 .actions = std::move(actions),
-                .result_column_name = prewhere_info->row_level_column_name
+                .result_column_name = prewhere_info->prewhere_column_name,
+                .need_filter = prewhere_info->need_filter,
             });
+        if (!prewhere_info->remove_prewhere_column)
+            prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
     }
-    ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
-    prewhere_steps.push_back(PrewhereStep
-        {
-            .actions = std::move(actions),
-            .result_column_name = prewhere_info->prewhere_column_name,
-            .need_filter = prewhere_info->need_filter,
-        });
-    if (!prewhere_info->remove_prewhere_column)
-        prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
-
     /// Look up expression inputs in extended_sample_block.
     for (PrewhereStep & step : prewhere_steps)
     {

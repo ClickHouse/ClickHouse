@@ -46,6 +46,7 @@ public:
         std::vector<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
+        bool encode_utf8 = false;
         bool enable_heavy_proxy_redirection = true;
     };
 

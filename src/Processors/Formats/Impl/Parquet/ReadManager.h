@@ -44,8 +44,15 @@ public:
 
     ~ReadManager();
 
+    struct ReadResult
+    {
+        Chunk chunk;
+        BlockMissingValues block_missing_values;
+        size_t virtual_bytes_read = 0;
+    };
+
     /// Not thread safe.
-    std::tuple<Chunk, BlockMissingValues> read();
+    ReadResult read();
 
     void cancel() noexcept;
 
@@ -63,6 +70,14 @@ private:
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
         size_t cost_estimate_bytes = 0;
+
+        struct Comparator
+        {
+            bool operator()(const Task & x, const Task & y) const
+            {
+                return std::make_tuple(x.row_group_idx, x.row_subgroup_idx) > std::make_tuple(y.row_group_idx, y.row_subgroup_idx);
+            }
+        };
     };
 
     struct Stage
@@ -91,7 +106,7 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::queue<Task> delivery_queue;
+    std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;

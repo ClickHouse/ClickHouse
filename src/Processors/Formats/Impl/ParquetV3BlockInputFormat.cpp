@@ -66,7 +66,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 /// as a signal to disable thread pool altogether, sacrificing the ability to
                 /// use thread pool with 1 thread. We could subtract 1 instead, but then
                 /// by default the thread pool would use `num_cores - 1` threads, also bad.
-                if (parser_shared_resources->max_parsing_threads <= 1 || format_settings.parquet.preserve_order)
+                if (parser_shared_resources->max_parsing_threads <= 1)
                     parser_shared_resources->parsing_runner.initManual();
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
@@ -99,16 +99,17 @@ Chunk ParquetV3BlockInputFormat::read()
         auto file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
 
         auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(0));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;
     }
 
     initializeIfNeeded();
-    Chunk chunk;
-    std::tie(chunk, previous_block_missing_values) = reader->read();
-    return chunk;
+    auto res = reader->read();
+    previous_block_missing_values = res.block_missing_values;
+    previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
+    return std::move(res.chunk);
 }
 
 std::optional<std::vector<size_t>> ParquetV3BlockInputFormat::getChunksByteSizes()

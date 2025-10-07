@@ -2,121 +2,272 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Core/Settings.h>
-#include <Common/CurrentThread.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNSUPPORTED_METHOD;
 }
 
-StorageAlias::StorageAlias(const StorageID & table_id_, const StorageID & ref_table_id_)
-    : IStorage(table_id_), ref_table_id(ref_table_id_)
+StorageAlias::StorageAlias(
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const StorageID & target_table_id_,
+    const ColumnsDescription & columns_,
+    const String & comment)
+    : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
+    , target_table_id(target_table_id_)
 {
-    if (table_id_ == ref_table_id_)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself.");
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
+    setInMemoryMetadata(storage_metadata);
+}
+
+void StorageAlias::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    local_context->checkAccess(AccessType::SELECT, target_table_id, column_names);
+
+    auto target_storage = getTargetTable();
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
+
+    target_storage->read(
+        query_plan,
+        column_names,
+        target_snapshot,
+        query_info,
+        local_context,
+        processed_stage,
+        max_block_size,
+        num_streams);
+
+    query_plan.addStorageHolder(target_storage);
+    query_plan.addTableLock(std::move(lock));
+}
+
+SinkToStoragePtr StorageAlias::write(
+    const ASTPtr & query,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    local_context->checkAccess(AccessType::INSERT, target_table_id);
+
+    auto target_storage = getTargetTable();
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto sink = target_storage->write(query, target_metadata, local_context, async_insert);
+
+    sink->addTableLock(lock);
+    return sink;
+}
+
+void StorageAlias::alter(
+    const AlterCommands & params,
+    ContextPtr local_context,
+    AlterLockHolder & table_lock_holder)
+{
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
+    auto target_storage = getTargetTable();
+    target_storage->alter(params, local_context, table_lock_holder);
+
+    // Update alias metadata to match target
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    new_metadata.setColumns(target_metadata->getColumns());
+    setInMemoryMetadata(new_metadata);
+}
+
+void StorageAlias::truncate(
+    const ASTPtr & query,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    ContextPtr local_context,
+    TableExclusiveLockHolder & table_lock_holder)
+{
+    local_context->checkAccess(AccessType::TRUNCATE, target_table_id);
+
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+}
+
+bool StorageAlias::optimize(
+    const ASTPtr & query,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Names & deduplicate_by_columns,
+    bool cleanup,
+    ContextPtr local_context)
+{
+    local_context->checkAccess(AccessType::OPTIMIZE, target_table_id);
+
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
+                                    deduplicate_by_columns, cleanup, local_context);
+}
+
+Pipe StorageAlias::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const PartitionCommands & commands,
+    ContextPtr local_context)
+{
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    return target_storage->alterPartition(target_metadata, commands, local_context);
+}
+
+void StorageAlias::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & settings,
+    ContextPtr local_context) const
+{
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
+}
+
+void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
+{
+    local_context->checkAccess(AccessType::ALTER, target_table_id);
+
+    auto target_storage = getTargetTable();
+    target_storage->mutate(commands, local_context);
+}
+
+void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
+{
+    // Only rename the alias itself, not the target table
+    renameInMemory(new_table_id);
+}
+
+QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageSnapshotPtr & /* storage_snapshot */,
+    SelectQueryInfo & query_info) const
+{
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
+    return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }
 
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
-        if (!args.columns.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "No need to define the schema of Alias table");
+        // Supported syntaxes:
+        //  CREATE TABLE t2 ENGINE = Alias(t)
+        //  CREATE TABLE t2 ENGINE = Alias(db, t)
+        //  CREATE TABLE t2 ENGINE = Alias('t')
+        //  CREATE TABLE t2 ENGINE = Alias('db', 't')
 
-        /** Arguments of engine is following:
-          * Alias(UUID)
-          * or
-          * Alias(database.table)
-          * or
-          * Alias(database, table)
-          */
+        String target_database;
+        String target_table;
+        auto local_context = args.getLocalContext();
 
-        ASTs & engine_args = args.engine_args;
-        if (engine_args.empty() || engine_args.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires 1 or 2 arguments - Alias(UUID) or Alias(database.table) or Alias(database, table), where UUID or database.table is towards the reference table");
-
-        const ContextPtr & local_context = args.getLocalContext();
-
-        if (engine_args.size() == 1)
+        if (args.engine_args.empty())
         {
-            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
-            auto arg = checkAndGetLiteralArgument<String>(engine_args[0], "database_with_table");
-            auto qualified_name = QualifiedTableName::parseFromString(arg);
-            /// The definition is Alias(database.table)
-            if (!qualified_name.database.empty())
-                return std::make_shared<StorageAlias>(args.table_id, StorageID(qualified_name));
-            /// The definition is Alias(UUID)
-            auto uuid = UUIDHelpers::Nil;
-            ReadBufferFromMemory buffer(qualified_name.table.data(), qualified_name.table.size());
-            if (!tryReadUUIDText(uuid, buffer))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Definition of Alias table should be either Alias(database.table) or Alias(UUID)");
-            return std::make_shared<StorageAlias>(args.table_id, StorageID("", "", uuid));
+            // Note: CREATE TABLE ... AS ... syntax is not supported
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage Alias requires target table name in ENGINE arguments. "
+                "Use: ENGINE = Alias('table_name') or ENGINE = Alias('database', 'table_name').");
+        }
+        else if (args.engine_args.size() == 1)
+        {
+            // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
+            auto evaluated_arg = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            String table_arg = checkAndGetLiteralArgument<String>(evaluated_arg, "table_name");
+
+            auto dot_pos = table_arg.find('.');
+            if (dot_pos != String::npos)
+            {
+                target_database = table_arg.substr(0, dot_pos);
+                target_table = table_arg.substr(dot_pos + 1);
+            }
+            else
+            {
+                target_table = table_arg;
+                target_database = args.table_id.database_name;
+            }
+        }
+        else if (args.engine_args.size() == 2)
+        {
+            // Syntax: ENGINE = Alias(database_name, table_name)
+            auto evaluated_db = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            auto evaluated_table = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
+            target_database = checkAndGetLiteralArgument<String>(evaluated_db, "database_name");
+            target_table = checkAndGetLiteralArgument<String>(evaluated_table, "table_name");
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage Alias requires at most 2 arguments: database name and table name");
         }
 
-        /// The definition is Alias(database, table)
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-        auto database = checkAndGetLiteralArgument<String>(engine_args[0], "database");
-        auto table = checkAndGetLiteralArgument<String>(engine_args[1], "table");
-        return std::make_shared<StorageAlias>(args.table_id, StorageID(database, table));
+        StorageID target_table_id(target_database, target_table);
+
+        // Get columns from target table if not specified
+        ColumnsDescription columns = args.columns;
+        if (columns.empty())
+        {
+            auto target_storage = DatabaseCatalog::instance().getTable(target_table_id, local_context);
+            columns = target_storage->getInMemoryMetadataPtr()->getColumns();
+        }
+
+        return std::make_shared<StorageAlias>(
+            args.table_id,
+            local_context,
+            target_table_id,
+            columns,
+            args.comment);
     },
     {
-        .supports_schema_inference = true,
+        .supports_schema_inference = true
     });
-}
-
-StoragePtr StorageAlias::getReferenceTable(ContextPtr context) const
-{
-    if (ref_table_id.hasUUID())
-        return DatabaseCatalog::instance().getByUUID(ref_table_id.uuid).second;
-    return DatabaseCatalog::instance().getTable(ref_table_id, context);
-}
-
-void StorageAlias::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageAlias::alter() is not supported");
-}
-
-void StorageAlias::modifyContextByQueryAST(ASTPtr query, ContextMutablePtr context)
-{
-    if (query->as<ASTRenameQuery>()
-        || query->as<ASTShowTablesQuery>()
-        || query->as<ASTShowCreateTableQuery>()
-        || query->as<ASTShowCreateViewQuery>()
-        || query->as<ASTShowCreateDatabaseQuery>()
-        || query->as<ASTExistsDatabaseQuery>()
-        || query->as<ASTExistsTableQuery>()
-        || query->as<ASTExistsViewQuery>()
-        || query->as<ASTExistsDictionaryQuery>())
-    {
-        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
-    }
-    else if (auto * drop_query = query->as<ASTDropQuery>())
-    {
-        if (drop_query->kind != ASTDropQuery::Truncate)
-            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
-        else
-            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
-    }
-    else if (query->as<ASTAlterQuery>())
-            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
 }
 
 }

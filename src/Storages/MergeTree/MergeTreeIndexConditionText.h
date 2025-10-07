@@ -73,11 +73,12 @@ private:
             /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
+            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MATCH,
-            FUNCTION_SEARCH_ANY,
-            FUNCTION_SEARCH_ALL,
+            FUNCTION_HAS_ANY_TOKENS,
+            FUNCTION_HAS_ALL_TOKENS,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators

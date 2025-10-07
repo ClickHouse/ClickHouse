@@ -492,6 +492,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;
         }
+        case ASTAlterCommand::REWRITE_PARTS:
+        {
+            required_access.emplace_back(AccessType::ALTER_REWRITE_PARTS, database, table);
+            break;
+        }
         case ASTAlterCommand::RESET_SETTING: [[fallthrough]];
         case ASTAlterCommand::MODIFY_SETTING:
         {
