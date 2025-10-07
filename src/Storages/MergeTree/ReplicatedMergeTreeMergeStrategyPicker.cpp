@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
@@ -19,6 +20,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsSeconds execute_merges_on_single_replica_time_threshold;
+    extern const MergeTreeSettingsUInt64 execute_merges_on_single_replica_min_blocks;
     extern const MergeTreeSettingsSeconds remote_fs_execute_merges_on_single_replica_time_threshold;
 }
 
@@ -57,8 +59,12 @@ bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const Stri
 bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const
 {
     time_t threshold = execute_merges_on_single_replica_time_threshold;
+    size_t min_blocks = execute_merges_on_single_replica_min_blocks;
     return (
         threshold > 0       /// feature turned on
+        && (min_blocks > 0 ?
+            MergeTreePartInfo::fromPartName(entry.new_part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING).getBlocksCount() > min_blocks
+            : 1)
         && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
