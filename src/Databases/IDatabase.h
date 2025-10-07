@@ -347,15 +347,18 @@ public:
         return static_cast<time_t>(0);
     }
 
-    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const noexcept
+    /// Get the CREATE TABLE query for the table.
+    /// It can also provide information for detached tables for which there is metadata.
+    ///
+    /// Does not throw if the table does not exist, but can throw on other errors.
+    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const
     {
-        return getCreateTableQueryImpl(name, context, false);
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
     ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
     {
-        return getCreateTableQueryImpl(name, context, true);
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ true);
     }
 
     /// Get the CREATE DATABASE query for current database.

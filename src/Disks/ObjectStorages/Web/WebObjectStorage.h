@@ -51,8 +51,7 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
-
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
