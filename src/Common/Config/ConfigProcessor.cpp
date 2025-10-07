@@ -627,7 +627,7 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"] && HashiCorpVault::instance().isLoaded())
     {
-        const auto * hashicorp_vault_key_node = node->attributes()->getNamedItem("hashicorp_vault_key");
+        const NodePtr hashicorp_vault_key_node = node->attributes()->getNamedItem("hashicorp_vault_key");
 
         if (!hashicorp_vault_key_node || hashicorp_vault_key_node->getNodeValue().empty())
             throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
