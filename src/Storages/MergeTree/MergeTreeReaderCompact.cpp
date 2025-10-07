@@ -41,7 +41,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         avg_value_size_hints_)
     , columns_substreams(data_part_info_for_read_->getColumnsSubstreams())
     , marks_loader(std::make_shared<MergeTreeMarksLoader>(
-        data_part_info_for_read_,
+        data_part_info_for_read_->getDataPartStorage(),
         mark_cache,
         data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
         data_part_info_for_read_->getMarksCount(),

@@ -113,6 +113,7 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (zookeeper-dump-tree)
 add_subdirectory (zookeeper-remove-by-list)
+add_subdirectory (restore-parts-serialization)
 
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
@@ -204,6 +205,7 @@ clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-di
 clickhouse_program_install(clickhouse-su su)
 clickhouse_program_install(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
 clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-by-list)
+clickhouse_program_install(clickhouse-restore-parts-serialization restore-parts-serialization)
 
 if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)

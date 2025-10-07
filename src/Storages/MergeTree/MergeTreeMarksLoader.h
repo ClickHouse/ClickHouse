@@ -41,7 +41,7 @@ class MergeTreeMarksLoader
 {
 public:
     MergeTreeMarksLoader(
-        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        DataPartStoragePtr data_part_storage_,
         MarkCache * mark_cache_,
         const String & mrk_path,
         size_t marks_count_,
@@ -58,7 +58,7 @@ public:
     size_t getNumColumns() const { return num_columns_in_mark; }
 
 private:
-    const MergeTreeDataPartInfoForReaderPtr data_part_reader;
+    const DataPartStoragePtr data_part_storage;
     MarkCache * const mark_cache;
     const String mrk_path;
     const size_t marks_count;
