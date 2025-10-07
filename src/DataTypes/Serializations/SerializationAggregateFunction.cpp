@@ -162,10 +162,9 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
             ReadBufferFromString buf(value_str);
             // Parse tuple manually - expect format like (val1,val2,val3)
             if (buf.eof() || *buf.position() != '(')
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, 
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                     "Expected tuple format for multi-argument aggregate function, got: '{}'", value_str);
             ++buf.position(); // skip '('
-            
             std::vector<MutableColumnPtr> temp_columns;
             for (size_t i = 0; i < argument_types.size(); ++i)
             {
@@ -176,7 +175,6 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
                             "Expected comma in tuple, got: '{}'", value_str);
                     ++buf.position(); // skip ','
                 }
-                
                 temp_columns.push_back(argument_types[i]->createColumn());
                 argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
             }
@@ -212,16 +210,12 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
     {
         // Get the argument types for the aggregate function
         const auto & argument_types = function->getArgumentTypes();
-        
         // Parse the array - expect format like [val1,val2,val3] or [(val1a,val1b),(val2a,val2b)]
         ReadBufferFromString buf(array_str);
-        
         if (buf.eof() || *buf.position() != '[')
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                 "Expected array format starting with '[', got: '{}'", array_str);
-        
         ++buf.position(); // skip '['
-        
         size_t row = 0;
         while (!buf.eof() && *buf.position() != ']')
         {
