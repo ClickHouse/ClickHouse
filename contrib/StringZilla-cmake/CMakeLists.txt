@@ -41,6 +41,6 @@ elseif (ARCH_AARCH64)
     )
 endif ()
 
-target_compile_definitions(_stringzilla PRIVATE "SZ_DYNAMIC_DISPATCH=1")
+target_compile_definitions(_stringzilla PUBLIC "SZ_DYNAMIC_DISPATCH=1")
 target_compile_definitions(_stringzilla PRIVATE "SZ_AVOID_LIBC=0")
 target_compile_definitions(_stringzilla PRIVATE "SZ_DEBUG=0")
