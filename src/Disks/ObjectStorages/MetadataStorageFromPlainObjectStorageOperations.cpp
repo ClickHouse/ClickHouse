@@ -64,7 +64,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     chassert(path.empty() || path.string().ends_with('/'));
 }
 
-void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
     /// parent_path() removes the trailing '/'
     const auto base_path = path.parent_path();
@@ -101,7 +101,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     path_map.addOrReplacePath(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
 }
 
-void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
     const auto base_path = path.parent_path();
@@ -178,7 +178,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     return write_buf;
 }
 
-void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
+void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute( /* metadata_lock */)
 {
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
@@ -216,7 +216,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     write_finalized = true;
 }
 
-void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
     if (write_finalized)
     {
@@ -239,7 +239,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     chassert(path.empty() || path.string().ends_with('/'));
 }
 
-void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
+void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute( /* metadata_lock */)
 {
     /// parent_path() removes the trailing '/'
     const auto base_path = path.parent_path();
@@ -263,7 +263,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     remove_attempted = true;
 }
 
-void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
 {
     if (!remove_attempted)
         return;
@@ -291,7 +291,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
 {
 }
 
-void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
@@ -309,7 +309,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
     }
 }
 
-void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
     if (!written)
         return;
@@ -326,7 +326,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
 {
 }
 
-void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
 {
     LOG_TEST(
         getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
@@ -338,7 +338,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
         unlinked = true;
 }
 
-void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 {
     if (!unlinked)
         return;
@@ -366,7 +366,7 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
 {
 }
 
-void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
 
@@ -387,7 +387,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique
     chassert(added);
 }
 
-void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
 {
     if (!copied)
         return;
@@ -418,16 +418,16 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , object_storage(object_storage_)
 {
     {
-        auto tmp_path_from = path_to.string() + ".move_from." + getRandomASCIIString(16);
+        auto tmp_path_from = path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_from";
         tmp_remote_path_from = object_storage->generateObjectKeyForPath(tmp_path_from, std::nullopt).serialize();
     }
     {
-        auto tmp_path_to = path_to.string() + ".move_to." + getRandomASCIIString(16);
+        auto tmp_path_to = path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_to";
         tmp_remote_path_to = object_storage->generateObjectKeyForPath(tmp_path_to, std::nullopt).serialize();
     }
 }
 
-void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 {
     LOG_TEST(
         getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
@@ -495,7 +495,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute(std::unique
     path_map.removeFile(path_from);
 }
 
-void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 {
     path_map.addFile(path_from);
 

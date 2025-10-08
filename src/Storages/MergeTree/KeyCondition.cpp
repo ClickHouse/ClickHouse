@@ -2560,85 +2560,92 @@ KeyCondition::Description KeyCondition::getDescription() const
     std::vector<Frame> rpn_stack;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+            case RPNElement::FUNCTION_UNKNOWN:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::FUNCTION_NOT:
+                assert(!rpn_stack.empty());
+
+                std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
+                break;
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
+                auto arg1 = std::move(rpn_stack.back());
+
+                rpn_stack.pop_back();
+
+                assert(!rpn_stack.empty());
+                auto arg2 = std::move(rpn_stack.back());
+
+                Frame frame;
+                frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
+                frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
+
+                rpn_stack.back() = std::move(frame);
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
+                auto arg1 = std::move(rpn_stack.back());
+
+                rpn_stack.pop_back();
+
+                assert(!rpn_stack.empty());
+                auto arg2 = std::move(rpn_stack.back());
+
+                Frame frame;
+                frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
+                frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
+
+                rpn_stack.back() = std::move(frame);
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::ALWAYS_TRUE:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (
-               element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
-
-            std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::getDescription");
 
-    std::vector<String> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
+    std::vector<String> key_names(num_key_columns);
+    std::vector<bool> is_key_used(num_key_columns, false);
 
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
@@ -2862,26 +2869,10 @@ BoolMask KeyCondition::checkInRange(
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-    // std::cerr << "Checking for: [";
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
-    // std::cerr << " ... ";
-
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    // std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
-
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
-        auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
-
-        // std::cerr << "Hyperrectangle: ";
-        // for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
-        //     std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
-        // std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
-
-        return res;
+        return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
     });
 }
 
@@ -2979,10 +2970,6 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            /// TODO: Fix MergeTreeSetIndex::checkInRange handling per-column inclusive/exclusive ranges, then remove this check.
-            if (element.set_index->getIndexesMapping().size() != 1)
-                return false;
-
             for (const auto & mapping : element.set_index->getIndexesMapping())
             {
                 auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
@@ -3203,7 +3190,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges::makeUniverse());
             }
-            else /// FUNCTION_UNKNOWN
+            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
             {
                 if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
@@ -3459,6 +3446,47 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             if (!element.set_index)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
+
+            /// We call set_index->checkInRange.
+            /// In theory this should be a checkInHyperrectangle rather than checkInRange.
+            /// checkInRange may produce false positives if some set element is in range but not in
+            /// hyperrectangle. But for MergeTreeSetIndex, range lookup is more efficient than
+            /// hyperrectangle lookup: range lookup is a binary search in O(log n) time, while
+            /// hyperrectangle lookup requires an O(n) scan in the worst case.
+            /// So we use checkInRange as an approximation of checkInHyperrectangle. This doesn't
+            /// break correctness because it can't produce false negatives, because the range is
+            /// a superset of the hyperrectangle.
+            ///
+            /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
+            /// forAnyHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// no false positives.
+            /// Proof: Recall how forAnyHyperrectangle produces its hyperrectangles:
+            ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
+            ///  > the following three hyperrectangles:
+            ///  > [x1]       × [y1 .. +inf)
+            ///  > (x1 .. x2) × (-inf .. +inf)
+            ///  > [x2]       × (-inf .. y2]
+            /// (The above is applied recursively, i.e. y1 and y2 are tails of the tuple,
+            ///  not necessarily individual tuple elements.)
+            /// Suppose the MergeTreeSetIndex contains a set element that's inside the range but not
+            /// inside the hyperrectangle. It's a tuple (..., x, ..., y, ...), where y is outside
+            /// the corresponding hyperrectangle range, and x corresponds to a hyperrectangle range
+            /// that is not a single element. So x must come from the `(x1 .. x2) × (-inf .. +inf)`
+            /// case. But then y's range is (-inf, +inf), so y can't be outside its range. Contradiction.
+            ///
+            /// It may make sense to implement proper MergeTreeSetIndex::checkInHyperrectangle too,
+            /// for cases when KeyCondition::checkInHyperrectangle is called directly, e.g. based on
+            /// min/max index in MergeTree or Parquet file metadata.
+
+            /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
+            /// once for the initial key range instead of going through forAnyHyperrectangle?
+            /// No, that would be incorrect if the set's tuple doesn't include all key columns.
+            /// For example,
+            ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
+            /// is neither necessary nor sufficient for
+            ///   (x, z) BETWEEN (10, 1000) AND (20, 2000)
+            /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
+            /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
 
@@ -3746,54 +3774,54 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            /// If unknown_any is true, return instantly,
-            /// to avoid processing it with FUNCTION_AND, and change the outcome.
-            if (unknown_any)
-                return true;
-            /// Otherwise, it may be AND'ed via FUNCTION_AND
-            rpn_stack.push_back(true);
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.push_back(true);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
-            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(false);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
+            case RPNElement::FUNCTION_UNKNOWN:
+                /// If unknown_any is true, return instantly,
+                /// to avoid processing it with FUNCTION_AND, and change the outcome.
+                if (unknown_any)
+                    return true;
+                /// Otherwise, it may be AND'ed via FUNCTION_AND
+                rpn_stack.push_back(true);
+                break;
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.push_back(true);
+                break;
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.push_back(false);
+                break;
+            case RPNElement::FUNCTION_NOT:
+                break;
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
 
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 & arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 & arg2;
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
 
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 | arg2;
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 | arg2;
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
@@ -3809,67 +3837,70 @@ bool KeyCondition::alwaysFalse() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::ALWAYS_TRUE)
+        switch (element.function)
         {
-            rpn_stack.push_back(1);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(0);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_UNKNOWN)
-        {
-            rpn_stack.push_back(2);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.push_back(1);
+                break;
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.push_back(0);
+                break;
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_UNKNOWN:
+                rpn_stack.push_back(2);
+                break;
+            case RPNElement::FUNCTION_NOT:
+            {
+                assert(!rpn_stack.empty());
 
-            auto & arg = rpn_stack.back();
-            if (arg == 0)
-                arg = 1;
-            else if (arg == 1)
-                arg = 0;
+                auto & arg = rpn_stack.back();
+                if (arg == 0)
+                    arg = 1;
+                else if (arg == 1)
+                    arg = 0;
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
+
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+
+                if (arg1 == 0 || arg2 == 0)
+                    rpn_stack.back() = 0;
+                else if (arg1 == 1 && arg2 == 1)
+                    rpn_stack.back() = 1;
+                else
+                    rpn_stack.back() = 2;
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
+
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+
+                if (arg1 == 1 || arg2 == 1)
+                    rpn_stack.back() = 1;
+                else if (arg1 == 0 && arg2 == 0)
+                    rpn_stack.back() = 0;
+                else
+                    rpn_stack.back() = 2;
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
-
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-
-            if (arg1 == 0 || arg2 == 0)
-                rpn_stack.back() = 0;
-            else if (arg1 == 1 && arg2 == 1)
-                rpn_stack.back() = 1;
-            else
-                rpn_stack.back() = 2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
-
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-
-            if (arg1 == 1 || arg2 == 1)
-                rpn_stack.back() = 1;
-            else if (arg1 == 0 && arg2 == 0)
-                rpn_stack.back() = 0;
-            else
-                rpn_stack.back() = 2;
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)

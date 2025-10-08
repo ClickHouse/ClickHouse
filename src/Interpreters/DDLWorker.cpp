@@ -23,7 +23,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -731,10 +730,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
                     {
                         /// It's not CREATE DATABASE
                         auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                        /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
-                        auto query_context = Context::createCopy(context);
-                        StorageAlias::modifyContextByQueryAST(task.query, query_context);
-                        storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                        storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                     }
 
                     task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -795,20 +791,15 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
         /// Active node was removed in multi ops
         active_node->setAlreadyRemoved();
 
-        holder.retries_ctl.retryLoop([&, &zookeeper_create_node = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(holder);
-            task.createSyncedNodeIfNeed(zookeeper_create_node);
-        });
+        task.createSyncedNodeIfNeed(zookeeper);
+        updateMaxDDLEntryID(task.entry_name);
+        task.completely_processed = true;
+        subsequent_errors_count = 0;
     },
     [&]()
     {
         task.ops = original_task_ops;
     });
-
-    updateMaxDDLEntryID(task.entry_name);
-    task.completely_processed = true;
-    subsequent_errors_count = 0;
 }
 
 

@@ -60,9 +60,8 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
-    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -85,9 +84,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
-    auto format_filter_info
-        = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, configuration->getColumnMapperForCurrentSchema());
-    format_filter_info->prewhere_info = prewhere_info;
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        filter_actions_dag,
+        context,
+        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        query_info.row_level_filter,
+        query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -95,6 +97,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             getName(),
             object_storage,
             configuration,
+            storage_snapshot,
             info,
             format_settings,
             context,
@@ -128,7 +131,7 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
+        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
 }
 
