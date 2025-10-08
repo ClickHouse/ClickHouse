@@ -117,9 +117,6 @@ private:
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     mutable std::atomic<bool> build_phase_finished{false};
 
-    /// Shared flags map for all HashJoin instances.
-    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags;
-
     StatsCollectingParams stats_collecting_params;
 
     std::mutex totals_mutex;

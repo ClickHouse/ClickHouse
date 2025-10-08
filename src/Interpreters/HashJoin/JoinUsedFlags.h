@@ -153,6 +153,7 @@ public:
             bool expected = false;
             return per_offset_flags[off].compare_exchange_strong(expected, true);
         }
+
     }
 
     template <bool use_flags, bool flag_per_row>

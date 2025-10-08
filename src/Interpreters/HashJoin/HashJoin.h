@@ -116,8 +116,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
-        std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_ = {});
+        bool use_two_level_maps_ = false);
 
     ~HashJoin() override;
 

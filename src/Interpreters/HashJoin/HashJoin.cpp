@@ -126,8 +126,7 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps,
-    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
+    bool use_two_level_maps)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -161,11 +160,7 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    /// use shared instance if provided, else create a new one
-    if (shared_used_flags_)
-        used_flags = shared_used_flags_;
-    else
-        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
+    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1509,14 +1504,18 @@ private:
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
             size_t rows = columns->columns.at(0)->size();
-            size_t limit = nullmap ? std::min(rows, nullmap->size()) : rows;
-            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
+            for (size_t row = 0; row < rows; ++row)
             {
+                if (nullmap && nullmap->size() == row)
+                    break;
                 if (!nullmap || (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
                     ++rows_added;
+
+                    if (rows_added >= max_block_size)
+                        break;
                 }
             }
             if (rows_added >= max_block_size)
@@ -1525,8 +1524,8 @@ private:
     }
 };
 
-IBlocksStreamPtr
-HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
+IBlocksStreamPtr HashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
