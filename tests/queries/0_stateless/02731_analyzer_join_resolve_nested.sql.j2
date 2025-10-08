@@ -168,7 +168,7 @@ SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
-SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t) ORDER BY t.t.t.t.t ASC;
 
 SELECT t FROM nnna, nnnb;
 SELECT t.t.t FROM nnna, nnnb;

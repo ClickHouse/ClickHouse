@@ -515,7 +515,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         {
             std::lock_guard lock(hash_join->mutex);
 
-            if (hash_join->data->hasNonJoinedRows() || 
+            if (hash_join->data->hasNonJoinedRows() ||
                 hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
             {
                 if (auto s = hash_join->data->getNonJoinedBlocks(
