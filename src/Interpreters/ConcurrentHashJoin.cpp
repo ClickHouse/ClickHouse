@@ -791,17 +791,16 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     if (holder.column)
                     {
                         const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
+                        for (size_t idx : idxs)
                         {
-                            size_t idx = static_cast<size_t>(idxs[pos]);
                             if (idx < src_mask.size())
                                 filtered->getData()[idx] = src_mask[idx];
                         }
                     }
                     else
                     {
-                        for (size_t pos = 0, sz = idxs.size(); pos < sz; ++pos)
-                            filtered->getData()[static_cast<size_t>(idxs[pos])] = 1;
+                        for (size_t idx : idxs)
+                            filtered->getData()[idx] = 1;
                     }
                 }
                 // Append the rebuilt holder for this slot; memory accounting is kept to maintain the same semantics
