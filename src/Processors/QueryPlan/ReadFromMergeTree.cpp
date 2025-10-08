@@ -1760,8 +1760,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         all_column_names,
         log,
         indexes,
-        find_exact_ranges,
-        is_parallel_reading_from_replicas);
+        find_exact_ranges);
+
     return analyzed_result_ptr;
 }
 
@@ -1972,8 +1972,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
-    bool find_exact_ranges,
-    bool is_parallel_reading_from_replicas_)
+    bool find_exact_ranges)
 {
     AnalysisResult result;
     const auto & settings = context_->getSettingsRef();
@@ -2081,8 +2080,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.index_stats,
             indexes->use_skip_indexes,
             find_exact_ranges,
-            query_info_.isFinal(),
-            is_parallel_reading_from_replicas_);
+            query_info_.isFinal());
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
 
@@ -2490,9 +2488,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
-        return false;
-
-    if (is_parallel_reading_from_replicas)
         return false;
 
     return true;

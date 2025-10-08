@@ -212,8 +212,7 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
-        bool find_exact_ranges,
-        bool is_parallel_reading_from_replicas_);
+        bool find_exact_ranges);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 

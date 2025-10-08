@@ -206,8 +206,7 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges,
-        bool is_final_query,
-        bool is_parallel_reading_from_replicas);
+        bool is_final_query);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
