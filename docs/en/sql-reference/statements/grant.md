@@ -698,7 +698,6 @@ GRANT READ ON URL('https://www\.google\.com') TO john;
 ```
 :::
 
-
 **Re-granting with GRANT OPTION:**
 
 If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
