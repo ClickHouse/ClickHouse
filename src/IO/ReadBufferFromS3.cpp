@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int NOT_INITIALIZED;
 }
 
 
@@ -469,6 +470,14 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     const auto & error = outcome.GetError();
     throw S3Exception(error.GetMessage(), error.GetErrorType());
+}
+
+ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const
+{
+    if (!impl)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "No S3 object metadata available because there were no successful requests");
+
+    return impl->getObjectMetadata();
 }
 
 }
