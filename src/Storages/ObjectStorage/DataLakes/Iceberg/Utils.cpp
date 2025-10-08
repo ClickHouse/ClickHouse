@@ -28,7 +28,6 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 
-
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -908,13 +907,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        std::string storage_prefix = std::filesystem::path(prefix_storage_path) / "metadata";
-
-        std::string result_metadata_path = metadata_file;
-        if (!metadata_file.starts_with(storage_prefix))
-            result_metadata_path = fs::path(storage_prefix) / metadata_file;
-
-        return getMetadataFileAndVersion(result_metadata_path);
+        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / fs::path(metadata_file).filename());
     }
     else
     {
