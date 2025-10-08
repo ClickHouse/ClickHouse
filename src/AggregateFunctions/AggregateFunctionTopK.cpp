@@ -197,7 +197,6 @@ struct AggregateFunctionTopKGenericData
     using Set = SpaceSaving<StringRef, StringRefHash>;
 
     Set value;
-    bool loaded_from_state = false;
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
@@ -267,23 +266,12 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & state = this->data(place);
-        auto & set = state.value;
+        auto & set = this->data(place).value;
         set.clear();
-        // Mark external load only for approx_top_k variants; plain topK must not be tainted by internal binary transport
-        state.loaded_from_state = is_approx_top_k;
 
+        // Specialized here because there's no deserialiser for StringRef
         size_t size = 0;
-        try
-        {
-            readVarUInt(size, buf);
-        }
-        catch (...)
-        {
-            set.resize(std::min<size_t>(1, reserved));
-            set.readAlphaMap(buf);
-            return;
-        }
+        readVarUInt(size, buf);
         if (unlikely(size > TOP_K_MAX_SIZE))
             throw Exception(
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -294,21 +282,15 @@ public:
         set.resize(std::min(size + 1, size_t(reserved)));
         for (size_t i = 0; i < size; ++i)
         {
-            try
-            {
-                auto ref = readStringBinaryInto(*arena, buf);
-                UInt64 count = 0;
-                UInt64 error = 0;
-                readVarUInt(count, buf);
-                readVarUInt(error, buf);
-                set.insert(ref, count, error);
-                arena->rollback(ref.size);
-            }
-            catch (...)
-            {
-                break;
-            }
+            auto ref = readStringBinaryInto(*arena, buf);
+            UInt64 count;
+            UInt64 error;
+            readVarUInt(count, buf);
+            readVarUInt(error, buf);
+            set.insert(ref, count, error);
+            arena->rollback(ref.size);
         }
+
         set.readAlphaMap(buf);
     }
 
@@ -346,21 +328,12 @@ public:
         if (set.capacity() != reserved)
             set.resize(reserved);
         set.merge(this->data(rhs).value);
-        // Propagate external-load flag only for approx_top_k variants
-        if (is_approx_top_k)
-            this->data(place).loaded_from_state = this->data(place).loaded_from_state || this->data(rhs).loaded_from_state;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        if (is_approx_top_k && this->data(place).loaded_from_state)
-        {
-            offsets_to.push_back(offsets_to.back());
-            return;
-        }
 
         const typename State::Set & set = this->data(place).value;
         auto result_vec = set.topK(threshold);
