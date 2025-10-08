@@ -452,6 +452,7 @@ def test_yt_multiple_endpoints(started_cluster):
     yt.remove_table("//tmp/table")
 
 
+
 def test_ytsaurus_cyrillic_strings(started_cluster):
     table_path = "//tmp/table"
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
@@ -467,3 +468,27 @@ def test_ytsaurus_cyrillic_strings(started_cluster):
     assert instance.query("SELECT * FROM yt_test") == "10\tпривет\n20\tпока\n"
     instance.query("DROP TABLE yt_test SYNC")
     yt.remove_table(table_path)
+
+
+def test_ytsaurus_select_subset_of_columns(started_cluster):
+    table_path = "//tmp/table"
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt.create_table(
+        table_path,
+        '{"a":10,"b":20, "c": 1}{"a":20,"b":40, "c": 2}',
+        schema={"a": "int32", "b": "int32", "c": "int32"},
+    )
+
+    instance.query(
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
+    )
+    assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
+
+    assert (
+        instance.query(
+            f"SELECT a,b FROM ytsaurus('{YT_URI}','{table_path}', '{YT_DEFAULT_TOKEN}', 'a Int32, b Int32')"
+        )
+        == "10\t20\n20\t40\n"
+    )
+    instance.query("DROP TABLE yt_test SYNC")
+    yt.remove_table(f"{table_path}")
