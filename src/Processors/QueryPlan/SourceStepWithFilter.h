@@ -123,7 +123,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+    virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value, const FilterDAGInfoPtr & row_level_filter_value);
 
     void describeActions(FormatSettings & format_settings) const override;
 

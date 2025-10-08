@@ -2202,14 +2202,15 @@ bool ReadFromMergeTree::readsInOrder() const
     return reader_settings.read_in_order;
 }
 
-void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value, const FilterDAGInfoPtr & row_level_filter_value)
 {
+    query_info.row_level_filter = row_level_filter_value;
     query_info.prewhere_info = prewhere_info_value;
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         lazily_read_info,
-        query_info.row_level_filter,
+        row_level_filter_value,
         prewhere_info_value));
 
     updateSortDescription();

@@ -91,9 +91,10 @@ void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
     filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 }
 
-void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value, const FilterDAGInfoPtr & row_level_filter_value)
 {
     query_info.prewhere_info = prewhere_info_value;
+    query_info.row_level_filter = row_level_filter_value;
     output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, query_info.row_level_filter, query_info.prewhere_info));
 }
 

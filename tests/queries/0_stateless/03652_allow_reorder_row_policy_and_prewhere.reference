@@ -1,0 +1,106 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.heavy String : 0
+         INPUT : 1 -> __table1.light Int32 : 1
+         ALIAS __table1.heavy :: 0 -> heavy String : 2
+         ALIAS __table1.light :: 1 -> light Int32 : 0
+Positions: 0 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> heavy String : 0
+           INPUT : 1 -> light Int32 : 1
+           ALIAS heavy :: 0 -> __table1.heavy String : 2
+           ALIAS light :: 1 -> __table1.light Int32 : 0
+  Positions: 2 0
+    ReadFromMergeTree (default.test_table)
+    ReadType: Default
+    Parts: 1
+    Granules: 123
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: and(greaterOrEquals(__table1.light, 100000_UInt32), less(__table1.light, 100500_UInt32)) (removed)
+      Actions: INPUT : 0 -> light Int32 : 0
+               COLUMN Const(UInt32) -> 100000_UInt32 UInt32 : 1
+               COLUMN Const(UInt32) -> 100500_UInt32 UInt32 : 2
+               FUNCTION greaterOrEquals(light : 0, 100000_UInt32 :: 1) -> greaterOrEquals(__table1.light, 100000_UInt32) UInt8 : 3
+               FUNCTION less(light : 0, 100500_UInt32 :: 2) -> less(__table1.light, 100500_UInt32) UInt8 : 1
+               FUNCTION and(greaterOrEquals(__table1.light, 100000_UInt32) :: 3, less(__table1.light, 100500_UInt32) :: 1) -> and(greaterOrEquals(__table1.light, 100000_UInt32), less(__table1.light, 100500_UInt32)) UInt8 : 2
+      Positions: 0 2
+      Row level filter
+      Row level filter column: like(heavy, \'%_aaa\'_String) (removed)
+      Actions: INPUT : 0 -> heavy String : 0
+               COLUMN Const(String) -> \'%_aaa\'_String String : 1
+               FUNCTION like(heavy : 0, \'%_aaa\'_String :: 1) -> like(heavy, \'%_aaa\'_String) UInt8 : 2
+      Positions: 2 0
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.heavy String : 0
+         INPUT : 1 -> __table1.light Int32 : 1
+         ALIAS __table1.heavy :: 0 -> heavy String : 2
+         ALIAS __table1.light :: 1 -> light Int32 : 0
+Positions: 0 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> heavy String : 0
+           INPUT : 1 -> light Int32 : 1
+           ALIAS heavy :: 0 -> __table1.heavy String : 2
+           ALIAS light :: 1 -> __table1.light Int32 : 0
+  Positions: 2 0
+    ReadFromMergeTree (default.test_table)
+    ReadType: Default
+    Parts: 1
+    Granules: 123
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: and(greaterOrEquals(__table1.light, 100000_UInt32), less(__table1.light, 100500_UInt32), like(heavy, \'%_aaa\'_String)) (removed)
+      Actions: INPUT : 0 -> heavy String : 0
+               COLUMN Const(String) -> \'%_aaa\'_String String : 1
+               INPUT : 1 -> light Int32 : 2
+               COLUMN Const(UInt32) -> 100000_UInt32 UInt32 : 3
+               COLUMN Const(UInt32) -> 100500_UInt32 UInt32 : 4
+               FUNCTION like(heavy : 0, \'%_aaa\'_String :: 1) -> like(heavy, \'%_aaa\'_String) UInt8 : 5
+               FUNCTION greaterOrEquals(light : 2, 100000_UInt32 :: 3) -> greaterOrEquals(__table1.light, 100000_UInt32) UInt8 : 1
+               FUNCTION less(light : 2, 100500_UInt32 :: 4) -> less(__table1.light, 100500_UInt32) UInt8 : 3
+               FUNCTION and(greaterOrEquals(__table1.light, 100000_UInt32) :: 1, less(__table1.light, 100500_UInt32) :: 3, like(heavy, \'%_aaa\'_String) :: 5) -> and(greaterOrEquals(__table1.light, 100000_UInt32), less(__table1.light, 100500_UInt32), like(heavy,... UInt8 : 4
+      Positions: 0 2 4
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+Positions: 0
+  Aggregating
+  Keys:
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Skip merging: 0
+    Expression (Before GROUP BY)
+    Positions:
+      Expression ((WHERE + Change column names to column identifiers))
+      Actions: INPUT :: 0 -> light Int32 : 0
+      Positions:
+        ReadFromMergeTree (default.test_table)
+        ReadType: Default
+        Parts: 1
+        Granules: 123
+        Prewhere info
+        Need filter: 1
+          Prewhere filter
+          Prewhere filter column: and(equals(throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)), 0_UInt8), greaterOrEquals(__table1.light, 100000_UInt32), less(__table1.light, 100500_UInt32)) (removed)
+          Actions: INPUT : 0 -> light Int32 : 0
+                   COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+                   COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 2
+                   COLUMN Const(UInt32) -> 100000_UInt32 UInt32 : 3
+                   COLUMN Const(UInt32) -> 100500_UInt32 UInt32 : 4
+                   FUNCTION modulo(light : 0, 2_UInt8 :: 1) -> modulo(__table1.light, 2_UInt8) Int16 : 5
+                   FUNCTION greaterOrEquals(light : 0, 100000_UInt32 :: 3) -> greaterOrEquals(__table1.light, 100000_UInt32) UInt8 : 1
+                   FUNCTION less(light : 0, 100500_UInt32 :: 4) -> less(__table1.light, 100500_UInt32) UInt8 : 3
+                   FUNCTION equals(modulo(__table1.light, 2_UInt8) :: 5, 0_UInt8 : 2) -> equals(modulo(__table1.light, 2_UInt8), 0_UInt8) UInt8 : 4
+                   FUNCTION throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8) :: 4) -> throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)) UInt8 : 5
+                   FUNCTION equals(throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)) :: 5, 0_UInt8 :: 2) -> equals(throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)), 0_UInt8) UInt8 : 4
+                   FUNCTION and(equals(throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)), 0_UInt8) :: 4, greaterOrEquals(__table1.light, 100000_UInt32) :: 1, less(__table1.light, 100500_UInt32) :: 3) -> and(equals(throwIf(equals(modulo(__table1.light, 2_UInt8), 0_UInt8)), 0_UInt8), greaterOrEquals(__ta... UInt8 : 2
+          Positions: 0 2
+          Row level filter
+          Row level filter column: like(heavy, \'%_aaa\'_String) (removed)
+          Actions: INPUT : 0 -> heavy String : 0
+                   COLUMN Const(String) -> \'%_aaa\'_String String : 1
+                   FUNCTION like(heavy :: 0, \'%_aaa\'_String :: 1) -> like(heavy, \'%_aaa\'_String) UInt8 : 2
+          Positions: 2
+250

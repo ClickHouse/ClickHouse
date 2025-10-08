@@ -20,6 +20,8 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool allow_reorder_prewhere_conditions;
+    extern const SettingsBool allow_reorder_row_policy_and_prewhere;
 }
 
 namespace QueryPlanOptimizations
@@ -37,6 +39,40 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
             return;
         }
     }
+}
+
+static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+    {
+        bool is_const = child->column && isColumnConst(*child->column);
+        types.push_back({child->result_type, is_const});
+    }
+    return types;
+}
+
+static bool predicateDoesNotThrowException(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> stack;
+    stack.push(node);
+    while (!stack.empty())
+    {
+        const auto * top = stack.top();
+        stack.pop();
+
+        /// This is a pessimistic check. Functions that throw exception should be isSuitableForShortCircuitArgumentsExecution.
+        /// Computationally heavy functions should also apply, but it's ok to firbid reordering with row-level policy in this case.
+        if (top->type == ActionsDAG::ActionType::FUNCTION
+            && top->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(top->children)))
+            return false;
+
+        for (const auto * child : top->children)
+            stack.push(child);
+    }
+
+    return true;
 }
 
 ActionsDAG splitAndFillPrewhereInfo(
@@ -185,8 +221,40 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
-    auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
-        filter_step->getFilterColumnName(),
+    auto & filter_actions_dag = filter_step->getExpression();
+    auto row_level_filter = source_step_with_filter->getRowLevelFilter();
+
+    bool remove_filter_column = filter_step->removesFilterColumn();
+    auto filter_column_name = filter_step->getFilterColumnName();
+    const auto * predicate = &filter_actions_dag.findInOutputs(filter_column_name);
+
+    std::optional<ActionsDAG> combined_dag;
+    if (read_from_merge_tree_step && row_level_filter
+        && context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions]
+        && context->getSettingsRef()[Setting::allow_reorder_row_policy_and_prewhere]
+        && predicateDoesNotThrowException(predicate))
+    {
+        combined_dag = ActionsDAG::merge(row_level_filter->actions.clone(), filter_actions_dag.clone());
+        const auto * predicate_node = &combined_dag->findInOutputs(filter_column_name);
+        const auto * row_level_predicate_node = &combined_dag->findInOutputs(row_level_filter->column_name);
+
+        auto & outputs = combined_dag->getOutputs();
+
+        if (remove_filter_column)
+            outputs.erase(std::find(outputs.begin(), outputs.end(), predicate_node));
+        if (row_level_filter->do_remove_column)
+            outputs.erase(std::find(outputs.begin(), outputs.end(), row_level_predicate_node));
+
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        predicate = &combined_dag->addFunction(func_builder_and, {row_level_predicate_node, predicate_node}, {});
+        remove_filter_column = true;
+        filter_column_name = predicate->result_name;
+        outputs.push_back(predicate);
+
+        row_level_filter = nullptr;
+    }
+
+    auto optimize_result = where_optimizer.optimize(predicate,
         source_step_with_filter->getContext(),
         is_final);
 
@@ -194,16 +262,17 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         return;
 
     PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+    ActionsDAG dag = combined_dag ? std::move(*combined_dag) : std::move(filter_actions_dag);
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,
-        optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn(),
-        std::move(filter_step->getExpression()),
-        filter_step->getFilterColumnName(),
+        optimize_result.fully_moved_to_prewhere && remove_filter_column,
+        std::move(dag),
+        filter_column_name,
         optimize_result.prewhere_nodes,
         optimize_result.prewhere_nodes_list);
 
-    source_step_with_filter->updatePrewhereInfo(prewhere_info);
+    source_step_with_filter->updatePrewhereInfo(prewhere_info, row_level_filter);
 
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
@@ -211,8 +280,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         new_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
-            filter_step->getFilterColumnName(),
-            filter_step->removesFilterColumn());
+            filter_column_name,
+            remove_filter_column);
     }
     else
     {
