@@ -151,4 +151,9 @@ private:
     }
 };
 
+REGISTER_FUNCTION(FlipCoordinates)
+{
+    factory.registerFunction<FunctionFlipCoordinates>();
+}
+
 }
