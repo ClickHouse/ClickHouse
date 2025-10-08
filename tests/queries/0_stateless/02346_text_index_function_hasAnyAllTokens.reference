@@ -19,10 +19,24 @@ SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 1
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 0
+SELECT 'Test singular aliases';
+Test singular aliases
+SELECT hasAnyToken('a b', ['b']);
+1
+SELECT hasAnyToken('a b', ['c']);
+0
+SELECT hasAllToken('a b', ['b']);
+1
+SELECT hasAllToken('a b', ['c']);
+0
 1
 2
+3
 1
 2
+Testing edge cases on non-indexed column
+3
+3
 FixedString input columns
 [1]
 [1]
@@ -224,3 +238,12 @@ Text index should choose 25% of granules
 Description: text GRANULARITY 1
 Parts: 1/1
 Granules: 256/1024
+Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column
+1
+3
+2
+3
+2
+1
+2
+3
