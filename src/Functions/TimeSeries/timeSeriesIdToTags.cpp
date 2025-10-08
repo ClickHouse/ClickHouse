@@ -149,7 +149,7 @@ public:
     std::vector<TagNamesAndValuesPtr> getTagsImpl(const IColumn & column_ids) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsById(ids);
+        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsByID(ids);
     }
 
     /// Extracts identifiers from the column.

@@ -122,7 +122,7 @@ public:
     std::vector<size_t> getGroupsImpl(const IColumn & column_ids) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getGroupById(ids);
+        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getGroupByID(ids);
     }
 
     /// Extracts identifiers from the column.

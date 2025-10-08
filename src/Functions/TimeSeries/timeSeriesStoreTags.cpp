@@ -395,7 +395,7 @@ public:
     void extractIDsAndStoreTagsImpl(const IColumn & column_ids, std::vector<TagNamesAndValues> && tags_vector) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        getContext()->getQueryContext()->getTimeSeriesTagsCollector().add(ids, makeTagsPtrVector(std::move(tags_vector)));
+        getContext()->getQueryContext()->getTimeSeriesTagsCollector().insert(ids, makeTagsPtrVector(std::move(tags_vector)));
     }
 
     /// Extracts identifiers from the column.
