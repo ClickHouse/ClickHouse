@@ -195,6 +195,16 @@ void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
     task_handle->deactivate();
 }
 
+void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
+{
+    UInt64 q = doubleToUInt64(std::exp2(status.error_count));
+    std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
+    if (new_sleep_time.count() < 0)
+        sleep_time = max_sleep_time;
+    else
+        sleep_time = std::min(new_sleep_time, max_sleep_time);
+}
+
 
 void DistributedAsyncInsertDirectoryQueue::run()
 {
@@ -226,19 +236,14 @@ void DistributedAsyncInsertDirectoryQueue::run()
 
                     status.error_count /= 2;
                     last_decrease_time = now;
+
+                    updateSleepTime();
                 }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
-
-                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
-                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
-                if (new_sleep_time.count() < 0)
-                    sleep_time = max_sleep_time;
-                else
-                    sleep_time = std::min(new_sleep_time, max_sleep_time);
-
+                updateSleepTime();
                 do_sleep = true;
             }
         }
