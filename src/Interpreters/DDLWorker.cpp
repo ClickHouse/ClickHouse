@@ -1404,7 +1404,7 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
     for (const auto & replica : replicas)
     {
         auto replica_path = fs::path(replicas_dir) / replica;
-        auto responses = zookeeper->get({replica_path, fs::path(replica_path) / "active"});
+        auto responses = zookeeper->tryGet({replica_path, fs::path(replica_path) / "active"});
         /// Replica not active
         if (responses[1].error == Coordination::Error::ZNONODE)
         {
