@@ -56,6 +56,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1901,6 +1902,7 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
+    RewriteRules::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
@@ -2223,6 +2225,7 @@ try
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
+            RewriteRules::instance().reload();
 
             HTTPConnectionPools::instance().setLimits(
                 HTTPConnectionPools::Limits{

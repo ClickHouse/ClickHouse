@@ -23,6 +23,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -839,6 +840,7 @@ struct ContextSharedPart : boost::noncopyable
         });
 
         NamedCollectionFactory::instance().shutdown();
+        RewriteRules::instance().shutdown();
 
         delete_async_insert_queue.reset();
 
