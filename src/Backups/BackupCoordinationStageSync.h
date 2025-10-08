@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Backups/BackupConcurrencyCheck.h>
-#include <Backups/WithRetries.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/WithRetries.h>
 
 
 namespace DB

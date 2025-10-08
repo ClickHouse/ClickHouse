@@ -39,7 +39,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     if (!rename.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }

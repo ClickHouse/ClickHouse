@@ -13,11 +13,11 @@ UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT reinterpretAsUUID(currentDatabase())
 
 #### 1 - There is only one replica
 
-${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+${CLICKHOUSE_CLIENT} --keeper_max_retries=0 --create_replicated_merge_tree_fault_injection_probability=1 \
     -q "CREATE TABLE test_exception_replicated UUID '$UUID' (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/recreate', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
 
 # We will see that the replica is empty and throw the same 'Fault injected' exception as before
-${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+${CLICKHOUSE_CLIENT} --keeper_max_retries=0 --create_replicated_merge_tree_fault_injection_probability=1 \
     -q "CREATE TABLE test_exception_replicated UUID '$UUID' (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/recreate', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
 
 # We will succeed
@@ -28,9 +28,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_exception_replicated SYNC"
 
 #### 2 - There are two replicas
 
-${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+${CLICKHOUSE_CLIENT} --keeper_max_retries=0 --create_replicated_merge_tree_fault_injection_probability=1 \
     -q "CREATE TABLE test_exception_replicated UUID '$UUID' (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/recreate', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
-${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+${CLICKHOUSE_CLIENT} --keeper_max_retries=0 --create_replicated_merge_tree_fault_injection_probability=1 \
     -q "CREATE TABLE test_exception_replicated_2 (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/recreate', 'r2') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
 
 # We will succeed

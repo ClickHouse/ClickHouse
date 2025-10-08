@@ -83,7 +83,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
@@ -95,7 +95,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
         return executeToTable(drop);
     if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
@@ -208,7 +208,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             query_to_send.if_empty = false;
 
-            DDLQueryOnClusterParams params;
+            DDLQueryOnClusterParams params(getContext());
             params.access_to_check = getRequiredAccessForDDLOnCluster();
             return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
         }

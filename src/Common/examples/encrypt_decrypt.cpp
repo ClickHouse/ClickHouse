@@ -87,7 +87,7 @@ int main(int argc, char ** argv)
             zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
             auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
 
-            zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
+            zkutil::ZooKeeperNodeCache zk_node_cache([&](UInt64) { return zookeeper; });
             config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
         }
         DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));

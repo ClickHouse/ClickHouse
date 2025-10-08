@@ -11,12 +11,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <Backups/IBackup.h>
-#include <Backups/WithRetries.h>
 
 #include <span>
 
 namespace DB
 {
+
+class WithRetries;
 
 namespace ErrorCodes
 {

@@ -34,6 +34,9 @@ namespace Setting
     extern const SettingsBool allow_distributed_ddl;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
@@ -58,6 +61,17 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
     };
 
     return !unsupported_alter_types.contains(type);
+}
+
+DDLQueryOnClusterParams::DDLQueryOnClusterParams(ContextPtr context_)
+{
+    const Settings & settings = context_->getSettingsRef();
+    retries_info = {
+        settings[Setting::keeper_max_retries],
+        settings[Setting::keeper_retry_initial_backoff_ms],
+        settings[Setting::keeper_retry_max_backoff_ms],
+        context_->getProcessListElement()
+    };
 }
 
 

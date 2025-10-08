@@ -34,7 +34,7 @@ protected:
     virtual void handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id) = 0;
     virtual void fillHostStatus(const String & host_id, const ExecutionStatus & status, MutableColumns & columns) = 0;
 
-    virtual NameSet getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper);
+    virtual NameSet getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     Strings getNewAndUpdate(const Strings & current_finished_hosts);
     ExecutionStatus getExecutionStatus(const fs::path & status_path);

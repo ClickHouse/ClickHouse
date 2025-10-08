@@ -33,8 +33,10 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_)
+    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, const ZooKeeperRetriesInfo & retries_info_)
+        : name(std::move(name_))
+        , logger(logger_)
+        , retries_info(retries_info_)
     {
     }
 
@@ -168,6 +170,8 @@ public:
     const std::string & getName() const { return name; }
 
     LoggerPtr getLogger() const { return logger; }
+
+    UInt64 getCurrentBackoffMs() const { return current_backoff_ms; }
 
 private:
     struct KeeperError

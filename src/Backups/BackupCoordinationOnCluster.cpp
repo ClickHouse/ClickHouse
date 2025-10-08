@@ -203,11 +203,11 @@ void BackupCoordinationOnCluster::startup()
 
 void BackupCoordinationOnCluster::createRootNodes()
 {
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes", WithRetries::kInitialization);
+    auto holder = with_retries.createRetriesControlHolderForBackup("createRootNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         zk->createAncestors(zookeeper_path);
         zk->createIfNotExists(zookeeper_path, "");
@@ -286,11 +286,11 @@ ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeep
 void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name)
 {
     {
-        auto holder = with_retries.createRetriesControlHolder(logging_name + "::create");
+        auto holder = with_retries.createRetriesControlHolderForBackup(logging_name + "::create");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             zk->createIfNotExists(path, "");
         });
     }
@@ -311,11 +311,11 @@ void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String
         String part = value.substr(begin, end - begin);
         String part_path = fmt::format("{}/{:06}", path, i);
 
-        auto holder = with_retries.createRetriesControlHolder(logging_name + "::createPart");
+        auto holder = with_retries.createRetriesControlHolderForBackup(logging_name + "::createPart");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             zk->createIfNotExists(part_path, part);
         });
     }
@@ -326,11 +326,11 @@ String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const 
     Strings part_names;
 
     {
-        auto holder = with_retries.createRetriesControlHolder(logging_name + "::getChildren");
+        auto holder = with_retries.createRetriesControlHolderForBackup(logging_name + "::getChildren");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             part_names = zk->getChildren(path);
             std::sort(part_names.begin(), part_names.end());
         });
@@ -341,11 +341,11 @@ String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const 
     {
         String part;
         String part_path = path + "/" + part_name;
-        auto holder = with_retries.createRetriesControlHolder(logging_name + "::get");
+        auto holder = with_retries.createRetriesControlHolderForBackup(logging_name + "::get");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             part = zk->get(part_path);
         });
         res += part;
@@ -366,11 +366,11 @@ void BackupCoordinationOnCluster::addReplicatedPartNames(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedPartNames() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedPartNames");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addReplicatedPartNames");
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(replica_name);
@@ -397,11 +397,11 @@ void BackupCoordinationOnCluster::addReplicatedMutations(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedMutations() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedMutations");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addReplicatedMutations");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             String path = zookeeper_path + "/repl_mutations/" + escapeForFileName(table_zk_path);
             zk->createIfNotExists(path, "");
             path += "/" + escapeForFileName(replica_name);
@@ -426,11 +426,11 @@ void BackupCoordinationOnCluster::addReplicatedDataPath(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedDataPath() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedDataPath");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addReplicatedDataPath");
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(data_path);
@@ -453,12 +453,12 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
 
     std::vector<BackupCoordinationReplicatedTables::PartNamesForTableReplica> part_names_for_replicated_tables;
     {
-        auto holder = with_retries.createRetriesControlHolder("prepareReplicatedTables::repl_part_names");
+        auto holder = with_retries.createRetriesControlHolderForBackup("prepareReplicatedTables::repl_part_names");
         holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
         {
             part_names_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_part_names";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -478,12 +478,12 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
 
     std::vector<BackupCoordinationReplicatedTables::MutationsForTableReplica> mutations_for_replicated_tables;
     {
-        auto holder = with_retries.createRetriesControlHolder("prepareReplicatedTables::repl_mutations");
+        auto holder = with_retries.createRetriesControlHolderForBackup("prepareReplicatedTables::repl_mutations");
         holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
         {
             mutations_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_mutations";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -503,12 +503,12 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
 
     std::vector<BackupCoordinationReplicatedTables::DataPathForTableReplica> data_paths_for_replicated_tables;
     {
-        auto holder = with_retries.createRetriesControlHolder("prepareReplicatedTables::repl_data_paths");
+        auto holder = with_retries.createRetriesControlHolderForBackup("prepareReplicatedTables::repl_data_paths");
         holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
         {
             data_paths_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_data_paths";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -541,11 +541,11 @@ void BackupCoordinationOnCluster::addReplicatedAccessFilePath(const String & acc
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedAccessFilePath() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedAccessFilePath");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addReplicatedAccessFilePath");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + AccessEntityTypeInfo::get(access_entity_type).name;
@@ -568,12 +568,12 @@ void BackupCoordinationOnCluster::prepareReplicatedAccess() const
         return;
 
     std::vector<BackupCoordinationReplicatedAccess::FilePathForAccessEntity> file_path_for_access_entities;
-    auto holder = with_retries.createRetriesControlHolder("prepareReplicatedAccess");
+    auto holder = with_retries.createRetriesControlHolderForBackup("prepareReplicatedAccess");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
         file_path_for_access_entities.clear();
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         String path = zookeeper_path + "/repl_access";
         for (const String & escaped_access_zk_path : zk->getChildren(path))
@@ -606,11 +606,11 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedSQLObjectsDir() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedSQLObjectsDir");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addReplicatedSQLObjectsDir");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_sql_objects/" + escapeForFileName(loader_zk_path);
         zk->createIfNotExists(path, "");
 
@@ -641,12 +641,12 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
         return;
 
     std::vector<BackupCoordinationReplicatedSQLObjects::DirectoryPathForSQLObject> directories_for_sql_objects;
-    auto holder = with_retries.createRetriesControlHolder("prepareReplicatedSQLObjects");
+    auto holder = with_retries.createRetriesControlHolderForBackup("prepareReplicatedSQLObjects");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
         directories_for_sql_objects.clear();
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         String path = zookeeper_path + "/repl_sql_objects";
         for (const String & escaped_loader_zk_path : zk->getChildren(path))
@@ -679,11 +679,11 @@ void BackupCoordinationOnCluster::addKeeperMapTable(const String & table_zookeep
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addKeeperMapTable() must not be called after preparing");
     }
 
-    auto holder = with_retries.createRetriesControlHolder("addKeeperMapTable");
+    auto holder = with_retries.createRetriesControlHolderForBackup("addKeeperMapTable");
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
         if (auto res
             = zk->tryCreate(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
@@ -698,13 +698,13 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
         return;
 
     std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> keeper_map_table_infos;
-    auto holder = with_retries.createRetriesControlHolder("prepareKeeperMapTables");
+    auto holder = with_retries.createRetriesControlHolderForBackup("prepareKeeperMapTables");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
         keeper_map_table_infos.clear();
 
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
 
@@ -781,11 +781,11 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
 
     Strings hosts_with_file_infos;
     {
-        auto holder = with_retries.createRetriesControlHolder("prepareFileInfos::get_hosts");
+        auto holder = with_retries.createRetriesControlHolderForBackup("prepareFileInfos::get_hosts");
         holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             hosts_with_file_infos = zk->getChildren(zookeeper_path + "/file_infos");
         });
     }
@@ -812,11 +812,11 @@ bool BackupCoordinationOnCluster::startWritingFile(size_t data_file_index)
     String full_path = zookeeper_path + "/writing_files/" + std::to_string(data_file_index);
     String host_index_str = std::to_string(current_host_index);
 
-    auto holder = with_retries.createRetriesControlHolder("startWritingFile");
+    auto holder = with_retries.createRetriesControlHolderForBackup("startWritingFile");
     holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         auto code = zk->tryCreate(full_path, host_index_str, zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)

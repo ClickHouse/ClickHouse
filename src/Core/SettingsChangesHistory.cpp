@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"keeper_fault_injection_probability", 0, 0, "New setting"},
+            {"keeper_fault_injection_seed", 0, 0, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},

@@ -33,7 +33,7 @@ BlockIO InterpreterCreateResourceQuery::execute()
         if (current_context->getWorkloadEntityStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because workload entities are replicated automatically");
 
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(current_context);
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }

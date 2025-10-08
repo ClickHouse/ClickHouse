@@ -15,10 +15,7 @@ namespace ErrorCodes
 
 TEST(ReplicatedAccessStorage, ShutdownWithFailedStartup)
 {
-    auto get_zk = []()
-    {
-        return std::shared_ptr<zkutil::ZooKeeper>();
-    };
+    auto get_zk = [](UInt64) { return std::shared_ptr<zkutil::ZooKeeper>(); };
 
     AccessChangesNotifier changes_notifier;
 

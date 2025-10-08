@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
