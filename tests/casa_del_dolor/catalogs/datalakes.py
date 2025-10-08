@@ -11,7 +11,6 @@ import threading
 from pathlib import Path
 from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
-from pyiceberg.catalog.rest import RestCatalog
 from .laketables import (
     TableStorage,
     LakeFormat,
@@ -338,7 +337,6 @@ logger.jetty.level = warn
             "org.datanucleus:datanucleus-api-jdo:4.2.4",
             "org.datanucleus:datanucleus-rdbms:4.1.19",
         ]
-
         if lake == LakeFormat.Iceberg:
             catalog_extension = (
                 "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
@@ -386,6 +384,14 @@ logger.jetty.level = warn
             # CATALOG CONFIGURATIONS
             # ============================================================
             if catalog == LakeCatalogs.Glue:
+                # Mock AWS credentials
+                builder.config("spark.driverEnv.AWS_ACCESS_KEY_ID", "testing")
+                builder.config("spark.driverEnv.AWS_SECRET_ACCESS_KEY", "testing")
+                builder.config("spark.driverEnv.AWS_SESSION_TOKEN", "testing")
+                builder.config("spark.executorEnv.AWS_ACCESS_KEY_ID", "testing")
+                builder.config("spark.executorEnv.AWS_SECRET_ACCESS_KEY", "testing")
+                builder.config("spark.executorEnv.AWS_SESSION_TOKEN", "testing")
+
                 if lake == LakeFormat.Iceberg:
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.catalog-impl",
@@ -396,12 +402,15 @@ logger.jetty.level = warn
                         "spark.hadoop.hive.metastore.client.factory.class",
                         "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
                     )
-                    builder.enableHiveSupport()
 
                 if storage == TableStorage.S3:
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.io-impl",
                         "org.apache.iceberg.aws.s3.S3FileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -412,42 +421,71 @@ logger.jetty.level = warn
                         cluster.minio_secret_key,
                     )
                     builder.config(
-                        f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1"
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.glue.endpoint",
+                        "http://localhost:3000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.glue.region", "us-east-1"
                     )
 
                     builder.config(
-                        "spark.sql.warehouse.dir",
-                        "s3a://warehouse-glue",
-                    )
-                    builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
-                        "s3a://warehouse-glue",
+                        "s3://warehouse-glue",
                     )
             elif catalog == LakeCatalogs.Hive:
                 builder.config(
                     "spark.sql.catalog.hive.catalog-impl",
                     "org.apache.iceberg.hive.HiveCatalog",
                 )
+
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
                 )
-                builder.enableHiveSupport()
                 if storage == TableStorage.S3:
                     builder.config(
-                        "spark.sql.warehouse.dir",
-                        "s3a://warehouse-hms",
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.aws.s3.S3FileIO",
                     )
                     builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                        cluster.minio_access_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                        cluster.minio_secret_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access",
+                        "true",
+                    )
+
+                    builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
-                        "s3a://warehouse-hms",
+                        "s3a://warehouse-hms/data",
                     )
             elif catalog == LakeCatalogs.REST or (
                 catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
             ):
-                builder.config(
-                    f"spark.sql.catalog.{catalog_name}.catalog-impl",
-                    "org.apache.iceberg.rest.RESTCatalog",
-                )
+                # builder.config(
+                #    f"spark.sql.catalog.{catalog_name}.catalog-impl",
+                #    "org.apache.iceberg.rest.RESTCatalog",
+                # )
+                builder.config(f"spark.sql.catalog.{catalog_name}.type", "rest")
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
                     f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
@@ -458,6 +496,10 @@ logger.jetty.level = warn
                         "org.apache.iceberg.aws.s3.S3FileIO",
                     )
                     builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                    )
+                    builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
                         cluster.minio_access_key,
                     )
@@ -466,13 +508,16 @@ logger.jetty.level = warn
                         cluster.minio_secret_key,
                     )
                     builder.config(
-                        f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1"
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
                     )
 
-                    builder.config("spark.sql.warehouse.dir", "s3a://warehouse-rest")
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
-                        "s3a://warehouse-rest",
+                        "s3://warehouse-rest",
                     )
             elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
                 builder.config(
@@ -502,6 +547,21 @@ logger.jetty.level = warn
             # STORAGE CONFIGURATIONS
             # ============================================================
             if storage == TableStorage.S3:
+                # Driver environment
+                builder.config(
+                    "spark.driverEnv.MINIO_ACCESS_KEY", cluster.minio_access_key
+                )
+                builder.config(
+                    "spark.driverEnv.MINIO_SECRET_KEY", cluster.minio_secret_key
+                )
+                # Executor environment
+                builder.config(
+                    "spark.executorEnv.MINIO_ACCESS_KEY", cluster.minio_access_key
+                )
+                builder.config(
+                    "spark.executorEnv.MINIO_SECRET_KEY", cluster.minio_secret_key
+                )
+
                 if catalog not in (LakeCatalogs.Glue, LakeCatalogs.REST):
                     # S3A filesystem implementation
                     builder.config(
@@ -653,85 +713,48 @@ logger.jetty.level = warn
         next_catalog_impl = None
 
         # Load catalog if needed
-        if next_catalog == LakeCatalogs.REST:
-            if next_lake == LakeFormat.Iceberg:
-                next_warehouse = ""
-                kwargs = {"py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO"}
-                if next_storage == TableStorage.S3:
-                    kwargs.update(
-                        {
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": cluster.minio_access_key,
-                            "s3.secret-access-key": cluster.minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                            "s3.connection-ssl.enabled": "false",
-                        }
-                    )
-                    next_warehouse = f"s3a://{catalog_name}"
-                elif next_storage == TableStorage.Azure:
-                    kwargs.update(
-                        {
-                            "wasb.account-name": cluster.azurite_account,
-                            "wasb.account-key": cluster.azurite_key,
-                            "azure.blob-endpoint": f"http://{cluster.azurite_ip}:{cluster.azurite_port}/{cluster.azurite_account}",
-                        }
-                    )
-                    next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
-                elif next_storage == TableStorage.Local:
-                    next_warehouse = f"file://{get_local_base_path(catalog_name)}"
-                next_catalog_impl = RestCatalog(
-                    catalog_name,
-                    uri="http://localhost:8182",
-                    warehouse=next_warehouse,
-                    **kwargs,
+        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
+            params = {
+                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:9000",
+                "s3.access-key-id": cluster.minio_access_key,
+                "s3.secret-access-key": cluster.minio_secret_key,
+                "s3.signing-region": "us-east-1",
+                "s3.path-style-access": "true",
+                "s3.connection-ssl.enabled": "false",
+            }
+            if next_catalog == LakeCatalogs.REST:
+                params.update(
+                    {
+                        "type": "rest",
+                        "uri": "http://localhost:8182",
+                    }
+                )
+            elif next_catalog == LakeCatalogs.Glue:
+                params.update(
+                    {
+                        "type": "glue",
+                        "glue.endpoint": "http://localhost:3000",
+                        "glue.region": "us-east-1",
+                        "glue.access-key-id": cluster.minio_access_key,
+                        "glue.secret-access-key": cluster.minio_secret_key,
+                    }
+                )
+            elif next_catalog == LakeCatalogs.Hive:
+                params.update(
+                    {
+                        "type": "hive",
+                        "uri": "thrift://0.0.0.0:9083",
+                        "client.region": "us-east-1",
+                    }
                 )
             else:
-                raise Exception("REST catalog not avaiable outside Iceberg")
-        elif next_catalog == LakeCatalogs.Glue:
-            if next_storage == TableStorage.S3:
-                if next_lake == LakeFormat.Iceberg:
-                    next_catalog_impl = load_catalog(
-                        catalog,
-                        **{
-                            "type": "glue",
-                            "glue.endpoint": "http://localhost:3000",
-                            "glue.region": "us-east-1",
-                            "glue.access-key-id": cluster.minio_access_key,
-                            "glue.secret-access-key": cluster.minio_secret_key,
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": cluster.minio_access_key,
-                            "s3.secret-access-key": cluster.minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                            "s3.connection-ssl.enabled": "false",
-                        },
-                    )
-            else:
-                raise Exception("Glue catalog not available outside AWS at the moment")
-        elif next_catalog == LakeCatalogs.Hive:
-            if next_storage == TableStorage.S3:
-                if next_lake == LakeFormat.Iceberg:
-                    next_catalog_impl = load_catalog(
-                        catalog,
-                        **{
-                            "uri": "thrift://0.0.0.0:9083",
-                            "type": "hive",
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": cluster.minio_access_key,
-                            "s3.secret-access-key": cluster.minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                            "s3.connection-ssl.enabled": "false",
-                        },
-                    )
-            else:
-                raise Exception("Hive catalog not available outside AWS at the moment")
+                raise Exception("I have not implemented this case yet")
+            next_catalog_impl = load_catalog(catalog_name, **params)
         elif next_catalog == LakeCatalogs.Unity:
             self.start_uc_server()
             self.create_uc_namespace(catalog_name)
-        elif next_catalog == LakeCatalogs.Nessie:
-            raise Exception("No Nessie yet")
+        else:
+            raise Exception("I have not implemented this case yet")
 
         with self.catalogs_lock:
             self.catalogs[catalog_name] = DolorCatalog(
@@ -739,16 +762,22 @@ logger.jetty.level = warn
                 next_catalog,
                 next_catalog_impl,
             )
-        next_session = self.get_next_session(
-            cluster, catalog_name, next_storage, next_lake, next_catalog
-        )
-        try:
-            self.create_database(next_session, catalog_name)
-        except Exception as e:
-            saved_exception = e
-        next_session.stop()
-        if saved_exception is not None:
-            raise saved_exception
+        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
+            try:
+                next_catalog_impl.create_namespace("test")
+            except Exception:
+                pass  # already exists
+        else:
+            next_session = self.get_next_session(
+                cluster, catalog_name, next_storage, next_lake, next_catalog
+            )
+            try:
+                self.create_database(next_session, catalog_name)
+            except Exception as e:
+                saved_exception = e
+            next_session.stop()
+            if saved_exception is not None:
+                raise saved_exception
         return True
 
     def create_lake_table(self, cluster, data) -> bool:
@@ -758,6 +787,7 @@ logger.jetty.level = warn
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
+        catalog_impl = None
 
         self.catalogs_lock.acquire()
         if catalog_name not in self.catalogs:
@@ -780,6 +810,7 @@ logger.jetty.level = warn
                 raise saved_exception
         else:
             catalog_type = self.catalogs[catalog_name].catalog_type
+            catalog_impl = self.catalogs[catalog_name].catalog_impl
             self.catalogs_lock.release()
 
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
@@ -802,7 +833,24 @@ logger.jetty.level = warn
             self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
         try:
-            self.run_query(next_session, next_sql)
+            if (
+                next_lake == LakeFormat.Iceberg
+                and next_storage == TableStorage.S3
+                and catalog_type
+                in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
+            ):
+                catalog_impl.create_table(
+                    identifier=("test", data["table_name"]),
+                    location=f"s3{"a" if catalog_type == LakeCatalogs.Hive else ""}://warehouse-{"rest" if catalog_type == LakeCatalogs.REST else ("hms" if catalog_type == LakeCatalogs.Hive else "glue")}{"/data" if catalog_type == LakeCatalogs.Hive else ""}",
+                    schema=next_table_generator.generate_catalog_schema(
+                        data["columns"]
+                    ),
+                )
+            elif catalog_type == LakeCatalogs.NoCatalog:
+                self.run_query(next_session, next_sql)
+            else:
+                raise Exception("I have not implemented this case yet")
+
             if random.randint(1, 5) != 5:
                 self.data_generator.insert_random_data(next_session, next_table)
         except Exception as e:

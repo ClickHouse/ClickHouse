@@ -2169,7 +2169,7 @@ void StatementGenerator::generateSelect(
         {
             addWindowDefs(rg, ssc);
         }
-        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 2)
+        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 3)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
         }
@@ -2215,7 +2215,7 @@ void StatementGenerator::generateSelect(
 
             this->width++;
             generateExpression(rg, eca->mutable_expr());
-            if (!top)
+            if (!top && rg.nextBool())
             {
                 const String ncname = getNextAlias();
 

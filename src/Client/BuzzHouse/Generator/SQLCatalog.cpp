@@ -46,8 +46,9 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format
-            = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue || rg.nextBool())
+            ? LakeFormat::Iceberg
+            : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
@@ -171,6 +172,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 const Catalog * cat = nullptr;
                 const ServerCredentials & sc = fc.dolor_server.value();
 
+                chassert(isOnS3()); /// What is supported at the moment
                 switch (catalog)
                 {
                     case LakeCatalog::Glue:
@@ -188,7 +190,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                     default:
                         chassert(0);
                 }
-                next_bucket_path = fmt::format("{}/t{}", cat->warehouse, tname);
+                next_bucket_path = fmt::format(
+                    "http://{}:{}/{}/t{}", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
             }
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())

@@ -34,6 +34,7 @@ from integration.helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
 from oracles import ElOraculoDeTablas
 from properties import (
@@ -348,6 +349,24 @@ with open(current_server, "r+") as f:
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
+
+if args.with_minio:
+    # Set environment variables before cluster starts
+    credentials_file = tempfile.NamedTemporaryFile()
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ENDPOINT_URL"] = "http://localhost:3000"
+    os.environ["MINIO_ACCESS_KEY"] = minio_access_key
+    os.environ["MINIO_SECRET_KEY"] = minio_secret_key
+    with open(credentials_file.name, "w+") as file:
+        file.write(
+            f"[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
+        )
+    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
+
 cluster = ClickHouseCluster(
     __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
 )
@@ -420,19 +439,9 @@ servers[len(servers) - 1].wait_start(8)
 servers[0].give_user_files_permissions()
 
 # Uploaders for object storage
-credentials_file = tempfile.NamedTemporaryFile()
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
-    os.environ["AWS_ACCESS_KEY_ID"] = cluster.minio_access_key
-    os.environ["AWS_SECRET_ACCESS_KEY"] = cluster.minio_secret_key
-    os.environ["AWS_REGION"] = "us-east-1"
-    with open(credentials_file.name, "w+") as file:
-        file.write(
-            f"[default]\naws_access_key_id = {cluster.minio_access_key}\naws_secret_access_key = {cluster.minio_secret_key}\n"
-        )
-    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
-    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 if args.with_azurite:
     cluster.blob_service_client = cluster.blob_service_client
     cluster.container_client = cluster.blob_service_client.create_container(

@@ -167,7 +167,7 @@ class BuzzHouseGenerator(Generator):
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
                     "port": 9083,
-                    "warehouse": "warehouse-hms",
+                    "warehouse": "warehouse-hms/data",
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {

@@ -228,8 +228,11 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
         sv->set_property(next);
         sv->set_value(
-            ((create && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "enable_"))) || rg.nextBool()) ? "1"
-                                                                                                                                   : "0");
+            ((create
+              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")))
+             || rg.nextBool())
+                ? "1"
+                : "0");
     }
     this->ids.clear();
 }

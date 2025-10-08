@@ -2,7 +2,7 @@ import random
 import typing
 from abc import abstractmethod
 
-from .clickhousetospark import ClickHouseSparkTypeMapper
+from .clickhousetospark import ClickHouseMapping, ClickHouseTypeMapper
 from .laketables import (
     LakeFormat,
     SparkTable,
@@ -12,15 +12,9 @@ from .laketables import (
 )
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (
-    ByteType,
-    ShortType,
-    IntegerType,
-    LongType,
-    DateType,
-    TimestampType,
-    DataType,
-)
+from pyiceberg.schema import Schema
+import pyspark.sql.types as sp
+import pyiceberg.types as it
 
 Parameter = typing.Callable[[], int | float | str]
 
@@ -34,7 +28,7 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
 
 class LakeTableGenerator:
     def __init__(self):
-        self.type_mapper = ClickHouseSparkTypeMapper()
+        self.type_mapper = ClickHouseTypeMapper()
         self.write_format: FileFormat = FileFormat.Parquet
 
     @staticmethod
@@ -76,7 +70,9 @@ class LakeTableGenerator:
         return []
 
     @abstractmethod
-    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+    def add_generated_col(
+        self, columns: dict[str, SparkColumn], col: sp.DataType
+    ) -> str:
         return ""
 
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
@@ -117,10 +113,12 @@ class LakeTableGenerator:
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_def = []
         columns_spark = {}
+        self.type_mapper.reset()
         for val in columns:
             # Convert columns
+            self.type_mapper.increment()
             str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
-                val["type"], False
+                val["type"], False, ClickHouseMapping.Spark
             )
             generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
@@ -169,6 +167,10 @@ class LakeTableGenerator:
             ddl += ",".join(prop_lines)
             ddl += ")"
         return (ddl + ";", res)
+
+    @abstractmethod
+    def generate_catalog_schema(self, columns: list[dict[str, str]]):
+        return []
 
     def generate_alter_table_statements(
         self,
@@ -258,8 +260,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         for k, val in flattened_columns.items():
             res.append(k)
             if (
-                isinstance(val, TimestampType)
-                or isinstance(val, DateType)
+                isinstance(val, sp.TimestampType)
+                or isinstance(val, sp.DateType)
                 or random.randint(0, 9) == 0
             ):
                 res.append(f"year({k})")
@@ -270,8 +272,32 @@ class IcebergTableGenerator(LakeTableGenerator):
             res.append(f"truncate({random.randint(0, 1000)}, {k})")
         return res
 
-    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+    def add_generated_col(
+        self, columns: dict[str, SparkColumn], col: sp.DataType
+    ) -> str:
         return ""
+
+    @abstractmethod
+    def generate_catalog_schema(self, columns: list[dict[str, str]]):
+        fields = []
+
+        self.type_mapper.reset()
+        for val in columns:
+            # Convert columns
+            next_field_id = self.type_mapper.field_id
+            _, nullable, iceberg_type = self.type_mapper.clickhouse_to_spark(
+                val["type"], False, ClickHouseMapping.Iceberg
+            )
+            fields.append(
+                it.NestedField(
+                    field_id=next_field_id,
+                    name=val["name"],
+                    field_type=iceberg_type,
+                    required=not nullable,
+                )
+            )
+            self.type_mapper.increment()
+        return Schema(*fields)
 
     def generate_table_properties_impl(
         self,
@@ -490,7 +516,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.avro.compression-codec": lambda: random.choice(
-                        ["snappy", "bzip2", "uncompressed"]
+                        ["snappy", "uncompressed"]
                     )
                 }
             )
@@ -599,14 +625,14 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
+                res += f", snapshot_id => '{random.choice(snapshots)}'"
             res += ")"
             return res
         if next_option == 6:
             res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
+                res += f", snapshot_id => '{random.choice(snapshots)}'"
             res += ")"
             return res
         if next_option == 7:
@@ -696,7 +722,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 "set_current_snapshot",
                 "cherrypick_snapshot",
             ]
-            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
+            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => '{random.choice(snapshots)}')"
         timestamps = self.get_timestamps(spark, table)
         if len(timestamps) > 0 and next_option in (13, 14):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
@@ -721,20 +747,28 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             res.append(k)
         return res
 
-    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
-        if isinstance(col, LongType) and random.randint(1, 10) < 3:
+    def add_generated_col(
+        self, columns: dict[str, SparkColumn], col: sp.DataType
+    ) -> str:
+        if isinstance(col, sp.LongType) and random.randint(1, 10) < 3:
             return f" GENERATED {random.choice(["ALWAYS", "BY DEFAULT"])} AS IDENTITY"
         if len(columns) > 0 and random.randint(1, 10) < 3:
             flattened = {}
             for _, val in columns.items():
                 val.flat_column(flattened)
             if (
-                isinstance(col, (ByteType, ShortType, IntegerType, LongType))
+                isinstance(
+                    col, (sp.ByteType, sp.ShortType, sp.IntegerType, sp.LongType)
+                )
                 and random.randint(1, 2) == 1
             ):
                 return f" GENERATED ALWAYS AS ({random.choice(["year", "month", "day", "hour"])}({random.choice(list(flattened.keys()))}))"
             return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
         return ""
+
+    @abstractmethod
+    def generate_catalog_schema(self, columns: list[dict[str, str]]):
+        return []
 
     def generate_table_properties_impl(
         self,

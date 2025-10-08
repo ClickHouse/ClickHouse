@@ -1,81 +1,100 @@
+from enum import Enum
 from typing import Dict, List, Tuple, Optional
 import random
 import re
-from typing import Any
-
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    BooleanType,
-    ByteType,
-    ShortType,
-    IntegerType,
-    LongType,
-    FloatType,
-    DoubleType,
-    DecimalType,
-    CharType,
-    VarcharType,
-    StringType,
-    BinaryType,
-    DateType,
-    TimestampType,
-    ArrayType,
-    MapType,
-    DataType,
-)
+import pyspark.sql.types as sp
+import pyiceberg.types as it
 
 
-class ClickHouseSparkTypeMapper:
-    """Maps between ClickHouse and Spark SQL data types using string representations."""
+class ClickHouseMapping(Enum):
+    Unkown = 0
+    Spark = 1
+    Iceberg = 2
+
+
+class ClickHouseTypeMapper:
+    """Maps between ClickHouse and Spark and Iceberg data types with string representations."""
 
     def __init__(self):
         # Basic type mappings from ClickHouse to Spark SQL strings
-        self.clickhouse_to_spark_map: Dict[str, tuple[str, DataType]] = {
+        self.field_id = 1
+        self.clickhouse_to_spark_map: Dict[
+            str, tuple[str, sp.DataType, it.PrimitiveType]
+        ] = {
             # Numeric types
-            "UInt8": ("SMALLINT", ShortType()),  # or 'SHORT'
-            "UInt16": ("INT", IntegerType()),  # or 'INTEGER'
-            "UInt32": ("BIGINT", LongType()),  # or 'LONG'
-            "UInt64": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
-            "UInt128": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
-            "UInt256": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
-            "Int8": ("TINYINT", ByteType()),  # or 'BYTE'
-            "Int16": ("SMALLINT", ShortType()),  # or 'SHORT'
-            "Int32": ("INT", IntegerType()),  # or 'INTEGER'
-            "Int64": ("BIGINT", LongType()),  # or 'LONG'
-            "Int128": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
-            "Int256": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
-            "Float32": ("FLOAT", FloatType()),  # or 'REAL'
-            "Float64": ("DOUBLE", DoubleType()),  # or 'DOUBLE PRECISION'
-            "BFloat16": ("FLOAT", FloatType()),
+            "UInt8": ("SMALLINT", sp.ShortType(), it.IntegerType()),  # or 'SHORT'
+            "UInt16": ("INT", sp.IntegerType(), it.IntegerType()),  # or 'INTEGER'
+            "UInt32": ("BIGINT", sp.LongType(), it.LongType()),  # or 'LONG'
+            "UInt64": (
+                "BIGINT",
+                sp.LongType(),
+                it.LongType(),
+            ),  # May overflow - consider DECIMAL(20,0)
+            "UInt128": (
+                "BIGINT",
+                sp.LongType(),
+                it.LongType(),
+            ),  # May overflow - consider DECIMAL(20,0)
+            "UInt256": (
+                "BIGINT",
+                sp.LongType(),
+                it.LongType(),
+            ),  # May overflow - consider DECIMAL(20,0)
+            "Int8": ("TINYINT", sp.ByteType(), it.IntegerType()),  # or 'BYTE'
+            "Int16": ("SMALLINT", sp.ShortType(), it.IntegerType()),  # or 'SHORT'
+            "Int32": ("INT", sp.IntegerType(), it.IntegerType()),  # or 'INTEGER'
+            "Int64": ("BIGINT", sp.LongType(), it.LongType()),  # or 'LONG'
+            "Int128": (
+                "BIGINT",
+                sp.LongType(),
+                it.LongType(),
+            ),  # May overflow - consider DECIMAL(20,0)
+            "Int256": (
+                "BIGINT",
+                sp.LongType(),
+                it.LongType(),
+            ),  # May overflow - consider DECIMAL(20,0)
+            "Float32": ("FLOAT", sp.FloatType(), it.FloatType()),  # or 'REAL'
+            "Float64": (
+                "DOUBLE",
+                sp.DoubleType(),
+                it.DoubleType(),
+            ),  # or 'DOUBLE PRECISION'
+            "BFloat16": ("FLOAT", sp.FloatType(), it.FloatType()),
             # String types
-            "String": ("STRING", StringType()),
-            "FixedString": ("STRING", StringType()),
+            "String": ("STRING", sp.StringType(), it.StringType()),
+            "FixedString": ("STRING", sp.StringType(), it.StringType()),
             # Date and Time types
-            "Date": ("STRING", StringType()),  # it doesn't fit
-            "Date32": ("DATE", DateType()),
-            "Time": ("STRING", StringType()),
-            "Time64": ("STRING", StringType()),
-            "DateTime": ("STRING", StringType()),  # it doesn't fit
-            "DateTime64": ("TIMESTAMP", TimestampType()),
+            "Date": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
+            "Date32": ("DATE", sp.DateType(), it.DateType()),
+            "Time": ("STRING", sp.StringType(), it.TimeType()),
+            "Time64": ("STRING", sp.StringType(), it.TimeType()),
+            "DateTime": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
+            "DateTime64": ("TIMESTAMP", sp.TimestampType(), it.TimestampType()),
             # Boolean
-            "Bool": ("BOOLEAN", BooleanType()),
-            "Boolean": ("BOOLEAN", BooleanType()),
+            "Bool": ("BOOLEAN", sp.BooleanType(), it.BooleanType()),
+            "Boolean": ("BOOLEAN", sp.BooleanType(), it.BooleanType()),
             # UUID
-            "UUID": ("STRING", StringType()),
+            "UUID": ("STRING", sp.StringType(), it.UUIDType()),
             # IP addresses
-            "IPv4": ("STRING", StringType()),
-            "IPv6": ("STRING", StringType()),
+            "IPv4": ("STRING", sp.StringType(), it.StringType()),
+            "IPv6": ("STRING", sp.StringType(), it.StringType()),
             # JSON and Dynamic
-            "JSON": ("STRING", StringType()),
-            "Dynamic": ("STRING", StringType()),
+            "JSON": ("STRING", sp.StringType(), it.StringType()),
+            "Dynamic": ("STRING", sp.StringType(), it.StringType()),
         }
 
+    def reset(self):
+        self.field_id = 1
+
+    def increment(self):
+        self.field_id += 1
+
     def clickhouse_to_spark(
-        self, ch_type: str, inside_nullable: bool
-    ) -> Tuple[str, bool, DataType]:
+        self, ch_type: str, inside_nullable: bool, mapping: ClickHouseMapping
+    ) -> Tuple[str, bool, sp.DataType | it.IcebergType]:
         """
-        Convert ClickHouse type to Spark SQL type string.
+        Convert ClickHouse type to Spark or Iceberg type with string representation.
 
         Args:
             ch_type: ClickHouse type string (e.g., 'Int32', 'Nullable(String)', 'Array(Int32)')
@@ -85,24 +104,36 @@ class ClickHouseSparkTypeMapper:
             A tuple of (spark_type_string, is_nullable)
         """
         ch_type = ch_type.strip()
+        module = sp if mapping == ClickHouseMapping.Spark else it
 
         # Handle Nullable types
         nullable_match = re.match(r"Nullable\((.*)\)$", ch_type)
         if nullable_match:
             inner_type = nullable_match.group(1)
             # In Spark SQL, nullable is handled at column level, not type level
-            return self.clickhouse_to_spark(inner_type, True)
+            return self.clickhouse_to_spark(inner_type, True, mapping)
 
         # Handle Array types
         if ch_type.startswith("Array("):
             element_type = self._extract_nested_content(ch_type, "Array")
+            current_id = self.field_id
+
+            self.increment()
             inner_str, inner_null, inner_tp = self.clickhouse_to_spark(
-                element_type, False
+                element_type, False, mapping
             )
             return (
                 f"ARRAY<{inner_str}>",
                 False,
-                ArrayType(inner_tp, containsNull=inner_null),
+                (
+                    sp.ArrayType(inner_tp, containsNull=inner_null)
+                    if mapping == ClickHouseMapping.Spark
+                    else it.ListType(
+                        element_id=current_id,
+                        element_type=inner_tp,
+                        element_required=not inner_null,
+                    )
+                ),
             )
 
         # Handle Nested (similar to Array of Structs)
@@ -110,24 +141,51 @@ class ClickHouseSparkTypeMapper:
             fields_str = self._extract_nested_content(ch_type, "Nested")
             fields = self._parse_nested_fields(fields_str)
             struct_fields = []
+            current_id = self.field_id
+
             if fields:
-                parsed_fields = {
-                    name: self.clickhouse_to_spark(ch_field_type, False)
-                    for name, ch_field_type in fields.items()
-                }
+                parsed_fields = {}
+                for name, ch_field_type in fields.items():
+                    self.increment()
+                    parsed_fields[name] = self.clickhouse_to_spark(
+                        ch_field_type, False, mapping
+                    )
                 str_fields = ", ".join(
                     [f"{cname}: {val[0]}" for cname, val in parsed_fields.items()]
                 )
                 struct_fields = [
-                    StructField(name=cname, dataType=val[2], nullable=val[1])
+                    (
+                        sp.StructField(name=cname, dataType=val[2], nullable=val[1])
+                        if mapping == ClickHouseMapping.Spark
+                        else it.NestedField(
+                            field_id=current_id,
+                            name=cname,
+                            field_type=val[2],
+                            required=not val[1],
+                        )
+                    )
                     for cname, val in parsed_fields.items()
                 ]
+                inner_fields = (
+                    module.StructType(struct_fields)
+                    if mapping == ClickHouseMapping.Spark
+                    else module.StructType(*struct_fields)
+                )
+
                 return (
                     f"ARRAY<STRUCT<{str_fields}>>",
                     False,
-                    ArrayType(StructType(struct_fields), containsNull=False),
+                    (
+                        sp.ArrayType(inner_fields)
+                        if mapping == ClickHouseMapping.Spark
+                        else it.ListType(
+                            element_id=current_id,
+                            element_type=inner_fields,
+                            element_required=True,
+                        )
+                    ),
                 )
-            return ("STRING", False, StringType())
+            return ("STRING", False, module.StringType())
 
         # Handle Tuple types (map to Struct)
         if ch_type.startswith("Tuple("):
@@ -135,6 +193,7 @@ class ClickHouseSparkTypeMapper:
             elements = self._parse_tuple_elements(content)
             spark_elements = []
             struct_fields = []
+            current_id = self.field_id
 
             for i, elem in enumerate(elements):
                 # Check if it's a named tuple element
@@ -142,32 +201,41 @@ class ClickHouseSparkTypeMapper:
                 # We need to find the last space that's not inside parentheses
                 cname, elem_type = self._split_named_element(elem)
 
+                self.increment()
                 if cname:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
-                        elem_type, False
+                        elem_type, False, mapping
                     )
                     spark_elements.append(f"{cname}: {next_tp}")
-                    struct_fields.append(
-                        StructField(name=cname, dataType=next_spark, nullable=next_null)
-                    )
                 else:
+                    cname = f"{i + 1}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
-                        elem, False
+                        elem, False, mapping
                     )
-                    spark_elements.append(f"`{i + 1}`: {next_tp}")
-                    struct_fields.append(
-                        StructField(
-                            name=f"{i + 1}", dataType=next_spark, nullable=next_null
-                        )
+                    spark_elements.append(f"`{cname}`: {next_tp}")
+
+                struct_fields.append(
+                    sp.StructField(name=cname, dataType=next_spark, nullable=next_null)
+                    if mapping == ClickHouseMapping.Spark
+                    else it.NestedField(
+                        field_id=current_id,
+                        name=cname,
+                        field_type=next_spark,
+                        required=not next_null,
                     )
+                )
 
             if spark_elements:
                 return (
                     f'STRUCT<{", ".join(spark_elements)}>',
                     False,
-                    StructType(struct_fields),
+                    (
+                        module.StructType(struct_fields)
+                        if mapping == ClickHouseMapping.Spark
+                        else module.StructType(*struct_fields)
+                    ),
                 )
-            return ("STRING", False, StringType())
+            return ("STRING", False, module.StringType())
 
         # Handle Map types
         if ch_type.startswith("Map("):
@@ -175,17 +243,35 @@ class ClickHouseSparkTypeMapper:
             # Parse map key and value types
             key_value = self._parse_map_types(content)
             if key_value:
+                current_id = self.field_id
                 key_type, value_type = key_value
-                spark_key_str, _, spark_key = self.clickhouse_to_spark(key_type, False)
+
+                self.increment()
+                spark_key_str, _, spark_key = self.clickhouse_to_spark(
+                    key_type, False, mapping
+                )
+                self.increment()
                 spark_value_str, value_nullable, spark_val = self.clickhouse_to_spark(
-                    value_type, False
+                    value_type, False, mapping
                 )
                 return (
                     f"MAP<{spark_key_str}, {spark_value_str}>",
                     False,
-                    MapType(spark_key, spark_val, valueContainsNull=value_nullable),
+                    (
+                        sp.MapType(
+                            spark_key, spark_val, valueContainsNull=value_nullable
+                        )
+                        if mapping == ClickHouseMapping.Spark
+                        else it.MapType(
+                            key_id=current_id,
+                            key_type=spark_key,
+                            value_id=current_id,
+                            value_type=spark_val,
+                            value_required=True,
+                        )
+                    ),
                 )
-            return ("STRING", False, StringType())
+            return ("STRING", False, module.StringType())
 
         # Handle Decimal types
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
@@ -198,32 +284,38 @@ class ClickHouseSparkTypeMapper:
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
-                DecimalType(precision=nprecision, scale=nscale),
+                module.DecimalType(precision=nprecision, scale=nscale),
             )
 
         # Handle FixedString with length
         fixed_string_match = re.match(r"FixedString\((\d+)\)", ch_type)
         if fixed_string_match:
             nlength = fixed_string_match.group(1)
+            if mapping == ClickHouseMapping.Iceberg:
+                return ("STRING", False, module.StringType())
             return (
-                (f"CHAR({nlength})", inside_nullable, CharType(length=int(nlength)))
+                (
+                    f"CHAR({nlength})",
+                    inside_nullable,
+                    sp.CharType(length=int(nlength)),
+                )
                 if random.randint(1, 2) == 1
                 else (
                     f"VARCHAR({nlength})",
                     inside_nullable,
-                    VarcharType(length=int(nlength)),
+                    sp.VarcharType(length=int(nlength)),
                 )
             )
 
         # Handle DateTime and Time
         for val in ["DateTime", "Time"]:
             if ch_type.startswith(val):
-                return ("TIMESTAMP", inside_nullable, TimestampType())
+                return ("TIMESTAMP", inside_nullable, module.TimestampType())
 
         # Handle LowCardinality wrapper
         if ch_type.startswith("LowCardinality("):
             inner_type = self._extract_nested_content(ch_type, "LowCardinality")
-            return self.clickhouse_to_spark(inner_type, inside_nullable)
+            return self.clickhouse_to_spark(inner_type, inside_nullable, mapping)
 
         # Handle types not covered by Spark
         # Spark 4.0.0 has Variant type, maybe worth to try
@@ -233,19 +325,23 @@ class ClickHouseSparkTypeMapper:
                 return (
                     "STRING" if is_text else "BINARY",
                     inside_nullable,
-                    StringType() if is_text else BinaryType(),
+                    (module.StringType() if is_text else module.BinaryType()),
                 )
 
         # Handle AggregateFunction
         for val in ["AggregateFunction", "SimpleAggregateFunction"]:
             if ch_type.startswith(val):
-                return ("BINARY", inside_nullable, BinaryType())
+                return ("BINARY", inside_nullable, module.BinaryType())
 
         # Basic type lookup
-        str_type, spark_type = self.clickhouse_to_spark_map.get(
-            ch_type, ("STRING", StringType())
+        str_type, spark_type, iceberg_type = self.clickhouse_to_spark_map.get(
+            ch_type, ("STRING", sp.StringType(), it.StringType())
         )
-        return (str_type, inside_nullable, spark_type)
+        return (
+            str_type,
+            inside_nullable,
+            spark_type if mapping == ClickHouseMapping.Spark else iceberg_type,
+        )
 
     def _extract_nested_content(self, type_str: str, prefix: str) -> str:
         """
@@ -442,11 +538,11 @@ class ClickHouseSparkTypeMapper:
             )
             return f"MAP<{key_type},{value_type}>"
         elif type_choice == "struct":
-            # Generate random number of fields (1-5)
-            num_fields = random.randint(1, 5)
+            # Generate random number of fields (1-3)
+            num_fields = random.randint(1, 3)
             fields = []
             for i in range(num_fields):
-                field_name = f"field_{i}"
+                field_name = f"`{i}`"
                 field_type = self.generate_random_spark_sql_type(
                     max_depth=max_depth,
                     current_depth=current_depth + 1,
