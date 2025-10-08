@@ -71,7 +71,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     auto it = dict.find(boost::to_lower_copy(name));
     if (dict.end() != it)
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+    auto hints = this->getHints(name);
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -400,8 +401,9 @@ InputFormatPtr FormatFactory::getInput(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (format_filter_info && format_filter_info->prewhere_info && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE passed to format that doesn't support it");
+    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter) && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
+            format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
     if (!parser_shared_resources)
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -1006,4 +1008,8 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
+std::vector<String> FormatFactory::getAllRegisteredNames() const
+{
+    return KnownFormatNames::instance().getAllRegisteredNames();
+}
 }

@@ -2688,7 +2688,7 @@ SELECT
     /// toIPv4OrZero documentation
     FunctionDocumentation::Description description_toIPv4OrZero = R"(
 Converts an input value to a value of type [IPv4](../data-types/ipv4.md) but returns zero IPv4 address in case of an error.
-Like [`toIPv4`](#toipv4) but returns zero IPv4 address (`0.0.0.0`) instead of throwing an exception on conversion errors.
+Like [`toIPv4`](#toIPv4) but returns zero IPv4 address (`0.0.0.0`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of IPv4 addresses in dotted decimal notation.
@@ -2729,7 +2729,7 @@ SELECT
     /// toIPv6OrZero documentation
     FunctionDocumentation::Description description_toIPv6OrZero = R"(
 Converts an input value to a value of type [IPv6](../data-types/ipv6.md) but returns zero IPv6 address in case of an error.
-Like [`toIPv6`](#toipv6) but returns zero IPv6 address (`::`) instead of throwing an exception on conversion errors.
+Like [`toIPv6`](#toIPv6) but returns zero IPv6 address (`::`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of IPv6 addresses in standard notation.

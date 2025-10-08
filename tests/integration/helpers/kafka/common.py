@@ -135,7 +135,7 @@ def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         auto_offset_reset="earliest",
     )
-    consumer.subscribe(topics=(topic))
+    consumer.subscribe(topics=[topic])
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
@@ -400,7 +400,7 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
 
 
 def random_string(size=8):
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
+    return "".join(random.choices(string.ascii_uppercase, k=size))
 
 
 def gen_normal_json():
