@@ -15,11 +15,9 @@ class HudiMetadata final : public IDataLakeMetadata, private WithContext
 public:
     static constexpr auto name = "Hudi";
 
-    const char * getName() const override { return name; }
-
     HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
+    NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -54,7 +52,6 @@ protected:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
-        StorageMetadataPtr storage_metadata_snapshot,
         ContextPtr context) const override;
 
 private:

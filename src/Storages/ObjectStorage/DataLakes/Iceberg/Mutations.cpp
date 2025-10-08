@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -162,10 +161,18 @@ std::optional<WriteDataFilesResult> writeDataFiles(
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
 
-            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
-            size_t col_position_index = block.getPositionByName(block_row_number);
-            ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
-            ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
+            auto col_data_filename = block.getByName(block_datafile_path);
+            auto col_position = block.getByName(block_row_number);
+
+            size_t col_data_filename_index = 0;
+            size_t col_position_index = 0;
+            for (size_t i = 0; i < block.columns(); ++i)
+            {
+                if (block.getNames()[i] == block_datafile_path)
+                    col_data_filename_index = i;
+                if (block.getNames()[i] == block_row_number)
+                    col_position_index = i;
+            }
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
@@ -200,14 +207,6 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
                 col_position.column = partition_chunk.getColumns()[col_position_index];
-
-                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
-                {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-                    col_position.column = nullable->getNestedColumnPtr();
-                }
 
                 auto col_data_filename_without_namespaces = ColumnString::create();
                 for (size_t i = 0; i < col_data_filename.column->size(); ++i)
@@ -308,10 +307,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 
     if (commands[0].type == MutationCommand::DELETE)
         return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, std::nullopt};
-    else if (commands[0].type == MutationCommand::UPDATE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
     else
-        return {};
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
 }
 
 struct WriteMetadataResult
@@ -629,8 +626,6 @@ void alter(
             metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
             break;
         case AlterCommand::Type::DROP_COLUMN:
-            if (params[0].clear)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
             metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
             break;
         case AlterCommand::Type::MODIFY_COLUMN:

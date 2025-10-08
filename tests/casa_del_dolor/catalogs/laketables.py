@@ -1,5 +1,5 @@
 from enum import Enum
-from pyspark.sql.types import DataType, StructType
+from pyspark.sql.types import DataType
 
 
 class TableStorage(Enum):
@@ -126,17 +126,3 @@ class SparkTable:
 
     def get_clickhouse_path(self) -> str:
         return f"{self.database_name}.{self.table_name}"
-
-    def _flat_columns(
-        self, res: dict[str, DataType], next_path: str, next_type: DataType
-    ):
-        res[next_path] = next_type
-        if isinstance(next_type, StructType):
-            for f in next_type.fields:
-                self._flat_columns(res, f"{next_path}.`{f.name}`", f.dataType)
-
-    def flat_columns(self) -> dict[str, DataType]:
-        res = {}
-        for k, val in self.columns.items():
-            self._flat_columns(res, k, val.spark_type)
-        return res

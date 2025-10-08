@@ -117,6 +117,11 @@ void DiskBackup::createDirectories(const String & path)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support createDirectories method");
 }
 
+void DiskBackup::clearDirectory(const String &)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support clearDirectory method");
+}
+
 void DiskBackup::moveDirectory(const String &, const String &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support moveDirectory method");

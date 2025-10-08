@@ -138,7 +138,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         String next_bucket_path;
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
+        if (getLakeCatalog() != LakeCatalog::None || (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -153,43 +153,14 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
-            const LakeCatalog catalog = getLakeCatalog();
-
-            if (catalog == LakeCatalog::None)
-            {
-                /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-                next_bucket_path = fmt::format(
-                    "{}{}{}{}t{}",
-                    isOnLocal() ? fc.lakes_path.generic_string() : "",
-                    isOnLocal() ? "/" : "",
-                    (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                    tname);
-            }
-            else
-            {
-                const Catalog * cat = nullptr;
-                const ServerCredentials & sc = fc.dolor_server.value();
-
-                switch (catalog)
-                {
-                    case LakeCatalog::Glue:
-                        cat = &sc.glue_catalog.value();
-                        break;
-                    case LakeCatalog::Hive:
-                        cat = &sc.hive_catalog.value();
-                        break;
-                    case LakeCatalog::REST:
-                        cat = &sc.rest_catalog.value();
-                        break;
-                    case LakeCatalog::Unity:
-                        cat = &sc.unity_catalog.value();
-                        break;
-                    default:
-                        chassert(0);
-                }
-                next_bucket_path = fmt::format("{}/t{}", cat->warehouse, tname);
-            }
+            /// Set bucket path, Spark has the catalog concept on the path :(
+            next_bucket_path = fmt::format(
+                "{}{}{}{}t{}",
+                isOnLocal() ? fc.lakes_path.generic_string() : "",
+                isOnLocal() ? "/" : "",
+                (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
+                (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                tname);
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())
         {

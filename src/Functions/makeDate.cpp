@@ -534,7 +534,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::dateTimeFromComponents(
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_time,
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(precision));
