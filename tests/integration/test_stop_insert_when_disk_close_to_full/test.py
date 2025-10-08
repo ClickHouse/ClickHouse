@@ -76,6 +76,8 @@ def test_min_free_disk_settings(start_cluster):
 
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
+    node.query("TRUNCATE TABLE test_table")
+
     node.query("DROP TABLE test_table")
     node.query("SET min_free_disk_ratio_to_perform_insert = 0.0")
 
@@ -119,4 +121,5 @@ def test_insert_stops_when_disk_full(start_cluster):
     rows = int(node.query("SELECT count() from test_table").strip())
     assert rows == count
 
+    node.query("TRUNCATE TABLE test_table")
     node.query("DROP TABLE test_table")
