@@ -127,9 +127,9 @@
 ((1,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
 ((2,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
 ((0,''),'')		Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
+(0,'')		Tuple(\n    t UInt32,\n    s String)	String
 (1,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
 (2,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(0,'')		Tuple(\n    t UInt32,\n    s String)	String
 1	s	UInt32	String
 2	s	UInt32	String
 0		UInt32	String
