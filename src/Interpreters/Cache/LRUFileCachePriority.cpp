@@ -370,11 +370,17 @@ IFileCachePriority::EvictionInfo LRUFileCachePriority::checkEvictionInfo(
     /// So we create a space holder for the currently available part
     /// of the required space for the duration of eviction of the other
     /// currently non-available part of the space.
-    info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
-        info.size_to_evict ? available_size : size,
-        info.elements_to_evict ? available_elements : elements,
-        *this,
-        lock);
+    size_t size_to_hold = info.size_to_evict ? available_size : size;
+    size_t elements_to_hold = info.elements_to_evict ? available_elements : elements;
+
+    if (size_to_hold || elements_to_hold)
+    {
+        info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
+            size_to_hold,
+            elements_to_hold,
+            *this,
+            lock);
+    }
     return info;
 }
 
