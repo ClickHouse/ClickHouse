@@ -75,7 +75,7 @@ struct LazyOutput
         ++row_count;
     }
 
-    size_t buildOutput(size_t size_to_reserve,
+    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
         MutableColumns & columns,
         const UInt64 * row_refs_begin,
         const UInt64 * row_refs_end,
@@ -92,7 +92,7 @@ struct LazyOutput
 
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    size_t buildOutputFromBlocksLimitAndOffset(
+    [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         size_t rows_offset, size_t rows_limit) const;
 };

@@ -166,21 +166,10 @@ void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offs
 
     const UInt64 end = shift + std::min(limit, total - shift);
 
-    UInt64 out = 0;
-    UInt64 prev = 0;
-
     for (size_t i = 0, n = offsets.size(); i < n; ++i)
     {
-        const UInt64 curr = offsets[i];
-
-        const UInt64 start = std::max(prev,  shift);
-        const UInt64 stop  = std::min(curr,  end);
-
-        if (start < stop)
-            out += (stop - start);
-
-        out_offsets[i] = out;
-        prev = curr;
+        out_offsets[i] = std::min(offsets[i], end);
+        out_offsets[i] = std::max<Int64>(0, out_offsets[i] - shift);
     }
 }
 
