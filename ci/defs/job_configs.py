@@ -11,6 +11,11 @@ BINARY_DOCKER_COMMAND = (
     f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
 )
 
+if Utils.is_arm():
+    docker_sock_mount = "--volume=/var/run:/run/host:ro"
+else:
+    docker_sock_mount = "--volume=/run:/run/host:ro"
+
 build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
@@ -50,6 +55,7 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/functional_tests_results.py",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -79,6 +85,19 @@ common_stress_job_config = Job.Config(
     ),
     allow_merge_on_failure=True,
     timeout=3600 * 2,
+)
+common_integration_test_job_config = Job.Config(
+    name=JobNames.INTEGRATION,
+    runs_on=[],  # from parametrize
+    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}'",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/integration_test_job.py",
+            "./tests/integration/",
+            "./ci/docker/integration",
+        ],
+    ),
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
 )
 
 BINARY_DOCKER_COMMAND = (
@@ -539,11 +558,9 @@ class JobConfigs:
             ),
         )
     )
-    bugfix_validation_it_job = Job.Config(
-        name=JobNames.BUGFIX_VALIDATE_IT,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="python3 ./ci/jobs/integration_test_check.py --validate-bugfix",
-    )
+    bugfix_validation_it_job = common_integration_test_job_config.set_name(
+        JobNames.BUGFIX_VALIDATE_IT
+    ).set_runs_on(RunnerLabels.AMD_SMALL_MEM)
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
@@ -655,46 +672,22 @@ class JobConfigs:
         ),
     )
     # why it's master only?
-    integration_test_asan_master_jobs = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-    ).parametrize(
+    integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
             for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ]
     )
-    integration_test_jobs_required = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-    ).parametrize(
+    integration_test_jobs_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
             for total_batches in (6,)
@@ -703,7 +696,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_binary, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             )
             for total_batches in (5,)
@@ -712,50 +705,32 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"arm_binary, distributed plan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_MEDIUM,
                 requires=[ArtifactNames.CH_ARM_BINARY],
             )
             for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ],
     )
-    integration_test_jobs_non_required = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-        allow_merge_on_failure=True,
-    ).parametrize(
+    integration_test_jobs_non_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
-    integration_test_asan_flaky_pr_job = Job.Config(
-        name=JobNames.INTEGRATION + " (amd_asan, flaky check)",
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-        requires=[ArtifactNames.CH_AMD_ASAN],
+    integration_test_asan_flaky_pr_jobs = (
+        common_integration_test_job_config.parametrize(
+            Job.ParamSet(
+                parameter=f"amd_asan, flaky",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_ASAN],
+            )
+        )
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
@@ -786,7 +761,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
-                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],

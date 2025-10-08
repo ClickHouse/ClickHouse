@@ -31,17 +31,21 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
+    extern const Event FilesystemCacheReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
+    extern const Event FilesystemCacheBackgroundEvictedFileSegments;
+    extern const Event FilesystemCacheBackgroundEvictedBytes;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
+    extern const Metric FilesystemCacheReserveThreads;
 }
 
 namespace DB
@@ -941,7 +945,9 @@ bool FileCache::tryReserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason)
 {
+    CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAttempts);
 
     assertInitialized();
 
@@ -955,6 +961,11 @@ bool FileCache::tryReserve(
         failure_reason = "cache is being resized";
         return false;
     }
+
+    cache_reserve_active_threads.fetch_add(1, std::memory_order_relaxed);
+    SCOPE_EXIT({
+        cache_reserve_active_threads.fetch_sub(1, std::memory_order_relaxed);
+    });
 
     auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
     if (!cache_lock)
@@ -1021,7 +1032,14 @@ bool FileCache::tryReserve(
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+                size,
+                required_elements_num,
+                reserve_stat,
+                eviction_candidates,
+                {},
+                /* continue_from_last_eviction_pos */false,
+                user.user_id,
+                cache_lock))
         {
             const auto & stat = reserve_stat.total_stat;
             failure_reason = fmt::format(
@@ -1041,8 +1059,19 @@ bool FileCache::tryReserve(
         reserve_stat.stat_by_kind.clear();
     }
 
+    bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
+    if (!continue_from_last_eviction_pos)
+        main_priority->resetEvictionPos(cache_lock);
+
     if (!main_priority->collectCandidatesForEviction(
-            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+            size,
+            required_elements_num,
+            reserve_stat,
+            eviction_candidates,
+            queue_iterator,
+            continue_from_last_eviction_pos,
+            user.user_id,
+            cache_lock))
     {
         const auto & stat = reserve_stat.total_stat;
         failure_reason = fmt::format(
@@ -1130,6 +1159,11 @@ bool FileCache::tryReserve(
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
+    if (cache_reserve_active_threads.load(std::memory_order_relaxed) == 1)
+    {
+        main_priority->resetEvictionPos(cache_lock);
+    }
+
     cache_lock.unlock();
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
     {
@@ -1187,7 +1221,12 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         /// (we use batches to make sure we do not block cache for too long,
         /// by default the batch size is quite small).
         desired_size_status = main_priority->collectCandidatesForEviction(
-            desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
+            desired_size,
+            desired_elements_num,
+            keep_up_free_space_remove_batch,
+            stat,
+            eviction_candidates,
+            lock);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// Let's make sure that we correctly processed the limits.
@@ -1229,6 +1268,9 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             /// e.g. to update the in-memory state.
             lock.lock();
             eviction_candidates.finalize(nullptr, lock);
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments, eviction_candidates.size());
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, eviction_candidates.bytes());
         }
     }
     catch (...)
@@ -1642,6 +1684,18 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
 {
     assertInitialized();
     return main_priority->dump(lockCache());
+}
+
+IFileCachePriority::Type FileCache::getEvictionPolicyType()
+{
+    assertInitialized();
+    return main_priority->getType();
+}
+
+std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
+{
+    assertInitialized();
+    return main_priority->getUsageStatPerClient();
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
