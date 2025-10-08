@@ -31,12 +31,14 @@ namespace ErrorCodes
 StorageAlias::StorageAlias(
     const StorageID & table_id_,
     ContextPtr context_,
-    const StorageID & target_table_id_,
+    const String & target_database_,
+    const String & target_table_,
     const ColumnsDescription & columns_,
     const String & comment)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , target_table_id(target_table_id_)
+    , target_database(target_database_)
+    , target_table(target_table_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -54,7 +56,7 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    local_context->checkAccess(AccessType::SELECT, target_table_id, column_names);
+    local_context->checkAccess(AccessType::SELECT, target_database, target_table, column_names);
 
     auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
@@ -84,7 +86,7 @@ SinkToStoragePtr StorageAlias::write(
     ContextPtr local_context,
     bool async_insert)
 {
-    local_context->checkAccess(AccessType::INSERT, target_table_id);
+    local_context->checkAccess(AccessType::INSERT, target_database, target_table);
 
     auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
@@ -103,7 +105,7 @@ void StorageAlias::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
-    local_context->checkAccess(AccessType::ALTER, target_table_id);
+    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
 
     auto target_storage = getTargetTable();
     target_storage->alter(params, local_context, table_lock_holder);
@@ -121,7 +123,7 @@ void StorageAlias::truncate(
     ContextPtr local_context,
     TableExclusiveLockHolder & table_lock_holder)
 {
-    local_context->checkAccess(AccessType::TRUNCATE, target_table_id);
+    local_context->checkAccess(AccessType::TRUNCATE, target_database, target_table);
 
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
@@ -138,7 +140,7 @@ bool StorageAlias::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::OPTIMIZE, target_table_id);
+    local_context->checkAccess(AccessType::OPTIMIZE, target_database, target_table);
 
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
@@ -147,11 +149,11 @@ bool StorageAlias::optimize(
 }
 
 Pipe StorageAlias::alterPartition(
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr &,
     const PartitionCommands & commands,
     ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::ALTER, target_table_id);
+    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
 
     auto target_storage = getTargetTable();
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
@@ -171,7 +173,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
 
 void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::ALTER, target_table_id);
+    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
 
     auto target_storage = getTargetTable();
     target_storage->mutate(commands, local_context);
@@ -248,20 +250,20 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias requires at most 2 arguments: database name and table name");
         }
 
-        StorageID target_table_id(target_database, target_table);
-
         // Get columns from target table if not specified
         ColumnsDescription columns = args.columns;
         if (columns.empty())
         {
-            auto target_storage = DatabaseCatalog::instance().getTable(target_table_id, local_context);
+            auto target_storage = DatabaseCatalog::instance().getTable(
+                StorageID(target_database, target_table), local_context);
             columns = target_storage->getInMemoryMetadataPtr()->getColumns();
         }
 
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
-            target_table_id,
+            target_database,
+            target_table,
             columns,
             args.comment);
     },
