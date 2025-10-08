@@ -19,6 +19,16 @@ SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 1
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 0
+SELECT 'Test singular aliases';
+Test singular aliases
+SELECT hasAnyToken('a b', ['b']);
+1
+SELECT hasAnyToken('a b', ['c']);
+0
+SELECT hasAllToken('a b', ['b']);
+1
+SELECT hasAllToken('a b', ['c']);
+0
 1
 2
 1

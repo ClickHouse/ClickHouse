@@ -9,26 +9,33 @@ You can reproduce CI integration test jobs locally using the same orchestration 
 - **Prerequisites**
   - Python 3
   - Docker
-  - A ClickHouse server binary available to the job. Place the binary (or a symlink) in `./ci/tmp/`.
+  - A ClickHouse server binary available to the job. The runner looks for a binary in this order and uses the first one it finds:
+    - `./ci/tmp/clickhouse`
+    - `./build/programs/clickhouse`
+    - `./clickhouse`
+    Tip: place or symlink your built binary to one of these paths.
 
 - **Run a CI job locally**
   ```bash
   python -m ci.praktika run "<JOB_NAME>"
   ```
-  - **JOB_NAME** is the job name as it appears in the CI report, for example: `"Integration tests (amd_asan, 1/5)"`.
+  - Always quote the job name exactly as it appears in the CI report (it contains spaces and commas), for example: `"Integration tests (amd_asan, 1/5)"`.
+  - If the job name is not unique across workflows, disambiguate with the workflow name:
+    ```bash
+    python -m ci.praktika run "Integration tests (amd_binary, 1/5)"
+    ```
 
 - **Run a specific test within a CI job**
   ```bash
-  python -m ci.praktika run "Integration tests (amd_asan, 4/5)" \
-    --test "test_storage_delta/test.py::test_single_log_file"
-
-  # With specified test, the batch index in the job name (e.g., 4/5) is irrelevant locally, but
-  # it must still match an actual job name from CI for the command to work.
-
-  # The build token (e.g., amd_asan) is only a label used in CI reports. For
-  # local runs, your architecture and build type are determined by your host
-  # and the binary you provide.
+  python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
+    --test "test_named_collections/"
   ```
+  - With `--test` specified, the batch index in the job name (e.g., `4/5`) is irrelevant locally, but the job name must still match an actual CI job to select the right configuration.
+  - You can pass multiple test selectors (they will be combined and forwarded to the job):
+    ```bash
+    python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
+      --test "test_named_collections/test.py::test_default_access" "test_multiple_disks/"
+    ```
 
 No other dependencies are required beyond Python 3 and Docker.
 
