@@ -167,6 +167,20 @@ namespace
                     skip_asts.insert(create.select);
             }
 
+            if (create.storage && create.storage->engine && create.storage->engine->name == "Alias")
+            {
+                size_t argument_size = 0;
+                if (create.storage->engine->arguments)
+                    argument_size = create.storage->engine->arguments->children.size();
+                if (argument_size == 1)
+                {
+                    auto qualified_name = tryGetQualifiedNameFromArgument(*create.storage->engine, 0, true, true);
+                    if (qualified_name)
+                    {
+                        dependencies.emplace(*qualified_name);
+                    }
+                }
+            }
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
