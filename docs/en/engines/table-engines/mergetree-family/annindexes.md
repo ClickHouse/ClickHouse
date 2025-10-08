@@ -435,6 +435,12 @@ The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size).
 By default, the cache can grow up to 5 GB in size.
 
+:::note
+The vector similarity index cache stores vector index granules.
+If individual vector index granules are bigger than the cache size, they will not be cached.
+Therefore, please make sure to calculate the vector index size (based on the formula in "Estimating storage and memory consumption" or [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices)) and size the cache correspondingly.
+:::
+
 The current size of the vector similarity index cache is shown in [system.metrics](../../../operations/system-tables/metrics.md):
 
 ```sql
