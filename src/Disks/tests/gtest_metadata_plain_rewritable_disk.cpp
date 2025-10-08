@@ -217,3 +217,128 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
     EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
+{
+    auto metadata = getMetadataStorage("CreateNotFromRoot");
+    auto object_storage = getObjectStorage("CreateNotFromRoot");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A/B/C");
+        tx->commit();
+    }
+
+    /// It is a bug. It should not be possible to create folder unlinked from root.
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
+{
+    auto metadata = getMetadataStorage("RemoveDirectory");
+    auto object_storage = getObjectStorage("RemoveDirectory");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->createDirectory("A/B/C");
+        tx->commit();
+    }
+
+    /// Remove fs tree
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("A");
+        tx->commit();
+    }
+
+    /// This is a bug. Logical tree is broken.
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
+{
+    auto metadata = getMetadataStorage("MoveFile");
+    auto object_storage = getObjectStorage("MoveFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("A/file", std::nullopt).serialize(), "Hello world!");
+        tx->createMetadataFile("A/file", {StoredObject("A/file")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("A/file"));
+
+    auto a_file_path = metadata->getStorageObjects("A/file").front().remote_path;
+    EXPECT_EQ(readObject(object_storage, a_file_path), "Hello world!");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveFile("A/file", "B/file");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A/file"));
+    EXPECT_TRUE(metadata->existsFile("B/file"));
+
+    auto b_file_path = metadata->getStorageObjects("B/file").front().remote_path;
+    EXPECT_EQ(readObject(object_storage, b_file_path), "Hello world!");
+
+    EXPECT_NE(a_file_path, b_file_path);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
+{
+    auto metadata = getMetadataStorage("MoveFileUndo");
+    auto object_storage = getObjectStorage("MoveFileUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("A/file", std::nullopt).serialize(), "Hello world!");
+        tx->createMetadataFile("A/file", {StoredObject("A/file")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("A/file"));
+
+    auto path_1 = metadata->getStorageObjects("A/file").front().remote_path;
+    EXPECT_EQ(readObject(object_storage, path_1), "Hello world!");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveFile("A/file", "B/file");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsFile("A/file"));
+
+    auto path_2 = metadata->getStorageObjects("A/file").front().remote_path;
+    EXPECT_EQ(readObject(object_storage, path_2), "Hello world!");
+
+    EXPECT_EQ(path_1, path_2);
+}
