@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
+    extern const int CORRUPTED_DATA;
 }
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
@@ -297,7 +298,8 @@ bool Exception::isErrorCodeImportant() const
 {
     const int error_code = code();
     return error_code == ErrorCodes::LOGICAL_ERROR
-        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART;
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
+        || error_code == ErrorCodes::CORRUPTED_DATA;
 }
 
 Exception::~Exception()
