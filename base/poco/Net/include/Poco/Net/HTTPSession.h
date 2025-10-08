@@ -149,6 +149,7 @@ namespace Net
         /// attached to the session.
 
         StreamSocket & socket();
+        const StreamSocket & socket() const;
         /// Returns a reference to the underlying socket.
 
         void drainBuffer(Poco::Buffer<char> & buffer);
@@ -299,6 +300,11 @@ namespace Net
     }
 
     inline StreamSocket & HTTPSession::socket()
+    {
+        return _socket;
+    }
+
+    inline const StreamSocket & HTTPSession::socket() const
     {
         return _socket;
     }
