@@ -197,6 +197,7 @@ std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk, S3B
         it->second.backup_client = creator(disk);
     else
     {
+        /// Reuse the existing client if the reported object storage client matches the actual one.
         auto locked = it->second.disk_reported_client.lock();
         if (locked != disk_client)
         {
