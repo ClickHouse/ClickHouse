@@ -189,10 +189,6 @@ void optimizeTreeSecondPass(
 
         auto & frame = stack.back();
 
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
-
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
@@ -201,6 +197,10 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
+
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(*frame.node);
 
         stack.pop_back();
     }
@@ -229,9 +229,6 @@ void optimizeTreeSecondPass(
         {
             auto & frame = stack.back();
 
-            if (optimization_settings.optimize_prewhere)
-                optimizePrewhere(*frame.node);
-
             if (frame.next_child == 0)
             {
                 tryMergeExpressions(frame.node, nodes, {});
@@ -247,6 +244,9 @@ void optimizeTreeSecondPass(
                 stack.push_back(next_frame);
                 continue;
             }
+
+            if (optimization_settings.optimize_prewhere)
+                optimizePrewhere(*frame.node);
 
             stack.pop_back();
         }
