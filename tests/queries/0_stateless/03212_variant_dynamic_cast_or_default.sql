@@ -108,8 +108,8 @@ select distinct toDateOrDefault(d) as res from t order by res;
 select distinct toDate32OrDefault(d) as res from t order by res;
 select distinct toDateTimeOrDefault(d) as res from t order by res;
 
-select distinct toIPv4OrDefault(d) as res from t order by res;
-select distinct toIPv6OrDefault(d) as res from t order by res;
+select distinct toIPv4OrDefault(toString(d)) as res from t order by res;
+select distinct toIPv6OrDefault(toString(d)) as res from t order by res;
 
 select distinct toUUIDOrDefault(d) as res from t order by res;
 
