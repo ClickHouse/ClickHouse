@@ -128,7 +128,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
-        && !partition_columns_in_data_file.has_value());
+        && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 5;
@@ -261,6 +261,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
         partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
+    }
+    if (isS3Engine() && rg.nextMediumNumber() < 21)
+    {
+        storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
     }
     if (isExternalDistributedEngine())
     {

@@ -343,7 +343,7 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"LRU_OVERCOMMIT") > -1
+    is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
