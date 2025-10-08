@@ -5,6 +5,8 @@
 #include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
+#include <Common/StringSearcher.h>
+
 constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
 constexpr size_t MAX_SUBPATTERNS = 1024;
 
@@ -464,6 +466,8 @@ finish:
 }
 }
 
+namespace DB
+{
 RegexpAnalysisResult OptimizedRegularExpression::analyze(std::string_view regexp_)
 try
 {
@@ -546,9 +550,11 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
 
@@ -563,11 +569,15 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
+
+OptimizedRegularExpression::~OptimizedRegularExpression() = default;
 
 bool OptimizedRegularExpression::match(const char * subject, size_t subject_size) const
 {
@@ -719,4 +729,5 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
         }
     }
     return limit;
+}
 }
