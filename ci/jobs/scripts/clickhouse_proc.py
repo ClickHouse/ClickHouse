@@ -1087,7 +1087,7 @@ quit
             self.system_table_sql_map[system_table_sql_file] = sql_content
 
     def restore_system_metadata_files_from_remote_database_disk(self):
-        if self.system_db_uuid is None:
+        if not hasattr(self, "system_db_uuid") or self.system_db_uuid is None:
             return
 
         # Ensure no remote database disk config
