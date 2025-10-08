@@ -1683,9 +1683,11 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     }
 }
 
-bool DolorIntegration::performExternalCommand(const uint64_t seed, const String & cname, const String & tname)
+bool DolorIntegration::performExternalCommand(const uint64_t seed, const bool async, const String & cname, const String & tname)
 {
-    return httpPut("/sparkupdate", fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", seed, cname, tname));
+    return httpPut(
+        "/sparkupdate",
+        fmt::format(R"({{"seed":{},"async":{},"catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1826,7 +1828,8 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
     return next ? next->reRunCreateTable(body) : false;
 }
 
-bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const IntegrationCall ic, const String & cname, const String & tname)
+bool ExternalIntegrations::performExternalCommand(
+    const uint64_t seed, const bool async, const IntegrationCall ic, const String & cname, const String & tname)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1839,7 +1842,16 @@ bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const Int
             chassert(0);
             break;
     }
-    return next ? next->performExternalCommand(seed, cname, tname) : false;
+    if (next)
+    {
+        if (async)
+        {
+            worker.enqueue([next, seed, cname, tname]() { next->performExternalCommand(seed, true, cname, tname); });
+            return true;
+        }
+        return next->performExternalCommand(seed, false, cname, tname);
+    }
+    return false;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const

@@ -182,7 +182,19 @@ public:
         }
         if (tmp <= always_on_prob + always_off_prob + 0.01)
         {
-            return std::numeric_limits<T>::max();
+            if constexpr (std::is_unsigned_v<T>)
+            {
+                return std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                if (max_val >= 0.9 && max_val <= 1.1)
+                {
+                    return max_val;
+                }
+                return std::numeric_limits<T>::max();
+            }
+            chassert(0);
         }
         if constexpr (std::is_unsigned_v<T>)
         {
@@ -233,6 +245,8 @@ public:
 
     String nextJSONCol();
 
+    String nextTokenString();
+
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 
     String nextUUID();
@@ -242,7 +256,9 @@ public:
     String nextIPv6();
 };
 
-using RandomSettingParameter = std::function<String(RandomGenerator &)>;
+class FuzzConfig;
+
+using RandomSettingParameter = std::function<String(RandomGenerator &, FuzzConfig &)>;
 
 struct CHSetting
 {
