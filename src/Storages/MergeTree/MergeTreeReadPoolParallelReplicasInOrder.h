@@ -17,6 +17,7 @@ public:
         const IndexReadTasks & index_read_tasks_,
         bool has_limit_below_one_block_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,

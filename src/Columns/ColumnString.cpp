@@ -3,6 +3,7 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
@@ -746,6 +747,27 @@ void ColumnString::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
     hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
+}
+
+ColumnPtr ColumnString::createSizeSubcolumn() const
+{
+    MutableColumnPtr column_sizes = ColumnUInt64::create();
+    size_t rows = offsets.size();
+    if (rows == 0)
+        return column_sizes;
+
+    auto & sizes_data = assert_cast<ColumnUInt64 &>(*column_sizes).getData();
+    sizes_data.resize(rows);
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto current_offset = offsets[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
+    }
+
+    return column_sizes;
 }
 
 }
