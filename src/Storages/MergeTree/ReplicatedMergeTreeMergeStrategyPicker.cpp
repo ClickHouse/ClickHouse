@@ -62,9 +62,9 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const Re
     size_t min_blocks = execute_merges_on_single_replica_min_blocks;
     return (
         threshold > 0       /// feature turned on
-        && (min_blocks > 0 ?
+        && (min_blocks == 0 ||
             MergeTreePartInfo::fromPartName(entry.new_part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING).getBlocksCount() > min_blocks
-            : 1)
+        )
         && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
