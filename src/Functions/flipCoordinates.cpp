@@ -151,39 +151,4 @@ private:
     }
 };
 
-REGISTER_FUNCTION(FlipCoordinates)
-{
-    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
-    FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
-    FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polygon", "MultiPolygon"}};
-    FunctionDocumentation::Examples examples = {
-        {"basic_point",
-         "SELECT flipCoordinates((1.0, 2.0));",
-         "(2.0, 1.0)"},
-        {"ring",
-         "SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);",
-         "[(2.0, 1.0), (4.0, 3.0)]"},
-        {"polygon",
-         "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-
-    FunctionDocumentation function_documentation = {
-        .description = description,
-        .syntax = syntax,
-        .arguments = arguments,
-        .returned_value = returned_value,
-        .examples = examples,
-        .introduced_in = introduced_in,
-        .category = category
-    };
-
-    factory.registerFunction<FunctionFlipCoordinates>(function_documentation);
-}
-
 }
