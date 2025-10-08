@@ -730,21 +730,33 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
+            bool has_right_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                /// Save rows that do not hold conditions
-                not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
+                ///  - build mask in the source block row space
+                ///  - set bits only for rows that belong to THIS slot (by selector)
+                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                const auto & sel = stored_columns->selector;
+
+                auto mark_if_needed = [&](size_t row)
                 {
-                    /// Condition hold, do not save row
-                    if (!join_mask_col.isRowFiltered(i))
-                        continue;
+                    if (!join_mask_col.isRowFiltered(row))
+                        return; // ON condition passed -> not "non-joined"
+                    if (save_nullmap && (*null_map)[row])
+                        return; // already covered by null-keys map
+                    not_joined_map->getData()[row] = 1;
+                    has_right_not_joined = true;
+                };
 
-                    /// NULL key will be saved anyway because, do not save twice
-                    if (save_nullmap && (*null_map)[i])
-                        continue;
-
-                    not_joined_map->getData()[i] = 1;
+                if (sel.isContinuousRange())
+                {
+                    auto [beg, end] = sel.getRange();
+                    for (size_t r = beg; r < end; ++r) mark_if_needed(r);
+                }
+                else
+                {
+                    const auto & idxs = sel.getIndexes().getData();
+                    for (size_t r : idxs) mark_if_needed(r);
                 }
             }
 
@@ -783,7 +795,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && is_inserted)
+            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
                 data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
