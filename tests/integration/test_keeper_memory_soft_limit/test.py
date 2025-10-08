@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pytest
 from kazoo.client import KazooClient
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
@@ -18,7 +19,7 @@ node = cluster.add_instance(
 def get_connection_zk(nodename, timeout=30.0):
     # NOTE: here we need KazooClient without implicit retries! (KazooClientWithImplicitRetries)
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":2181", timeout=timeout
+        hosts=f"{cluster.get_instance_ip(nodename)}:2181", timeout=timeout
     )
     _fake_zk_instance.start()
     return _fake_zk_instance
@@ -28,9 +29,7 @@ def get_connection_zk(nodename, timeout=30.0):
 def started_cluster():
     try:
         cluster.start()
-
         yield cluster
-
     finally:
         cluster.shutdown()
 
@@ -40,29 +39,62 @@ def test_soft_limit_create(started_cluster):
         pytest.skip("Disabled for sanitizers")
     started_cluster.wait_zookeeper_to_start()
     node_zk = get_connection_zk("zoo1")
+    test_path = "/test_soft_limit"
+
+    # Retry logic for initial znode creation
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            node_zk.create(test_path, b"abc")
+            break
+        except (ConnectionLoss, KazooException) as e:
+            print(f"Attempt {attempt+1}/{max_attempts} failed: {e}")
+            time.sleep(3)
+    else:
+        raise RuntimeError(
+            f"Failed to create znode {test_path} after {max_attempts} attempts"
+        )
+
     try:
         loop_time = 100000
         batch_size = 10000
 
-        node_zk.create("/test_soft_limit", b"abc")
-
         for i in range(0, loop_time, batch_size):
-            node.query(f"""
-            INSERT INTO system.zookeeper (name, path, value)
-            SELECT 'node_' || number::String, '/test_soft_limit', repeat('a', 3000)
-            FROM numbers({i}, {batch_size})
-            """)
+            node.query(
+                f"""INSERT INTO system.zookeeper (name, path, value)
+                SELECT 'node_' || number::String, '{test_path}', repeat('a', 3000)
+                FROM numbers({i}, {batch_size})
+            """
+            )
     except Exception as e:
         # the message contains out of memory so the users will not be confused.
-        assert 'out of memory' in str(e).lower()
+        assert "out of memory" in str(e).lower()
+
         txn = node_zk.transaction()
         for i in range(10):
-            txn.delete("/test_soft_limit/node_" + str(i))
+            txn.delete(f"{test_path}/node_{i}")
 
-        txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
+        txn.create(f"{test_path}/node_1000001_{i}", b"abcde")
         txn.commit()
-        node.query("system flush logs metric_log")
-        assert int(node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log").strip()) > 0
+        node.query("SYSTEM FLUSH LOGS metric_log")
+
+        # Retry fetching metric to make it stable
+        retries = 5
+        wait_seconds = 1
+        for _ in range(5):
+            result = int(
+                node.query(
+                    "SELECT sum(ProfileEvent_ZooKeeperHardwareExceptions) FROM system.metric_log"
+                ).strip()
+            )
+            if result > 0:
+                break
+            time.sleep(wait_seconds)
+        else:
+            raise Exception(
+                "ZooKeeper hardware exceptions metric not registered after OOM"
+            )
+
         return
 
     raise Exception("all records are inserted but no error occurs")
