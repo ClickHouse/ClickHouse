@@ -99,6 +99,7 @@ class ClickHouseProc:
         self.extra_tests_results = []
         self.logs = []
         self.log_export_host, self.log_export_password = None, None
+        self.system_db_uuid = None
 
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
