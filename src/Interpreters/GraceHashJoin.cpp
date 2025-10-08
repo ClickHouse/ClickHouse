@@ -439,9 +439,10 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
+    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
+    blocks.clear();
 
     auto res = hash_join->joinBlock(std::move(block));
-    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
     return res;
 }
 
@@ -660,8 +661,8 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
         hash_join->onBuildPhaseFinish();
 
-        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
-            bucket_idx, hash_join->getTotalRowCount(), num_rows);
+        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
+            bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
 
         return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }
