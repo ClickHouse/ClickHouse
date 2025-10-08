@@ -410,11 +410,6 @@ std::string PrewhereInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
-
     {
         ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
     }
