@@ -86,8 +86,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 
         for (auto & key_name : keys_names)
         {
-            size_t key_column_position_in_block = sample_block.getPositionByName(key_name);
-            sample_block.erase(key_column_position_in_block);
+            sample_block.erase(key_name);
         }
     }
 }
