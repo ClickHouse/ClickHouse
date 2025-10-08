@@ -272,8 +272,16 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextGranuleBuilder granule_builder;
 };
 
+class ASTIndexDeclaration;
+class ASTFunction;
+
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
+
+    static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
+    static ASTPtr tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function);
+    static std::pair<FieldVector,ASTPtr> parseArgumentsListFromAST(const ASTPtr & arguments);
+
 public:
     MergeTreeIndexText(
         const IndexDescription & index_,
@@ -291,6 +299,10 @@ public:
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
+
+    static void updateIndexDescriptionTextFromAST(
+        const ASTIndexDeclaration * index_definition, const ColumnsDescription & columns, ContextPtr context,
+        IndexDescription & result);
 };
 
 }
