@@ -104,11 +104,16 @@ public:
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
-    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override { eviction_pos = queue.end(); }
+    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override
+    {
+        std::lock_guard lock(eviction_pos_mutex);
+        eviction_pos = queue.end();
+    }
 
     /// Used only for unit test.
     size_t getEvictionPos()
     {
+        std::lock_guard lock(eviction_pos_mutex);
         return std::distance(queue.begin(), eviction_pos);
     }
 
@@ -121,7 +126,8 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
-    LRUQueue::iterator eviction_pos;
+    LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
+    std::mutex eviction_pos_mutex;
 
     bool canFit(
         size_t size,

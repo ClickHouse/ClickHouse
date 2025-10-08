@@ -146,8 +146,11 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
 
 void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
-    if (eviction_pos == it)
-        eviction_pos = std::next(it);
+    {
+        std::lock_guard lk(eviction_pos_mutex);
+        if (eviction_pos == it)
+            eviction_pos = std::next(it);
+    }
     queue.splice(queue.end(), queue, it);
 }
 
@@ -167,8 +170,11 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size.load());
 
-    if (eviction_pos == it)
-        eviction_pos = std::next(it);
+    {
+        std::lock_guard lk(eviction_pos_mutex);
+        if (eviction_pos == it)
+            eviction_pos = std::next(it);
+    }
     return queue.erase(it);
 }
 
@@ -397,10 +403,15 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
     auto start_pos = queue.begin();
-    if (continue_from_last_eviction_pos && eviction_pos != queue.end() && start_pos != eviction_pos)
+    LRUQueue::iterator current_eviction_pos;
+    {
+        std::lock_guard lk(eviction_pos_mutex);
+        current_eviction_pos = eviction_pos;
+    }
+    if (continue_from_last_eviction_pos && current_eviction_pos != queue.end() && start_pos != current_eviction_pos)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
-        start_pos = eviction_pos;
+        start_pos = current_eviction_pos;
     }
     auto iteration_pos = iterateImpl(start_pos, [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
@@ -431,7 +442,10 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     }, stat, lock);
 
     if (continue_from_last_eviction_pos)
+    {
+        std::lock_guard lk(eviction_pos_mutex);
         eviction_pos = iteration_pos;
+    }
 
     const bool success = (!size || stat.total_stat.releasable_size >= size)
         && (!elements || stat.total_stat.releasable_count >= elements);
@@ -472,8 +486,11 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    if (other.eviction_pos == it.iterator)
-        other.eviction_pos = std::next(it.iterator);
+    {
+        std::lock_guard lk(other.eviction_pos_mutex);
+        if (other.eviction_pos == it.iterator)
+            other.eviction_pos = std::next(it.iterator);
+    }
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, 1, state_lock);
@@ -604,7 +621,7 @@ void LRUFileCachePriority::LRUIterator::assertValid() const
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)
 {
-    chassert(eviction_pos == queue.end());
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(eviction_pos) == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)
