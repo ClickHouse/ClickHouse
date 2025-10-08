@@ -60,7 +60,7 @@ private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
         LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
-        MetadataStorageMetrics metadata_storage_metrics = MetadataStorageMetrics::create<LocalObjectStorageSettings, MetadataStorageType::PlainRewritable>();
+        MetadataStorageMetrics metadata_storage_metrics = MetadataStorageMetrics::create<LocalObjectStorage, MetadataStorageType::PlainRewritable>();
         auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
 
