@@ -24,6 +24,11 @@ You can reproduce CI integration test jobs locally using the same orchestration 
     ```bash
     python -m ci.praktika run "Integration tests (amd_binary, 1/5)"
     ```
+  - If searching for the exact job name in the CI report is inconvenient, you can use a keyword or substring of the job name. For example:
+    ```bash
+    python -m ci.praktika run "integration"
+    ```
+    If the job cannot be determined unambiguously, the tool will print a list of matching jobs.
 
 - **Run a specific test within a CI job**
   ```bash
@@ -36,6 +41,10 @@ You can reproduce CI integration test jobs locally using the same orchestration 
     python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
       --test "test_named_collections/test.py::test_default_access" "test_multiple_disks/"
     ```
+
+- **Additional customization options for local run:**
+  - `--count N` to repeat each test N times (`--count` will be passed to pytest with `--repeat-scope=function`).
+  - `--debug` to open the Python debug console on exception (`--pdb` will be passed to pytest).
 
 No other dependencies are required beyond Python 3 and Docker.
 
