@@ -480,13 +480,13 @@ def test_ytsaurus_select_subset_of_columns(started_cluster):
     )
 
     instance.query(
-        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{yt_uri_helper.uri}', '{table_path}', '{yt_uri_helper.token}') SETTINGS check_table_schema = 0"
     )
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
 
     assert (
         instance.query(
-            f"SELECT a,b FROM ytsaurus('{YT_URI}','{table_path}', '{YT_DEFAULT_TOKEN}', 'a Int32, b Int32')"
+            f"SELECT a,b FROM ytsaurus('{yt_uri_helper.uri}','{table_path}', '{yt_uri_helper.token}', 'a Int32, b Int32')"
         )
         == "10\t20\n20\t40\n"
     )
