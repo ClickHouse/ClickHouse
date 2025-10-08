@@ -55,7 +55,7 @@ struct TemporaryDataOnDiskSettings
 };
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
-using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(size_t)>;
+using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
@@ -95,7 +95,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric);
+    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_ = 0);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 protected:
