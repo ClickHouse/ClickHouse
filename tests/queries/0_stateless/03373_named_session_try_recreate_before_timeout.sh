@@ -39,6 +39,9 @@ echo "$output" | grep -q "SESSION_NOT_FOUND" || { echo "Expected SESSION_NOT_FOU
 # Ensure table is still empty
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME"
 
+# sleep a bit more than a session timeout (3) to make sure there's enough time to close it using close time buckets
+sleep 5
+
 $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name = 'http_max_tries'" "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 1000000) from $TABLE_NAME" \
