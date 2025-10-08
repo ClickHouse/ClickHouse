@@ -2,6 +2,7 @@
 #include <Interpreters/Set.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Common/SharedMutex.h>
 #include <shared_mutex>
 
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
@@ -30,13 +32,15 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
 RuntimeFilter::RuntimeFilter(
-    const DataTypePtr & filter_column_target_type,
+    const DataTypePtr & filter_column_target_type_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_)
     : exact_values_limit(exact_values_limit_)
     , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    , filter_column_target_type(filter_column_target_type_)
+    , result_type(std::make_shared<DataTypeUInt8>())
     , bloom_filter(nullptr)
     , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
 {
@@ -48,6 +52,9 @@ RuntimeFilter::RuntimeFilter(
 
 void RuntimeFilter::insert(ColumnPtr values)
 {
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+
     if (exact_values)
     {
         exact_values->insertFromColumns({values});
@@ -60,13 +67,34 @@ void RuntimeFilter::insert(ColumnPtr values)
 
 void RuntimeFilter::finishInsert()
 {
+    inserts_are_finished = true;
+
     if (exact_values)
+    {
         exact_values->finishInsert();
+
+        /// If the set is empty just return Const False column
+        if (exact_values->getTotalRowCount() == 0)
+        {
+            no_elements_in_set = true;
+            return;
+        }
+
+        /// If only 1 element in the set then use " == const" instead of set lookup
+        if (exact_values->getTotalRowCount() == 1)
+        {
+            single_element_in_set = (*exact_values->getSetElements().front())[0];
+            return;
+        }
+    }
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
 void RuntimeFilter::addAllFrom(const RuntimeFilter & source)
 {
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+
     if (source.exact_values)
     {
         insert(source.exact_values->getSetElements().front());
@@ -80,13 +108,28 @@ void RuntimeFilter::addAllFrom(const RuntimeFilter & source)
 
 ColumnPtr RuntimeFilter::find(ColumnPtr values) const
 {
-    if (exact_values)
+    if (!inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+
+    if (no_elements_in_set)
     {
         /// If the set is empty just return Const False column
-        if (exact_values->getTotalRowCount() == 0)
-            return DataTypeUInt8().createColumnConst(values->size(), false);
-
-        return exact_values->execute({ColumnWithTypeAndName(values, exact_values->getDataTypes().front(), String())}, false);
+        return result_type->createColumnConst(values->size(), false);
+    }
+    else if (single_element_in_set)
+    {
+        /// If only 1 element in the set then use "value == const" instead of set lookup
+        auto const_column = filter_column_target_type->createColumnConst(values->size(), *single_element_in_set);
+        ColumnsWithTypeAndName equals_args = {
+            ColumnWithTypeAndName(values, filter_column_target_type, String()),
+            ColumnWithTypeAndName(const_column, filter_column_target_type, String())
+        };
+        auto single_element_equals_function = FunctionFactory::instance().get("equals", nullptr)->build(equals_args);
+        return single_element_equals_function->execute(equals_args, single_element_equals_function->getResultType(), values->size(), /* dry_run = */ false);
+    }
+    else if (exact_values)
+    {
+        return exact_values->execute({ColumnWithTypeAndName(values, filter_column_target_type, String())}, false);
     }
     else
     {

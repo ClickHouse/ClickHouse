@@ -20,10 +20,31 @@ SELECT avg(o_totalprice)
 FROM orders, customer, nation
 WHERE c_custkey = o_custkey AND c_nationkey = n_nationkey AND n_name = 'FRANCE';
 
-
+-- 1 element in filter
 SELECT count()
 FROM customer, nation
 WHERE c_nationkey = n_nationkey AND n_name = 'FRANCE';
+
+-- 0 elements in filter ('WAKANDA' is not present in `nations` table)
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_name = 'WAKANDA';
+
+-- again 1 element in filter
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_name IN ('WAKANDA', 'FRANCE');
+
+-- 2 elements in filter
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_name IN ('GERMANY', 'FRANCE');
+
+-- 2 elements in filter store in a bloom filter
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_name IN ('GERMANY', 'FRANCE')
+SETTINGS join_runtime_filter_exact_values_limit=1;
 
 SELECT count()
 FROM customer, nation

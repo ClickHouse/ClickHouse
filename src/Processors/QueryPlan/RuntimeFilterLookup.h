@@ -39,8 +39,16 @@ private:
     const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
 
+    const DataTypePtr filter_column_target_type;
+    const DataTypePtr result_type;
     BloomFilterPtr bloom_filter;
     SetPtr exact_values;
+    bool inserts_are_finished = false;
+
+    /// If filter set has no elements then find() always returns false
+    bool no_elements_in_set = false;
+    /// If filter set has just one element then "find(value)" is replaced with "value==element"
+    std::optional<Field> single_element_in_set;
 };
 
 using RuntimeFilterConstPtr = std::shared_ptr<const RuntimeFilter>;
