@@ -766,6 +766,10 @@ class ClickHouseCluster:
         self.redis_host = "redis1"
         self._redis_port = 0
 
+        # available when with_hashicorp_vault == True
+        self.hashicorp_vault_host = "hashicorpvault"
+        self.hashicorp_vault_ip = None
+
         # available when with_postgres == True
         self.postgres_host = "postgres1"
         self.postgres_ip = None
@@ -2685,8 +2689,9 @@ class ClickHouseCluster:
         )
 
     def wait_vault_to_start(self):
+        self.hashicorp_vault_ip = self.get_instance_ip(self.hashicorp_vault_host)
         self.wait_for_url(
-            url=f"http://localhost:8200/v1/sys/health", timeout=300
+            url=f"http://{self.hashicorp_vault_ip}:8200/v1/sys/health", timeout=300
         )
 
     def wait_postgres_to_start(self, timeout=260):
@@ -3687,7 +3692,7 @@ class ClickHouseCluster:
                 run_and_check(vault_start_cmd)
                 self.wait_vault_to_start()
                 if self.pre_hashicorp_vault_startup_command:
-                    self.pre_hashicorp_vault_startup_command()
+                    self.pre_hashicorp_vault_startup_command(self)
 
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
