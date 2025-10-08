@@ -11,7 +11,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-/// TODO: when p is <=16, downcast to BFloat16. If <=32, downcast to Float32
+#include <Interpreters/Context.h>
+
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
+#if USE_SIMSIMD
+#    if defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#    endif
+#    include <simsimd/simsimd.h>
+#endif
 
 
 namespace DB
@@ -20,7 +28,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
@@ -32,30 +39,6 @@ struct L2DistanceTransposed
     {
         UInt8 groups;
     };
-
-    template <typename FloatType>
-    struct State
-    {
-        FloatType sum{};
-    };
-
-    template <typename ResultType>
-    static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
-    {
-        state.sum += (x - y) * (x - y);
-    }
-
-    template <typename ResultType>
-    static void combine(State<ResultType> & state, const State<ResultType> & other, const ConstParams &)
-    {
-        state.sum += other.sum;
-    }
-
-    template <typename ResultType>
-    static ResultType finalize(const State<ResultType> & state, const ConstParams &)
-    {
-        return sqrt(state.sum);
-    }
 };
 
 template <typename Kernel>
@@ -69,6 +52,43 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    template <typename T>
+    static void l2Distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// Benchmarks show simsimd has great performance. We do not need CPU dispatch because SimSimd provides it's own dynamic dispatch
+#if USE_SIMSIMD
+        if constexpr (std::is_same_v<T, BFloat16>)
+            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            simsimd_l2_f32(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            simsimd_l2_f64(x, y, array_size, result);
+        return;
+#endif
+
+        /// Fallback to scalar implementation if simsimd is not available. It also originates from simsimd, but is decoupled
+        if constexpr (std::is_same_v<T, BFloat16>)
+            l2DistanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            l2DistanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            l2DistanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void l2DistanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType d2 = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            d2 += (xi - yi) * (xi - yi);
+        }
+        *result = static_cast<Float64>(sqrt(d2));
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -84,20 +104,7 @@ public:
         /// and are almost certainly correct. It is extremely unlikely that user will write optimised case manually. Thus, any error in
         /// arguments is treated as user error from the original case.
         if (validateOptimizedArguments(arguments))
-        {
-            const auto * ref_vec_type = checkAndGetDataType<DataTypeArray>(arguments.back().type.get());
-
-            switch (ref_vec_type->getNestedType()->getTypeId())
-            {
-                case TypeIndex::BFloat16:
-                case TypeIndex::Float32:
-                    return std::make_shared<DataTypeFloat32>();
-                case TypeIndex::Float64:
-                    return std::make_shared<DataTypeFloat64>();
-                default:
-                    UNREACHABLE();
-            }
-        }
+            return std::make_shared<DataTypeFloat64>();
 
         if (arguments.size() > 3)
             throw Exception(
@@ -115,19 +122,6 @@ public:
 
         if (!first_arg_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be an Array", getName());
-
-        const auto zeroth_arg_nested_type = zeroth_arg_type->getElementType();
-        const auto first_arg_nested_type = first_arg_type->getNestedType();
-        const auto zeroth_arg_nested_type_id = zeroth_arg_nested_type->getTypeId();
-        const auto first_arg_nested_type_id = first_arg_nested_type->getTypeId();
-
-        if (zeroth_arg_nested_type_id != first_arg_nested_type_id)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Arguments 1 and 2 of function {} have different nested types: {} and {}. They must be the same",
-                getName(),
-                zeroth_arg_nested_type->getName(),
-                first_arg_nested_type->getName());
 
         /// Check that precision (third argument) is valid
         const auto & precision_col = arguments[2];
@@ -149,7 +143,7 @@ public:
 
         const auto precision = precision_col.column->getUInt(0);
 
-        switch (first_arg_nested_type_id)
+        switch (first_arg_type->getNestedType()->getTypeId())
         {
             case TypeIndex::BFloat16:
                 if (precision == 0 || precision > 16)
@@ -158,7 +152,7 @@ public:
                         "The third argument (precision) of function {} must be in range [1, 16] for BFloat16 QBit, got {}",
                         getName(),
                         precision);
-                return std::make_shared<DataTypeFloat32>();
+                return std::make_shared<DataTypeFloat64>();
 
             case TypeIndex::Float32:
                 if (precision == 0 || precision > 32)
@@ -167,7 +161,7 @@ public:
                         "The third argument (precision) of function {} must be in range [1, 32] for Float32 QBit, got {}",
                         getName(),
                         precision);
-                return std::make_shared<DataTypeFloat32>();
+                return std::make_shared<DataTypeFloat64>();
 
             case TypeIndex::Float64:
                 if (precision == 0 || precision > 64)
@@ -223,36 +217,16 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        switch (result_type->getTypeId())
-        {
-            /// Result type cannot be BFloat16 as there is no sqrt function for it
-            case TypeIndex::BFloat16:
-            case TypeIndex::Float32:
-                return executeWithResultType<Float32>(arguments, input_rows_count);
-            case TypeIndex::Float64:
-                return executeWithResultType<Float64>(arguments, input_rows_count);
-            default:
-                UNREACHABLE();
-        }
-    }
 
-private:
-    static ColumnPtr extractFromConst(const ColumnPtr & column)
-    {
-        return column->isConst() ? assert_cast<const ColumnConst *>(column.get())->getDataColumnPtr() : column;
-    }
-
-    template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         const auto & last_arg = arguments.back();
 
         /// If last argument is UInt, we are in L2DistanceTransposed(qbit, ref_vec, p) case
         WhichDataType which_last(last_arg.type);
         if (which_last.isUInt8())
-            return executeWithQBitColumnConverted<ResultType>(arguments, input_rows_count);
+            return executeWithQBitColumnConverted(arguments, input_rows_count);
 
         /// Otherwise, L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec)
 
@@ -277,26 +251,59 @@ private:
         }
 
         /// Continue with execution
-        auto type_y = typeid_cast<const DataTypeArray *>(last_arg.type.get())->getNestedType();
-        switch (type_y->getTypeId())
+        auto type_y = checkAndGetDataType<DataTypeArray>(last_arg.type.get())->getNestedType()->getTypeId();
+        const size_t precision = arguments.size() - 2;
+
+        /// We need to find two types: the type of the reference vector and the type of the calculation.
+        /// The type of calculation is determined by the value of `precision. For example, if col_x is Float32 and p = 16, we will only have
+        /// 16 meaningful bits to calculate the distance. So we can downcast the reference vector to BFloat16 and do calculations faster.
+        auto dispatch_by_accum_type = [&]<typename ReferenceType>(auto func)
         {
+            auto calc_type
+                = (precision <= 16 ? TypeToTypeIndex<BFloat16> : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
+
+            /// Float64 cannot be downcasted to Float32 or BFloat16 in an easy way by reordering bits. That is why with it we always do
+            /// calculations in full width. Alternatively, we could static_cast each element when calculating, but it is slower.
+            if (std::is_same_v<ReferenceType, Float64>)
+                return func.template operator()<ReferenceType, Float64>();
+            else if (calc_type == TypeToTypeIndex<Float32>)
+                return func.template operator()<ReferenceType, Float32>();
+            else if (calc_type == TypeToTypeIndex<BFloat16>)
+                return func.template operator()<ReferenceType, BFloat16>();
+            else
+                UNREACHABLE();
+        };
+
+        auto execute_with_type = [&]<typename T>() -> ColumnPtr
+        {
+            return dispatch_by_accum_type.template operator()<T>(
+                [&]<typename RefT, typename CalcT>()
+                { return executeDistanceCalculation<RefT, CalcT>(reference_vector, arguments, qbit_size, input_rows_count); });
+        };
+
+        /// Dispatch to type-specific implementation based on reference vector type
+        switch (type_y)
+        {
+            /// Result type cannot be BFloat16 as there is no sqrt function for it
             case TypeIndex::BFloat16:
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, BFloat16, BFloat16>(arguments, qbit_size, input_rows_count);
+                return execute_with_type.template operator()<BFloat16>();
             case TypeIndex::Float32:
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, Float32, Float32>(arguments, qbit_size, input_rows_count);
+                return execute_with_type.template operator()<Float32>();
             case TypeIndex::Float64:
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, Float64, Float64>(arguments, qbit_size, input_rows_count);
+                return execute_with_type.template operator()<Float64>();
             default:
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested or unsupported type {}. Supported types: BFloat16, Float32, Float64",
-                    getName(),
-                    type_y->getName());
+                UNREACHABLE();
         }
     }
 
+
+private:
+    static ColumnPtr extractFromConst(const ColumnPtr & column)
+    {
+        return column->isConst() ? assert_cast<const ColumnConst *>(column.get())->getDataColumnPtr() : column;
+    }
+
     /// L2DistanceTransposed(qbit, ref_vec, p) case. Convert arguments to [qbit.1, ..., qbit.p, ref_vec] format before executing
-    template <typename ResultType>
     ColumnPtr executeWithQBitColumnConverted(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName converted_arguments;
@@ -316,34 +323,39 @@ private:
         converted_arguments.emplace_back(arguments[1]);
 
         /// We go back to the function that called us, but now with converted arguments
-        return executeWithResultType<ResultType>(converted_arguments, input_rows_count);
+        return executeImpl(converted_arguments, nullptr, input_rows_count);
     }
 
-    template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(
-        const ColumnsWithTypeAndName & arguments, const size_t qbit_size, size_t input_rows_count) const
-    {
-        const ColumnPtr col_y = extractFromConst(arguments.back().column);
-        const ColumnArray & array = *assert_cast<const ColumnArray *>(extractFromConst(col_y).get());
-        return executeDistanceCalculation<ResultType, LeftType, RightType>(array, arguments, qbit_size, input_rows_count);
-    }
-
-    template <typename ResultType, typename LeftType, typename RightType>
+    template <typename ReferenceType, typename CalculationType>
     ColumnPtr executeDistanceCalculation(
         const ColumnArray & array, const ColumnsWithTypeAndName & arguments, const size_t qbit_size, size_t input_rows_count) const
     {
         const size_t precision = arguments.size() - 2;
-        const auto & array_data = typeid_cast<const ColumnVector<RightType> &>(array.getData()).getData();
         const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(qbit_size);
         const size_t padded_array_size = bytes_per_fixedstring * 8;
 
-        const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
-        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        /// For the sake of speed, downcast the reference vector to CalculationType p is low enough
+        const auto & array_data = static_cast<const ColumnVector<ReferenceType> &>(array.getData()).getData();
+        const PaddedPODArray<CalculationType> * data_ptr;
+        PaddedPODArray<CalculationType> array_data_downcasted;
+        if constexpr (!std::is_same_v<ReferenceType, CalculationType>)
+        {
+            array_data_downcasted.resize(array_data.size());
+            for (size_t i = 0; i < array_data.size(); ++i)
+                array_data_downcasted[i] = static_cast<CalculationType>(array_data[i]);
+            data_ptr = &array_data_downcasted;
+        }
+        else
+        {
+            data_ptr = &array_data;
+        }
+
+        auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        std::vector<LeftType> untransposed_x(padded_array_size);
-
-        using Word = std::conditional_t<sizeof(LeftType) == 2, UInt16, std::conditional_t<sizeof(LeftType) == 4, UInt32, UInt64>>;
+        using Word
+            = std::conditional_t<sizeof(CalculationType) == 2, UInt16, std::conditional_t<sizeof(CalculationType) == 4, UInt32, UInt64>>;
+        std::vector<CalculationType> untransposed_x(padded_array_size);
 
         /// Pre-extract all FixedString columns from constants if needed to avoid repeated work in the loop below
         std::vector<ColumnPtr> extracted_columns;
@@ -358,7 +370,7 @@ private:
         size_t array_start = 0;
         for (size_t row = 0; row < input_rows_count; row++)
         {
-            memset(untransposed_x.data(), 0, padded_array_size * sizeof(LeftType));
+            memset(untransposed_x.data(), 0, padded_array_size * sizeof(CalculationType));
 
             for (size_t bit = 0; bit < precision; ++bit)
             {
@@ -369,41 +381,20 @@ private:
                 SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(untransposed_x.data()), padded_array_size, bit_mask);
             }
 
-            /// Calculate distance, processing vectorized chunks, unless the array size is smaller than the minimum chunk size
-            typename Kernel::template State<ResultType> state;
-            static constexpr size_t VEC_SIZE = 16;
-            size_t pos = 0;
+            if constexpr (std::is_same_v<CalculationType, BFloat16>)
+                l2Distance(untransposed_x.data(), data_ptr->data(), qbit_size, &result_data[row]);
+            else if constexpr (std::is_same_v<CalculationType, Float32>)
+                l2Distance(untransposed_x.data(), data_ptr->data() + array_start, qbit_size, &result_data[row]);
+            else if constexpr (std::is_same_v<CalculationType, Float64>)
+                l2Distance(untransposed_x.data(), data_ptr->data() + array_start, qbit_size, &result_data[row]);
+            else
+                UNREACHABLE();
 
-            for (; pos + VEC_SIZE < qbit_size; pos += VEC_SIZE)
-            {
-                typename Kernel::template State<ResultType> states[VEC_SIZE];
-                for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(
-                        states[s],
-                        static_cast<ResultType>(untransposed_x[pos + s]),
-                        static_cast<ResultType>(array_data[array_start + pos + s]),
-                        kernel_params);
-
-                for (const auto & other_state : states)
-                    Kernel::template combine<ResultType>(state, other_state, kernel_params);
-            }
-
-            /// Process remaining elements
-            for (; pos < qbit_size; ++pos)
-                Kernel::template accumulate<ResultType>(
-                    state,
-                    static_cast<ResultType>(untransposed_x[pos]),
-                    static_cast<ResultType>(array_data[array_start + pos]),
-                    kernel_params);
-
-            result_data[row] = Kernel::finalize(state, kernel_params);
             array_start += reference_vector_shift;
         }
 
         return col_res;
     }
-
-    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 template <>
@@ -417,26 +408,6 @@ ColumnNumbers FunctionArrayDistance<L2DistanceTransposed>::getArgumentsThatAreAl
 {
     return {2};
 }
-
-template <>
-L2DistanceTransposed::ConstParams
-FunctionArrayDistance<L2DistanceTransposed>::initConstParams(const ColumnsWithTypeAndName & arguments) const
-{
-    if (arguments.size() < 3)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} expects three or more arguments", getName());
-
-    const UInt8 precision = arguments.size() - 2;
-
-    if (precision == 0 || precision > 64)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Second argument for function {} must be positive integer in range [1, 64], got {}",
-            getName(),
-            toString(precision));
-
-    return L2DistanceTransposed::ConstParams{precision};
-}
-
 
 /// Used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)

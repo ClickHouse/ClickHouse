@@ -22,9 +22,10 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, vec.17, vec.18, vec.19, vec.20, vec.21, vec.22, vec.23, vec.24, vec.25, vec.26, vec.27, vec.28, vec.29, vec.30, vec.31, vec.32, 3, reference_vec) AS dist FROM qbit ORDER BY id;
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, 3, reference_vec) AS dist FROM qbit ORDER BY id;
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, 3, reference_vec) AS dist FROM qbit ORDER BY id;
+-- Use rounding to avoid minor precision differences when using non-vectorized implementations of distance function
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, vec.17, vec.18, vec.19, vec.20, vec.21, vec.22, vec.23, vec.24, vec.25, vec.26, vec.27, vec.28, vec.29, vec.30, vec.31, vec.32, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 

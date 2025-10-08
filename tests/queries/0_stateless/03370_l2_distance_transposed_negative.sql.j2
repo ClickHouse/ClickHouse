@@ -13,10 +13,10 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 17) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 17) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
+WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -27,10 +27,10 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 33) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 33) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
+WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -41,10 +41,10 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 65) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 65) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -53,7 +53,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 9)) ENGINE = Memory;
 
 INSERT INTO qbit VALUES (1, [0,1,2,3,4,5,6,7,8]);
 
-WITH [toBFloat16(0), 1, 2, 3, 4, 5, 6, 7, 8, 9] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec.1, 9, reference_vec) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec.1, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 DROP TABLE qbit;
 
 
@@ -62,7 +62,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 5)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0,1,2,3,4]);
 INSERT INTO qbit VALUES (2, [1,2,3,4,5]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY dist; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
 DROP TABLE qbit;
 
 -- Check if full column as third argument throws

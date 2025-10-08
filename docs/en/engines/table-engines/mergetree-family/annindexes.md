@@ -605,7 +605,7 @@ ClickHouse offers the Quantized Bit (`QBit`) data type that addresses these limi
 1. Storing the original full-precision data.
 2. Allowing quantization precision to be specified at query time.
 
-This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
+This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O and computation from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
 
 :::note
 The `QBit` data type and its associated distance functions are currently experimental. To enable them, run `SET allow_experimental_qbit_type = 1`.
@@ -696,14 +696,10 @@ In the current state, the speed-up is due to reduced I/O as we read less data. I
 
 #### Performance Considerations {#qbit-performance}
 
-The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. The precision parameter directly controls the trade-off between accuracy and speed:
+The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. Moreover, when the `QBit` contains `Float32` data, if the precision parameter is 16 or below, there will be additional benefits from reduced computation. The precision parameter directly controls the trade-off between accuracy and speed:
 
 - **Higher precision** (closer to the original data width): More accurate results, slower queries
 - **Lower precision**: Faster queries with approximate results, reduced memory usage
-
-:::note
-Currently, the speed improvement comes from reduced I/O rather than computational optimizations. When using lower precision values, the distance calculations still operate on the original data width.
-:::
 
 ### References {#references}
 
