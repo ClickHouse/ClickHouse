@@ -44,7 +44,6 @@ private:
     ContextPtr context;
     String keeper_path;
     size_t max_series = 0;
-    bool at_capacity = false;
 
 public:
     static constexpr auto name = "generateSerialID";
@@ -52,25 +51,7 @@ public:
     explicit FunctionSerial(ContextPtr context_) : context(context_)
     {
         keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
-        zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
         max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
-
-        Coordination::Stat stat;
-        if (keeper->exists(keeper_path, &stat))
-        {
-            if (static_cast<size_t>(stat.numChildren) > max_series)
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                    "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
-                    name, max_series);
-
-            if (static_cast<size_t>(stat.numChildren) == max_series)
-                at_capacity = true;
-        }
-        else
-        {
-            keeper->createAncestors(keeper_path);
-            keeper->create(keeper_path, "", zkutil::CreateMode::Persistent);
-        }
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -88,45 +69,44 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
+        FunctionArgumentDescriptors mandatory_args
+        {
+            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    /// Increments the counter and returns the old counter.
+    [[nodiscard]] UInt64 update(String series_name, size_t & current_series, UInt64 increment, zkutil::ZooKeeperPtr & keeper) const
     {
-        String series_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-
         if (series_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of function {} (the series name) cannot be empty", name);
         series_name = escapeForFileName(series_name);
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
 
-        auto col_res = ColumnUInt64::create();
-        typename ColumnUInt64::Container & vec_to = col_res->getData();
-
-        vec_to.resize(input_rows_count);
-
         String serial_path = std::filesystem::path(keeper_path) / series_name;
 
-        zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
-        if (at_capacity)
+        if (current_series < max_series)
+        {
+            auto code = keeper->tryCreate(serial_path, "0", zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZOK)
+                ++current_series;
+            else if (code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(code, serial_path);
+        }
+        else
         {
             if (!keeper->exists(serial_path))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
                     name, max_series);
         }
-        else
-            keeper->createIfNotExists(serial_path, "0");
 
         UInt64 counter = 0;
         Coordination::Stat stat;
@@ -134,7 +114,7 @@ public:
         {
             String old_value = keeper->get(serial_path, &stat);
             counter = parse<UInt64>(old_value);
-            String new_value = toString(counter + input_rows_count);
+            String new_value = toString(counter + increment);
             auto code = keeper->trySet(serial_path, new_value, stat.version);
 
             if (code == Coordination::Error::ZOK)
@@ -146,10 +126,61 @@ public:
             throw zkutil::KeeperException::fromPath(code, serial_path);
         }
 
-        for (auto & val : vec_to)
+        return counter;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto col_res = ColumnUInt64::create();
+        typename ColumnUInt64::Container & vec_to = col_res->getData();
+        vec_to.resize(input_rows_count);
+
+        zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
+
+        Coordination::Stat stat;
+        if (!keeper->exists(keeper_path, &stat))
         {
-            val = counter;
-            ++counter;
+            keeper->createAncestors(keeper_path);
+            keeper->create(keeper_path, "", zkutil::CreateMode::Persistent);
+        }
+        size_t current_series = stat.numChildren;
+
+        if (current_series > max_series)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
+                name, max_series);
+
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(arguments[0].column.get()))
+        {
+            String series_name = column_const->getValue<String>();
+            UInt64 counter = update(series_name, current_series, input_rows_count, keeper);
+
+            for (auto & val : vec_to)
+            {
+                val = counter;
+                ++counter;
+            }
+        }
+        else
+        {
+            struct Series
+            {
+                UInt64 num_rows = 0;
+                UInt64 old_value = 0;
+            };
+            std::unordered_map<StringRef, Series, StringRefHash> series;
+
+            /// Count the number of rows for each name:
+            for (size_t i = 0; i < input_rows_count; ++i)
+                ++series[arguments[0].column->getDataAt(i)].num_rows;
+
+            /// Update counters in Keeper:
+            for (auto & [series_name, values] : series)
+                values.old_value = update(series_name.toString(), current_series, values.num_rows, keeper);
+
+            /// Populate the result:
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = ++series[arguments[0].column->getDataAt(i)].old_value;
         }
 
         return col_res;
@@ -164,7 +195,7 @@ REGISTER_FUNCTION(Serial)
     {
         .description=R"(
 Generates and returns sequential numbers starting from the previous counter value.
-This function takes a constant string argument - a series identifier.
+This function takes a string argument - a series identifier.
 
 The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
