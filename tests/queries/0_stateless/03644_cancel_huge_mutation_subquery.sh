@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT --enable_sharing_sets_for_mutations=0 --mutations_sync=2 -n -
 
 # wait until mutation started
 i=0
-while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE table = 'cancel_huge_mutation_subquery' AND is_done = 0")" -ne 1 ]; do
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE table = 'cancel_huge_mutation_subquery' and database='${CLICKHOUSE_DATABASE}' AND is_done = 0")" -ne 1 ]; do
     sleep 0.5
     i=$((i + 1))
     if [ $i -gt 100 ]; then
