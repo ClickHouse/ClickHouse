@@ -472,7 +472,7 @@ def test_ytsaurus_cyrillic_strings(started_cluster):
 
 def test_ytsaurus_select_subset_of_columns(started_cluster):
     table_path = "//tmp/table"
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     yt.create_table(
         table_path,
         '{"a":10,"b":20, "c": 1}{"a":20,"b":40, "c": 2}',
