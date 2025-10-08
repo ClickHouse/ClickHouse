@@ -106,6 +106,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     const auto settings = storage.getSettings();
     time_t threshold = (*settings)[MergeTreeSetting::execute_merges_on_single_replica_time_threshold].totalSeconds();
+    size_t min_blocks = (*settings)[MergeTreeSetting::execute_merges_on_single_replica_min_blocks];
     time_t threshold_init = 0;
     if ((*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         threshold_init = (*settings)[MergeTreeSetting::remote_fs_execute_merges_on_single_replica_time_threshold].totalSeconds();
@@ -163,8 +164,10 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     }
 
     std::lock_guard lock(mutex);
-    if (threshold != 0) /// Zeros already reset
+    if (threshold != 0) { /// Zeros already reset
         execute_merges_on_single_replica_time_threshold = threshold;
+        execute_merges_on_single_replica_min_blocks = min_blocks;
+    }
     if (threshold_init != 0)
         remote_fs_execute_merges_on_single_replica_time_threshold = threshold_init;
     last_refresh_time = now;
