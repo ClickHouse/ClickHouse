@@ -80,6 +80,7 @@ add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
+add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
@@ -89,6 +90,7 @@ add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
+add_contrib (chdig-cmake chdig)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -107,7 +109,6 @@ if (ENABLE_TESTS)
 endif()
 
 add_contrib (libfuzzer-cmake llvm-project)
-add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake
@@ -122,7 +123,6 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
-    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
@@ -138,9 +138,6 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (curl-cmake curl)
 add_contrib (azure-cmake azure) # requires: curl
-if (NOT OS_DARWIN)
-    add_contrib (sentry-native-cmake sentry-native) # requires: curl
-endif()
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -242,15 +239,33 @@ add_contrib (ulid-c-cmake ulid-c)
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
+add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib (numactl-cmake numactl)
 
-add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
+# Google Cloud Cpp
+if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
+else()
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
+endif()
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+if(ENABLE_GOOGLE_CLOUD_CPP)
+    add_contrib (nlohmann-json-cmake nlohmann-json)
+    add_contrib (crc32c-cmake crc32c)
+    add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
+else()
+    message(STATUS "Not using Google Cloud Cpp")
+endif()
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
+add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
+
+add_contrib (bech32)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

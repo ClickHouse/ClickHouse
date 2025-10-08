@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
 #include <Common/BitHelpers.h>
-#include <Common/GWPAsan.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/memcpySmall.h>
 
@@ -15,6 +14,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <numeric>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -67,20 +67,34 @@ namespace DB
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
 static constexpr size_t empty_pod_array_size = 1024;
-extern const char empty_pod_array[empty_pod_array_size];
+alignas(std::max_align_t) extern const char empty_pod_array[empty_pod_array_size];
 
 namespace PODArrayDetails
 {
 
 void protectMemoryRegion(void * addr, size_t len, int prot);
 
+[[noreturn]] void throw_alloc_error(); /// NOLINT
+
 /// The amount of memory occupied by the num_elements of the elements.
-size_t byte_size(size_t num_elements, size_t element_size); /// NOLINT
+inline size_t byte_size(size_t num_elements, size_t element_size)
+{
+    size_t amount;
+    if (__builtin_mul_overflow(num_elements, element_size, &amount))
+        throw_alloc_error();
+    return amount;
+}
 
 /// Minimum amount of memory to allocate for num_elements, including padding.
-size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right); /// NOLINT
+inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
+{
+    size_t amount;
+    if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
+        throw_alloc_error();
+    return amount;
+}
 
-};
+}
 
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
@@ -92,11 +106,12 @@ protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
-    static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, ELEMENT_SIZE), 16);
+    static constexpr size_t pad_left = integerRoundUp(pad_left_, std::lcm(ELEMENT_SIZE, 16));
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
+    static_assert(pad_left % ELEMENT_SIZE == 0, "pad_left must be multiple of element alignment");
 
     // If we are using allocator with inline memory, the minimal size of
     // array must be in sync with the size of this memory.
@@ -167,8 +182,10 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
+    /// NO_INLINE functions for slow paths of otherwise fast small inlinable functions.
+
     template <typename ... TAllocatorParams>
-    void reserveForNextSize(TAllocatorParams &&... allocator_params)
+    NO_INLINE void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {
@@ -180,6 +197,12 @@ protected:
         }
         else
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    NO_INLINE void reallocPowerOfTwoElements(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        realloc(roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
 #ifndef NDEBUG
@@ -214,11 +237,10 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-    void reserve(size_t n, TAllocatorParams &&... allocator_params)
+    ALWAYS_INLINE void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
-            realloc(roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
+            reallocPowerOfTwoElements(n, std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
@@ -456,7 +478,7 @@ public:
         this->assertNotIntersects(from_begin, from_end);
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -479,7 +501,7 @@ public:
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         if (bytes_to_copy)
@@ -537,7 +559,7 @@ public:
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = PODArrayDetails::byte_size(copy_size, sizeof(T));
         if (bytes_to_copy)

@@ -1,9 +1,11 @@
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 
 namespace DB
@@ -22,7 +24,7 @@ namespace ErrorCodes
 
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const ObjectIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
     SchemaCache & schema_cache_,
@@ -150,7 +152,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
+    auto impl = createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
@@ -275,7 +277,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
+            read_buf = createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

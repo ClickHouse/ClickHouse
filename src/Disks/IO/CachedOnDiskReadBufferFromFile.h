@@ -165,6 +165,8 @@ private:
         const ReadInfo & info,
         size_t offset);
 
+    bool predownload(FileSegment & file_segment);
+
     bool nextImplStep();
 
     size_t getRemainingSizeToRead();

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -14,6 +13,7 @@ namespace DB
 
 class KeyCondition;
 struct QueryIdHolder;
+class VectorSimilarityIndexCache;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -48,7 +48,8 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
-        bool enable_parallel_reading = false) const;
+        bool enable_parallel_reading = false,
+        std::shared_ptr<ParallelReadingExtension> extension_ = nullptr) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
@@ -73,24 +74,12 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-private:
-    const MergeTreeData & data;
-    LoggerPtr log;
-
-    /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
-    static size_t getApproximateTotalRowsToRead(
-        const RangesInDataParts & parts,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const Settings & settings,
-        LoggerPtr log);
-
-    static MarkRanges filterMarksUsingIndex(
+    static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const Settings & settings,
+        const RangesInDataPartReadHints & in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
@@ -102,11 +91,22 @@ private:
         MergeTreeIndexMergedConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        LoggerPtr log);
+
+private:
+    const MergeTreeData & data;
+    LoggerPtr log;
+
+    /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
+    static size_t getApproximateTotalRowsToRead(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const Settings & settings,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -194,6 +194,7 @@ public:
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
@@ -205,12 +206,14 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges,
-        bool is_final_query);
+        bool is_final_query,
+        bool is_parallel_reading_from_replicas);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
         const ContextPtr & context,
         LoggerPtr log);
 

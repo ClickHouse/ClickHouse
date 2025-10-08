@@ -121,7 +121,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(true, false);
+    IAST::FormatSettings settings(true);
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
@@ -423,7 +423,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        if (!type_tuple->haveExplicitNames())
+        if (!type_tuple->hasExplicitNames())
         {
             ++it;
             continue;
@@ -612,7 +612,7 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
     /// Check for dynamic subcolumns
     auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
     auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
     {
         if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
             return true;
@@ -657,29 +657,7 @@ NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & optio
 {
     NamesAndTypesList res;
     for (const auto & name : names)
-    {
-        if (auto it = columns.get<1>().find(name); it != columns.get<1>().end())
-        {
-            auto kind = defaultKindToGetKind(it->default_desc.kind);
-            if (options.kind & kind)
-            {
-                res.emplace_back(name, it->type);
-                continue;
-            }
-        }
-        else if (options.with_subcolumns)
-        {
-            auto jt = subcolumns.get<0>().find(name);
-            if (jt != subcolumns.get<0>().end())
-            {
-                res.push_back(*jt);
-                continue;
-            }
-        }
-
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", name);
-    }
-
+        res.push_back(getColumn(options, name));
     return res;
 }
 

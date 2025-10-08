@@ -14,8 +14,9 @@ S3_ARTIFACT_PATH = S3_BUCKET_NAME
 CI_CONFIG_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
 
 ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
-DOCKER_BUILD_AND_MERGE_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
+DOCKER_MERGE_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
 DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
+DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
 
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
 HTML_S3_PATH = S3_REPORT_BUCKET_NAME
@@ -26,7 +27,16 @@ S3_BUCKET_TO_HTTP_ENDPOINT = {
 ENABLE_ARTIFACTS_REPORT = True
 
 COMPRESS_THRESHOLD_MB = 32
-TEXT_CONTENT_EXTENSIONS = [".txt", ".log", ".err", ".out", ".tsv", ".csv", ".json"]
+TEXT_CONTENT_EXTENSIONS = [
+    ".txt",
+    ".log",
+    ".err",
+    ".out",
+    ".tsv",
+    ".csv",
+    ".json",
+    ".jsonl",
+]
 
 DOCKERHUB_USERNAME = "robotclickhouse"
 DOCKERHUB_SECRET = "dockerhub_robot_password"

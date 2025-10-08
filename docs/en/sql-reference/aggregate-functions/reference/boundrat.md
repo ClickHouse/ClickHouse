@@ -4,6 +4,7 @@ description: 'Aggregate function that calculates the slope between the leftmost 
 sidebar_position: 114
 slug: /sql-reference/aggregate-functions/reference/boundingRatio
 title: 'boundingRatio'
+doc_type: 'reference'
 ---
 
 Aggregate function that calculates the slope between the leftmost and rightmost points across a group of values.
@@ -43,4 +44,3 @@ FROM numbers(10)
 │                                          1.5 │
 └──────────────────────────────────────────────┘
 ```
-

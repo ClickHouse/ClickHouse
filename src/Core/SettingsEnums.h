@@ -294,11 +294,39 @@ enum class Dialect : uint8_t
     clickhouse,
     kusto,
     prql,
+    promql,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
+enum class AlterUpdateMode : uint8_t
+{
+    HEAVY,
+    LIGHTWEIGHT,
+    LIGHTWEIGHT_FORCE,
+};
+
+DECLARE_SETTING_ENUM(AlterUpdateMode)
+
+enum class UpdateParallelMode : uint8_t
+{
+    SYNC,
+    ASYNC,
+    AUTO,
+};
+
+DECLARE_SETTING_ENUM(UpdateParallelMode)
+
+enum class LightweightDeleteMode : uint8_t
+{
+    ALTER_UPDATE,
+    LIGHTWEIGHT_UPDATE,
+    LIGHTWEIGHT_UPDATE_FORCE,
+};
+
+DECLARE_SETTING_ENUM(LightweightDeleteMode)
 
 enum class LightweightMutationProjectionMode : uint8_t
 {
@@ -361,6 +389,7 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
+    NONE,
     ICEBERG_REST,
     UNITY,
     GLUE,
@@ -369,4 +398,92 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class FileCachePolicy : uint8_t
+{
+    LRU,
+    SLRU,
+};
+
+DECLARE_SETTING_ENUM(FileCachePolicy)
+
+enum class VectorSearchFilterStrategy : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+
+enum class GeoToH3ArgumentOrder : uint8_t
+{
+    LAT_LON,
+    LON_LAT,
+};
+
+DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+enum class MergeTreeSerializationInfoVersion : uint8_t
+{
+    DEFAULT = 0,
+    WITH_TYPES = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+
+enum class MergeTreeStringSerializationVersion : uint8_t
+{
+    DEFAULT = 0,
+    WITH_SIZE_STREAM = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
+
+enum class MergeTreeObjectSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V3,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+
+enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
+{
+    MAP,
+    MAP_WITH_BUCKETS,
+    ADVANCED,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
+
+enum class MergeTreeDynamicSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V3,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+
+enum class SearchOrphanedPartsDisks : uint8_t
+{
+    NONE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class IcebergMetadataLogLevel : uint8_t
+{
+    None = 0,
+    Metadata = 1,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
+};
+
+DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 }

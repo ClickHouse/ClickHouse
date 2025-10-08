@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - resizable columns
     - display totals
     - show/hide the editor
     - check for readonly
@@ -68,6 +67,11 @@
 
             --progress-color: #0C4;
             --progress: 0%;
+
+            ::selection {
+                color: #FFF;
+                background-color: #456;
+            }
         }
 
         [data-theme="dark"] {
@@ -95,6 +99,11 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
+
+            ::selection {
+                color: #000;
+                background-color: #FF8;
+            }
         }
 
         *
@@ -112,6 +121,7 @@
             margin: 0;
             /* This enables position: sticky on controls */
             overflow: auto;
+            scrollbar-color: var(--border-color) var(--element-background-color);
         }
 
         html
@@ -444,12 +454,23 @@
             background-color: var(--element-background-color);
         }
 
+        #data_div.fixed
+        {
+            width: fit-content;
+        }
+
         #data-table
         {
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
         }
+
+        #data-table.fixed
+        {
+            table-layout: fixed;
+            width: var(--table-width);
+         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
@@ -495,6 +516,12 @@
             border: 1px solid var(--border-color);
         }
 
+        th .name {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .type-hint
         {
             display: none;
@@ -512,6 +539,22 @@
         th:hover .type-hint
         {
             display: inline-block;
+        }
+
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: -0.3rem;
+            width: 0.5rem;
+            cursor: col-resize;
+            user-select: none;
+            height: 100%;
+        }
+
+        .resizer:hover, .resizer-dragging
+        {
+            border-radius: 0.25rem;
+            background-color: var(--border-color-selected);
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -538,13 +581,6 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
-        }
-
-        td.transposed
-        {
-            max-width: none;
-            overflow: auto;
-            white-space: pre-wrap;
         }
 
         td.empty-result
@@ -667,15 +703,23 @@
             color: var(--misc-text-color);
         }
 
+        /* Prevents a different color when Chromium auto-fills inputs from the list. */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active
+        {
+            transition: background-color 600000s 0s, color 600000s 0s;
+        }
+
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
         .u-wrap {position: relative;user-select: none;}
         .u-over, .u-under, .u-axis {position: absolute;}
         .u-under {overflow: hidden;}
         .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
-        .u-legend {margin: auto;text-align: center; margin-top: 1em; font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;}
+        .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
         .u-inline {display: block;}
         .u-inline * {display: inline-block;}
-        .u-inline tr {margin-right: 16px;}
         .u-legend th {font-weight: 600;}
         .u-legend th > * {vertical-align: middle;display: inline-block;}
         .u-legend td { min-width: 13em; }
@@ -709,13 +753,13 @@
         </div>
     </div>
     <div id="main">
-        <div id="controls">
+        <form id="controls">
             <div id="inputs">
-                <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="run_div">
-                <button class="shadow" id="run">Run</button>
+                <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
@@ -723,7 +767,7 @@
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
-        </div>
+        </form>
         <div id="data_div">
             <table class="monospace shadow" id="data-table"></table>
             <pre class="monospace shadow" id="data-unparsed"></pre>
@@ -764,12 +808,16 @@ let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
 
-const server_address = current_url.searchParams.get('url');
-if (server_address) {
-    url_elem.value = server_address;
-} else if (!opened_locally) {
-    /// Substitute the address of the server where the page is served.
-    url_elem.value = location.origin;
+if (url_elem.value == '') {
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        url_elem.value = server_address;
+    } else if (!opened_locally) {
+        /// Substitute the address of the server where the page is served.
+        url_elem.value = location.origin;
+    } else {
+        url_elem.value = 'http://localhost:8123/';
+    }
 }
 
 /// Substitute username if it's specified in the query string
@@ -1011,6 +1059,20 @@ function queryToColor(str) {
     return 50 + Math.abs(hash % 200);
 }
 
+function toBase64(str) {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(str);
+    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+    return btoa(binary);
+}
+
+function fromBase64(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+    const decoder = new TextDecoder();
+    return decoder.decode(bytes);
+}
 
 let row_idx = 0;
 let elapsed_ns = 0;
@@ -1196,7 +1258,7 @@ async function postImpl(posted_request_num, query)
             /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
-        history_url += '#' + window.btoa(query);
+        history_url += '#' + toBase64(query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -1286,14 +1348,15 @@ window.onpopstate = function(event) {
 };
 
 if (window.location.hash) {
-    query_area.value = window.atob(window.location.hash.substr(1));
+    query_area.value = fromBase64(window.location.hash.substr(1));
 }
 
 let in_flight = false;
 async function post()
 {
     ++request_num;
-    let query = query_area.value;
+    document.body.scrollTo(0, 0);
+    let query = await getQueryUnderCursor();
     in_flight = true;
     let run = document.getElementById('run');
     run.innerText = 'Stop';
@@ -1309,19 +1372,29 @@ async function cancel()
     document.getElementById('run').innerText = 'Run';
 }
 
-document.getElementById('run').onclick = function(e)
+document.getElementById('controls').addEventListener('submit', e =>
 {
+    e.preventDefault();
     if (in_flight) {
         cancel();
     } else {
         post();
+
+        if (password_elem.value) {
+            const cred = new PasswordCredential({
+                id: user_elem.value,
+                password: password_elem.value,
+                name: url_elem.value,
+            });
+            navigator.credentials.store(cred);
+        }
     }
-}
+});
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        post();
+        document.getElementById('controls').requestSubmit();
     }
 });
 
@@ -1389,6 +1462,8 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
+    document.getElementById('data-table').classList.remove('fixed');
+    document.getElementById('data_div').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1513,7 +1588,7 @@ document.addEventListener('keydown', e => {
 function transposeTableIfNeeded()
 {
     let table = document.getElementById('data-table');
-    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+    if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;
@@ -1525,6 +1600,7 @@ function transposeTableIfNeeded()
         let th = heads[1];
         th.className = 'right';
         th.style.width = '0';
+        th.removeChild(th.querySelector('.resizer'))
         tr.appendChild(th);
         if (values) {
             let td = values[1];
@@ -1601,10 +1677,10 @@ function updateProgress(progress) {
     let stats = document.getElementById('stats');
     let progress_elem = document.getElementById('progress');
 
-    const rows = progress.read_rows;
-    const bytes = progress.read_bytes;
-    const total_rows = progress.total_rows_to_read;
-    elapsed_ns = progress.elapsed_ns;
+    const rows = +progress.read_rows;
+    const bytes = +progress.read_bytes;
+    const total_rows = +progress.total_rows_to_read;
+    elapsed_ns = +progress.elapsed_ns;
 
     let formatted_rows = formatReadableRows(rows);
     let formatted_bytes = formatReadableBytes(bytes);
@@ -1636,6 +1712,77 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
+function changeTableLayout() {
+    const table = document.getElementById('data-table');
+    const headers = table.querySelectorAll('th');
+
+    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
+
+    columnWidths = [];
+    headers.forEach(header => {
+        columnWidths.push(header.offsetWidth);
+    });
+
+    table.classList.add('fixed');
+    document.getElementById('data_div').classList.add('fixed');
+
+    headers.forEach((header, index) => {
+        header.style.width = `${columnWidths[index]}px`;
+    });
+}
+
+
+function appendHeaderResizer(header) {
+    let drag_state = {
+        elem: null,
+        is_dragging: true,
+        offset_x: null,
+        offset_width: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return; }
+
+        changeTableLayout();
+        drag_state.offset_x = e.clientX;
+        drag_state.offset_width = header.offsetWidth;
+        drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('resizer-dragging');
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dx = e.clientX - drag_state.offset_x;
+        header.style.width = `${drag_state.offset_width + dx}px`;
+        if(dx < 0) {
+            const table = document.getElementById('data-table');
+            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
+        };
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('resizer-dragging');
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    header.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1647,14 +1794,24 @@ function appendHeader(meta) {
     th.appendChild(document.createTextNode('№'));
     thead.appendChild(th);
 
+    /// Assign z-index in the reverse order.
+    /// This is needed to make sure the contents that overflow to the right (column resizer) is visible.
+    let zIndex = meta.length;
+
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
-        th.appendChild(name);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.appendChild(name);
+        th.appendChild(nameSpan);
         let type_hint = document.createElement('span');
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
+        appendHeaderResizer(th);
+        th.style.zIndex = zIndex;
+        --zIndex;
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
@@ -1815,6 +1972,95 @@ function loadUplot() {
     return load_uplot_promise;
 }
 
+function legendAsTooltipPlugin({ className, style = {} } = {}) {
+    let legendEl;
+    let multiline;
+
+    function init(u, opts) {
+        legendEl = u.root.querySelector(".u-legend");
+        legendEl.classList.remove("u-inline");
+        className && legendEl.classList.add(className);
+
+        uPlot.assign(legendEl.style, {
+            textAlign: "right",
+            pointerEvents: "none",
+            display: "none",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            zIndex: 100,
+            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
+            ...style
+        });
+
+        const nodes = legendEl.querySelectorAll("th");
+        for (let i = 0; i < nodes.length; i++)
+            nodes[i]._order = i;
+
+        if (opts.series.length == 2) {
+            multiline = false;
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i].style.display = "none";
+        } else {
+            multiline = true;
+            legendEl.querySelector("th").remove();
+            legendEl.querySelector("td").setAttribute('colspan', '2');
+            legendEl.querySelector("td").style.textAlign = 'center';
+            let footer = legendEl.insertRow().insertCell();
+            footer.setAttribute('colspan', '2');
+            footer.style.textAlign = 'center';
+            footer.classList.add('u-value');
+            footer.parentNode.classList.add('u-series','footer');
+            footer.textContent = ". . .";
+        }
+
+        const overEl = u.over;
+        overEl.style.overflow = "visible";
+
+        overEl.appendChild(legendEl);
+
+        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
+    }
+
+    function nodeListToArray(nodeList) {
+        return Array.prototype.slice.call(nodeList);
+    }
+
+    function update(u) {
+        let { left, top } = u.cursor;
+        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
+        /// avoiding the borders of the chart.
+        left -= legendEl.clientWidth * (left / u.width);
+        if (top >= legendEl.clientHeight) {
+            top -= legendEl.clientHeight;
+        }
+        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+
+        if (multiline) {
+            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+            let header = nodes.shift();
+            let footer = nodes.pop();
+            let showLimit = Math.floor(u.height / 30);
+            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+            nodes.sort((a, b) => b._sort_key - a._sort_key);
+            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].style.display = i < showLimit ? null : "none";
+            }
+            footer.parentNode.appendChild(footer);
+            footer.style.display = nodes.length > showLimit ? null : "none";
+        }
+    }
+
+    return {
+        hooks: {
+            init: init,
+            setCursor: update,
+        }
+    };
+}
+
 let uplot;
 async function renderChart(json)
 {
@@ -1824,11 +2070,11 @@ async function renderChart(json)
     let chart = document.getElementById('chart');
     chart.style.display = 'block';
 
-    let paths = uPlot.paths.stepped({align:  1});
+    let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
 
     const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F8C", "#F8C", "#CCC", "#444"]
-        : ["#FF6", "#FF6", "#444", "#CCC"];
+        ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
+        : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
 
     const opts = {
         width: chart.clientWidth,
@@ -1841,9 +2087,9 @@ async function renderChart(json)
                     grid: { width: 1 / devicePixelRatio, stroke: grid_color },
                     ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
         series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color,
-                    drawStyle: 0, lineInterpolation: 1, paths } ],
+                    { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
         padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+        plugins: [ legendAsTooltipPlugin() ],
     };
 
     uplot = new uPlot(opts, json, chart);
@@ -1863,6 +2109,105 @@ function redrawChart() {
 }
 
 new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
+
+let lexer_module;
+async function loadLexer() {
+    // base64 -w0 build/src/Parsers/Lexer.wasm
+    const lexer_base64 = "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A08NAkEBIQgDQCACLQAAIgVBMGshAQJAAkAgBwRAIAFB/wFxQQpJIAVBwQBrQQZJcg0CIAVB4QBrQQZPDQEMAgsgAUH/AXFBCkkNAQsgCCAFQd8AR3JBAXENBAJAIAJBAWoiCSADTw0AIAktAAAiBUEwayEBIAcEQCABQf8BcUEKSSAFQcEAa0EGSXINASAFQeEAa0EGTw0HDAELIAFB/wFxQQlLDQYLIAMgCUYNBAsgBiACQQFqIgI2AgBBACEIIAIgA0kNAAsMAgsgBiACQQFqIgI2AgBBACEIIAIgA0cNAAsLIAJBAWoiASADTw0AIAItAAAhBQJAIAcEQCAFQSByQfAARw0CDAELIAVBIHJB5QBHDQELIAYgATYCAAJAIAJBAmogA08NAAJAIAEtAABBK2sOAwABAAELIAYgAUEBaiIBNgIAIAEgA08NAgtBASECA0AgAS0AACIFQTBrQf8BcUEKTwRAIAIgBUHfAEdyQQFxDQMgAUEBaiICIANPDQMgAi0AAEEwa0H/AXFBCUsNAwsgBiABQQFqIgE2AgBBACECIAEgA0cNAAsMAQsgAiEBCwJ/AkACQCABIANPDQAgAS0AACICQd8ARiACQTBrQf8BcUEKSXJFIAJB3wFxQcEAa0H/AXFBGUtxDQAgAUEBaiEFA0AgBiAFIgE2AgAgASADTw0CIAFBAWohBSABLQAAIgdBMGshAiAHQd8ARiACQf8BcUEKSXIgB0HfAXFBwQBrQf8BcUEaSXINAAsgAUEBawwCCyAAIAE2AggMCgsgAUEBawshAwJAIAEgBE0NACAEQQFrIQUDQCAFQQFqIgUtAAAiAkEkRiACQd8ARnIgAkEwa0H/AXFBCklyRSACQd8BcUHBAGtB/wFxQRpPcUUEQCADIAVLDQEMAgsLIAAgATYCCCAAIAQ2AgQgAEEvOgAADwsMCQsgBiAEQQJqIgE2AgACQCABIANGDQADQCABLQAAQQpGDQEgAUEBaiIBIANHDQALIAMhAQsLIAAgATYCCCAAIAQ2AgQgAEEBOgAACyAGIAE2AgAPCyAAIAE2AgggACAENgIEIABBADoAAA8LIAAgBEEBaiIANgIIDAILIAAgBEECaiIANgIIDAELIAAgATYCCCAAIAQ2AgQgAEEoOgAADwsgBiAANgIADwsgACAENgIEIABBAzoAAA8LIAAgATYCCCAAIAQ2AgQgAEECOgAACyUAIABBADoAECAAIAM2AgwgACACNgIIIAAgATYCBCAAIAE2AgALNgEBfyMAQRBrIgMkACADQQRqIAAQASABIAMoAgg2AgAgAiADKAIMNgIAIAMtAAQgA0EQaiQACwcAIABBAUsLBwAgAEEnSwsHACAAQSdGCwsIAQBBgAgLARQAeQlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEFY2xhbmdZMjAuMC4wZ2l0IChnaXRAZ2l0aHViLmNvbTpsbHZtL2xsdm0tcHJvamVjdC5naXQgNmNiYzY0ZWQ5MjJjYzY5YmMyOTJkMzk0YmE1YzY4MWZhMzA5ZjQwNCkAaw90YXJnZXRfZmVhdHVyZXMGKw9tdXRhYmxlLWdsb2JhbHMrE25vbnRyYXBwaW5nLWZwdG9pbnQrC2J1bGstbWVtb3J5KwhzaWduLWV4dCsPcmVmZXJlbmNlLXR5cGVzKwptdWx0aXZhbHVl";
+
+    if (!lexer_module) {
+        const binary = atob(lexer_base64);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+
+        lexer_module = await WebAssembly.instantiate(bytes);
+    }
+}
+
+async function tokenize(query) {
+    await loadLexer();
+
+    let exports = lexer_module.instance.exports;
+    let buffer = exports.memory.buffer;
+    let memory_offset = 0;
+
+    /// Allocate memory for the lexer object
+    const lexer = new Uint8Array(buffer, memory_offset, exports.clickhouse_lexer_size);
+    memory_offset += exports.clickhouse_lexer_size;
+
+    /// Allocate the query
+    const bytes = new TextEncoder().encode(query);
+    const query_array = new Uint8Array(buffer, memory_offset, bytes.length);
+    query_array.set(bytes);
+    const query_begin = memory_offset;
+    memory_offset += bytes.length;
+    const query_end = memory_offset;
+
+    /// Initialize the lexer
+    exports.clickhouse_lexer_create(lexer, query_begin, query_end, 65536);
+
+    /// Allocate the out ptrs
+    const token_begin = memory_offset;
+    memory_offset += 4;
+    const token_end = memory_offset;
+    memory_offset += 4;
+
+    let result = [];
+
+    while (true) {
+        const token_type = exports.clickhouse_lexer_next_token(lexer, token_begin, token_end);
+        if (exports.clickhouse_lexer_token_is_error(token_type) || exports.clickhouse_lexer_token_is_end(token_type)) {
+            break;
+        }
+
+        const view = new DataView(buffer);
+        const begin = view.getUint32(token_begin, true);
+        const end = view.getUint32(token_end, true);
+
+        const token_bytes = new Uint8Array(buffer, begin, end - begin);
+        let token = new TextDecoder().decode(token_bytes);
+
+        result.push({type: token_type, significant: exports.clickhouse_lexer_token_is_significant(token_type), token: token});
+    }
+
+    return result;
+}
+
+async function getQueryUnderCursor() {
+    const all_queries = query_area.value;
+
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        return all_queries;
+    }
+
+    const tokens = await tokenize(all_queries);
+
+    const cursor_position = query_area.selectionStart;
+    let current_query_start = 0;
+    let current_offset = 0;
+
+    for (const elem of tokens) {
+        if (current_query_start == current_offset && !elem.significant) {
+            current_query_start += elem.token.length;
+        }
+        current_offset += elem.token.length;
+        if (elem.token == ';') {
+            if (current_offset >= cursor_position) {
+                query_area.setSelectionRange(current_query_start, current_offset);
+                query_area.focus();
+                return all_queries.substring(current_query_start, current_offset);
+            } else {
+                current_query_start = current_offset;
+            }
+        }
+
+    }
+
+    return all_queries;
+}
 
 /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
 let theme = current_url.searchParams.get('theme');

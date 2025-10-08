@@ -6,6 +6,7 @@ keywords: ['ProtobufList']
 output_format: true
 slug: /interfaces/formats/ProtobufList
 title: 'ProtobufList'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -20,7 +21,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 For example:
 
@@ -47,4 +48,4 @@ message Envelope {
 };
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

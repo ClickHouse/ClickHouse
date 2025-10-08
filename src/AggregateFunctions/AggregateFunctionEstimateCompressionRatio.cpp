@@ -128,7 +128,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];
@@ -164,7 +163,6 @@ public:
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t) const override
     {
         const auto & column = columns[0];
-
 
         createBuffersIfNeeded(place);
 
@@ -210,9 +208,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-        {
             ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
-        }
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
@@ -247,7 +243,12 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
                     ErrorCodes::BAD_QUERY_PARAMETER,
                     "Multiple numeric type parameters specified for {}. Expected at most one numeric type (block_size_bytes) parameter",
                     name);
-            block_size_bytes = param.safeGet<UInt64>();
+
+            UInt64 new_block_size_bytes = param.safeGet<UInt64>();
+            if (new_block_size_bytes == 0)
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
+
+            block_size_bytes = new_block_size_bytes;
         }
         else
         {

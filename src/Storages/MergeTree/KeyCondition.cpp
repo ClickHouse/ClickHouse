@@ -58,7 +58,6 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -66,7 +65,7 @@ extern const int BAD_TYPE_OF_FIELD;
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -79,27 +78,39 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
         {
             case '%':
             case '_':
+            {
+                bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                 if (requires_perfect_prefix)
                 {
-                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                    return is_prefect_prefix ? fixed_prefix : "";
+                    if (is_perfect_prefix)
+                        return {fixed_prefix, true};
+                    else
+                        return {"", false};
                 }
-            return fixed_prefix;
+                else
+                {
+                    return {fixed_prefix, is_perfect_prefix};
+                }
+            }
             case '\\':
+            {
                 ++pos;
-            if (pos == end)
-                break;
-            [[fallthrough]];
+                if (pos == end)
+                    break;
+                [[fallthrough]];
+            }
             default:
+            {
                 fixed_prefix += *pos;
+            }
         }
 
         ++pos;
     }
     /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
     if (requires_perfect_prefix)
-        return "";
-    return fixed_prefix;
+        return {"", false};
+    return {fixed_prefix, false};
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -113,7 +124,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
 
-    while (pos != end)
+    while (pos < end)
     {
         switch (*pos)
         {
@@ -136,19 +147,22 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '$':
                     case '.':
                     case '[':
+                    case ']':
                     case '?':
                     case '*':
                     case '+':
+                    case '\\':
                     case '{':
+                    case '}':
+                    case '-':
                         fixed_prefix += *pos;
+                        ++pos;
                     break;
                     default:
                         /// all other escape sequences are not supported
                             pos = end;
-                    break;
                 }
 
-                ++pos;
                 break;
             }
 
@@ -210,14 +224,35 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
     return res;
 }
 
+namespace
+{
+bool isNaN(const Field & field)
+{
+    if (field.getType() != Field::Types::Float64)
+        return false;
+
+    const double value = field.safeGet<Float64>();
+    return std::isnan(value);
+}
+}
+
 const KeyCondition::AtomMap KeyCondition::atom_map
 {
         {
             "notEquals",
             [] (RPNElement & out, const Field & value)
             {
-                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                out.range = Range(value);
+                if (isNaN(value))
+                {
+                    /// Convert data <> NaN -> data IN [-INF, INF]
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range::createWholeUniverse();
+                }
+                else
+                {
+                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                    out.range = Range(value);
+                }
                 return true;
             }
         },
@@ -226,7 +261,15 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field & value)
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = Range(value);
+                if (isNaN(value))
+                {
+                    /// Convert data = NaN -> data IN (INF, -INF)
+                    out.range = Range(POSITIVE_INFINITY, false, NEGATIVE_INFINITY, false);
+                }
+                else
+                {
+                    out.range = Range(value);
+                }
                 return true;
             }
         },
@@ -361,9 +404,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
                 if (prefix.empty())
                     return false;
+
+                if (!is_perfect)
+                    out.relaxed = true;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -382,9 +428,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
                 if (prefix.empty())
                     return false;
+
+                chassert(is_perfect);
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -441,6 +489,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.range = !right_bound.empty()
                     ? Range(prefix, true, right_bound, false)
                     : Range::createLeftBounded(prefix, true);
+                out.relaxed = true;
 
                 return true;
             }
@@ -477,7 +526,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
 };
 
-static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
     = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
@@ -835,11 +883,11 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
-void KeyCondition::getAllSpaceFillingCurves()
+void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
     /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
 
-    for (const auto & action : key_expr->getActions())
+    for (const auto & action : info.key_expr->getActions())
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && action.node->children.size() >= 2
@@ -894,25 +942,21 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
-    : key_expr(key_expr_)
-    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
+    : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
-        if (!key_columns.contains(name))
-        {
-            key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
+        key_columns.try_emplace(name, key_index);
         ++key_index;
     }
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
-        getAllSpaceFillingCurves();
+        getAllSpaceFillingCurves(info);
 
     if (!filter_dag.predicate)
     {
@@ -926,7 +970,7 @@ KeyCondition::KeyCondition(
 
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
-        return extractAtomFromTree(node, out);
+        return extractAtomFromTree(node, info, out);
     });
 
     rpn = std::move(builder).extractRPN();
@@ -936,6 +980,17 @@ KeyCondition::KeyCondition(
     if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
         relaxed = true;
 }
+
+KeyCondition::KeyCondition(
+    ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
+    bool date_time_overflow_behavior_ignore_, bool relaxed_)
+    : has_filter(true)
+    , key_columns(std::move(key_columns_))
+    , num_key_columns(num_key_columns_)
+    , single_point(single_point_)
+    , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
+    , relaxed(relaxed_)
+{}
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
@@ -1115,6 +1170,7 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
 
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
@@ -1122,10 +1178,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 {
     String expr_name = node.getColumnName();
 
-    if (array_joined_column_names.contains(expr_name))
-        return false;
-
-    if (!key_subexpr_names.contains(expr_name))
+    if (!info.key_subexpr_names.contains(expr_name))
         return false;
 
     if (out_value.isNull())
@@ -1135,6 +1188,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
+        info,
         out_key_column_num,
         out_key_column_type,
         transform_functions,
@@ -1179,6 +1233,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
@@ -1186,10 +1241,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 {
     String expr_name = node.getColumnName();
 
-    if (array_joined_column_names.contains(expr_name))
-        return false;
-
-    if (!key_subexpr_names.contains(expr_name))
+    if (!info.key_subexpr_names.contains(expr_name))
     {
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
@@ -1202,7 +1254,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         /// Note: for negative values, we can filter more partitions then needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
-        if (!key_subexpr_names.contains(expr_name))
+        if (!info.key_subexpr_names.contains(expr_name))
             return false;
     }
 
@@ -1213,6 +1265,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
+        info,
         out_key_column_num,
         out_key_column_type,
         transform_functions,
@@ -1242,6 +1295,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
 bool KeyCondition::tryPrepareSetIndex(
     const RPNBuilderFunctionTreeNode & func,
+    const BuildInfo & info,
     RPNElement & out,
     size_t & out_key_column_num,
     bool & allow_constant_transformation,
@@ -1262,7 +1316,7 @@ bool KeyCondition::tryPrepareSetIndex(
         std::optional<size_t> key_space_filling_curve_argument_pos;
         MonotonicFunctionsChain set_transforming_chain;
         if (isKeyPossiblyWrappedByMonotonicFunctions(
-                node, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
+                node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
             indexes_mapping.push_back(index_mapping);
@@ -1273,7 +1327,7 @@ bool KeyCondition::tryPrepareSetIndex(
         // For partition index, checking if set can be transformed to prune any partitions
         else if (
             single_point && allow_constant_transformation
-            && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
+            && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
@@ -1587,6 +1641,7 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     std::optional<size_t> & out_argument_num_of_space_filling_curve,
     DataTypePtr & out_key_res_column_type,
@@ -1597,7 +1652,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     DataTypePtr key_column_type;
 
     if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-        node, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
+        node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
         return false;
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
@@ -1654,6 +1709,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     std::optional<size_t> & out_argument_num_of_space_filling_curve,
     DataTypePtr & out_key_column_type,
@@ -1662,13 +1718,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
       */
-    const auto & sample_block = key_expr->getSampleBlock();
+    const auto & sample_block = info.key_expr->getSampleBlock();
 
     /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
-
-    if (array_joined_column_names.contains(name))
-        return false;
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -1716,6 +1769,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
             {
                 result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     function_node.getArgumentAt(1),
+                    info,
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
@@ -1725,6 +1779,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
             {
                 result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     function_node.getArgumentAt(0),
+                    info,
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
@@ -1735,6 +1790,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         {
             result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                 function_node.getArgumentAt(0),
+                info,
                 out_key_column_num,
                 out_argument_num_of_space_filling_curve,
                 out_key_column_type,
@@ -1757,6 +1813,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
+    "toTime",
+    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
@@ -1780,14 +1838,15 @@ static std::set<std::string_view> date_time_parsing_functions = {
 bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     ContextPtr context,
     const String & expr_name,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     MonotonicFunctionsChain & out_functions_chain,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
-    const auto & sample_block = key_expr->getSampleBlock();
+    const auto & sample_block = info.key_expr->getSampleBlock();
 
-    for (const auto & node : key_expr->getNodes())
+    for (const auto & node : info.key_expr->getNodes())
     {
         auto it = key_columns.find(node.result_name);
         if (it != key_columns.end())
@@ -1900,6 +1959,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
 bool KeyCondition::canSetValuesBeWrappedByFunctions(
     const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
     MonotonicFunctionsChain & out_functions_chain)
@@ -1907,20 +1967,18 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
     // Checking if column name matches any of key subexpressions
     String expr_name = node.getColumnName();
 
-    if (array_joined_column_names.contains(expr_name))
-        return false;
-
-    if (!key_subexpr_names.contains(expr_name))
+    if (!info.key_subexpr_names.contains(expr_name))
     {
         expr_name = node.getColumnNameWithModuloLegacy();
 
-        if (!key_subexpr_names.contains(expr_name))
+        if (!info.key_subexpr_names.contains(expr_name))
             return false;
     }
 
     return extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
+        info,
         out_key_column_num,
         out_key_res_column_type,
         out_functions_chain,
@@ -1963,21 +2021,8 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
-static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
-{
-    try
-    {
-        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
-            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
-    }
-}
 
-
-bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -2071,14 +2116,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             return atom_it->second(out, const_value);
         };
 
-        if (always_relaxed_atom_functions.contains(func_name))
-            relaxed = true;
-
         bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
-                func.getArgumentAt(0), key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
+                func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
                 return false;
 
             if (key_column_num == static_cast<size_t>(-1))
@@ -2092,7 +2134,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, out, key_column_num, allow_constant_transformation, is_constant_transformed))
+                if (tryPrepareSetIndex(func, info, out, key_column_num, allow_constant_transformation, is_constant_transformed))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;
@@ -2116,6 +2158,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
                         func.getArgumentAt(0),
+                        info,
                         key_column_num,
                         argument_num_of_space_filling_curve,
                         key_expr_type,
@@ -2127,14 +2170,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 else if (
                     allow_constant_transformation
                     && canConstantBeWrappedByMonotonicFunctions(
-                        func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
+                        func.getArgumentAt(0), info, key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals"
-                    && canConstantBeWrappedByFunctions(func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(func.getArgumentAt(0), info, key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
@@ -2153,6 +2196,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
                         func.getArgumentAt(1),
+                        info,
                         key_column_num,
                         argument_num_of_space_filling_curve,
                         key_expr_type,
@@ -2164,14 +2208,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 else if (
                     allow_constant_transformation
                     && canConstantBeWrappedByMonotonicFunctions(
-                        func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
+                        func.getArgumentAt(1), info, key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals"
-                    && canConstantBeWrappedByFunctions(func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(func.getArgumentAt(1), info, key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
@@ -2238,7 +2282,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        castValueToType(common_type, const_value, const_type, node.getColumnName());
+                        // Replace direct call that throws exception with try version
+                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        const_value = converted;
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2289,7 +2338,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        bool valid_atom = atom_it->second(out, const_value);
+        if (valid_atom && out.relaxed)
+            relaxed = true;
+        return valid_atom;
     }
     if (node.tryGetConstant(const_value, const_type))
     {
@@ -2508,85 +2560,92 @@ KeyCondition::Description KeyCondition::getDescription() const
     std::vector<Frame> rpn_stack;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+            case RPNElement::FUNCTION_UNKNOWN:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::FUNCTION_NOT:
+                assert(!rpn_stack.empty());
+
+                std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
+                break;
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
+                auto arg1 = std::move(rpn_stack.back());
+
+                rpn_stack.pop_back();
+
+                assert(!rpn_stack.empty());
+                auto arg2 = std::move(rpn_stack.back());
+
+                Frame frame;
+                frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
+                frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
+
+                rpn_stack.back() = std::move(frame);
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
+                auto arg1 = std::move(rpn_stack.back());
+
+                rpn_stack.pop_back();
+
+                assert(!rpn_stack.empty());
+                auto arg2 = std::move(rpn_stack.back());
+
+                Frame frame;
+                frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
+                frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
+
+                rpn_stack.back() = std::move(frame);
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            case RPNElement::ALWAYS_TRUE:
+            {
+                auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+                auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
+                rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (
-               element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
-
-            std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::getDescription");
 
-    std::vector<String> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
+    std::vector<String> key_names(num_key_columns);
+    std::vector<bool> is_key_used(num_key_columns, false);
 
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
@@ -2810,26 +2869,10 @@ BoolMask KeyCondition::checkInRange(
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-    // std::cerr << "Checking for: [";
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
-    // std::cerr << " ... ";
-
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    // std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
-
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
-        auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
-
-        // std::cerr << "Hyperrectangle: ";
-        // for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
-        //     std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
-        // std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
-
-        return res;
+        return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
     });
 }
 
@@ -2882,9 +2925,31 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    // Not implemented yet.
-    if (hasMonotonicFunctionsChain())
-        return false;
+    const Field field{};
+    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
+    {
+        bool all_always_monotonic = true;
+        bool all_strict = true;
+
+        for (const auto & func : chain)
+        {
+            if (!func || !func->hasInformationAboutMonotonicity())
+                return {false, false};
+
+            const auto & types = func->getArgumentTypes();
+            if (types.empty() || !types.front())
+                return {false, false};
+
+            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+            all_always_monotonic &= monotonicity.is_always_monotonic;
+            all_strict &= monotonicity.is_strict;
+
+            if (!all_always_monotonic && !all_strict)
+                break;
+        }
+
+        return {all_always_monotonic, all_strict};
+    };
 
     enum Constraint
     {
@@ -2897,32 +2962,56 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::Function::FUNCTION_AND)
+        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
+            || element.function == RPNElement::Function::ALWAYS_TRUE)
         {
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            column_constraints[element.key_column] = Constraint::POINT;
+            for (const auto & mapping : element.set_index->getIndexesMapping())
+            {
+                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
+                if (!is_chain_always_monotonic)
+                    return false;
+
+                chassert(mapping.key_index < key_columns.size());
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    column_constraints[mapping.key_index] = Constraint::POINT;
+                else
+                {
+                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
+                    if (column_constraints[mapping.key_index] != Constraint::POINT)
+                        column_constraints[mapping.key_index] = Constraint::RANGE;
+                }
+            }
+
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
         {
+            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
+            if (!is_chain_always_monotonic)
+                return false;
+
+            chassert(element.key_column < key_columns.size());
             if (element.range.left == element.range.right)
             {
-                column_constraints[element.key_column] = Constraint::POINT;
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    column_constraints[element.key_column] = Constraint::POINT;
             }
-            if (column_constraints[element.key_column] != Constraint::POINT)
-            {
-                column_constraints[element.key_column] = Constraint::RANGE;
-            }
-            continue;
-        }
 
-        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
+            if (column_constraints[element.key_column] != Constraint::POINT)
+                column_constraints[element.key_column] = Constraint::RANGE;
+
             continue;
         }
 
@@ -2956,7 +3045,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 
 bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 {
-    if (key_indices.size() != 1)
+    if (key_columns.size() != 1)
         return false;
 
     if (hasMonotonicFunctionsChain())
@@ -3034,7 +3123,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                 Ranges points_range;
 
                 /// values in set_index are ordered and no duplication
-                for (size_t i=0; i<element.set_index->size(); i++)
+                for (size_t i = 0; i < element.set_index->size(); i++)
                 {
                     FieldRef f;
                     values[0]->get(i, f);
@@ -3101,7 +3190,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges::makeUniverse());
             }
-            else /// FUNCTION_UNKNOWN
+            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
             {
                 if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
@@ -3155,14 +3244,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
                                 hyperrectangle.size(), element.key_column, element.toString());
             }
 
-            const Range * key_range = &hyperrectangle[element.key_column];
+            Range key_range = hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            Range transformed_range = Range::createWholeUniverse();
             if (!element.monotonic_functions_chain.empty())
             {
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range,
+                    key_range,
                     element.monotonic_functions_chain,
                     data_types[element.key_column],
                     single_point
@@ -3173,12 +3261,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                transformed_range = *new_range;
-                key_range = &transformed_range;
+                key_range = *new_range;
             }
 
-            bool intersects = element.range.intersectsRange(*key_range);
-            bool contains = element.range.containsRange(*key_range);
+            bool intersects = element.range.intersectsRange(key_range);
+            bool contains = element.range.containsRange(key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
 
@@ -3360,6 +3447,47 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.set_index)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
 
+            /// We call set_index->checkInRange.
+            /// In theory this should be a checkInHyperrectangle rather than checkInRange.
+            /// checkInRange may produce false positives if some set element is in range but not in
+            /// hyperrectangle. But for MergeTreeSetIndex, range lookup is more efficient than
+            /// hyperrectangle lookup: range lookup is a binary search in O(log n) time, while
+            /// hyperrectangle lookup requires an O(n) scan in the worst case.
+            /// So we use checkInRange as an approximation of checkInHyperrectangle. This doesn't
+            /// break correctness because it can't produce false negatives, because the range is
+            /// a superset of the hyperrectangle.
+            ///
+            /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
+            /// forAnyHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// no false positives.
+            /// Proof: Recall how forAnyHyperrectangle produces its hyperrectangles:
+            ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
+            ///  > the following three hyperrectangles:
+            ///  > [x1]       × [y1 .. +inf)
+            ///  > (x1 .. x2) × (-inf .. +inf)
+            ///  > [x2]       × (-inf .. y2]
+            /// (The above is applied recursively, i.e. y1 and y2 are tails of the tuple,
+            ///  not necessarily individual tuple elements.)
+            /// Suppose the MergeTreeSetIndex contains a set element that's inside the range but not
+            /// inside the hyperrectangle. It's a tuple (..., x, ..., y, ...), where y is outside
+            /// the corresponding hyperrectangle range, and x corresponds to a hyperrectangle range
+            /// that is not a single element. So x must come from the `(x1 .. x2) × (-inf .. +inf)`
+            /// case. But then y's range is (-inf, +inf), so y can't be outside its range. Contradiction.
+            ///
+            /// It may make sense to implement proper MergeTreeSetIndex::checkInHyperrectangle too,
+            /// for cases when KeyCondition::checkInHyperrectangle is called directly, e.g. based on
+            /// min/max index in MergeTree or Parquet file metadata.
+
+            /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
+            /// once for the initial key range instead of going through forAnyHyperrectangle?
+            /// No, that would be incorrect if the set's tuple doesn't include all key columns.
+            /// For example,
+            ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
+            /// is neither necessary nor sufficient for
+            ///   (x, z) BETWEEN (10, 1000) AND (20, 2000)
+            /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
+            /// but  (20, 150, 3000) satisfies the first condition but not the second.
+
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
@@ -3417,10 +3545,10 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 {
     for (auto & rpn_element : rpn)
     {
-        // this would be a problem for `where negate(x) = -58`.
-        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
         if (!rpn_element.monotonic_functions_chain.empty())
         {
+            /// We could apply the inverse functions to get the key value when possible.
+            /// This is currently not implemented.
             continue;
         }
 
@@ -3460,6 +3588,11 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             for (auto i = 0u; i < ordered_set.size(); i++)
             {
+                if (!indexes_mapping[i].functions.empty())
+                {
+                    continue;
+                }
+
                 const auto & set_column = ordered_set[i];
 
                 auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
@@ -3641,54 +3774,54 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            /// If unknown_any is true, return instantly,
-            /// to avoid processing it with FUNCTION_AND, and change the outcome.
-            if (unknown_any)
-                return true;
-            /// Otherwise, it may be AND'ed via FUNCTION_AND
-            rpn_stack.push_back(true);
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.push_back(true);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
-            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(false);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
+            case RPNElement::FUNCTION_UNKNOWN:
+                /// If unknown_any is true, return instantly,
+                /// to avoid processing it with FUNCTION_AND, and change the outcome.
+                if (unknown_any)
+                    return true;
+                /// Otherwise, it may be AND'ed via FUNCTION_AND
+                rpn_stack.push_back(true);
+                break;
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.push_back(true);
+                break;
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.push_back(false);
+                break;
+            case RPNElement::FUNCTION_NOT:
+                break;
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
 
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 & arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 & arg2;
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
 
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 | arg2;
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 | arg2;
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
@@ -3704,67 +3837,70 @@ bool KeyCondition::alwaysFalse() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::ALWAYS_TRUE)
+        switch (element.function)
         {
-            rpn_stack.push_back(1);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(0);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_UNKNOWN)
-        {
-            rpn_stack.push_back(2);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.push_back(1);
+                break;
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.push_back(0);
+                break;
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_UNKNOWN:
+                rpn_stack.push_back(2);
+                break;
+            case RPNElement::FUNCTION_NOT:
+            {
+                assert(!rpn_stack.empty());
 
-            auto & arg = rpn_stack.back();
-            if (arg == 0)
-                arg = 1;
-            else if (arg == 1)
-                arg = 0;
+                auto & arg = rpn_stack.back();
+                if (arg == 0)
+                    arg = 1;
+                else if (arg == 1)
+                    arg = 0;
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                assert(!rpn_stack.empty());
+
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+
+                if (arg1 == 0 || arg2 == 0)
+                    rpn_stack.back() = 0;
+                else if (arg1 == 1 && arg2 == 1)
+                    rpn_stack.back() = 1;
+                else
+                    rpn_stack.back() = 2;
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                assert(!rpn_stack.empty());
+
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+
+                if (arg1 == 1 || arg2 == 1)
+                    rpn_stack.back() = 1;
+                else if (arg1 == 0 && arg2 == 0)
+                    rpn_stack.back() = 0;
+                else
+                    rpn_stack.back() = 2;
+                break;
+            }
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
-
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-
-            if (arg1 == 0 || arg2 == 0)
-                rpn_stack.back() = 0;
-            else if (arg1 == 1 && arg2 == 1)
-                rpn_stack.back() = 1;
-            else
-                rpn_stack.back() = 2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
-
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-
-            if (arg1 == 1 || arg2 == 1)
-                rpn_stack.back() = 1;
-            else if (arg1 == 0 && arg2 == 0)
-                rpn_stack.back() = 0;
-            else
-                rpn_stack.back() = 2;
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
@@ -3780,6 +3916,235 @@ bool KeyCondition::hasMonotonicFunctionsChain() const
             || (element.set_index && element.set_index->hasMonotonicFunctionsChain()))
             return true;
     return false;
+}
+
+std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelConjunction() const
+{
+    struct ValueInfo
+    {
+        std::vector<std::pair<size_t, size_t>> conjuncts; // not necessarily sorted
+        size_t start = 0;
+    };
+
+    std::vector<ValueInfo> stack;
+    for (size_t i = 0; i < rpn.size(); ++i)
+    {
+        const RPNElement & elem = rpn[i];
+        switch (elem.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::ALWAYS_FALSE:
+            case RPNElement::ALWAYS_TRUE:
+                stack.push_back(ValueInfo {.conjuncts = {{i, i + 1}}, .start = i});
+                break;
+            case RPNElement::FUNCTION_NOT:
+            {
+                /// E.g. `x AND y AND z` is 3 conjuncts, but
+                /// `NOT (x AND y AND z)` glues them together into one.
+                ///
+                /// We could De-Morgan things like `NOT (x OR y)` into `(NOT x) AND (NOT y)`,
+                /// but there's no need because negation is pushed down into leaves at
+                /// KeyCondition construction time.
+                size_t start = stack.back().start;
+                stack.back().conjuncts = {{start, i + 1}};
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                /// Merge the smaller vector into the bigger one.
+                /// (It would be more convenient to merge the right vector into the left one - then
+                ///  it would remain sorted. But that would take O(n^2) time for expression like
+                ///  `x AND (y AND (z AND (...)))`. Smaller-into-bigger has O(n log n) worst case.)
+                auto & left = stack[stack.size() - 2];
+                auto & right = stack[stack.size() - 1];
+                if (left.conjuncts.size() < right.conjuncts.size())
+                    std::swap(left.conjuncts, right.conjuncts);
+                left.conjuncts.insert(left.conjuncts.end(), right.conjuncts.begin(), right.conjuncts.end());
+                stack.pop_back();
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                /// Similar to NOT, merge the ranges (which must be adjacent) into one.
+                auto & left = stack[stack.size() - 2];
+                size_t start = left.start;
+                left.conjuncts = {{start, i + 1}};
+                stack.pop_back();
+                break;
+            }
+        }
+    }
+    chassert(stack.size() == 1);
+    return std::move(stack[0].conjuncts);
+}
+
+void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
+{
+    using RPNRanges = std::vector<std::pair<size_t, size_t>>;
+    RPNRanges conjuncts = topLevelConjunction();
+    std::vector<RPNRanges> conjuncts_by_key_column;
+    RPNRanges complex_conjuncts;
+    bool all_complex = true;
+    for (auto range : conjuncts)
+    {
+        std::optional<size_t> key_column;
+        bool is_complex = false;
+        for (size_t i = range.first; i < range.second; ++i)
+        {
+            const RPNElement & element = rpn[i];
+
+            if (element.argument_num_of_space_filling_curve.has_value())
+                is_complex = true;
+
+            std::optional<size_t> elem_key_column;
+            switch (element.function)
+            {
+                case RPNElement::FUNCTION_IN_RANGE:
+                case RPNElement::FUNCTION_NOT_IN_RANGE:
+                case RPNElement::FUNCTION_IS_NULL:
+                case RPNElement::FUNCTION_IS_NOT_NULL:
+                    elem_key_column = element.key_column;
+                    break;
+
+                case RPNElement::FUNCTION_IN_SET:
+                case RPNElement::FUNCTION_NOT_IN_SET:
+                {
+                    const auto & indexes_mapping = element.set_index->getIndexesMapping();
+                    if (indexes_mapping.size() != 1)
+                        is_complex = true;
+                    else
+                        elem_key_column = indexes_mapping[0].key_index;
+                    break;
+                }
+
+                case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+                case RPNElement::FUNCTION_POINT_IN_POLYGON:
+                    is_complex = true;
+                    break;
+
+                case RPNElement::FUNCTION_UNKNOWN:
+                case RPNElement::FUNCTION_NOT:
+                case RPNElement::FUNCTION_AND:
+                case RPNElement::FUNCTION_OR:
+                case RPNElement::ALWAYS_FALSE:
+                case RPNElement::ALWAYS_TRUE:
+                    break;
+            }
+
+            if (elem_key_column.has_value())
+            {
+                if (!key_column.has_value())
+                    key_column = elem_key_column;
+                else if (key_column != elem_key_column)
+                    is_complex = true;
+            }
+
+            if (is_complex)
+                break;
+        }
+
+        if (!key_column.has_value())
+            is_complex = true;
+
+        if (is_complex)
+            complex_conjuncts.push_back(range);
+        else
+        {
+            if (conjuncts_by_key_column.size() <= *key_column)
+                conjuncts_by_key_column.resize(*key_column + 1);
+            conjuncts_by_key_column.at(*key_column).push_back(range);
+            all_complex = false;
+        }
+    }
+
+    auto add_rpn_ranges = [](KeyCondition & target, const KeyCondition & source, const RPNRanges & ranges)
+    {
+        for (size_t j = 0; j < ranges.size(); ++j)
+        {
+            const auto & range = ranges[j];
+            target.rpn.insert(target.rpn.end(), source.rpn.begin() + range.first, source.rpn.begin() + range.second);
+            if (j > 0)
+                target.rpn.emplace_back(RPNElement::FUNCTION_AND);
+        }
+    };
+
+    if (!all_complex)
+    {
+        std::vector<const String *> key_column_names(num_key_columns);
+        for (const auto & [name, index] : key_columns)
+            key_column_names[index] = &name;
+
+        for (size_t i = 0; i < conjuncts_by_key_column.size(); ++i)
+        {
+            const RPNRanges & ranges = conjuncts_by_key_column[i];
+            if (ranges.empty())
+                continue;
+
+            ColumnIndices one_key_column = {{*key_column_names[i], i}};
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            add_rpn_ranges(*condition, *this, ranges);
+            out_column_conditions.emplace_back(i, std::move(condition));
+        }
+    }
+
+    if (out_complex_condition && !complex_conjuncts.empty())
+    {
+        /// Copy including key_space_filling_curves.
+        auto copy = std::make_shared<KeyCondition>(*this);
+        if (!all_complex)
+        {
+            copy->rpn.clear();
+            add_rpn_ranges(*copy, *this, complex_conjuncts);
+        }
+    }
+}
+
+std::unordered_set<size_t> KeyCondition::getUsedColumns() const
+{
+    std::unordered_set<size_t> res;
+    for (const RPNElement & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+                res.insert(element.key_column);
+                break;
+
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            {
+                for (const auto & mapping_elem : element.set_index->getIndexesMapping())
+                    res.insert(mapping_elem.key_index);
+                break;
+            }
+
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+                for (size_t idx : element.point_in_polygon_column_description->key_column_positions)
+                    res.insert(idx);
+                break;
+
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::FUNCTION_NOT:
+            case RPNElement::FUNCTION_AND:
+            case RPNElement::FUNCTION_OR:
+            case RPNElement::ALWAYS_FALSE:
+            case RPNElement::ALWAYS_TRUE:
+                break;
+        }
+    }
+    return res;
 }
 
 }

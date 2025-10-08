@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ void matchDataPartToRowOffsets(
     }
 }
 
-void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
+static void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
 {
     bool has_columns = false;
     for (const auto & column : res_columns)
@@ -82,7 +83,7 @@ void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num
 }
 
 MergeTreeLazilyReader::MergeTreeLazilyReader(
-    const Block & header_,
+    SharedHeader header_,
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
@@ -98,7 +99,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     for (const auto & column_name : lazily_read_info_->lazily_read_columns)
         columns_name_set.insert(column_name.name);
 
-    for (const auto & column : header_)
+    for (const auto & column : *header_)
     {
         const auto it = alias_index_.find(column.name);
         if (it == alias_index_.end())
@@ -108,7 +109,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
         if (columns_name_set.contains(requested_column_name))
         {
             requested_column_names.emplace_back(requested_column_name);
-            lazy_columns.emplace_back(header_.getByName(column.name));
+            lazy_columns.emplace_back(header_->getByName(column.name));
         }
     }
 }
@@ -168,7 +169,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             ReadBufferFromFileBase::ProfileCallback{});
 
         size_t idx = 0;
-        auto mark_range_iter = mark_ranges.begin();
+        auto * mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
         size_t next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;
@@ -262,11 +263,10 @@ void MergeTreeLazilyReader::transformLazyColumns(
     const size_t rows_size = row_num_column->size();
 
     ReadSettings read_settings;
-    read_settings.direct_io_threshold = 1;
     MergeTreeReaderSettings reader_settings =
     {
         .read_settings = read_settings,
-        .save_marks_in_cache = false,
+        .save_marks_in_cache = true,
     };
 
     MutableColumns lazily_read_columns;

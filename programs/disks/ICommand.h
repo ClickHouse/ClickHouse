@@ -10,16 +10,16 @@
 #include <boost/program_options.hpp>
 
 #include <Poco/Util/Application.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/Config/ConfigProcessor.h>
 
 #include <boost/program_options/positional_options.hpp>
 
-#include "DisksApp.h"
+#include <DisksApp.h>
 
-#include "DisksClient.h"
+#include <DisksClient.h>
 
-#include "ICommand_fwd.h"
+#include <ICommand_fwd.h>
 
 namespace DB
 {

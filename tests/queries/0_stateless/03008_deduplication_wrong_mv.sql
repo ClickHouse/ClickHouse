@@ -1,3 +1,4 @@
+-- Tags: memory-engine
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;

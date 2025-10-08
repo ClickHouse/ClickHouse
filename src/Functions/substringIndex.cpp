@@ -226,7 +226,7 @@ namespace
         static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
-            res_data.resize(res_offset + res_ref.size + 1);
+            res_data.resize(res_offset + res_ref.size);
 
             if constexpr (padded)
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
@@ -234,9 +234,6 @@ namespace
                 memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
 
             res_offset += res_ref.size;
-            res_data[res_offset] = 0;
-            ++res_offset;
-
             res_offsets.emplace_back(res_offset);
         }
 
@@ -314,8 +311,53 @@ namespace
 
 REGISTER_FUNCTION(SubstringIndex)
 {
-    factory.registerFunction<FunctionSubstringIndex<false>>(); /// substringIndex
-    factory.registerFunction<FunctionSubstringIndex<true>>(); /// substringIndexUTF8
+    FunctionDocumentation::Description description = R"(
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
+)";
+    FunctionDocumentation::Syntax syntax = "substringIndex(s, delim, count)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to extract substring from.", {"String"}},
+        {"delim", "The character to split.", {"String"}},
+        {"count", "The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned.", {"UInt", "Int"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a substring of `s` before `count` occurrences of `delim`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT substringIndex('www.clickhouse.com', '.', 2)",
+        R"(
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    FunctionDocumentation::Description description_utf8 = R"(
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
+Assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+)";
+    FunctionDocumentation::Syntax syntax_utf8 = "substringIndexUTF8(s, delim, count)";
+    FunctionDocumentation::Arguments arguments_utf8 = {
+        {"s", "The string to extract substring from.", {"String"}},
+        {"delim", "The character to split.", {"String"}},
+        {"count", "The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned.", {"UInt", "Int"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` before `count` occurrences of `delim`.", {"String"}};
+    FunctionDocumentation::Examples examples_utf8 = {
+    {
+        "UTF8 example",
+        "SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)",
+        "www.straßen-in-europa"
+    }
+    };
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, returned_value_utf8, examples_utf8, introduced_in, category};
+
+    factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
+    factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8
 
     factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
 }

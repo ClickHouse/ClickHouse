@@ -23,7 +23,13 @@ struct WriteOptions
     bool output_string_as_string = false;
     bool output_fixed_string_as_fixed_byte_array = true;
     bool output_datetime_as_uint32 = false;
+    bool output_date_as_uint16 = false;
+    bool output_enum_as_byte_array = false;
 
+    /// Note: the meaning of some compression methods here is different from
+    /// wrapReadBufferWithCompressionMethod:
+    ///  * Lz4 here lz4 block format, while in Lz4InflatingReadBuffer uses lz4 framed format,
+    ///  * Snappy here doesn't have extra headers, while HadoopSnappyReadBuffer does.
     CompressionMethod compression = CompressionMethod::Lz4;
     int compression_level = 3;
 
@@ -31,10 +37,10 @@ struct WriteOptions
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
-    size_t dictionary_size_limit = 1024 * 1024;
+    size_t max_dictionary_size = 1024 * 1024;
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
-    parquet::format::Encoding::type encoding = parquet::format::Encoding::PLAIN;
+    parq::Encoding::type encoding = parq::Encoding::PLAIN;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -61,13 +67,15 @@ struct WriteOptions
     ///  * In general, if set to N, bloom filters for written row groups are accumulated in memory
     ///    and flushed to the file when they become bigger than N bytes (to limit memory usage).
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+
+    bool write_geometadata = true;
 };
 
 struct ColumnChunkIndexes
 {
-    parquet::format::ColumnIndex column_index; // if write_page_index
-    parquet::format::OffsetIndex offset_index; // if write_page_index
-    parquet::format::BloomFilterHeader bloom_filter_header;
+    parq::ColumnIndex column_index; // if write_page_index
+    parq::OffsetIndex offset_index; // if write_page_index
+    parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
@@ -76,9 +84,10 @@ struct ColumnChunkWriteState
 {
     /// After writeColumnChunkBody(), offsets in this struct are relative to the start of column chunk.
     /// Then finalizeColumnChunkAndWriteFooter fixes them up before writing to file.
-    parquet::format::ColumnChunk column_chunk;
+    parq::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
+    DataTypePtr type;
     CompressionMethod compression; // must match what's inside column_chunk
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
@@ -107,7 +116,7 @@ struct ColumnChunkWriteState
 
 struct RowGroupWithIndexes
 {
-    parquet::format::RowGroup row_group;
+    parq::RowGroup row_group;
     std::vector<ColumnChunkIndexes> column_indexes;
 };
 
@@ -120,7 +129,7 @@ struct FileWriteState
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parquet::format::SchemaElement>;
+using SchemaElements = std::vector<parq::SchemaElement>;
 using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.
@@ -155,17 +164,18 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options);
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr);
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt);
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 
 /// Encodes a column chunk, without the footer.
 /// Can be called in parallel for multiple column chunks (with different WriteBuffer-s).
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out);
+void writeColumnChunkBody(
+    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out);
 
 /// Unlike most of the column chunk data, the footer (`ColumnMetaData`) needs to know its absolute
 /// offset in the file. So we encode it separately, in one thread, after all previous row groups
@@ -177,6 +187,10 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
-void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out);
+void writeFileFooter(FileWriteState & file,
+    SchemaElements schema,
+    const WriteOptions & options,
+    WriteBuffer & out,
+    const Block & header);
 
 }

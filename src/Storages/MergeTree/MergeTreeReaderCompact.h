@@ -45,11 +45,18 @@ protected:
         size_t rows_to_read,
         size_t rows_offset,
         size_t from_mark,
+        size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
-        ISerialization::SubstreamsCache & columns_cache,
-        std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
+        std::unordered_map<String, ColumnPtr> & columns_cache,
+        std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+        ISerialization::SubstreamsCache * substreams_cache);
+
+    virtual MergeTreeReaderStream & getStream(const NameAndTypePair & column) = 0;
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
+
+    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
+    void initSubcolumnsDeserializationOrder();
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
@@ -81,8 +88,17 @@ protected:
     size_t next_mark = 0;
 
     /// True if we have marks per each substream and not per each column.
-    bool have_substream_marks;
+    bool has_substream_marks;
+    bool has_subcolumns = false;
+    /// Remember indexes of subcolumns in columns_to_read list for each column if any.
+    std::unordered_map<String, std::vector<size_t>> column_to_subcolumns_indexes;
+    /// If we have marks for substreams we read all subcolumns of the same column from a single stream
+    /// by seeking to the required substream during deserialization. To avoid seeks back in the file
+    /// we deserialize subcolumns of the same column in the order of their serialization.
+    std::unordered_map<String, std::vector<size_t>> subcolumns_deserialization_order;
 
+    DeserializationPrefixesCache * deserialization_prefixes_cache;
+    DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
 private:
     void readPrefix(
         const NameAndTypePair & name_and_type,
