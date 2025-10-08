@@ -202,9 +202,30 @@ void MergeTreeReaderCompact::readData(
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
-        deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        deserialize_settings.get_avg_value_size_hint_callback
+            = [&](const ISerialization::SubstreamPath & substream_path) -> double
+        {
+            auto stream_name
+                = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+            if (!stream_name)
+                return 0.0;
+
+            return avg_value_size_hints[*stream_name];
+        };
+
+        deserialize_settings.update_avg_value_size_hint_callback
+            = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
+        {
+            auto stream_name
+                = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+            if (!stream_name)
+                return;
+
+            IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
+        };
+
         if (has_substream_marks)
         {
             deserialize_settings.seek_stream_to_mark_callback = [&](const ISerialization::SubstreamPath &, const MarkInCompressedFile & mark)
@@ -251,7 +272,7 @@ void MergeTreeReaderCompact::readData(
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
 
-                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
+                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column, serialization);
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())

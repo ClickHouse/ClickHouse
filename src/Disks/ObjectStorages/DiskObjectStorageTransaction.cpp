@@ -4,9 +4,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #if ENABLE_DISTRIBUTED_CACHE
-#include <Disks/IO/WriteBufferFromDistributedCache.h>
-#include <Interpreters/Context.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
@@ -534,28 +532,30 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         return fmt::format("WriteFileObjectStorageOperation (path {}, blob {}, mode {})", object->local_path, object->remote_path, mode);
     }
 
-
     void execute(MetadataTransactionPtr tx) override
     {
         chassert(object->bytes_size != std::numeric_limits<uint64_t>::max());
 
         if (mode == WriteMode::Rewrite)
         {
+            StoredObjects written_objects;
+
             if (object->bytes_size > 0 || create_blob_if_empty)
             {
                 LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
-                tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
+                written_objects.push_back(*object);
             }
             else
             {
                 LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
-                tx->createEmptyMetadataFile(object->local_path);
             }
+
+            tx->createMetadataFile(object->local_path, written_objects);
         }
         else
         {
             /// Even if not create_blob_if_empty and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
-            tx->addBlobToMetadata(object->local_path, remote_key, object->bytes_size);
+            tx->addBlobToMetadata(object->local_path, *object);
         }
     }
 
@@ -608,7 +608,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        tx->createEmptyMetadataFile(to_path);
+        /// We need this call to clear to_path metadata file if it exists
+        tx->createMetadataFile(to_path, /*objects=*/{});
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
         if (source_blobs.empty())
@@ -651,9 +652,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         created_objects.push_back(object_to);
 
         if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
+            tx->addBlobToMetadata(to_path, StoredObject(object_key.serialize(), to_path, object_from.bytes_size));
         else
-            tx->createMetadataFile(to_path, object_key, object_from.bytes_size);
+            tx->createMetadataFile(to_path, {StoredObject(object_key.serialize(), to_path, object_from.bytes_size)});
     }
 };
 
@@ -924,8 +925,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     [[maybe_unused]] bool use_distributed_cache = false;
     size_t use_buffer_size = buf_size;
 #if ENABLE_DISTRIBUTED_CACHE
-    use_distributed_cache = settings.write_through_distributed_cache
-        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az);
+    use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(settings, object_storage);
+
     if (use_distributed_cache && settings.distributed_cache_settings.write_through_cache_buffer_size)
         use_buffer_size = settings.distributed_cache_settings.write_through_cache_buffer_size;
 #endif
@@ -940,25 +941,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache)
-    {
-        auto connection_info = object_storage.getConnectionInfo();
-        if (connection_info)
-        {
-            auto global_context = Context::getGlobalContextInstance();
-            auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
-                query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
-
-            impl = std::make_unique<WriteBufferFromDistributedCache>(
-                path,
-                object,
-                settings,
-                connection_info,
-                std::move(impl),
-                std::move(timeouts));
-        }
-    }
+        impl = DistributedCache::writeWithDistributedCache(path, *object, settings, object_storage, std::move(impl));
 #endif
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
@@ -1040,7 +1023,7 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
     operations_to_execute.emplace_back(
         std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
-            tx->createEmptyMetadataFile(path);
+            tx->createMetadataFile(path, /*objects=*/{});
         }));
 }
 

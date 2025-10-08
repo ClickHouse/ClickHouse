@@ -72,6 +72,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <base/coverage.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
