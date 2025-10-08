@@ -17,9 +17,9 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON S3('http://localhost:11111/test/.*') TO $user WITH GRANT OPTION";
 
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV') FORMAT Null;";
-(( $(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/a.tsv', 'TSV') FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
-(( $(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/test/../a.tsv', 'TSV') FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
-(( $(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/test/%2e%2e/a.tsv', 'TSV') FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+$(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/a.tsv', 'TSV') FORMAT Null; -- { serverError ACCESS_DENIED }"
+$(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/test/../a.tsv', 'TSV') FORMAT Null; -- { serverError ACCESS_DENIED }"
+$(${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11111/test/%2e%2e/a.tsv', 'TSV') FORMAT Null; -- { serverError ACCESS_DENIED }"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user;
