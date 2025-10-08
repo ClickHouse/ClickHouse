@@ -520,10 +520,11 @@ bool Client::fuzzLoopReconnect()
 static void runExternalCommand(
     std::unique_ptr<BuzzHouse::ExternalIntegrations> & external_integrations,
     const uint64_t seed,
+    const bool async,
     const String & cname,
     const String & tname)
 {
-    if (!external_integrations->performExternalCommand(seed, BuzzHouse::IntegrationCall::Dolor, cname, tname))
+    if (!external_integrations->performExternalCommand(seed, async, BuzzHouse::IntegrationCall::Dolor, cname, tname))
     {
         throw Exception(ErrorCodes::BUZZHOUSE, "External command failed for {} on catalog {}", tname, cname);
     }
@@ -539,8 +540,8 @@ bool Client::buzzHouse()
     static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
     static const String & rerun_table = "--External table ";
     static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
-    static const String & external_cmd = "--External command with seed ";
-    static const RE2 extern_re(R"((?i)^--External\s+command\s+with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
+    static const String & external_cmd = "--External command ";
+    static const RE2 extern_re(R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -556,6 +557,7 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
+            String async_flag;
             String seed_str;
             String database;
             String table;
@@ -576,7 +578,8 @@ bool Client::buzzHouse()
 
                 UNUSED(x);
             }
-            else if (startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &seed_str, &database, &table))
+            else if (
+                startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &async_flag, &seed_str, &database, &table))
             {
                 uint64_t seed = 0;
                 const auto * const first = seed_str.data();
@@ -584,7 +587,7 @@ bool Client::buzzHouse()
                 const auto x = std::from_chars(first, last, seed, 10);
 
                 UNUSED(x);
-                runExternalCommand(external_integrations, seed, database, table);
+                runExternalCommand(external_integrations, seed, !async_flag.empty(), database, table);
             }
             else
             {
@@ -646,7 +649,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
+                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 100
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(
@@ -859,9 +862,11 @@ bool Client::buzzHouse()
                         = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                     const auto & ndname = tbl.getSparkCatalogName();
                     const auto & ntname = tbl.getTableName(false);
+                    const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                    fuzz_config->outf << "--External command with seed " << nseed << " to " << ndname << "." << ntname << std::endl;
-                    runExternalCommand(external_integrations, nseed, ndname, ntname);
+                    fuzz_config->outf << "--External command " << (async ? "async " : "") << "with seed " << nseed << " to " << ndname
+                                      << "." << ntname << std::endl;
+                    runExternalCommand(external_integrations, nseed, async, ndname, ntname);
                 }
                 else if (
                     run_query

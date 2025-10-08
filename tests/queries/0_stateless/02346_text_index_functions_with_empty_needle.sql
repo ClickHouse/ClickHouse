@@ -18,13 +18,13 @@ ORDER BY (id);
 INSERT INTO tab VALUES(1, 'bar'), (2, 'foo');
 
 SELECT '-- Plain text index search functions';
-SELECT count() FROM tab WHERE searchAny(text, ['']);
-SELECT count() FROM tab WHERE searchAll(text, ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(text, ['']);
+SELECT count() FROM tab WHERE hasAllTokens(text, ['']);
 SELECT count() FROM tab WHERE hasToken(text, '');
 
 SELECT '-- Negated text index search functions';
-SELECT count() FROM tab WHERE NOT searchAny(text, ['']);
-SELECT count() FROM tab WHERE NOT searchAll(text, ['']);
+SELECT count() FROM tab WHERE NOT hasAnyTokens(text, ['']);
+SELECT count() FROM tab WHERE NOT hasAllTokens(text, ['']);
 SELECT count() FROM tab WHERE NOT hasToken(text, '');
 
 DROP TABLE tab;
