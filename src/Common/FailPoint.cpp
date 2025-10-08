@@ -129,7 +129,7 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 #undef M
 }
 
-#ifdef FIU_ENABLE
+#if USE_LIBFIU
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
@@ -197,7 +197,6 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
@@ -221,7 +220,6 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-#endif
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
@@ -264,7 +262,7 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
     }
 }
 
-#else // FIU_ENABLE
+#else // USE_LIBFIU
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
@@ -297,6 +295,6 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
 }
 
-#endif // FIU_ENABLE
+#endif // USE_LIBFIU
 
 }

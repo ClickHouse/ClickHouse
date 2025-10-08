@@ -397,7 +397,6 @@ link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
-option (FIU_ENABLE "Enable fiu" ON)
 
 option(WERROR "Enable -Werror compiler option" ON)
 
