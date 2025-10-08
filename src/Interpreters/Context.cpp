@@ -2011,6 +2011,12 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
+void Context::releaseQuerySlot()
+{
+    if (auto elem = getProcessListElementSafe())
+        elem->releaseQuerySlot();
+}
+
 String Context::getMergeWorkload() const
 {
     SharedLockGuard lock(shared->mutex);
