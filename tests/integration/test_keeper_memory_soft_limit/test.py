@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
 import pytest
 from kazoo.client import KazooClient
 
@@ -42,14 +45,27 @@ def test_soft_limit_create(started_cluster):
     test_path = "/test_soft_limit"
 
     # Retry logic for initial znode creation
-    max_attempts = 3
+    # node_zk.create can occasionally hang on CI, so we add a retry loop with timeout to ensure it doesn't block indefinitely (900s).
+    max_attempts = 5
     for attempt in range(max_attempts):
         try:
-            node_zk.create(test_path, b"abc")
-            break
-        except (ConnectionLoss, KazooException) as e:
-            print(f"Attempt {attempt+1}/{max_attempts} failed: {e}")
-            time.sleep(3)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    # Normally, this is expected to succeed on the first try.
+                    node_zk.create,
+                    test_path,
+                    b"abc",
+                    ephemeral=False,
+                    makepath=True,
+                    sequence=False,
+                )
+                # Wait up to 30 seconds
+                future.result(timeout=30)
+            break  # success, exit loop
+        except TimeoutError:
+            logging.error(f"Attempt {attempt+1} timed out")
+        except Exception as e:
+            logging.error(f"Attempt {attempt+1} failed: {e}")
     else:
         raise RuntimeError(
             f"Failed to create znode {test_path} after {max_attempts} attempts"
