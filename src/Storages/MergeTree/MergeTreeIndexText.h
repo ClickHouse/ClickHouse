@@ -86,8 +86,8 @@ public:
     using PostingListsHolder = std::list<PostingList>;
     using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
 
-    /// sizeof(PostingListWithContext) == 24 bytes
-    /// Use small container with the same size in bytes.
+    /// sizeof(PostingListWithContext) == 24 bytes.
+    /// Use small container of the same size to reuse this memory.
     static constexpr size_t max_small_size = 6;
     using SmallContainer = std::array<UInt32, max_small_size>;
 

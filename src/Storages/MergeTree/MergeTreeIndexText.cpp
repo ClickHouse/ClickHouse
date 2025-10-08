@@ -715,6 +715,14 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 {
     if (small_size < max_small_size)
     {
+        if (small_size)
+        {
+            /// Values are added in non-descending order.
+            chassert(small[small_size - 1] <= value);
+            if (small[small_size - 1] == value)
+                return;
+        }
+
         small[small_size++] = value;
 
         if (small_size == max_small_size)
