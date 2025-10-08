@@ -106,15 +106,26 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
 
-    /// Project the incoming columns (input header shape) to the writer header shape
-    /// using the precomputed position map.
+    /// If chunk has already been shaped upstream exactly like the writer header, write it as such.
+    /// For e.g., HIVE style partitioned table with partition columns dropped upstream.
     const auto & src_cols = chunk.getColumns();
+    if (src_cols.size() == sample_block->columns())
+    {
+        writer->write(getHeader().cloneWithColumns(src_cols));
+        return;
+    }
+
+    /// Else, project from input_header shape to writer_header shape using the precomputed map.
     Columns selected;
     selected.reserve(input_to_format_pos.size());
     for (size_t pos : input_to_format_pos)
     {
         if (pos >= src_cols.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has fewer columns ({}) than expected position {}", src_cols.size(), pos);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incoming chunk has {} column(s) but position {} is required by writer header",
+                src_cols.size(),
+                pos);
         selected.emplace_back(src_cols[pos]);
     }
     writer->write(getHeader().cloneWithColumns(selected));
