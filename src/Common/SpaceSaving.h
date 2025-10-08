@@ -306,56 +306,13 @@ public:
 
     void readAlphaMap(ReadBuffer & rb)
     {
-        // Reset current alpha_map; we'll rebuild it based on serialized data, but
-        // always keep a safe, bounded size tied to current capacity.
-        alpha_map.clear();
-
-        size_t serialized_alpha_size = 0;
-        try
-        {
-            readVarUInt(serialized_alpha_size, rb);
-        }
-        catch (...)
-        {
-            // Malformed input: fall back to a zero-initialized alpha_map.
-            alpha_map.resize(nextAlphaSize(m_capacity));
-            return;
-        }
-
-        // Bound the alpha map to the expected size for current capacity.
-        const size_t expected_size = nextAlphaSize(m_capacity);
-        alpha_map.resize(expected_size);
-
-        // Read as many entries as both the serialized size and expected size allow.
-        const size_t to_read = std::min(serialized_alpha_size, expected_size);
-        for (size_t i = 0; i < to_read; ++i)
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+        for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
-            try
-            {
-                readVarUInt(alpha, rb);
-            }
-            catch (...)
-            {
-                // On any read failure, keep remaining entries zeroed and stop.
-                return;
-            }
-            alpha_map[i] = alpha;
-        }
-
-        // If the serialized size is larger than expected, attempt to consume and ignore the tail
-        // safely; if it fails, we still keep a valid alpha_map.
-        for (size_t i = to_read; i < serialized_alpha_size; ++i)
-        {
-            UInt64 ignored = 0;
-            try
-            {
-                readVarUInt(ignored, rb);
-            }
-            catch (...)
-            {
-                break;
-            }
+            readVarUInt(alpha, rb);
+            alpha_map.push_back(alpha);
         }
     }
 

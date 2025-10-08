@@ -21,6 +21,7 @@ from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
     LocalDownloader,
+    S3Downloader,
     prepare_s3_bucket,
 )
 
@@ -113,6 +114,7 @@ def started_cluster():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
+        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
@@ -438,6 +440,10 @@ def default_download_directory(
 ):
     if storage_type == "local":
         return started_cluster.default_local_downloader.download_directory(
+            local_path, remote_path, **kwargs
+        )
+    elif storage_type == "s3":
+        return started_cluster.default_s3_downloader.download_directory(
             local_path, remote_path, **kwargs
         )
     else:
