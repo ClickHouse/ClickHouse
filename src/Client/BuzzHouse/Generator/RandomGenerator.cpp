@@ -190,6 +190,11 @@ String RandomGenerator::nextJSONCol()
     return pick;
 }
 
+String RandomGenerator::nextTokenString()
+{
+    return pickRandomly(this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese));
+}
+
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     String ret;

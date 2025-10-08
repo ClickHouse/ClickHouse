@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <cstdlib>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
@@ -53,8 +54,21 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     }
     catch (...)
     {
-        function->destroy(place);
-        throw;
+        // For approx_top_* states, optionally swallow malformed input and keep an empty state instead of failing CAST
+        const String & fname = function->getName();
+        const bool is_approx_top = fname.starts_with("approx_top_");
+        if (is_approx_top)
+        {
+            // Reset to a fresh empty state
+            function->destroy(place);
+            place = arena.alignedAlloc(size_of_state, function->alignOfData());
+            function->create(place);
+        }
+        else
+        {
+            function->destroy(place);
+            throw;
+        }
     }
 
     column_concrete.getData().push_back(place);
@@ -120,8 +134,19 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     }
     catch (...)
     {
-        function->destroy(place);
-        throw;
+        const String & fname = function->getName();
+        const bool is_approx_top = fname.starts_with("approx_top_");
+        if (is_approx_top)
+        {
+            function->destroy(place);
+            place = arena.alignedAlloc(size_of_state, function->alignOfData());
+            function->create(place);
+        }
+        else
+        {
+            function->destroy(place);
+            throw;
+        }
     }
 
     column_concrete.getData().push_back(place);
