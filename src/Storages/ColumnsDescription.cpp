@@ -1195,7 +1195,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    QueryAnalyzer analyzer(/* only_analyze */ false);
+    QueryAnalyzer analyzer(/* only_analyze */ true);
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
     auto expression_list = buildQueryTree(default_expr_list, execution_context);
