@@ -1,8 +1,5 @@
 DATE
 JSONKey
-MACNumToString
-MACStringToNum
-MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 _CAST
@@ -14,7 +11,6 @@ __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
 caseWithExpression
-catboostEvaluate
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -23,7 +19,6 @@ dotProduct
 evalMLMethod
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
-getTypeSerializationStreams
 globalIn
 globalInIgnoreSet
 globalNotIn
@@ -32,7 +27,6 @@ globalNotNullIn
 globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
-globalVariable
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
@@ -40,16 +34,12 @@ ilike
 in
 inIgnoreSet
 like
-lowCardinalityIndices
-lowCardinalityKeys
 map
 mapAdd
 mapFromArrays
 mapPopulateSeries
 mapSubtract
 mapUpdate
-minSampleSizeContinuous
-minSampleSizeConversion
 moduloLegacy
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
@@ -140,8 +130,6 @@ toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
 toUUIDOrDefault
-transactionLatestSnapshot
-transactionOldestSnapshot
 validateNestedArraySizes
 windowID
 wkt

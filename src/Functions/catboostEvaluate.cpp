@@ -174,7 +174,59 @@ public:
 
 REGISTER_FUNCTION(CatBoostEvaluate)
 {
-    factory.registerFunction<FunctionCatBoostEvaluate>();
+    FunctionDocumentation::Description description = R"(
+Evaluate an external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learning.
+Accepts a path to a catboost model and model arguments (features).
+
+**Prerequisites**
+
+1. Build the catboost evaluation library
+
+Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
+
+Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
+
+```xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
+At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
+communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
+`9012` is already assigned to a different service.
+
+```xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
+2. Train a catboost model using libcatboost
+
+See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
+)";
+    FunctionDocumentation::Syntax syntax = "catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])";
+    FunctionDocumentation::Arguments arguments = {
+        {"path_to_model", "Path to catboost model.", {"const String"}},
+        {"feature", "One or more model features/arguments.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the model evaluation result.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "catboostEvaluate",
+        "SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1",
+        "4.695691092573497"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCatBoostEvaluate>(documentation);
 }
 
 }

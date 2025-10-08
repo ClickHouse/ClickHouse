@@ -84,28 +84,37 @@ public:
 
 REGISTER_FUNCTION(VariantType)
 {
-    factory.registerFunction<FunctionVariantType>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns 'None' for it.
-)",
-        .syntax = {"variantType(variant)"},
-        .arguments = {{"variant", "Variant column"}},
-        .examples = {{{
-            "Example",
-            R"(
+)";
+    FunctionDocumentation::Syntax syntax = "variantType(variant)";
+    FunctionDocumentation::Arguments arguments = {
+        {"variant", "Variant column.", {"Variant"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an Enum column with variant type name for each row.", {"Enum"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT variantType(v) FROM test;)",
-            R"(
+SELECT variantType(v) FROM test;
+        )",
+        R"(
 ┌─variantType(v)─┐
 │ None           │
 │ UInt64         │
 │ String         │
 │ Array(UInt64)  │
 └────────────────┘
-)"}}},
-        .category = FunctionDocumentation::Category::JSON,
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionVariantType>(documentation);
 }
 
 }

@@ -113,8 +113,90 @@ ROLLBACK;
     FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, arguments_transactionID, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
 
     factory.registerFunction<FunctionTransactionID>(documentation_transactionID);
-    factory.registerFunction<FunctionTransactionLatestSnapshot>();
-    factory.registerFunction<FunctionTransactionOldestSnapshot>();
+
+    FunctionDocumentation::Description description_transactionLatestSnapshot = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_transactionLatestSnapshot = "transactionLatestSnapshot()";
+    FunctionDocumentation::Arguments arguments_transactionLatestSnapshot = {};
+    FunctionDocumentation::ReturnedValue returned_value_transactionLatestSnapshot = {"Returns the latest snapshot (CSN) of a transaction.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_transactionLatestSnapshot = {
+    {
+        "Usage example",
+        R"(
+BEGIN TRANSACTION;
+SELECT transactionLatestSnapshot();
+ROLLBACK;
+        )",
+        R"(
+┌─transactionLatestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_transactionLatestSnapshot = {22, 6};
+    FunctionDocumentation::Category category_transactionLatestSnapshot = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_transactionLatestSnapshot = {description_transactionLatestSnapshot, syntax_transactionLatestSnapshot, arguments_transactionLatestSnapshot, returned_value_transactionLatestSnapshot, examples_transactionLatestSnapshot, introduced_in_transactionLatestSnapshot, category_transactionLatestSnapshot};
+
+    factory.registerFunction<FunctionTransactionLatestSnapshot>(documentation_transactionLatestSnapshot);
+
+    FunctionDocumentation::Description description_transactionOldestSnapshot = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+)";
+    FunctionDocumentation::Syntax syntax_transactionOldestSnapshot = "transactionOldestSnapshot()";
+    FunctionDocumentation::Arguments arguments_transactionOldestSnapshot = {};
+    FunctionDocumentation::ReturnedValue returned_value_transactionOldestSnapshot = {"Returns the oldest snapshot (CSN) of a transaction.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_transactionOldestSnapshot = {
+    {
+        "Usage example",
+        R"(
+BEGIN TRANSACTION;
+SELECT transactionOldestSnapshot();
+ROLLBACK;
+        )",
+        R"(
+┌─transactionOldestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_transactionOldestSnapshot = {22, 6};
+    FunctionDocumentation::Category category_transactionOldestSnapshot = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_transactionOldestSnapshot = {description_transactionOldestSnapshot, syntax_transactionOldestSnapshot, arguments_transactionOldestSnapshot, returned_value_transactionOldestSnapshot, examples_transactionOldestSnapshot, introduced_in_transactionOldestSnapshot, category_transactionOldestSnapshot};
+
+    factory.registerFunction<FunctionTransactionOldestSnapshot>(documentation_transactionOldestSnapshot);
 }
 
 }

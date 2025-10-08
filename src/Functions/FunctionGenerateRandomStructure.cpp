@@ -435,22 +435,49 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
 
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
-    factory.registerFunction<FunctionGenerateRandomStructure>(FunctionDocumentation
-        {
-            .description=R"(
-Generates a random table structure.
-This function takes 2 optional constant arguments:
-the number of columns in the result structure (random by default) and random seed (random by default)
-The maximum number of columns is 128.
-The function returns a value of type String.
-)",
-            .examples{
-                {"random", "SELECT generateRandomStructure()", "c1 UInt32, c2 FixedString(25)"},
-                {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
-                {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
-            },
-            .category = FunctionDocumentation::Category::RandomNumber
-        });
+    FunctionDocumentation::Description description = R"(
+Generates random table structure in the format `column1_name column1_type, column2_name column2_type, ...`.
+)";
+    FunctionDocumentation::Syntax syntax = "generateRandomStructure([number_of_columns, seed])";
+    FunctionDocumentation::Arguments arguments = {
+        {"number_of_columns", "The desired number of columns in the resultant table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.", {"UInt64"}},
+        {"seed", "Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Randomly generated table structure.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT generateRandomStructure()
+        )",
+        R"(
+c1 Decimal32(5), c2 Date, c3 Tuple(LowCardinality(String), Int128, UInt64, UInt16, UInt8, IPv6), c4 Array(UInt128), c5 UInt32, c6 IPv4, c7 Decimal256(64), c8 Decimal128(3), c9 UInt256, c10 UInt64, c11 DateTime
+        )"
+    },
+    {
+        "with specified number of columns",
+        R"(
+SELECT generateRandomStructure(1)
+        )",
+        R"(
+c1 Map(UInt256, UInt16)
+        )"
+    },
+    {
+        "with specified seed",
+        R"(
+SELECT generateRandomStructure(NULL, 33)
+        )",
+        R"(
+c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGenerateRandomStructure>(documentation);
 }
 
 }
