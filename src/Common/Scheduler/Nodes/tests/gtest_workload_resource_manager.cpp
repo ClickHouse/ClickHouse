@@ -1273,6 +1273,22 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     t.wait();
 }
 
+TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    // Only max_cpu_share is set, max_cpus is unset
+    t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
+    double actual_cap = c->getSettings().max_cpus;
+
+    EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
+}
+
 auto getAcquired()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
