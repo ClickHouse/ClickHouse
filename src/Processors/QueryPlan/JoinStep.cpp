@@ -168,7 +168,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin())
+    if (join->supportParallelJoin() && (min_block_size_rows > 1 || min_block_size_bytes > 1))
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
