@@ -180,6 +180,11 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
     EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
     EXPECT_EQ(readObject(object_storage, abcd_path), "A/B/C/D/");
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
