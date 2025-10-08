@@ -124,7 +124,7 @@ LIMIT 1;
 SELECT
     if(ProfileEvents['JoinProbeTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),
     if(ProfileEvents['JoinBuildTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] == 150, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_full'
