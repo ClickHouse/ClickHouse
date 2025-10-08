@@ -152,60 +152,6 @@ MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
-struct HashJoinResult::GenerateCurrentRowState
-{
-    GenerateCurrentRowState(
-        Block block_,
-        size_t rows_to_reserve_,
-        size_t row_ref_begin_,
-        size_t row_ref_end_,
-        MutableColumns columns_,
-        IColumn::Offsets offsets_,
-        std::span<UInt64> matched_rows_,
-        size_t limit_,
-        bool is_last_)
-            : block(std::move(block_))
-            , rows_to_reserve(rows_to_reserve_)
-            , row_ref_begin(row_ref_begin_)
-            , row_ref_end(row_ref_end_)
-            , columns(std::move(columns_))
-            , offsets(std::move(offsets_))
-            , matched_rows(matched_rows_)
-            , state_row_limit(limit_)
-            , is_last(is_last_)
-    {
-    }
-
-    MutableColumns getColumns()
-    {
-        if (!state_row_limit)
-            return std::move(columns);
-        return copyEmptyColumns(columns);
-    }
-
-    void setFilter(IColumn::Filter && filter_) { filter = std::move(filter_); }
-    void setFilter(const IColumn::Filter * filter_) { filter = std::cref(*filter_); }
-    const IColumn::Filter & getFilter() const { return filter.index() == 0 ? std::get<0>(filter) : std::get<1>(filter).get(); }
-
-    Block block;
-    size_t rows_to_reserve;
-    size_t row_ref_begin;
-    size_t row_ref_end;
-    MutableColumns columns;
-
-    IColumn::Offsets offsets;
-    std::variant<IColumn::Filter, std::reference_wrapper<const IColumn::Filter>> filter;
-
-    std::span<UInt64> matched_rows;
-
-    /// Rows already outputted from the block, which are skipped on next call to generateBlock.
-    size_t state_row_offset = 0;
-    /// If non-zero, limits the number of rows outputted from the block.
-    size_t state_row_limit = 0;
-
-    bool is_last = false;
-};
-
 void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
@@ -240,15 +186,26 @@ void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offs
 
 /// Generates joined block from lazy output
 /// If state is not finished, it will keep it for next call, otherwise reset it.
-static Block generateBlock(
-    std::unique_ptr<HashJoinResult::GenerateCurrentRowState> & state,
+Block HashJoinResult::generateBlock(
+    std::optional<HashJoinResult::GenerateCurrentRowState> & state,
     const LazyOutput & lazy_output,
     const HashJoinResult::Properties & properties)
 {
     size_t rows_added = 0;
     const auto * off_data = lazy_output.row_refs.data();
 
-    MutableColumns columns = state->getColumns();
+    MutableColumns columns;
+    if (state->state_row_limit > 0)
+    {
+        /// columns are empty when using lazy_output
+        chassert(std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }));
+        columns = copyEmptyColumns(state->columns);
+    }
+    else
+    {
+        columns = std::move(state->columns);
+    }
+
     if (properties.is_join_get)
     {
         lazy_output.buildJoinGetOutput(
@@ -292,7 +249,7 @@ static Block generateBlock(
         block,
         std::move(columns),
         offsets,
-        state->getFilter(),
+        state->filter,
         lazy_output.type_name,
         properties);
 
@@ -372,7 +329,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     {
         bool is_last = current_row_state->is_last;
         auto block = generateBlock(current_row_state, lazy_output, properties);
-        return {std::move(block), is_last && current_row_state == nullptr};
+        return {std::move(block), is_last && !current_row_state.has_value()};
     }
 
     if (!scattered_block)
@@ -405,21 +362,22 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             scattered_block->filter(std::span<UInt64>{matched_rows});
         scattered_block->filterBySelector();
 
-        current_row_state = std::make_unique<GenerateCurrentRowState>(
-            std::move(*scattered_block).getSourceBlock(),
-            lazy_output.row_count,
-            0,
-            lazy_output.row_refs.size(),
-            std::move(columns),
-            std::move(offsets),
-            std::span<UInt64>{matched_rows},
-            limit_rows_per_key,
-            /* is_last */ true);
-        current_row_state->setFilter(&filter);
+        current_row_state.emplace(GenerateCurrentRowState{
+            .block = std::move(*scattered_block).getSourceBlock(),
+            .rows_to_reserve = lazy_output.row_count,
+            .row_ref_begin = 0,
+            .row_ref_end = lazy_output.row_refs.size(),
+            .columns = std::move(columns),
+            .offsets = std::move(offsets),
+            .filter = std::move(filter),
+            .matched_rows = std::span<UInt64>{matched_rows},
+            .is_last = true,
+            .state_row_limit = limit_rows_per_key,
+        });
 
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
-        return {std::move(block), current_row_state == nullptr};
+        return {std::move(block), !current_row_state.has_value()};
     }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
@@ -529,23 +487,24 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         current_scattered_block.filter(partial_matched_rows);
     current_scattered_block.filterBySelector();
 
-    current_row_state = std::make_unique<GenerateCurrentRowState>(
-        std::move(current_scattered_block).getSourceBlock(),
-        num_rhs_rows,
-        row_ref_start,
-        next_row_ref,
-        std::move(rhs_columns),
-        std::move(partial_offsets),
-        partial_matched_rows,
-        limit_rows_per_key,
-        is_last);
-    current_row_state->setFilter(std::move(partial_filter));
+    current_row_state.emplace(GenerateCurrentRowState{
+        .block = std::move(current_scattered_block).getSourceBlock(),
+        .rows_to_reserve = num_rhs_rows,
+        .row_ref_begin = row_ref_start,
+        .row_ref_end = next_row_ref,
+        .columns = std::move(rhs_columns),
+        .offsets = std::move(partial_offsets),
+        .filter = std::move(partial_filter),
+        .matched_rows = partial_matched_rows,
+        .is_last = is_last,
+        .state_row_limit = limit_rows_per_key,
+    });
 
     auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
 
-    return {std::move(block), is_last && current_row_state == nullptr};
+    return {std::move(block), is_last && !current_row_state.has_value()};
 }
 
 }

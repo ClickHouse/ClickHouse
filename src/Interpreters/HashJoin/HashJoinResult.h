@@ -25,8 +25,6 @@ public:
         bool joined_block_split_single_row = false;
     };
 
-    struct GenerateCurrentRowState;
-
     HashJoinResult(
         LazyOutput && lazy_output_,
         MutableColumns columns_,
@@ -55,11 +53,35 @@ private:
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
 
+    struct GenerateCurrentRowState
+    {
+        Block block;
+        size_t rows_to_reserve;
+        size_t row_ref_begin;
+        size_t row_ref_end;
+        MutableColumns columns;
+
+        IColumn::Offsets offsets;
+        IColumn::Filter filter;
+
+        std::span<UInt64> matched_rows;
+
+        bool is_last;
+
+        /// If non-zero, limits the number of rows outputted from the block.
+        size_t state_row_limit;
+
+        /// Rows already outputted from the block, which are skipped on next call to generateBlock.
+        size_t state_row_offset = 0;
+    };
+
     /// HashJoinResult iterates over rows from the left side.
     /// This state is used to generate blocks for a single row from the left side.
     /// When limiting the number of rows in a block, if there are many matches for a single key,
     /// the current progress is saved here to continue from this state on the next call to next().
-    std::unique_ptr<GenerateCurrentRowState> current_row_state;
+    std::optional<GenerateCurrentRowState> current_row_state;
+
+    static Block generateBlock(std::optional<GenerateCurrentRowState> & state, const LazyOutput & lazy_output, const Properties & properties);
 };
 
 }
