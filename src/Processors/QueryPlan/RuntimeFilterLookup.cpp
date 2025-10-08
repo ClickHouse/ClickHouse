@@ -67,6 +67,12 @@ void RuntimeFilter::insert(ColumnPtr values)
 
 void RuntimeFilter::finishInsert()
 {
+    /// Only one thread will do the actual finishing logic and any concurrent caller will wait for it to complete
+    std::lock_guard g(finish_mutex);
+
+    if (inserts_are_finished)
+        return;
+
     inserts_are_finished = true;
 
     if (exact_values)

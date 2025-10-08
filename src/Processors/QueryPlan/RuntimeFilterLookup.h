@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <mutex>
 
 namespace DB
 {
@@ -43,7 +44,9 @@ private:
     const DataTypePtr result_type;
     BloomFilterPtr bloom_filter;
     SetPtr exact_values;
-    bool inserts_are_finished = false;
+
+    std::mutex finish_mutex;
+    std::atomic<bool> inserts_are_finished = false;
 
     /// If filter set has no elements then find() always returns false
     bool no_elements_in_set = false;
