@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -2065,9 +2066,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, vector_search_parameters, context_, log);
+
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            std::move(parts),
+            parts,
             metadata_snapshot,
             mutations_snapshot,
             context_,
@@ -2084,14 +2087,112 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_);
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
-
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
             add_index_stat_row_for_pk_expand = true;
+        }
+
+        std::optional<size_t> condition_hash;
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+                condition_hash = outputs.front()->getHash();
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (condition_hash)
+        {
+            RangesInDataParts remaining;
+
+            auto it_parts = parts.begin();
+            auto it_result = result.parts_with_ranges.begin();
+
+            while (it_parts != parts.end())
+            {
+                if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
+                {
+                    auto & full_ranges = it_parts->ranges;
+                    const auto & kept_ranges = it_result->ranges;
+
+                    MarkRanges diff_ranges;
+
+                    auto * it_full = full_ranges.begin();
+                    const auto * it_kept = kept_ranges.begin();
+
+                    while (it_full != full_ranges.end())
+                    {
+                        if (it_kept == kept_ranges.end() || it_full->end <= it_kept->begin)
+                        {
+                            /// full range is completely before kept range, keep it
+                            diff_ranges.push_back(*it_full);
+                            ++it_full;
+                        }
+                        else if (it_full->begin >= it_kept->end)
+                        {
+                            /// full range is completely after kept range, move to next kept
+                            ++it_kept;
+                        }
+                        else
+                        {
+                            /// overlap, need to slice
+                            if (it_full->begin < it_kept->begin)
+                                diff_ranges.push_back({it_full->begin, it_kept->begin});
+
+                            if (it_full->end > it_kept->end)
+                            {
+                                /// adjust full range and check next kept range
+                                *it_full = {it_kept->end, it_full->end};
+                                ++it_kept;
+                            }
+                            else
+                            {
+                                /// fully covered or trimmed
+                                ++it_full;
+                            }
+                        }
+                    }
+
+                    if (!diff_ranges.empty())
+                    {
+                        remaining.emplace_back(
+                            it_parts->data_part,
+                            it_parts->parent_part,
+                            it_parts->part_index_in_query,
+                            it_parts->part_starting_offset_in_query,
+                            std::move(diff_ranges));
+                    }
+
+                    ++it_parts;
+                    ++it_result;
+                }
+                else
+                {
+                    /// part was erased entirely, keep it whole
+                    remaining.push_back(*it_parts);
+                    ++it_parts;
+                }
+            }
+
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            for (const auto & remaining_ranges : remaining)
+            {
+                const auto & data_part = remaining_ranges.data_part;
+                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                                                 : data_part->name;
+                query_condition_cache->write(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    *condition_hash,
+                    reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
+                    remaining_ranges.ranges,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark());
+            }
         }
     }
 
