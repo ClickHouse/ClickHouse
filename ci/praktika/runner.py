@@ -227,7 +227,17 @@ class Runner:
 
         return 0
 
-    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
+    def _run(
+        self,
+        workflow,
+        job,
+        docker="",
+        no_docker=False,
+        param=None,
+        test="",
+        count=None,
+        debug=False,
+    ):
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
@@ -307,6 +317,12 @@ class Runner:
         if test:
             print(f"Custom --test [{test}] will be passed to job's script")
             cmd += f" --test {test}"
+        if count is not None:
+            print(f"Custom --count [{count}] will be passed to job's script")
+            cmd += f" --count {count}"
+        if debug:
+            print(f"Custom --debug will be passed to job's script")
+            cmd += f" --debug"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -644,6 +660,8 @@ class Runner:
         pr=None,
         sha=None,
         branch=None,
+        count=None,
+        debug=False,
     ):
         res = True
         setup_env_code = -10
@@ -697,6 +715,8 @@ class Runner:
                     no_docker=no_docker,
                     param=param,
                     test=test,
+                    count=count,
+                    debug=debug,
                 )
                 res = run_code == 0
                 if not res:

@@ -4,7 +4,6 @@ import subprocess
 import time
 from pathlib import Path
 
-from ci.defs.defs import DOCKERS
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -45,10 +44,22 @@ def parse_args():
     parser.add_argument("--options", help="Job parameters: ...")
     parser.add_argument(
         "--test",
-        help="Optional test name patterns (can be space-separated and flag can repeat)",
+        help="Optional. Test name patterns (space-separated)",
         default=[],
         nargs="+",
         action="extend",
+    )
+    parser.add_argument(
+        "--count",
+        help="Optional. Number of times to repeat each test",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open python debug console on exception",
+        default=False,
+        action="store_true",
     )
     return parser.parse_args()
 
@@ -97,6 +108,9 @@ def main():
             is_sequential = True
         else:
             assert False, f"Unknown job option [{to}]"
+
+    if args.count:
+        repeat_option = f"--count {args.count} --repeat-scope=function"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -212,7 +226,7 @@ def main():
 
     if args.test:
         test_result_specific = Result.from_pytest_run(
-            command=f"{' '.join(args.test)} {repeat_option}",  # TODO: support passing --pdb for debugging
+            command=f"{' '.join(args.test)} {'--pdb' if args.debug else ''} {repeat_option}",
             cwd="./tests/integration/",
             env=test_env,
             pytest_report_file=f"{temp_path}/pytest.jsonl",
