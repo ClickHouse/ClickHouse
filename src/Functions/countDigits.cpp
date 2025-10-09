@@ -73,13 +73,13 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which_first(arguments[0]->getTypeId());
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
+        };
 
-        if (!which_first.isInt() && !which_first.isUInt() && !which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
