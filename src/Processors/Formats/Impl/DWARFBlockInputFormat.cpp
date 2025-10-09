@@ -379,7 +379,10 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_attr_name = ColumnVector<UInt16>::create();
     auto col_attr_form = ColumnVector<UInt16>::create();
     auto col_attr_int = ColumnVector<UInt64>::create();
-    auto col_attr_str = ColumnLowCardinality::create(MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)), MutableColumnPtr(ColumnVector<UInt16>::create()));
+    auto col_attr_str = ColumnLowCardinality::create(
+        MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)),
+        MutableColumnPtr(ColumnVector<UInt16>::create()),
+        /*is_shared=*/false);
     auto col_attr_offsets = ColumnVector<UInt64>::create();
     size_t num_rows = 0;
     auto err = llvm::Error::success();
@@ -732,8 +735,8 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 auto index = ColumnVector<UInt8>::create();
                 index->insert(1);
                 auto indices = index->replicate({num_rows});
-                cols.push_back(ColumnLowCardinality::create(ColumnUnique<ColumnString>::create(
-                    std::move(dict), /*is_nullable*/ false), indices));
+                cols.push_back(ColumnLowCardinality::create(
+                    ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false), indices, /*is_shared*/ false));
                 break;
             }
             case COL_UNIT_OFFSET:
@@ -744,8 +747,8 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 auto index = ColumnVector<UInt8>::create();
                 index->insert(1);
                 auto indices = index->replicate({num_rows});
-                cols.push_back(ColumnLowCardinality::create(ColumnUnique<ColumnVector<UInt64>>::create(
-                    std::move(dict), /*is_nullable*/ false), indices));
+                cols.push_back(ColumnLowCardinality::create(
+                    ColumnUnique<ColumnVector<UInt64>>::create(std::move(dict), /*is_nullable*/ false), indices, /*is_shared*/ false));
                 break;
             }
             case COL_ANCESTOR_TAGS:
