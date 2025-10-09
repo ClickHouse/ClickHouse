@@ -279,7 +279,7 @@ public:
                 size,
                 getName(),
                 TOP_K_MAX_SIZE);
-        set.resize(std::min(size + 1, size_t(reserved)));
+        set.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);
@@ -310,7 +310,7 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else

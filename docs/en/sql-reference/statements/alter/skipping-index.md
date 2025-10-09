@@ -5,7 +5,6 @@ sidebar_position: 42
 slug: /sql-reference/statements/alter/skipping-index
 title: 'Manipulating Data Skipping Indices'
 toc_hidden_folder: true
-doc_type: 'reference'
 ---
 
 # Manipulating Data Skipping Indices
@@ -27,6 +26,7 @@ The following operations are available:
 ## CLEAR INDEX {#clear-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Deletes the secondary index files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+
 
 The commands `ADD`, `DROP`, and `CLEAR` are lightweight in the sense that they only change metadata or remove files.
 Also, they are replicated, syncing indices metadata via ClickHouse Keeper or ZooKeeper.

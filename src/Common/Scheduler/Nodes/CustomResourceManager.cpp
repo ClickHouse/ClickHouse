@@ -180,7 +180,7 @@ ResourceLink CustomResourceManager::Classifier::get(const String & resource_name
 CustomResourceManager::CustomResourceManager()
     : state(new State())
 {
-    scheduler.start("Sch.CstmResMngr");
+    scheduler.start();
 }
 
 void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration & config)

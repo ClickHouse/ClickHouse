@@ -1,49 +1,49 @@
 #pragma once
 
-#include <limits>
 #include <memory> // for std::unique_ptr
+#include <cmath>
+#include <stdexcept>
+#include <limits>
+#include <iostream>
 #include <base/types.h>
 
-#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+
 #include <AggregateFunctions/DDSketch/Mapping.h>
 #include <AggregateFunctions/DDSketch/Store.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <Common/Exception.h>
+#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 class DDSketchDenseLogarithmic
 {
 public:
     explicit DDSketchDenseLogarithmic(Float64 relative_accuracy = 0.01)
-        : mapping(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy))
-        , store(std::make_unique<DDSketchDenseStore>())
-        , negative_store(std::make_unique<DDSketchDenseStore>())
-        , zero_count(0.0)
-        , count(0.0)
+        : mapping(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy)),
+          store(std::make_unique<DDSketchDenseStore>()),
+          negative_store(std::make_unique<DDSketchDenseStore>()),
+          zero_count(0.0),
+          count(0.0)
     {
     }
 
-    DDSketchDenseLogarithmic(
-        std::unique_ptr<DDSketchLogarithmicMapping> mapping_,
-        std::unique_ptr<DDSketchDenseStore> store_,
-        std::unique_ptr<DDSketchDenseStore> negative_store_,
-        Float64 zero_count_)
-        : mapping(std::move(mapping_))
-        , store(std::move(store_))
-        , negative_store(std::move(negative_store_))
-        , zero_count(zero_count_)
-        , count(store->count + negative_store->count + zero_count_)
+    DDSketchDenseLogarithmic(std::unique_ptr<DDSketchLogarithmicMapping> mapping_,
+             std::unique_ptr<DDSketchDenseStore> store_,
+             std::unique_ptr<DDSketchDenseStore> negative_store_,
+             Float64 zero_count_)
+        : mapping(std::move(mapping_)),
+          store(std::move(store_)),
+          negative_store(std::move(negative_store_)),
+          zero_count(zero_count_),
+          count(store->count + negative_store->count + zero_count_)
     {
     }
 
@@ -97,11 +97,7 @@ public:
         return quantile_value;
     }
 
-    Float64 getGamma() const { return mapping->getGamma(); }
-
-    Float64 getCount() const { return count; }
-
-    void copy(const DDSketchDenseLogarithmic & other)
+    void copy(const DDSketchDenseLogarithmic& other)
     {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
         mapping = std::make_unique<DDSketchLogarithmicMapping>(rel_acc);
@@ -113,9 +109,9 @@ public:
         count = other.count;
     }
 
-    void merge(const DDSketchDenseLogarithmic & other)
+    void merge(const DDSketchDenseLogarithmic& other)
     {
-        if (*mapping != *other.mapping)
+        if (mapping->getGamma() != other.mapping->getGamma())
         {
             // modify the one with higher precision to match the one with lower precision
             if (mapping->getGamma() > other.mapping->getGamma())
@@ -151,7 +147,7 @@ public:
 
     /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-    void serialize(WriteBuffer & buf) const
+    void serialize(WriteBuffer& buf) const
     {
         // Write the mapping
         writeBinary(enc.FlagIndexMappingBaseLogarithmic.byte, buf);
@@ -169,7 +165,7 @@ public:
         writeBinary(zero_count, buf);
     }
 
-    void deserialize(ReadBuffer & buf)
+    void deserialize(ReadBuffer& buf)
     {
         // Read the mapping
         UInt8 flag = 0;
@@ -223,7 +219,7 @@ private:
         auto new_positive_store = std::make_unique<DDSketchDenseStore>();
         auto new_negative_store = std::make_unique<DDSketchDenseStore>();
 
-        auto remap_store = [this, &new_mapping](DDSketchDenseStore & old_store, std::unique_ptr<DDSketchDenseStore> & target_store)
+        auto remap_store = [this, &new_mapping](DDSketchDenseStore& old_store, std::unique_ptr<DDSketchDenseStore>& target_store)
         {
             for (int i = 0; i < old_store.length(); ++i)
             {

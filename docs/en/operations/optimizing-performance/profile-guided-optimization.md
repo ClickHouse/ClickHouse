@@ -1,15 +1,14 @@
 ---
-description: 'Documentation for profile guided optimization'
-sidebar_label: 'Profile guided optimization (PGO)'
+description: 'Documentation for Profile Guided Optimization'
+sidebar_label: 'Profile Guided Optimization (PGO)'
 sidebar_position: 54
 slug: /operations/optimizing-performance/profile-guided-optimization
-title: 'Profile guided optimization'
-doc_type: 'guide'
+title: 'Profile Guided Optimization'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
-# Profile guided optimization
+# Profile Guided Optimization
 
 Profile-Guided Optimization (PGO) is a compiler optimization technique where a program is optimized based on the runtime profile.
 
