@@ -14,6 +14,8 @@
 #include <Formats/NativeWriter.h>
 #include <Disks/IVolume.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace ProfileEvents
 {

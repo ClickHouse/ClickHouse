@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeShufflingTransform.h>
-// #include <Processors/Transforms/PartialShufflingTransform.h>
+#include <Processors/Transforms/PartialShufflingTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -81,7 +81,8 @@ size_t getMaxBytesInQueryBeforeExternalShuffle(double max_bytes_ratio_before_ext
     {
         size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
 
-        // LOG_TRACE(getLogger("ShufflingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
+        LOG_TRACE(getLogger("ShufflingStep"), "Adjusting memory limit before external sort with");
+        //  {} (ratio: {}, available system memory: {})",
             // formatReadableSizeWithBinarySuffix(ratio_in_bytes),
             // ratio,
             // formatReadableSizeWithBinarySuffix(*available_system_memory)
@@ -169,7 +170,10 @@ ShufflingStep::ShufflingStep(
     , type(Type::Full)
     , limit(limit_)
     , sort_settings(settings_)
-{}
+{
+
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::ShufflingStep type(Type::Full)");
+}
 
 ShufflingStep::ShufflingStep(
     const SharedHeader & input_header,
@@ -182,6 +186,8 @@ ShufflingStep::ShufflingStep(
     , always_read_till_end(always_read_till_end_)
     , sort_settings(max_block_size_)
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::ShufflingStep type(Type::MergingShuffled)");
+
     sort_settings.max_block_size = max_block_size_;
 }
 
@@ -199,19 +205,22 @@ void ShufflingStep::updateLimit(size_t limit_)
     }
 }
 
-void ShufflingStep::mergingShuffled(QueryPipelineBuilder & /*pipeline*/, const UInt64 /*limit_*/)
+void ShufflingStep::mergingShuffled(QueryPipelineBuilder & pipeline, const UInt64 limit_)
 {
-    /// If there are several streams, then we merge them into one
-    // if (pipeline.getNumStreams() > 1)
-    // {
-    //     if (use_buffering && sort_settings.read_in_order_use_buffering)
-    //     {
-    //         pipeline.addSimpleTransform([&](const SharedHeader & header)
-    //         {
-    //             return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
-    //         });
-    //     }
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::mergingShuffled");
 
+    /// If there are several streams, then we merge them into one
+    if (pipeline.getNumStreams() > 1)
+    {
+        if (use_buffering && sort_settings.read_in_order_use_buffering)
+        {
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+            });
+        }
+
+        // TODO: finish MergingShuffledTransform
     //     auto transform = std::make_shared<MergingShuffledTransform>(
     //         pipeline.getSharedHeader(),
     //         pipeline.getNumStreams(),
@@ -224,12 +233,14 @@ void ShufflingStep::mergingShuffled(QueryPipelineBuilder & /*pipeline*/, const U
     //         apply_virtual_row_conversions);
 
     //     pipeline.addTransform(std::move(transform));
-    // }
+    }
 }
 
 void ShufflingStep::mergeShuffling(
     QueryPipelineBuilder & pipeline, const Settings & sort_settings, UInt64 limit_)
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::mergeShuffling");
+
     bool increase_sort_description_compile_attempts = true;
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
@@ -274,16 +285,18 @@ void ShufflingStep::fullShuffleStreams(
     const UInt64 limit_,
     const bool skip_partial_shuffle)
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffleStreams");
+
     if (!skip_partial_shuffle || limit_)
     {
-        // pipeline.addSimpleTransform(
-        //     [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        //     {
-        //         if (stream_type != QueryPipelineBuilder::StreamType::Main)
-        //             return nullptr;
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
 
-        //         return std::make_shared<PartialShufflingTransform>(header, limit_);
-        //     });
+                return std::make_shared<PartialShufflingTransform>(header, limit_);
+            });
 
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
@@ -305,10 +318,13 @@ void ShufflingStep::fullShuffleStreams(
 void ShufflingStep::fullShuffle(
     QueryPipelineBuilder & pipeline, const UInt64 limit_, const bool skip_partial_shuffle)
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffle");
+
     // scatterByPartitionIfNeeded(pipeline);
 
     fullShuffleStreams(pipeline, sort_settings, limit_, skip_partial_shuffle);
 
+    // TODO
     /// If there are several streams, then we merge them into one
     // if (pipeline.getNumStreams() > 1 )
     // // && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
@@ -330,6 +346,8 @@ void ShufflingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     /// We consider that a caller has more information what type of shuffling to apply.
     /// The type depends on constructor used to create shuffling step.
     /// So we'll try to infer shuffling to use only in case of Full shuffling
+
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::transformPipeline");
 
     if (type == Type::MergingShuffled)
     {

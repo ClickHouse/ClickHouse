@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <ranges>
 #include <Access/AccessControl.h>
 
@@ -8,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTShuffle.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -1114,6 +1117,8 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::buildQueryPlan");
+
     executeImpl(query_plan, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
@@ -1155,6 +1160,8 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::getSampleBlockImpl()");
+    
     auto & select_query = getSelectQuery();
 
     query_info.query = query_ptr;
@@ -1578,6 +1585,8 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeImpl");
+
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
@@ -1703,6 +1712,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     {
         auto preliminary_sort = [&]()
         {
+                LOG_TRACE(getLogger("InterpreterSelectQuery"), "preliminary_sort = [&]()");
+
             /** For distributed query processing,
               *  if no GROUP, HAVING set,
               *  but there is an ORDER or LIMIT,
@@ -1713,8 +1724,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 && !expressions.hasHaving()
                 && !expressions.has_window)
             {
-                if (expressions.has_order_by)
+                if (expressions.has_order_by) {
+                    LOG_TRACE(getLogger("InterpreterSelectQuery"), "preliminary_sort = [&]() if (expressions.has_order_by)");
+
                     executeOrder(query_plan, input_order_info_for_order);
+                }
+
+                if (query.shuffle()) {
+                    executeShuffle(query_plan);
+                }
 
                 /// pre_distinct = false, because if we have limit and distinct,
                 /// we need to merge streams to one and calculate overall distinct.
@@ -2066,6 +2084,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, input_order_info_for_order);
             }
+
+            if (query.shuffle()) {
+                executeShuffle(query_plan);
+            }
+
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
@@ -3090,6 +3113,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeOrderOptimized");
+
     const Settings & settings = context->getSettingsRef();
 
     auto finish_sorting_step = std::make_unique<SortingStep>(
@@ -3104,6 +3129,8 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeOrder");
+
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
@@ -3150,6 +3177,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 
 void InterpreterSelectQuery::executeShuffle(QueryPlan & query_plan)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeShuffle");
+
     auto & query = getSelectQuery();
     UInt64 limit = getLimitForSorting(query, context);
 
@@ -3167,12 +3196,16 @@ void InterpreterSelectQuery::executeShuffle(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeProjection(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeProjection");
+
     executeExpression(query_plan, expression, "Projection");
 }
 
 
 void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeDistinct");
+
     auto & query = getSelectQuery();
     if (query.distinct)
     {
@@ -3211,6 +3244,8 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executePreLimit");
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -3290,6 +3325,8 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::executeLimit"); 
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -3398,6 +3435,8 @@ bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
 
 void InterpreterSelectQuery::initSettings()
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::initSettings()"); 
+
     auto & query = getSelectQuery();
     if (query.settings())
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
@@ -3418,6 +3457,8 @@ void InterpreterSelectQuery::initSettings()
 
 bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::isQueryWithFinal"); 
+
     bool result = info.query->as<ASTSelectQuery &>().final();
     if (info.table_expression_modifiers)
         result |= info.table_expression_modifiers->hasFinal();
@@ -3427,6 +3468,8 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
 
 void registerInterpreterSelectQuery(InterpreterFactory & factory)
 {
+    LOG_TRACE(getLogger("InterpreterSelectQuery"), "InterpreterSelectQuery::registerInterpreterSelectQuery"); 
+    
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {
         return std::make_unique<InterpreterSelectQuery>(args.query, args.context, args.options);
