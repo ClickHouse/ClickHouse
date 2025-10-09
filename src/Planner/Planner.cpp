@@ -1030,7 +1030,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
 
     if (do_not_skip_offset)
     {
-        if (limit_length > std::numeric_limits<Int64>::max() - limit_offset)
+        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
             return;
 
         limit_length += limit_offset;
