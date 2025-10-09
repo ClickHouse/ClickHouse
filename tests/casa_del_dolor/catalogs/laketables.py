@@ -140,7 +140,7 @@ class SparkTable:
     def get_clickhouse_path(self) -> str:
         if self.catalog == LakeCatalogs.NoCatalog:
             return f"{self.database_name}.{self.table_name}"
-        return f"{self.database_name}.`test,{self.table_name}`"
+        return f"{self.database_name}.`test.{self.table_name}`"
 
     def flat_columns(self) -> dict[str, DataType]:
         res = {}

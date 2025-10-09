@@ -177,8 +177,8 @@ class LakeTableGenerator:
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,
-    ):
-        pass
+    ) -> str:
+        return ""
 
     def generate_alter_table_statements(
         self,
@@ -290,7 +290,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,
-    ):
+    ) -> str:
         nproperties = self.set_basic_properties()
         fields = []
 
@@ -314,7 +314,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         if random.randint(1, 2) == 1:
             nproperties.update(self.generate_table_properties(table))
-        catalog_impl.create_table(
+        ctable = catalog_impl.create_table(
             identifier=("test", table.table_name),
             location=f"s3{"a" if table.catalog == LakeCatalogs.Hive else ""}://warehouse-{"rest" if table.catalog == LakeCatalogs.REST else ("hms" if table.catalog == LakeCatalogs.Hive else "glue")}/data",
             schema=nschema,
@@ -324,6 +324,54 @@ class IcebergTableGenerator(LakeTableGenerator):
             sort_order=self.type_mapper.generate_random_iceberg_sort_order(nschema),
             properties=nproperties,
         )
+
+        # Return created table information for logging
+        schema_summary = ", ".join(
+            [
+                f"{field.name}:{field.field_type}{" NOT NULL" if field.required else ""}"
+                for field in ctable.schema().fields
+            ]
+        )
+        partition_summary = (
+            (
+                "["
+                + ",".join(
+                    [
+                        f"{ctable.schema().find_field(pf.source_id).name}({pf.transform})"
+                        for pf in ctable.spec().fields
+                    ]
+                )
+                + "]"
+            )
+            if len(ctable.spec().fields) > 0
+            else "none"
+        )
+        sort_summary = (
+            (
+                "["
+                + ", ".join(
+                    [
+                        f"{ctable.schema().find_field(sf.source_id).name}({sf.direction.name[:3]})"
+                        for sf in ctable.sort_order().fields
+                    ]
+                )
+                + "]"
+            )
+            if len(ctable.sort_order().fields) > 0
+            else "none"
+        )
+        prop_summary = (
+            (
+                "["
+                + ", ".join(
+                    [f"{key} = {value}" for key, value in ctable.properties.items()]
+                )
+                + "]"
+            )
+            if ctable.properties
+            else "none"
+        )
+        return f"{table.get_table_full_path()} | v{ctable.format_version} | Fields: [{schema_summary}] | partitions={partition_summary} | sort={sort_summary} | properties={prop_summary}"
 
     def generate_table_properties_impl(
         self,
@@ -797,8 +845,8 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,
-    ):
-        pass
+    ) -> str:
+        return ""
 
     def generate_table_properties_impl(
         self,

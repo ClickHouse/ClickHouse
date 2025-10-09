@@ -839,9 +839,10 @@ logger.jetty.level = warn
                 and catalog_type
                 in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
             ):
-                next_table_generator.create_catalog_table(
+                next_info = next_table_generator.create_catalog_table(
                     catalog_impl, data["columns"], next_table
                 )
+                self.logger.info(f"Created catalog table: {next_info}")
             elif catalog_type == LakeCatalogs.NoCatalog:
                 self.run_query(next_session, next_sql)
             else:
