@@ -201,6 +201,8 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
+    bool tryIncreasePriority(FileSegment & file_segment);
+
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
@@ -216,7 +218,6 @@ public:
     void deactivateBackgroundOperations();
 
     CachePriorityGuard::WriteLock lockCache() const;
-    CachePriorityGuard::WriteLock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 

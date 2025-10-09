@@ -85,6 +85,11 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
+    bool tryIncreasePriority(
+        Iterator & iterator,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) override;
+
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
     struct LRUPriorityDump : public IPriorityDump
@@ -164,8 +169,6 @@ private:
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock &);
 
-    void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
-
     void holdImpl(
         size_t size,
         size_t elements,
@@ -189,8 +192,6 @@ public:
 
     EntryPtr getEntry() const override;
 
-    size_t increasePriority(const CachePriorityGuard::WriteLock &) override;
-
     void remove(const CachePriorityGuard::WriteLock &) override;
 
     void invalidate() override;
@@ -200,6 +201,8 @@ public:
     void decrementSize(size_t size) override;
 
     QueueEntryType getType() const override { return QueueEntryType::LRU; }
+
+    LRUQueue::iterator get() const { return iterator; }
 
 private:
     void assertValid() const;

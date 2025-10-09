@@ -144,16 +144,6 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     return LRUIterator(this, iterator);
 }
 
-void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
-{
-    {
-        std::lock_guard lk(eviction_pos_mutex);
-        if (eviction_pos == it)
-            eviction_pos = std::next(it);
-    }
-    queue.splice(queue.end(), queue, it);
-}
-
 LRUFileCachePriority::LRUQueue::iterator
 LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock & lock)
 {
@@ -536,6 +526,25 @@ bool LRUFileCachePriority::modifySizeLimits(
     return true;
 }
 
+bool LRUFileCachePriority::tryIncreasePriority(
+    Iterator & iterator,
+    CachePriorityGuard & queue_guard,
+    CacheStateGuard &)
+{
+    iterator.getEntry()->hits += 1;
+
+    auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
+    {
+        std::lock_guard lk(eviction_pos_mutex);
+        if (eviction_pos == it)
+            eviction_pos = std::next(it);
+    }
+
+    auto lock = queue_guard.writeLock();
+    queue.splice(queue.end(), queue, it);
+    return true;
+}
+
 IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
 {
     assertValid();
@@ -604,14 +613,6 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 
     cache_priority->state->sub(size, 0);
     entry->size -= size;
-}
-
-size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::WriteLock & lock)
-{
-    assertValid();
-    cache_priority->increasePriority(iterator, lock);
-    //cache_priority->check(lock);
-    return ++((*iterator)->hits);
 }
 
 void LRUFileCachePriority::LRUIterator::assertValid() const
