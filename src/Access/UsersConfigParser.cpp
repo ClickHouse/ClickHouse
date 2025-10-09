@@ -475,6 +475,23 @@ namespace
         else
             quota->key_type = QuotaKeyType::USER_NAME;
 
+        auto parse_prefix_bits = [&](const String & path, UInt8 max_bits) -> std::optional<MaskBits>
+        {
+            if (!config.has(path))
+                return std::nullopt;
+
+            UInt64 raw_value = config.getUInt64(path);
+            if (raw_value > max_bits)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Quota {}: {} must be between 0 and {}", quota_name, path, max_bits);
+
+            return MaskBits{static_cast<UInt8>(raw_value)};
+        };
+
+        const auto quota_ipv4_prefix = parse_prefix_bits(quota_config + ".ipv4_prefix_bits", 32);
+        const auto quota_ipv6_prefix = parse_prefix_bits(quota_config + ".ipv6_prefix_bits", 128);
+
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
 
@@ -501,6 +518,8 @@ namespace
                     limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
             }
         }
+        quota->ipv4_prefix_bits = quota_ipv4_prefix;
+        quota->ipv6_prefix_bits = quota_ipv6_prefix;
 
         quota->to_roles.add(user_ids);
         return quota;
