@@ -481,11 +481,10 @@ logger.jetty.level = warn
             elif catalog == LakeCatalogs.REST or (
                 catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
             ):
-                # builder.config(
-                #    f"spark.sql.catalog.{catalog_name}.catalog-impl",
-                #    "org.apache.iceberg.rest.RESTCatalog",
-                # )
-                builder.config(f"spark.sql.catalog.{catalog_name}.type", "rest")
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.catalog-impl",
+                    "org.apache.iceberg.rest.RESTCatalog",
+                )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
                     f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
