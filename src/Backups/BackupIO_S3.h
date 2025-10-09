@@ -19,7 +19,7 @@
 namespace DB
 {
 
-class S3BackupClientFactory
+class S3BackupDiskClientFactory
 {
 public:
     struct Entry
@@ -28,7 +28,7 @@ public:
         std::weak_ptr<const S3::Client> disk_reported_client;
     };
     using CreatorFn = std::function<Entry(DiskPtr)>;
-    explicit S3BackupClientFactory(const CreatorFn & creator_fn_);
+    explicit S3BackupDiskClientFactory(const CreatorFn & creator_fn_);
     std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk);
 
 private:
@@ -109,11 +109,9 @@ private:
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
-
     std::shared_ptr<S3::Client> client;
-
     S3Capabilities s3_capabilities;
-    S3BackupClientFactory client_factory;
+    S3BackupDiskClientFactory disk_client_factory;
     BlobStorageLogWriterPtr blob_storage_log;
 };
 

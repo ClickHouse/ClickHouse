@@ -95,13 +95,14 @@ public:
         slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
     }
 
-    S3BackupClientFactory::Entry operator()(DiskPtr disk) const
+    S3BackupDiskClientFactory::Entry operator()(DiskPtr disk) const
     {
         auto disk_client = disk->getS3StorageClient();
-        auto config = disk_client->getClientConfiguration();
 
+        auto config = disk_client->getClientConfiguration();
         config.retry_strategy = retry_strategy;
         config.s3_slow_all_threads_after_retryable_error = slow_all_threads_after_retryable_error;
+
         return {disk_client->cloneWithConfigurationOverride(config), disk_client};
     }
 
@@ -216,12 +217,12 @@ private:
 }
 
 
-S3BackupClientFactory::S3BackupClientFactory(const S3BackupClientFactory::CreatorFn & creator_fn_)
+S3BackupDiskClientFactory::S3BackupDiskClientFactory(const S3BackupDiskClientFactory::CreatorFn & creator_fn_)
     : creator_fn(creator_fn_)
 {
 }
 
-std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk)
+std::shared_ptr<S3::Client> S3BackupDiskClientFactory::getOrCreate(DiskPtr disk)
 {
     std::lock_guard lock(clients_mutex);
 
@@ -333,7 +334,6 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
-
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
@@ -350,7 +350,7 @@ BackupWriterS3::BackupWriterS3(
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
-    , client_factory(S3BackupClientCreator(context_))
+    , disk_client_factory(S3BackupClientCreator(context_))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -389,7 +389,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             /// Use storage client with overridden retry strategy settings.
             copyS3File(
-                /* src_s3_client */ client_factory.getOrCreate(src_disk),
+                /* src_s3_client */ disk_client_factory.getOrCreate(src_disk),
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
