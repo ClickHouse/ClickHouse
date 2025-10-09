@@ -14,23 +14,24 @@ Expression ((Project names + Projection))
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
       ReadFromObjectStorage
 Expression ((Project names + Projection))
-  Expression
+  Expression (Post Join Actions)
     Join
-      Expression
+      Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
-      Expression
+      Expression (Right Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromObjectStorage
 Expression ((Project names + Projection))
-  Expression
+  Expression (Post Join Actions)
     Join
-      Expression
+      Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
-      Expression
+      Expression (Right Pre Join Actions)
         Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
           ReadFromObjectStorage
+4
 4
 4
 Expression ((Project names + (Projection + Change column names to column identifiers)))

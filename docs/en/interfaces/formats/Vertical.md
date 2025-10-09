@@ -6,6 +6,7 @@ keywords: ['Vertical']
 output_format: true
 slug: /interfaces/formats/Vertical
 title: 'Vertical'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

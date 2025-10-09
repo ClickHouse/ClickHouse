@@ -5,6 +5,8 @@
 #include <compare>
 #include <optional>
 
+#include <Interpreters/IcebergMetadataLog.h>
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -19,6 +21,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+
+#include <Common/logger_useful.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -141,7 +146,7 @@ ManifestFileContent::ManifestFileContent(
     const String & manifest_file_name,
     Int32 format_version_,
     const String & common_path,
-    const IcebergSchemaProcessor & schema_processor,
+    IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id,
     const String & table_location,
@@ -149,6 +154,15 @@ ManifestFileContent::ManifestFileContent(
     const String & path_to_manifest_file_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
+    insertRowToLogTable(
+        context,
+        manifest_file_deserializer.getMetadataContent(),
+        DB::IcebergMetadataLogLevel::ManifestFileMetadata,
+        common_path,
+        path_to_manifest_file,
+        std::nullopt,
+        std::nullopt);
+
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -186,6 +200,8 @@ ManifestFileContent::ManifestFileContent(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
+    schema_processor.addIcebergTableSchema(schema_object);
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -214,6 +230,14 @@ ManifestFileContent::ManifestFileContent(
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
+        insertRowToLogTable(
+            context,
+            manifest_file_deserializer.getContent(i),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            common_path,
+            path_to_manifest_file,
+            i,
+            std::nullopt);
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
@@ -242,10 +266,28 @@ ManifestFileContent::ManifestFileContent(
             snapshot_id = snapshot_id_value.safeGet<Int64>();
         }
 
+        const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
+        if (!schema_id_opt.has_value())
+        {
+            /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
+            /// That's actually an error because it can lead to incorrect query results, so we are creating an exception to put it to system.error_log.
+            try
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+                    manifest_file_name,
+                    snapshot_id);
+            }
+            catch (const Exception &)
+            {
+                tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
+            }
+        }
+        const auto schema_id = schema_id_opt.has_value() ? schema_id_opt.value() : manifest_schema_id;
 
-        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
-
-        const auto file_path_key = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
+        const auto file_path_key
+            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
@@ -378,6 +420,7 @@ ManifestFileContent::ManifestFileContent(
                 this->data_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
+                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,
@@ -404,6 +447,7 @@ ManifestFileContent::ManifestFileContent(
                 this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
+                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,
@@ -432,6 +476,7 @@ ManifestFileContent::ManifestFileContent(
                 this->equality_deletes_files.emplace_back(
                     file_path_key,
                     file_path,
+                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,

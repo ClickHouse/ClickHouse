@@ -353,190 +353,335 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA512_256 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl256>>;
     using FunctionRIPEMD160 = FunctionStringHashFixedString<OpenSSLProvider<RIPEMD160Impl>>;
 
-    factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
-        .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
-        .syntax = "SELECT RIPEMD160(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
-            R"(
+    FunctionDocumentation::Description description_RIPEMD160 = "Calculates the RIPEMD-160 hash of the given string.";
+    FunctionDocumentation::Syntax syntax_RIPEMD160 = "RIPEMD160(s)";
+    FunctionDocumentation::Arguments arguments_RIPEMD160 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_RIPEMD160 = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}};
+    FunctionDocumentation::Examples example_RIPEMD160 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
+        )",
+        R"(
 ┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
 │ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
 └───────────────────────────────────────────────────────────────┘
-         )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionMD4>(FunctionDocumentation{
-        .description = R"(Calculates the MD4 hash of the given string.)",
-        .syntax = "SELECT MD4(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(MD4('abc'));",
-            R"(
+         )"
+    }
+    };
+    FunctionDocumentation::Category category_RIPEMD160 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation::IntroducedIn introduced_in_RIPEMD160 = {24, 10};
+
+    FunctionDocumentation documentation_RIPEMD160 = {description_RIPEMD160, syntax_RIPEMD160, arguments_RIPEMD160, returned_value_RIPEMD160, example_RIPEMD160, introduced_in_RIPEMD160, category_RIPEMD160};
+
+    factory.registerFunction<FunctionRIPEMD160>(documentation_RIPEMD160);
+
+    FunctionDocumentation::Description description_MD4 = R"(
+Calculates the MD4 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_MD4 = "MD4(s)";
+    FunctionDocumentation::Arguments arguments_MD4 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_MD4 = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}};
+    FunctionDocumentation::Examples example_MD4 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(MD4('abc'));
+        )",
+        R"(
 ┌─hex(MD4('abc'))──────────────────┐
 │ A448017AAF21D8525FC10AE87AA6729D │
 └──────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionMD5>(FunctionDocumentation{
-        .description = R"(Calculates the MD5 hash of the given string.)",
-        .syntax = "SELECT MD5(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(MD5('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_MD4 = {21, 11};
+    FunctionDocumentation::Category category_MD4 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_MD4 = {description_MD4, syntax_MD4, arguments_MD4, returned_value_MD4, example_MD4, introduced_in_MD4, category_MD4};
+
+    factory.registerFunction<FunctionMD4>(documentation_MD4);
+
+
+    FunctionDocumentation::Description description_MD5 = R"(
+Calculates the MD5 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_MD5 = "MD5(s)";
+    FunctionDocumentation::Arguments arguments_MD5 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_MD5 = {
+        "Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}
+    };
+    FunctionDocumentation::Examples example_MD5 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(MD5('abc'));
+        )",
+        R"(
 ┌─hex(MD5('abc'))──────────────────┐
 │ 900150983CD24FB0D6963F7D28E17F72 │
 └──────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA1>(FunctionDocumentation{
-        .description = R"(Calculates the SHA1 hash of the given string.)",
-        .syntax = "SELECT SHA1(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA1('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1};
+    FunctionDocumentation::Category category_MD5 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
+
+    factory.registerFunction<FunctionMD5>(documentation_MD5);
+
+
+    FunctionDocumentation::Description description_SHA1 = R"(
+Calculates the SHA1 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA1 = "SHA1(s)";
+    FunctionDocumentation::Arguments arguments_SHA1 = {
+        {"s", "The input string to hash", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA1 = {
+        "Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}
+    };
+    FunctionDocumentation::Examples example_SHA1 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA1('abc'));
+        )",
+        R"(
 ┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA224>(FunctionDocumentation{
-        .description = R"(Calculates the SHA224 hash of the given string.)",
-        .syntax = "SELECT SHA224(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString(28)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA224('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA1 = {1, 1};
+    FunctionDocumentation::Category category_SHA1 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA1 = {description_SHA1, syntax_SHA1, arguments_SHA1, returned_value_SHA1, example_SHA1, introduced_in_SHA1, category_SHA1};
+
+    factory.registerFunction<FunctionSHA1>(documentation_SHA1);
+
+    FunctionDocumentation::Description description_SHA224 = R"(
+Calculates the SHA224 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA224 = "SHA224(s)";
+    FunctionDocumentation::Arguments arguments_SHA224 = {
+        {"s", "The input value to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA224 = {
+        "Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString(28)"}
+    };
+    FunctionDocumentation::Examples example_SHA224 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA224('abc'));
+        )",
+        R"(
 ┌─hex(SHA224('abc'))───────────────────────────────────────┐
 │ 23097D223405D8228642A477BDA255B32AADBCE4BDA0B3F7E36C9DA7 │
 └──────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA256>(FunctionDocumentation{
-        .description = R"(Calculates the SHA256 hash of the given string.)",
-        .syntax = "SELECT SHA256(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA256('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA224 = {1, 1};
+    FunctionDocumentation::Category category_SHA224 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA224 = {description_SHA224, syntax_SHA224, arguments_SHA224, returned_value_SHA224, example_SHA224, introduced_in_SHA224, category_SHA224};
+
+    factory.registerFunction<FunctionSHA224>(documentation_SHA224);
+
+    FunctionDocumentation::Description description_SHA256 = R"(
+Calculates the SHA256 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA256 = "SHA256(s)";
+    FunctionDocumentation::Arguments arguments_SHA256 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA256 = {
+        "Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}
+    };
+    FunctionDocumentation::Examples example_SHA256 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA256('abc'));
+        )",
+        R"(
 ┌─hex(SHA256('abc'))───────────────────────────────────────────────┐
 │ BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD │
 └──────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA384>(FunctionDocumentation{
-        .description = R"(Calculates the SHA384 hash of the given string.)",
-        .syntax = "SELECT SHA384(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString(48)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA384('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA256 = {1, 1};
+    FunctionDocumentation::Category category_SHA256 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA256 = {description_SHA256, syntax_SHA256, arguments_SHA256, returned_value_SHA256, example_SHA256, introduced_in_SHA256, category_SHA256};
+
+    factory.registerFunction<FunctionSHA256>(documentation_SHA256);
+
+    FunctionDocumentation::Description description_SHA384 = R"(
+Calculates the SHA384 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA384 = "SHA384(s)";
+    FunctionDocumentation::Arguments arguments_SHA384 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA384 = {
+        "Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString(48)"}
+    };
+    FunctionDocumentation::Examples examples_SHA384 = {
+    {
+        "Usage example",
+        "SELECT HEX(SHA384('abc'));",
+        R"(
 ┌─hex(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
 │ CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA512>(FunctionDocumentation{
-        .description = R"(Calculates the SHA512 hash of the given string.)",
-        .syntax = "SELECT SHA512(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString(64)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA512('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA384 = {1, 1};
+    FunctionDocumentation::Category category_SHA384 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA384 = {description_SHA384, syntax_SHA384, arguments_SHA384, returned_value_SHA384, examples_SHA384, introduced_in_SHA384, category_SHA384};
+    factory.registerFunction<FunctionSHA384>(documentation_SHA384);
+
+    FunctionDocumentation::Description description_SHA512 = R"(
+Calculates the SHA512 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA512 = "SHA512(s)";
+    FunctionDocumentation::Arguments arguments_SHA512 = {
+        {"s", "The input string to hash", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA512 = {
+        "Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString(64)"}
+    };
+    FunctionDocumentation::Examples example_SHA512 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA512('abc'));
+        )",
+        R"(
 ┌─hex(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSHA512_256>(FunctionDocumentation{
-        .description = R"(Calculates the SHA512_256 hash of the given string.)",
-        .syntax = "SELECT SHA512_256(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
-        .examples
-        = {{"",
-            "SELECT HEX(SHA512_256('abc'));",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA512 = {1, 1};
+    FunctionDocumentation::Category category_SHA512 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA512 = {description_SHA512, syntax_SHA512, arguments_SHA512, returned_value_SHA512, example_SHA512, introduced_in_SHA512, category_SHA512};
+
+    factory.registerFunction<FunctionSHA512>(documentation_SHA512);
+
+
+    FunctionDocumentation::Description description_SHA512_256 = R"(
+Calculates the SHA512_256 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA512_256 = "SHA512_256(s)";
+    FunctionDocumentation::Arguments arguments_SHA512_256 = {
+        {"s", "The input string to hash.", {"String"}
+    }
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA512_256 = {
+        "Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}
+    };
+    FunctionDocumentation::Examples example_SHA512_256 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA512_256('abc'));
+        )",
+        R"(
 ┌─hex(SHA512_256('abc'))───────────────────────────────────────────┐
 │ 53048E2681941EF99B2E29B76B4C7DABE4C2D0C634FC6D46E0E2F13107E7AF23 │
 └──────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA512_256 = {1, 1};
+    FunctionDocumentation::Category category_SHA512_256 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA512_256 = {description_SHA512_256, syntax_SHA512_256, arguments_SHA512_256, returned_value_SHA512_256, example_SHA512_256, introduced_in_SHA512_256, category_SHA512_256};
+
+    factory.registerFunction<FunctionSHA512_256>(documentation_SHA512_256);
 
 
 #    endif
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<GenericProvider<ImplBLAKE3>>;
-    factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
-        .description = R"(
-    Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
-    This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
-    The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-    It returns a BLAKE3 hash as a byte array with type FixedString(32).
-    )",
-        .syntax = "SELECT BLAKE3(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the 32-byte BLAKE3 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
-        .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .category = FunctionDocumentation::Category::Hash});
+
+
+    FunctionDocumentation::Description description_BLAKE3  = R"(
+Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
+This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
+The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
+It returns a BLAKE3 hash as a byte array with type FixedString(32).
+    )";
+    FunctionDocumentation::Syntax syntax_BLAKE3 = "BLAKE3(message)";
+    FunctionDocumentation::Arguments arguments_BLAKE3 = {
+        {"message", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_BLAKE3 = {
+        "Returns the 32-byte BLAKE3 hash of the input string as a fixed-length string.", {"FixedString(32)"}
+    };
+    FunctionDocumentation::Examples example_BLAKE3 = {
+    {
+        "hash",
+        R"(
+SELECT hex(BLAKE3('ABC'))
+        )",
+        R"(
+┌─hex(BLAKE3('ABC'))───────────────────────────────────────────────┐
+│ D1717274597CF0289694F75D96D444B992A096F1AFD8E7BBFA6EBB1D360FEDFC │
+└──────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_BLAKE3 = {22, 10};
+    FunctionDocumentation::Category category_BLAKE3 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, returned_value_BLAKE3, example_BLAKE3, introduced_in_BLAKE3, category_BLAKE3};
+
+    factory.registerFunction<FunctionBLAKE3>(documentation_BLAKE3);
 #    endif
 
 #   if USE_SHA3IUF
     using FunctionKeccak256 = FunctionStringHashFixedString<GenericProvider<Keccak256Impl>>;
-    factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
-        .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
-        This hash function is widely used in blockchain applications, particularly Ethereum.)",
-        .syntax = "SELECT keccak256(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
-        .examples
-        = {{"",
-            "SELECT hex(keccak256('hello'))",
-            R"(
+
+    FunctionDocumentation::Description description_keccak256 = R"(
+Calculates the Keccak-256 cryptographic hash of the given string.
+This hash function is widely used in blockchain applications, particularly Ethereum.
+    )";
+    FunctionDocumentation::Syntax syntax_keccak256 = "keccak256(message)";
+    FunctionDocumentation::Arguments arguments_keccak256 = {
+        {"message", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_keccak256 = {
+        "Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}
+    };
+    FunctionDocumentation::Examples example_keccak256 = {
+    {
+        "Usage example",
+        R"(
+SELECT hex(keccak256('hello'))
+        )",
+        R"(
 ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
 │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
 └──────────────────────────────────────────────────────────────────┘
-        )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_keccak256 = {25, 4};
+    FunctionDocumentation::Category category_keccak256 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, returned_value_keccak256, example_keccak256, introduced_in_keccak256, category_keccak256};
+
+    factory.registerFunction<FunctionKeccak256>(documentation_keccak256);
 #    endif
 }
 #endif

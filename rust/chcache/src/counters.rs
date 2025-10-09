@@ -123,23 +123,28 @@ impl CacheStatsTracker {
         println!("Statistics summary:");
         println!(
             "  {:<30} {}",
-            "invocations", self.stats().invocation_count.load(Ordering::Relaxed)
+            "invocations",
+            self.stats().invocation_count.load(Ordering::Relaxed)
         );
         println!(
             "  {:<30} {}",
-            "cache hit (local)", self.stats().cache_hits_local.load(Ordering::Relaxed)
+            "cache hit (local)",
+            self.stats().cache_hits_local.load(Ordering::Relaxed)
         );
         println!(
             "  {:<30} {}",
-            "cache hit (remote)", self.stats().cache_hits_remote.load(Ordering::Relaxed)
+            "cache hit (remote)",
+            self.stats().cache_hits_remote.load(Ordering::Relaxed)
         );
         println!(
             "  {:<30} {}",
-            "cache miss", self.stats().cache_miss.load(Ordering::Relaxed)
+            "cache miss",
+            self.stats().cache_miss.load(Ordering::Relaxed)
         );
         println!(
             "  {:<30} {}",
-            "uncacheable", self.stats().uncacheable.load(Ordering::Relaxed)
+            "uncacheable",
+            self.stats().uncacheable.load(Ordering::Relaxed)
         );
     }
 }

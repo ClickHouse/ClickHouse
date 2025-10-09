@@ -1,3 +1,4 @@
+import dataclasses
 import platform
 import sys
 import traceback
@@ -312,6 +313,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
+        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
+        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
@@ -487,14 +490,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    print(f"Write config to GH's job output")
-    with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-        print(
-            f"DATA={workflow_config.to_json()}",
-            file=f,
-        )
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
+    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")

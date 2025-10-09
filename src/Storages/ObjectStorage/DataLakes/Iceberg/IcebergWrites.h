@@ -30,6 +30,8 @@
 #include <Generic.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+#include <new>
+
 
 namespace DB
 {
@@ -51,7 +53,12 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
+    explicit FileNamesGenerator(
+        const String & table_dir_,
+        const String & storage_dir_,
+        bool use_uuid_in_metadata_,
+        CompressionMethod compression_method_,
+        const String & format_name_);
 
     FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
@@ -79,6 +86,7 @@ private:
     String storage_metadata_dir;
     bool use_uuid_in_metadata;
     CompressionMethod compression_method;
+    String format_name;
 
     Int32 initial_version = 0;
 };
@@ -91,6 +99,7 @@ public:
     void update(const Chunk & chunk);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -100,6 +109,7 @@ private:
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
+    std::vector<Int64> null_counts;
     std::vector<Range> ranges;
 };
 
@@ -142,8 +152,8 @@ private:
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<String> data_file_names;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> buffers;
-    std::vector<OutputFormatPtr> output_formats;
+    std::unique_ptr<WriteBufferFromFileBase> buffer;
+    OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
     ObjectStoragePtr object_storage;
     ContextPtr context;
@@ -270,10 +280,12 @@ public:
     void onFinish() override;
 
 private:
+    LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
+    Int64 current_schema_id;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;

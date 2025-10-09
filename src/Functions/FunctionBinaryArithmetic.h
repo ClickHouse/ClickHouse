@@ -1775,8 +1775,9 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
+        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
@@ -1786,8 +1787,9 @@ public:
             return getReturnTypeImplStatic2(new_arguments, context);
         }
 
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
+        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
+        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],

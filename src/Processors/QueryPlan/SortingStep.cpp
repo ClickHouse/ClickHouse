@@ -345,8 +345,9 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            nullptr,
-            false,
+            /*out_row_sources_buf=*/ nullptr,
+            /*filter_column_name=*/ std::nullopt,
+            /*use_average_block_sizes=*/ false,
             apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));

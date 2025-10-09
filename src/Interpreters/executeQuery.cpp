@@ -97,6 +97,9 @@ namespace ProfileEvents
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
+    extern const Event FailedInternalQuery;
+    extern const Event FailedInternalInsertQuery;
+    extern const Event FailedInternalSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -176,7 +179,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto evaluation_time;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ServerSetting
@@ -598,7 +601,8 @@ void logQueryFinishImpl(
     if (process_list_elem)
     {
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
+        if (!query_pipeline.getProcessors().empty())
+            logProcessorProfile(context, query_pipeline.getProcessors());
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
 
@@ -719,6 +723,15 @@ void logQueryException(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (query_ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
 
     QueryStatusInfoPtr info;
     if (process_list_elem)
@@ -994,7 +1007,8 @@ static BlockIO executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
-    ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
+    ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
+    HTTPContinueCallback http_continue_callback = {})
 {
     const bool internal = flags.internal;
 
@@ -1072,7 +1086,7 @@ static BlockIO executeQueryImpl(
         {
             if (!settings[Setting::allow_experimental_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
-            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::evaluation_time]});
+            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
@@ -1407,6 +1421,10 @@ static BlockIO executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
+            /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
+            if (http_continue_callback && !internal)
+                http_continue_callback();
+
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1547,6 +1565,10 @@ static BlockIO executeQueryImpl(
                         quota->checkExceeded(QuotaType::ERRORS);
                     }
                 }
+
+                /// Invoke HTTP 100-Continue callback after quota checks are completed
+                if (http_continue_callback && !internal)
+                    http_continue_callback();
 
                 if (interpreter)
                 {
@@ -1810,11 +1832,12 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    HTTPContinueCallback http_continue_callback)
 {
     executeQuery(
         wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
 }
 
 void executeQuery(
@@ -1826,7 +1849,8 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    HTTPContinueCallback http_continue_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1850,9 +1874,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size)
+    if (istr->available() > max_query_size || http_continue_callback)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
+        /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
+        /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
+        /// in the buffer already because it should have been extracted from the query parameter.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -1945,7 +1972,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
     }
     catch (...)
     {

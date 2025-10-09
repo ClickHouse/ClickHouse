@@ -118,7 +118,7 @@ Plan getPlan(
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
-    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method);
+    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method, configuration->format);
 
     const auto [metadata_version, metadata_file_path, _]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
@@ -231,8 +231,8 @@ void writeDataFiles(
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
             sample_block, data_file->data_object_info, object_storage, format_settings, context);
 
-        StorageObjectStorage::ObjectInfo object_info(data_file->data_object_info->getPath());
-        auto read_buffer = createReadBuffer(object_info, object_storage, context, getLogger("IcebergCompaction"));
+        RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
+        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -240,14 +240,14 @@ void writeDataFiles(
             /*num_streams_=*/1);
 
         auto input_format = FormatFactory::instance().getInput(
-            configuration->format,
+            data_file->data_object_info->getFileFormat().value_or(configuration->format),
             *read_buffer,
             *sample_block,
             context,
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), configuration->compression_method),
             false);

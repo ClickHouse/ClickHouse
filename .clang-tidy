@@ -38,6 +38,8 @@ Checks: [
 
   '-clang-analyzer-optin.performance.Padding',
 
+  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
+
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
   '-darwin-*',
