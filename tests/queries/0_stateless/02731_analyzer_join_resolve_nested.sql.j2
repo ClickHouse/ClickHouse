@@ -32,6 +32,7 @@ CREATE TABLE nnnb ( x UInt64, t Nested(t Nested(t Nested(t Nested(t UInt32, s St
 INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 
 SET enable_analyzer = 1;
+SET join_algorithm = 'hash'; -- parallel_hash does not guarantee the right order
 
 {% for join_use_nulls in [0, 1] -%}
 
@@ -167,8 +168,8 @@ SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 
 SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
-SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t) ORDER BY t.t.t.t ASC;
-SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t) ORDER BY t.t.t.t.t ASC;
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
 
 SELECT t FROM nnna, nnnb;
 SELECT t.t.t FROM nnna, nnnb;

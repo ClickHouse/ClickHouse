@@ -1518,26 +1518,19 @@ private:
             size_t rows = columns->columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
-                if (nullmap && nullmap->size() == row)
-                    break;
-                if (!nullmap || (*nullmap)[row])
+                if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
                     ++rows_added;
-
-                    if (rows_added >= max_block_size)
-                        break;
                 }
             }
-            if (rows_added >= max_block_size)
-                break;
         }
     }
 };
 
-IBlocksStreamPtr HashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
+IBlocksStreamPtr
+HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
