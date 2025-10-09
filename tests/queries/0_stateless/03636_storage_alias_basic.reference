@@ -67,3 +67,12 @@ Test DROP PARTITION
 2
 Test INSERT SELECT
 2
+Before EXCHANGE:
+from_a
+from_b
+After EXCHANGE alias tables:
+from_b
+from_a
+After EXCHANGE source tables:
+from_a
+from_b
