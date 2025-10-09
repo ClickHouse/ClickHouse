@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -1254,19 +1255,29 @@ void addLimitStep(QueryPlan & query_plan,
 
     UInt64 limit_length = query_analysis_result.limit_length;
     UInt64 limit_offset = query_analysis_result.limit_offset;
+    bool is_negative = query_analysis_result.is_limit_negative;
+    
+    if (is_negative)
+    {
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
-    auto limit = std::make_unique<LimitStep>(
-        query_plan.getCurrentHeader(),
-        limit_length,
-        limit_offset,
-        always_read_till_end,
-        limit_with_ties,
-        limit_with_ties_sort_description);
+        query_plan.addStep(std::move(limit));
+    }
+    else
+    {
+        auto limit = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(),
+            limit_length,
+            limit_offset,
+            always_read_till_end,
+            limit_with_ties,
+            limit_with_ties_sort_description);
 
-    if (limit_with_ties)
-        limit->setStepDescription("LIMIT WITH TIES");
+        if (limit_with_ties)
+            limit->setStepDescription("LIMIT WITH TIES");
 
-    query_plan.addStep(std::move(limit));
+        query_plan.addStep(std::move(limit));
+    }
 }
 
 void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)

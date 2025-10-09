@@ -61,6 +61,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
@@ -3354,14 +3355,22 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
-        auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(),
-                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+        if (is_negative)
+        {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
-        if (query.limit_with_ties)
-            limit->setStepDescription("LIMIT WITH TIES");
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
 
-        query_plan.addStep(std::move(limit));
+            if (query.limit_with_ties)
+                limit->setStepDescription("LIMIT WITH TIES");
+
+            query_plan.addStep(std::move(limit));
+        }
     }
 }
 
