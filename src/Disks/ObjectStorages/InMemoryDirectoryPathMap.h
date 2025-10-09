@@ -9,6 +9,8 @@
 #include <base/defines.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
