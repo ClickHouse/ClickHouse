@@ -645,7 +645,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
     {
-        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue(); // assume Int128 too
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
         const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
 
         // Negative OFFSET, skip optimization
