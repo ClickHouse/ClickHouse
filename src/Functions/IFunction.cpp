@@ -407,9 +407,9 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
             if (indexes && !res_is_constant)
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
             if (res_is_constant)
                 result = ColumnConst::create(std::move(result), input_rows_count);
