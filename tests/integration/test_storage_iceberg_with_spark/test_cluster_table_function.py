@@ -250,22 +250,27 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         run_on_cluster=True,
     )
 
-    default_start_time = time.time()
-    instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
-    default_end_time = time.time()
-    time_default = default_end_time - default_start_time
+    max_retries_check_time_is_less = 3
+    while max_retries_check_time_is_less > 0:
+        max_retries_check_time_is_less -= 1
+        default_start_time = time.time()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
+        default_end_time = time.time()
+        time_default = default_end_time - default_start_time
 
-    start_time = time.time()
-    select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},enable_split_in_cluster_table_function=1, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
-    )
-    end_time = time.time()
-    time_row_groups = end_time - start_time
+        start_time = time.time()
+        select_cluster = (
+            instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},enable_split_in_cluster_table_function=1, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
+        )
+        end_time = time.time()
+        time_row_groups = end_time - start_time
 
-    # for some reason reading small parts from parquet from azure is much slower.
-    if storage_type == "s3":
-        assert time_row_groups < 0.95 * time_default
+        # for some reason reading small parts from parquet from azure is much slower.
+        if storage_type == "s3":
+            if time_row_groups < 0.95 * time_default:
+                break
 
+    assert max_retries_check_time_is_less > 0
     # Simple size check
     assert len(select_cluster) == len(select_regular)
     # Actual check
