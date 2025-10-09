@@ -11,7 +11,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/ITokenExtractor.h"
+#include <Interpreters/ITokenExtractor.h>
 #include <base/range.h>
 #include <fmt/ranges.h>
 
