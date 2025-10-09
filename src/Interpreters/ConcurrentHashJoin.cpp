@@ -756,7 +756,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 // matches the original right block rows referenced by this slot's ScatteredColumns
                 ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
                 // apply a contiguous [start, end) range from the source mask into the destination mask
-                // We cap 'end' by source-mask length for safety; if there is no source mask (NULLs-only), fill with 1s
+                // cap 'end' by source-mask length for safety, fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
                 {
                     if (holder.column)
@@ -798,8 +798,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                             filtered->getData()[idx] = 1;
                     }
                 }
-                // Append the rebuilt holder for this slot; memory accounting is kept to maintain the same semantics
-                // as individual slots and to avoid double-accounting after consolidation
                 combined.emplace_back(sc, std::move(filtered));
                 combined_allocated += combined.back().allocatedBytes();
             };
@@ -809,14 +807,11 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
-                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // Note: we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
-                src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
-            // Install the consolidated list into slot 0; it will be used later to emit non-joined rows
+            // install the list into slot 0, it will be used later to emit non-joined rows
             dst->nullmaps = std::move(combined);
             dst->nullmaps_allocated_size = combined_allocated;
         }
