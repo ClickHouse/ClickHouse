@@ -30,6 +30,6 @@ SELECT
     sum(ProfileEvents['ParallelReplicasUsedCount']) > 0,
     sum(ProfileEvents['TextIndexUsedEmbeddedPostings']) > 0
 FROM system.query_log
-WHERE (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%t_text_index_pr%hasAnyTokens%';
+WHERE (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%t_text_index_pr%hasAnyTokens%' AND type = 'QueryFinish';
 
 DROP TABLE IF EXISTS t_text_index_pr;
