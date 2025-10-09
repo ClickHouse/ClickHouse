@@ -630,25 +630,41 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    const Field & field = limit_offset_constant_node->getValue();
+    // We support limit in the range [INT64_MIN, UINT64_MAX]
 
-    // Here, we handle input negative of negative limit. If negative number is given,
-    // then converted_value_uint64 will be null
-    Field converted_value_uint64 = convertFieldToType(field, DataTypeUInt64());
-    Field converted_value_int64 = convertFieldToType(field, DataTypeInt64());
+    // Consider the positive limit case first as they are more common
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
 
-    if (converted_value_uint64.isNull() && converted_value_int64.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} numeric constant expression is not representable as Int64 or UInt64",
-            expression_description);
+        if (!converted_value.isNull())
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
 
-    Field & converted_value = (!converted_value_uint64.isNull() ? converted_value_uint64 : converted_value_int64);
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
 
-    // Regardless of positive or negative number, we cover the entire range [INT64_MIN, UINT64_MAX] using INT128
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt128>());
-    result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+    // If we are here, then the number is either negative or outside the supported range or float
+    // Consider the negative limit value case
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt64());
 
-    expression_node = std::move(result_constant_node);
+        if (!converted_value.isNull())
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt64>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
+
+    // If we are here, then the number is either outside the supported range or float
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "{} numeric constant expression is not representable as UInt64 or Int64",
+        expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
