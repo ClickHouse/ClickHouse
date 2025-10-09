@@ -1147,9 +1147,7 @@ void FileSegment::increasePriority()
     auto it = getQueueIterator();
     if (it)
     {
-        if (auto cache_lock = cache->tryLockCache())
-            it->increasePriority(cache_lock);
-        else
+        if (cache->tryIncreasePriority(*this))
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
         /// Used only for system.filesystem_cache.

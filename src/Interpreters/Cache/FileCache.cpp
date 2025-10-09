@@ -333,12 +333,6 @@ CachePriorityGuard::WriteLock FileCache::lockCache() const
     return cache_guard.writeLock();
 }
 
-CachePriorityGuard::WriteLock FileCache::tryLockCache() const
-{
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
-    return cache_guard.tryWriteLock();
-}
-
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
@@ -928,9 +922,9 @@ KeyMetadata::iterator FileCache::addFileSegment(
         }
         else
         {
-            result_state = record_it->second->increasePriority(*lock) >= stash->hits_threshold
-                ? FileSegment::State::EMPTY
-                : FileSegment::State::DETACHED;
+            //result_state = record_it->second->increasePriority(*lock) >= stash->hits_threshold
+            //    ? FileSegment::State::EMPTY
+            //    : FileSegment::State::DETACHED;
         }
     }
     else
@@ -959,6 +953,11 @@ KeyMetadata::iterator FileCache::addFileSegment(
     }
 
     return file_segment_metadata_it;
+}
+
+bool FileCache::tryIncreasePriority(FileSegment & file_segment)
+{
+    return main_priority->tryIncreasePriority(*file_segment.getQueueIterator(), cache_guard, cache_state_guard);
 }
 
 bool FileCache::tryReserve(

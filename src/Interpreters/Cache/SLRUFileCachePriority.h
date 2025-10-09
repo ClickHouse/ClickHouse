@@ -74,6 +74,11 @@ public:
         FileCacheReserveStat & stat,
         const CachePriorityGuard::ReadLock &) override;
 
+    bool tryIncreasePriority(
+        Iterator & iterator_,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) override;
+
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
     void resetEvictionPos(const CachePriorityGuard::ReadLock &) override;
@@ -129,8 +134,6 @@ public:
         bool is_protected_);
 
     EntryPtr getEntry() const override;
-
-    size_t increasePriority(const CachePriorityGuard::WriteLock &) override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 

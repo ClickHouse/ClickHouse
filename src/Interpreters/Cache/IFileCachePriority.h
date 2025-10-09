@@ -80,8 +80,6 @@ public:
 
         virtual EntryPtr getEntry() const = 0;
 
-        virtual size_t increasePriority(const CachePriorityGuard::WriteLock &) = 0;
-
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
 
@@ -219,6 +217,11 @@ public:
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
+
+    virtual bool tryIncreasePriority(
+        Iterator & iterator,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) = 0;
 
     virtual void shuffle(const CachePriorityGuard::WriteLock &) = 0;
 

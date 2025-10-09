@@ -370,14 +370,18 @@ void SLRUFileCachePriority::downgrade(
     candidate_it->is_protected = false;
 }
 
-void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock)
+bool SLRUFileCachePriority::tryIncreasePriority(
+    Iterator & iterator_,
+    CachePriorityGuard & queue_guard,
+    CacheStateGuard & state_guard)
 {
+    auto & iterator = dynamic_cast<SLRUFileCachePriority::SLRUIterator &>(iterator_);
+
     /// If entry is already in protected queue,
     /// we only need to increase its priority within the protected queue.
     if (iterator.is_protected)
     {
-        iterator.lru_iterator.increasePriority(lock);
-        return;
+        return protected_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
     }
 
     /// Entry can be not movable (between probationary and protected queues)
@@ -387,8 +391,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// Entry could not be chosen for eviction
         /// in case there is at least one reference to the corresponding file segment.
         /// But if someone called increasePriority(), then there must be one.
-        iterator.lru_iterator.increasePriority(lock);
-        return;
+        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
     }
 
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
@@ -397,6 +400,11 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
+    EvictionInfo info;
+    {
+        auto lock = state_guard.lock();
+        info = protected_queue.checkEvictionInfo(entry->size, 1, nullptr, lock);
+    }
     //if (entry->size > protected_queue.getSizeLimit(lock))
     //{
     //    /// Entry size is bigger than the whole protected queue limit.
@@ -408,43 +416,78 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     /// We need to remove the entry from probationary first
     /// in order to make space for downgrade from protected.
-    iterator.lru_iterator.remove(lock);
+    //iterator.lru_iterator.remove(lock);
 
     EvictionCandidates eviction_candidates;
     FileCacheReserveStat stat;
-    try
-    {
-        /// Check if there is enough space in protected queue to move entry there.
-        /// If not - we need to "downgrade" lowest priority entries from protected
-        /// queue to probationary queue.
-        ///
-        //if (!collectCandidatesForEvictionInProtected(
-        //        entry->size, /* elements */1, stat, eviction_candidates, nullptr, false, FileCache::getInternalUser().user_id, lock))
-        //{
-        //    /// "downgrade" candidates cannot be moved to probationary queue,
-        //    /// so entry cannot be moved to protected queue as well.
-        //    /// Then just increase its priority within probationary queue.
-        //    //iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
-        //    return;
-        //}
+    /// Check if there is enough space in protected queue to move entry there.
+    /// If not - we need to "downgrade" lowest priority entries from protected
+    /// queue to probationary queue.
 
-        eviction_candidates.evict();
-        eviction_candidates.finalize(nullptr, lock);
-
-        /// Count how much we evict,
-        /// because it could affect performance if we have to do this often.
-        ProfileEvents::increment(
-            ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
-            eviction_candidates.size());
-    }
-    catch (...)
+    bool collected_downgrade_candidates = false;
     {
-        //iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
-        throw;
+        auto lock = queue_guard.readLock();
+        collected_downgrade_candidates = collectCandidatesForEvictionInProtected(
+            entry->size,
+            /* elements */1,
+            stat,
+            eviction_candidates,
+            nullptr,
+            false,
+            FileCache::getInternalUser().user_id,
+            lock);
     }
 
-    //iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
+    if (!collected_downgrade_candidates)
+        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
+
+    eviction_candidates.evict();
+
+    /// Count how much we evict,
+    /// because it could affect performance if we have to do this often.
+    ProfileEvents::increment(
+        ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+        eviction_candidates.size());
+
+    std::optional<LRUIterator> new_iterator;
+    EntryPtr empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
+    {
+        auto lock = queue_guard.writeLock();
+
+        if (!stat.total_stat.invalidated_entries.empty())
+        {
+            for (const auto & [e, it] : stat.total_stat.invalidated_entries)
+            {
+                if (!e->isRemoved(lock))
+                    it->remove(lock);
+            }
+        }
+
+        /// Create a new queue entry with size 0.
+        new_iterator = protected_queue.add(empty_entry, lock, nullptr);
+        iterator.lru_iterator.remove(lock);
+    }
+
+    {
+        auto lock = state_guard.lock();
+        info.hold_space.reset();
+        eviction_candidates.invalidateQueueEntries(lock);
+
+        if (!protected_queue.canFit(entry->size, 1, lock, nullptr))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot fit {} in protected queue to increase priority, "
+                "but collection of eviction candidates succeeded with no candidates. "
+                "This is a bug. Cache info: {}",
+                entry->size.load(), getStateInfoForLog(lock));
+        }
+
+        new_iterator->incrementSize(entry->size, lock);
+    }
+    iterator.lru_iterator = *new_iterator;
     iterator.is_protected = true;
+    return true;
 }
 
 LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
@@ -534,14 +577,6 @@ SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() 
     if (!entry_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry pointer expired");
     return entry_ptr;
-}
-
-size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::WriteLock & lock)
-{
-    assertValid();
-    cache_priority->increasePriority(*this, lock);
-    //cache_priority->check(lock);
-    return getEntry()->hits;
 }
 
 void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
