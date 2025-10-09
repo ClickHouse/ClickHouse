@@ -1090,11 +1090,12 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
 
-    const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NgramTokenExtractor::getExternalName()
-                                      || tokenizer.value() == SplitTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName()
-                                      || tokenizer.value() == SparseGramTokenExtractor::getExternalName());
+    /// Check that tokenizer is supported
+    const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
+                                      || tokenizer == NgramTokenExtractor::getExternalName()
+                                      || tokenizer == SplitTokenExtractor::getExternalName()
+                                      || tokenizer == NoOpTokenExtractor::getExternalName()
+                                      || tokenizer == SparseGramTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
@@ -1132,7 +1133,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             }
         }
     }
-    else if (tokenizer.value() == SparseGramTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
         auto min_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_LENGTH);
         auto max_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MAX_LENGTH);
