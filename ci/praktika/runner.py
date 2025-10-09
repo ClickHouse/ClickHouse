@@ -237,6 +237,8 @@ class Runner:
         test="",
         count=None,
         debug=False,
+        path="",
+        path_1="",
     ):
         # re-set envs for local run
         env = _Environment.get()
@@ -305,7 +307,13 @@ class Runner:
             tty = ""
             if preserve_stdio:
                 tty = "-it"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+
+            # mount extra paths provided via --path_X  if they are outside current directory
+            extra_mounts = ""
+            for p_ in [path, path_1]:
+                if p_ and Path(p_).exists() and p_.startswith("/"):
+                    extra_mounts += f" --volume {p_}:{p_}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -323,6 +331,12 @@ class Runner:
         if debug:
             print(f"Custom --debug will be passed to job's script")
             cmd += f" --debug"
+        if path:
+            print(f"Custom --path [{path}] will be passed to job's script")
+            cmd += f" --path {path}"
+        if path_1:
+            print(f"Custom --path_1 [{path_1}] will be passed to job's script")
+            cmd += f" --path_1 {path_1}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -662,6 +676,8 @@ class Runner:
         branch=None,
         count=None,
         debug=False,
+        path="",
+        path_1="",
     ):
         res = True
         setup_env_code = -10
@@ -717,6 +733,8 @@ class Runner:
                     test=test,
                     count=count,
                     debug=debug,
+                    path=path,
+                    path_1=path_1,
                 )
                 res = run_code == 0
                 if not res:

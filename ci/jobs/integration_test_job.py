@@ -61,6 +61,18 @@ def parse_args():
         default=False,
         action="store_true",
     )
+    parser.add_argument(
+        "--path",
+        help="Optional. Path to custom clickhouse binary",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--path_1",
+        help="Optional. Path to custom server config",
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -137,15 +149,24 @@ def main():
             )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
+    clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
     if info.is_local_run:
-        if Path(clickhouse_path).is_file():
-            pass
-        elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
-            clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
-        elif Path(f"{Utils.cwd()}/clickhouse").is_file():
-            clickhouse_path = f"{Utils.cwd()}/clickhouse"
+        if args.path:
+            clickhouse_path = args.path
         else:
-            raise FileNotFoundError(f"Clickhouse binary not found")
+            if Path(clickhouse_path).is_file():
+                pass
+            elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
+                clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
+            elif Path(f"{Utils.cwd()}/clickhouse").is_file():
+                clickhouse_path = f"{Utils.cwd()}/clickhouse"
+            else:
+                raise FileNotFoundError(f"Clickhouse binary not found")
+        if args.path_1:
+            clickhouse_server_config_dir = args.path_1
+    assert Path(
+        clickhouse_server_config_dir
+    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
@@ -209,7 +230,7 @@ def main():
             assert False, f"No tag found for image [{image_name}]"
 
     test_env = {
-        "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": f"{Utils.cwd()}/programs/server",
+        "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,

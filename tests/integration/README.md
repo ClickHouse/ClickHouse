@@ -45,6 +45,8 @@ You can reproduce CI integration test jobs locally using the same orchestration 
 - **Additional customization options for local run:**
   - `--count N` to repeat each test N times (`--count` will be passed to pytest with `--repeat-scope=function`).
   - `--debug` to open the Python debug console on exception (`--pdb` will be passed to pytest).
+  - `--path` custom ClickHouse server binary location (if not in one of the default locations).
+  - `--path_1` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
 
 No other dependencies are required beyond Python 3 and Docker.
 
