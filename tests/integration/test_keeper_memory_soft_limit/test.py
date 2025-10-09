@@ -92,12 +92,12 @@ def test_soft_limit_create(started_cluster):
 
         txn.create(f"{test_path}/node_1000001_{i}", b"abcde")
         txn.commit()
-        node.query("SYSTEM FLUSH LOGS metric_log")
 
         # Retry fetching metric to make it stable
         retries = 5
         wait_seconds = 1
         for _ in range(5):
+            node.query("SYSTEM FLUSH LOGS metric_log")
             result = int(
                 node.query(
                     "SELECT sum(ProfileEvent_ZooKeeperHardwareExceptions) FROM system.metric_log"
