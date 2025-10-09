@@ -78,7 +78,7 @@ macro(clickhouse_program_add_library name)
 
     set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
     if(_link)
-        target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
+        target_link_libraries(clickhouse-${name}-lib PRIVATE ${CLICKHOUSE_${name_uc}_LINK})
     endif()
 
     target_include_directories (clickhouse-${name}-lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -113,7 +113,6 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (zookeeper-dump-tree)
 add_subdirectory (zookeeper-remove-by-list)
-add_subdirectory (restore-parts-serialization)
 
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
@@ -171,22 +170,6 @@ endfunction()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
-endif ()
-
-if (TARGET ch_rust::chdig)
-    clickhouse_program_alias(clickhouse-chdig)
-    clickhouse_program_alias(chdig)
-else()
-    message(STATUS "Adding dummy chdig targets (for nfpm)")
-    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
-        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
-        install(FILES ${chdig_path}
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                        GROUP_READ GROUP_EXECUTE
-                        WORLD_READ WORLD_EXECUTE
-        )
-    endforeach()
 endif ()
 
 clickhouse_program_install(clickhouse-benchmark benchmark)
@@ -274,5 +257,25 @@ if (TARGET ch_contrib::protobuf)
     get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)
     foreach (proto_file IN LISTS google_proto_files)
         install(FILES ${proto_file} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse/protos/google/protobuf)
+    endforeach()
+endif ()
+
+# FIXME: This should be at the end, to avoid using symbols from chdig if there
+# are the same in one of contribs (the problem was with lz4)
+if (TARGET ch_rust::chdig)
+    target_link_libraries (clickhouse PRIVATE ch_rust::chdig)
+
+    clickhouse_program_alias(clickhouse-chdig)
+    clickhouse_program_alias(chdig)
+else()
+    message(STATUS "Adding dummy chdig targets (for nfpm)")
+    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
+        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+        install(FILES ${chdig_path}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                        GROUP_READ GROUP_EXECUTE
+                        WORLD_READ WORLD_EXECUTE
+        )
     endforeach()
 endif ()

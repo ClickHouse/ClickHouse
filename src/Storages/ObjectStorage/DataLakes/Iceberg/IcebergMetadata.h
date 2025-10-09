@@ -77,6 +77,7 @@ public:
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
