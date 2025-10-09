@@ -65,6 +65,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -3389,8 +3390,16 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     {
         auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
 
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
-        query_plan.addStep(std::move(offsets_step));
+        if (is_negative)
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
+        else
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
     }
 }
 

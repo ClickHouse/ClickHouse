@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -1301,8 +1302,16 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     /// If there is not a LIMIT but an offset
     if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
     {
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
-        query_plan.addStep(std::move(offsets_step));
+        if (query_analysis_result.is_limit_negative)
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
+        else
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
     }
 }
 
