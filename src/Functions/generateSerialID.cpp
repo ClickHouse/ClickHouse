@@ -141,7 +141,7 @@ public:
         if (!keeper->exists(keeper_path, &stat))
         {
             keeper->createAncestors(keeper_path);
-            keeper->create(keeper_path, "", zkutil::CreateMode::Persistent);
+            keeper->createIfNotExists(keeper_path, "");
         }
         size_t current_series = stat.numChildren;
 
