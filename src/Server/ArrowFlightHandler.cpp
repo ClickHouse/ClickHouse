@@ -153,6 +153,35 @@ namespace ErrorCodes
 extern const int UNKNOWN_EXCEPTION;
 }
 
+namespace
+{
+    arrow::flight::Location addressToArrowLocation(const Poco::Net::SocketAddress & address_to_listen, bool use_tls)
+    {
+        auto ip_to_listen = address_to_listen.host();
+        auto port_to_listen = address_to_listen.port();
+
+        /// Function arrow::flight::Location::ForGrpc*() builds an URL based so it requires IPv6 address to be enclosed in brackets
+        String host_component = (ip_to_listen.family() == Poco::Net::AddressFamily::IPv6) ? ("[" + ip_to_listen.toString() + "]") : ip_to_listen.toString();
+
+        arrow::Result<arrow::flight::Location> parse_location_status;
+        if (use_tls)
+            parse_location_status = arrow::flight::Location::ForGrpcTls(host_component, port_to_listen);
+        else
+            parse_location_status = arrow::flight::Location::ForGrpcTcp(host_component, port_to_listen);
+
+        if (!parse_location_status.ok())
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_EXCEPTION,
+                "Invalid address {} for Arrow Flight Server: {}",
+                address_to_listen.toString(),
+                parse_location_status.status().ToString());
+        }
+
+        return std::move(parse_location_status).ValueOrDie();
+    }
+}
+
 ArrowFlightHandler::ArrowFlightHandler(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_)
     : server(server_)
     , log(getLogger("ArrowFlightHandler"))
@@ -172,27 +201,11 @@ std::unique_ptr<Session> ArrowFlightHandler::createSession(const arrow::flight::
 
 void ArrowFlightHandler::start()
 {
+    chassert(!initialized && !stopped);
+
     bool use_tls = server.config().getBool("arrowflight.enable_ssl", false);
 
-    arrow::Result<arrow::flight::Location> parse_location_status;
-
-    if (use_tls)
-    {
-        parse_location_status = arrow::flight::Location::ForGrpcTls(address_to_listen.host().toString(), address_to_listen.port());
-    }
-    else
-    {
-        parse_location_status = arrow::flight::Location::ForGrpcTcp(address_to_listen.host().toString(), address_to_listen.port());
-    }
-    if (!parse_location_status.ok())
-    {
-        throw Exception(
-            ErrorCodes::UNKNOWN_EXCEPTION,
-            "Invalid address {} for Arrow Flight Server: {}",
-            address_to_listen.toString(),
-            parse_location_status->ToString());
-    }
-    location = std::move(parse_location_status).ValueOrDie();
+    auto location = addressToArrowLocation(address_to_listen, use_tls);
 
     arrow::flight::FlightServerOptions options(location);
     options.auth_handler = std::make_unique<arrow::flight::NoOpAuthHandler>();
@@ -215,11 +228,15 @@ void ArrowFlightHandler::start()
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed init Arrow Flight Server: {}", init_status.ToString());
     }
 
+    initialized = true;
+
     server_thread.emplace([this]
     {
         try
         {
             setThreadName("ArrowFlightSrv");
+            if (stopped)
+                return;
             auto serve_status = Serve();
             if (!serve_status.ok())
                 LOG_ERROR(log, "Failed to serve Arrow Flight: {}", serve_status.ToString());
@@ -235,13 +252,27 @@ ArrowFlightHandler::~ArrowFlightHandler() = default;
 
 void ArrowFlightHandler::stop()
 {
-    auto status = Shutdown();
-    if (!status.ok())
+    if (!initialized)
+        return;
+
+    if (!stopped.exchange(true))
     {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed shutdown Arrow Flight: {}", status.ToString());
+        try
+        {
+            auto status = Shutdown();
+            if (!status.ok())
+                LOG_ERROR(log, "Failed to shutdown Arrow Flight: {}", status.ToString());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to shutdown Arrow Flight");
+        }
+        if (server_thread)
+        {
+            server_thread->join();
+            server_thread.reset();
+        }
     }
-    server_thread->join();
-    server_thread.reset();
 }
 
 UInt16 ArrowFlightHandler::portNumber() const

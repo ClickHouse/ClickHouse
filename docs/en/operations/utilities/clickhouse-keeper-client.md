@@ -3,6 +3,7 @@ description: 'Documentation for the ClickHouse Keeper client utility'
 sidebar_label: 'clickhouse-keeper-client'
 slug: /operations/utilities/clickhouse-keeper-client
 title: 'clickhouse-keeper-client utility'
+doc_type: 'reference'
 ---
 
 # clickhouse-keeper-client utility

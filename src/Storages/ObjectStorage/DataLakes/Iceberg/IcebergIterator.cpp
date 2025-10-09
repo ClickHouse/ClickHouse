@@ -1,4 +1,3 @@
-
 #include "config.h"
 #if USE_AVRO
 
@@ -45,13 +44,21 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
+#include <Interpreters/IcebergMetadataLog.h>
+#include <base/wide_integer_to_string.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+
 
 namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergMetadataReadWaitTimeMicroseconds;
+extern const Event IcebergMetadataReturnedObjectInfos;
 };
 
 
@@ -158,6 +165,14 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                     local_context);
             }
             auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
+            insertRowToLogTable(
+                local_context,
+                "",
+                DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                configuration.lock()->getRawPath().path,
+                current_manifest_file_content->getPathToManifestFile(),
+                manifest_file_entry.row_number,
+                pruning_status);
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:
@@ -197,7 +212,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
@@ -231,15 +246,18 @@ IcebergIterator::IcebergIterator(
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
     IDataLakeMetadata::FileProgressCallback callback_,
-    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , table_state_snapshot(table_snapshot_)
+    , persistent_components(persistent_components_)
     , data_files_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          [](const Iceberg::ManifestFilePtr & manifest_file)
+          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
@@ -269,10 +287,24 @@ IcebergIterator::IcebergIterator(
           {
               while (!blocking_queue.isFinished())
               {
-                  auto info = data_files_iterator.next();
-                  if (!info.has_value())
+                  std::optional<ManifestFileEntry> entry;
+                  try
+                  {
+                      entry = data_files_iterator.next();
+                  }
+                  catch (...)
+                  {
+                      std::lock_guard lock(exception_mutex);
+                      if (!exception)
+                      {
+                          exception = std::current_exception();
+                      }
+                      blocking_queue.finish();
                       break;
-                  while (!blocking_queue.push(std::move(info.value())))
+                  }
+                  if (!entry.has_value())
+                      break;
+                  while (!blocking_queue.push(std::move(entry.value())))
                   {
                       if (blocking_queue.isFinished())
                       {
@@ -283,8 +315,6 @@ IcebergIterator::IcebergIterator(
               blocking_queue.finish();
           }))
     , callback(std::move(callback_))
-    , format(configuration_.lock()->format)
-    , compression_method(configuration_.lock()->compression_method)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -307,6 +337,7 @@ IcebergIterator::IcebergIterator(
 
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
@@ -319,8 +350,21 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
+        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
+
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
     }
+    {
+        std::lock_guard lock(exception_mutex);
+        if (exception)
+        {
+            auto exception_message = getExceptionMessage(exception, true, true);
+            auto exception_code = getExceptionErrorCode(exception);
+            throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
+        }
+    }
+
     return nullptr;
 }
 

@@ -487,6 +487,50 @@ def test_backup_to_s3_native_copy_multipart():
     )
 
 
+@pytest.fixture(scope="module")
+def init_broken_s3():
+    yield start_s3_mock(cluster, "broken_s3", "8083")
+
+
+@pytest.fixture(scope="function")
+def broken_s3(init_broken_s3):
+    init_broken_s3.reset()
+    yield init_broken_s3
+
+
+def test_backup_to_s3_copy_multipart_check_error_message(broken_s3):
+    storage_policy = "policy_s3"
+    size = 10000000
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    node = cluster.instances["node"]
+
+    node.query(
+        f"""
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
+    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size} {format_settings(None)};
+    OPTIMIZE TABLE data FINAL;
+    """
+    )
+
+    try:
+        backup_query_id = uuid.uuid4().hex
+        broken_s3.setup_at_part_upload(after=20, count=1)
+        error = node.query_and_get_error(
+            f"BACKUP TABLE data TO {backup_destination} {format_settings(None)}",
+            query_id=backup_query_id,
+        )
+
+        assert "mock s3 injected unretryable error" in error, error
+    finally:
+        node.query(
+            """
+            DROP TABLE data SYNC;
+            """
+        )
+
+
 def test_incremental_backup_append_table_def():
     backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
 
@@ -916,17 +960,6 @@ def test_backup_restore_s3_plain():
     assert "READONLY" in err
     instance.query("DROP TABLE IF EXISTS sample SYNC")
     instance.query("DROP TABLE sample_restored SYNC")
-
-
-@pytest.fixture(scope="module")
-def init_broken_s3():
-    yield start_s3_mock(cluster, "broken_s3", "8083")
-
-
-@pytest.fixture(scope="function")
-def broken_s3(init_broken_s3):
-    init_broken_s3.reset()
-    yield init_broken_s3
 
 
 @pytest.mark.parametrize(

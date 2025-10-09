@@ -216,6 +216,10 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
+                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
+                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
+                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
+                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -223,11 +227,26 @@ class Runner:
 
         return 0
 
-    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
+    def _run(
+        self,
+        workflow,
+        job,
+        docker="",
+        no_docker=False,
+        param=None,
+        test="",
+        count=None,
+        debug=False,
+        path="",
+        path_1="",
+    ):
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
+        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
+        if preserve_stdio:
+            print("WARNING: Preserving stdio")
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
@@ -284,7 +303,17 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            # enable tty mode & interactive for docker if we have real tty
+            tty = ""
+            if preserve_stdio:
+                tty = "-it"
+
+            # mount extra paths provided via --path_X  if they are outside current directory
+            extra_mounts = ""
+            for p_ in [path, path_1]:
+                if p_ and Path(p_).exists() and p_.startswith("/"):
+                    extra_mounts += f" --volume {p_}:{p_}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -296,10 +325,25 @@ class Runner:
         if test:
             print(f"Custom --test [{test}] will be passed to job's script")
             cmd += f" --test {test}"
+        if count is not None:
+            print(f"Custom --count [{count}] will be passed to job's script")
+            cmd += f" --count {count}"
+        if debug:
+            print(f"Custom --debug will be passed to job's script")
+            cmd += f" --debug"
+        if path:
+            print(f"Custom --path [{path}] will be passed to job's script")
+            cmd += f" --path {path}"
+        if path_1:
+            print(f"Custom --path_1 [{path_1}] will be passed to job's script")
+            cmd += f" --path_1 {path_1}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(cmd, timeout=job.timeout) as process:
+        with TeePopen(
+            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio
+        ) as process:
             start_time = Utils.timestamp()
+
             if Path((Result.experimental_file_name_static())).exists():
                 # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
                 Path(Result.experimental_file_name_static()).unlink()
@@ -491,12 +535,20 @@ class Runner:
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
+                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
+                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
+                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+                assert url_secret and user_secret and passwd_secret
+                # request all secret at once to avoid rate limiting
+                url, user, pwd = (
+                    url_secret.join_with(user_secret)
+                    .join_with(passwd_secret)
+                    .get_value()
+                )
                 ci_db = CIDB(
-                    url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
-                    passwd=workflow.get_secret(
-                        Settings.SECRET_CI_DB_PASSWORD
-                    ).get_value(),
+                    url=url,
+                    user=user,
+                    passwd=pwd,
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
@@ -622,6 +674,10 @@ class Runner:
         pr=None,
         sha=None,
         branch=None,
+        count=None,
+        debug=False,
+        path="",
+        path_1="",
     ):
         res = True
         setup_env_code = -10
@@ -675,6 +731,10 @@ class Runner:
                     no_docker=no_docker,
                     param=param,
                     test=test,
+                    count=count,
+                    debug=debug,
+                    path=path,
+                    path_1=path_1,
                 )
                 res = run_code == 0
                 if not res:

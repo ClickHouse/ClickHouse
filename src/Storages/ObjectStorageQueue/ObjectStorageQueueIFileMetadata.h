@@ -130,8 +130,6 @@ public:
         static NodeMetadata fromString(const std::string & metadata_str);
     };
 
-    static std::string getProcessingNodesPath(bool use_persistent_processing_nodes);
-
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;

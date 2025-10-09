@@ -3,6 +3,7 @@ description: 'Documentation for ALL Clause'
 sidebar_label: 'ALL'
 slug: /sql-reference/statements/select/all
 title: 'ALL Clause'
+doc_type: 'reference'
 ---
 
 # ALL Clause

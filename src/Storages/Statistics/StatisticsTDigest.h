@@ -20,6 +20,8 @@ public:
     Float64 estimateLess(const Field & val) const override;
     Float64 estimateEqual(const Field & val) const override;
 
+    String getNameForLogs() const override { return "TDigest"; }
+
 private:
     QuantileTDigest<Float64> t_digest;
     DataTypePtr data_type;

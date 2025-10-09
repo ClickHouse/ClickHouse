@@ -107,6 +107,15 @@ bool ReadBuffer::next()
     }
     else
     {
+        /// It might happen that we need to skip all data in the buffer,
+        /// in this case we should call next() one more time to load new data.
+        if (nextimpl_working_buffer_offset == working_buffer.size())
+        {
+            pos = working_buffer.end();
+            nextimpl_working_buffer_offset = 0;
+            return next();
+        }
+
         pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
         chassert(position() < working_buffer.end());
     }
