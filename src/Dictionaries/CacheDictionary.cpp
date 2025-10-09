@@ -43,7 +43,6 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::CacheDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -63,7 +62,6 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
         })
     , configuration(configuration_)
     , log(getLogger("ExternalDictionaries"))
-    , context(std::move(context_))
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())

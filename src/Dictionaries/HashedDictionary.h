@@ -80,7 +80,6 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedDictionary(
-        ContextPtr context,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -121,7 +120,6 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse, sharded>>(
-            context,
             getDictionaryID(),
             dict_struct,
             source_ptr->clone(),
@@ -265,8 +263,6 @@ private:
 
     LoggerPtr log;
 
-    ContextPtr context;
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
@@ -301,7 +297,6 @@ extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -309,7 +304,6 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedDictionary"))
-    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)

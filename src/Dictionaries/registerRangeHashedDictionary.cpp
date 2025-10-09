@@ -75,7 +75,6 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
     };
 
     DictionaryPtr result = std::make_unique<RangeHashedDictionary<dictionary_key_type>>(
-        context,
         dict_id,
         dict_struct,
         std::move(source_ptr),

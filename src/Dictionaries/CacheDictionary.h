@@ -14,7 +14,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -62,7 +61,6 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     CacheDictionary(
-        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -103,7 +101,6 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
-                context,
                 getDictionaryID(),
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
@@ -208,8 +205,6 @@ private:
     const CacheDictionaryConfiguration configuration;
 
     LoggerPtr log;
-
-    ContextPtr context;
 
     mutable pcg64 rnd_engine;
 

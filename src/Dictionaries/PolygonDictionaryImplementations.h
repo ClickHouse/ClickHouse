@@ -2,7 +2,6 @@
 
 #include <Dictionaries/PolygonDictionary.h>
 #include <Dictionaries/PolygonDictionaryUtils.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <vector>
 
@@ -18,7 +17,6 @@ class PolygonDictionarySimple : public IPolygonDictionary
 {
 public:
     PolygonDictionarySimple(
-            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -29,8 +27,6 @@ public:
 
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
-
-    ContextPtr context;
 };
 
 /** A polygon dictionary which generates a recursive grid in order to efficiently cut the number
@@ -43,7 +39,6 @@ class PolygonDictionaryIndexEach : public IPolygonDictionary
 {
 public:
     PolygonDictionaryIndexEach(
-            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -65,8 +60,6 @@ private:
 
     const size_t min_intersections;
     const size_t max_depth;
-
-    ContextPtr context;
 };
 
 /** Uses single SlabsPolygonIndex for all queries. */
@@ -74,7 +67,6 @@ class PolygonDictionaryIndexCell : public IPolygonDictionary
 {
 public:
     PolygonDictionaryIndexCell(
-            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -95,8 +87,6 @@ private:
 
     const size_t min_intersections;
     const size_t max_depth;
-
-    ContextPtr context;
 };
 
 }

@@ -10,11 +10,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <Interpreters/Context.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
-#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Interpreters/Context.h>
 #include <base/itoa.h>
 #include <base/range.h>
 #include <base/sort.h>
@@ -209,7 +208,6 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
 }
 
 IPAddressDictionary::IPAddressDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -220,7 +218,6 @@ IPAddressDictionary::IPAddressDictionary(
     , configuration(configuration_)
     , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
     , logger(getLogger("IPAddressDictionary"))
-    , context(std::move(context_))
 {
     createAttributes();
     loadData();
@@ -1215,7 +1212,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
             .use_async_executor = use_async_executor,
         };
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(std::move(context), dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

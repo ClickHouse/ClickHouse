@@ -36,7 +36,6 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -44,7 +43,6 @@ HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedArrayDictionary"))
-    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -1208,15 +1206,15 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (shards > 1)
-                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (shards > 1)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
-                context, dict_id, dict_struct, std::move(source_ptr), configuration);
+                dict_id, dict_struct, std::move(source_ptr), configuration);
         return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
-            context, dict_id, dict_struct, std::move(source_ptr), configuration);
+            dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed_array",

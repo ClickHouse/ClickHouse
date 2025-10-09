@@ -3,14 +3,13 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -35,14 +34,12 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type>
 DirectDictionary<dictionary_key_type>::DirectDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , context(std::move(context_))
 {
     if (!source_ptr->supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
@@ -489,10 +486,9 @@ namespace
                 "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
                 layout_name);
 
+        auto dictionary = std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
+
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        auto dictionary = std::make_unique<DirectDictionary<dictionary_key_type>>(context, dict_id, dict_struct, std::move(source_ptr));
-
         dictionary->applySettings(context->getSettingsRef());
 
         return dictionary;

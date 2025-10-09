@@ -68,7 +68,6 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
-        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -105,7 +104,6 @@ public:
     std::shared_ptr<IExternalLoadable> clone() const override
     {
         auto result = std::make_shared<RangeHashedDictionary>(
-            context,
             getDictionaryID(),
             dict_struct,
             source_ptr->clone(),
@@ -281,8 +279,6 @@ private:
     const DictionaryLifetime dict_lifetime;
     const RangeHashedDictionaryConfiguration configuration;
 
-    ContextPtr context;
-
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
@@ -334,7 +330,6 @@ namespace impl
 
 template <DictionaryKeyType dictionary_key_type>
 RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -346,7 +341,6 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
-    , context(std::move(context_))
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();

@@ -5,7 +5,6 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
-#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -31,7 +30,6 @@ namespace ErrorCodes
 
 
 IPolygonDictionary::IPolygonDictionary(
-        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -42,7 +40,6 @@ IPolygonDictionary::IPolygonDictionary(
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
         , configuration(configuration_)
-        , context(std::move(context_))
 {
     setup();
     loadData();

@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -33,14 +32,12 @@ namespace ErrorCodes
 }
 
 FlatDictionary::FlatDictionary(
-    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     Configuration configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
-    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , configuration(configuration_)
@@ -764,7 +761,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr global_context,
+                            ContextPtr /* global_context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)
@@ -792,9 +789,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        return std::make_unique<FlatDictionary>(std::move(context), dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("flat", create_layout, false, false);

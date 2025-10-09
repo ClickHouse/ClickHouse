@@ -242,7 +242,6 @@ DictionaryPtr createCacheDictionaryLayout(
     };
 
     auto dictionary = std::make_unique<CacheDictionary<dictionary_key_type>>(
-        global_context,
         dictionary_identifier,
         dict_struct,
         std::move(source_ptr),
