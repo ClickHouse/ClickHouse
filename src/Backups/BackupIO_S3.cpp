@@ -191,22 +191,16 @@ std::shared_ptr<S3::Client> S3BackupClientFactory::getOrCreate(DiskPtr disk, S3B
 {
     std::lock_guard lock(clients_mutex);
 
-    auto disk_client = disk->getS3StorageClient();
-    auto [it, inserted] = clients.try_emplace(disk->getName(), ClientEntry{nullptr, disk_client});
-    if (inserted)
-        it->second.backup_client = creator(disk);
-    else
+    auto [it, inserted] = clients.try_emplace(disk->getName(), ClientEntry{{}, {}});
+    auto & entry = it->second;
+    /// Reuse the existing client if the reported object storage client matches the actual one.
+    if (inserted || const_pointer_cast<const S3::Client>(entry.disk_reported_client.lock()) != disk->getS3StorageClient())
     {
-        /// Reuse the existing client if the reported object storage client matches the actual one.
-        auto locked = it->second.disk_reported_client.lock();
-        if (locked != disk_client)
-        {
-            it->second.backup_client = creator(disk);
-            it->second.disk_reported_client = disk_client;
-        }
+        entry.backup_client = creator(disk);
+        entry.disk_reported_client = disk->getS3StorageClient();
     }
 
-    return it->second.backup_client;
+    return entry.backup_client;
 }
 
 BackupReaderS3::BackupReaderS3(
