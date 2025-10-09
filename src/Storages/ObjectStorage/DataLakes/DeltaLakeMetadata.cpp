@@ -509,7 +509,7 @@ struct DeltaLakeMetadataImpl
         THROW_ARROW_NOT_OK(
             parquet::arrow::OpenFile(
                 asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                ArrowMemoryPool::instance(),
+                arrow::default_memory_pool(),
                 &reader));
 
         ArrowColumnToCHColumn column_reader(
@@ -763,6 +763,7 @@ ObjectIterator DeltaLakeMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
+    StorageMetadataPtr /*storage_metadata_snapshot*/,
     ContextPtr /*context*/) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);

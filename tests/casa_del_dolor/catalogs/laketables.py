@@ -1,8 +1,5 @@
-import random
-import time
-from datetime import datetime, timedelta
 from enum import Enum
-from pyspark.sql.types import DataType
+from pyspark.sql.types import DataType, StructType
 
 
 class TableStorage(Enum):
@@ -92,10 +89,23 @@ class SparkColumn:
         _column_name: str,
         _spark_type: DataType,
         _nullable: bool,
+        _generated: bool,
     ):
         self.column_name = _column_name
         self.spark_type = _spark_type
         self.nullable = _nullable
+        self.generated = _generated
+
+    def _flat_column(
+        self, res: dict[str, DataType], next_path: str, next_type: DataType
+    ):
+        res[next_path] = next_type
+        if isinstance(next_type, StructType):
+            for f in next_type.fields:
+                self._flat_column(res, f"{next_path}.`{f.name}`", f.dataType)
+
+    def flat_column(self, res: dict[str, DataType]):
+        self._flat_column(res, self.column_name, self.spark_type)
 
 
 class SparkTable:
@@ -130,7 +140,8 @@ class SparkTable:
     def get_clickhouse_path(self) -> str:
         return f"{self.database_name}.{self.table_name}"
 
-
-def get_timestamp_for_table() -> datetime:
-    time.tzset()  # The timezone may change for every run
-    return datetime.now() - timedelta(seconds=random.choice([1, 2, 3, 5, 10, 20, 60]))
+    def flat_columns(self) -> dict[str, DataType]:
+        res = {}
+        for _, val in self.columns.items():
+            val.flat_column(res)
+        return res
