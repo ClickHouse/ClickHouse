@@ -40,6 +40,7 @@ public:
     EvictionInfo checkEvictionInfo(
         size_t size,
         size_t elements,
+        IFileCachePriority::Iterator * reservee,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
@@ -109,7 +110,7 @@ private:
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         const UserID & user_id,
-        const CachePriorityGuard::WriteLock & lock);
+        const CachePriorityGuard::ReadLock & lock);
 
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,

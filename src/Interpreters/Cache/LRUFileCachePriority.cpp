@@ -354,6 +354,7 @@ bool LRUFileCachePriority::canFit(
 IFileCachePriority::EvictionInfo LRUFileCachePriority::checkEvictionInfo(
     size_t size,
     size_t elements,
+    IFileCachePriority::Iterator *,
     const CacheStateGuard::Lock & lock)
 {
     EvictionInfo info;

@@ -174,15 +174,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            main_priority = std::make_unique<LRUFileCachePriority>(
+            main_priority = std::make_unique<SLRUFileCachePriority>(
                 settings[FileCacheSetting::max_size],
                 settings[FileCacheSetting::max_elements],
+                settings[FileCacheSetting::slru_size_ratio],
                 cache_name);
-            //main_priority = std::make_unique<SLRUFileCachePriority>(
-            //    settings[FileCacheSetting::max_size],
-            //    settings[FileCacheSetting::max_elements],
-            //    settings[FileCacheSetting::slru_size_ratio],
-            //    cache_name);
             break;
         }
     }
@@ -1061,12 +1057,12 @@ bool FileCache::tryReserve(
                     failure_reason = "query limit exceeded";
                     return false;
                 }
-                query_eviction_info = query_priority->checkEvictionInfo(size, required_elements_num, cache_state_lock);
+                query_eviction_info = query_priority->checkEvictionInfo(size, required_elements_num, queue_iterator.get(), cache_state_lock);
             }
         }
 
         /// Check server-wide cache limits.
-        main_eviction_info = main_priority->checkEvictionInfo(size, required_elements_num, cache_state_lock);
+        main_eviction_info = main_priority->checkEvictionInfo(size, required_elements_num, queue_iterator.get(), cache_state_lock);
     }
 
     LOG_TEST(log, "Main eviction info {}", main_eviction_info.formatForLog());

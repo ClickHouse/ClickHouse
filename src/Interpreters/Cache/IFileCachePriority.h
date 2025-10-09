@@ -184,6 +184,7 @@ public:
     virtual EvictionInfo checkEvictionInfo(
         size_t size,
         size_t elements,
+        IFileCachePriority::Iterator * reservee,
         const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
